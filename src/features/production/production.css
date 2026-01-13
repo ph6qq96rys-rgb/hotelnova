@@ -1,0 +1,49 @@
+﻿/* Optional: only if your app doesn't already have modal/drawer styles */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 60;
+}
+.drawer {
+  width: min(680px, 96vw);
+  height: 100%;
+  background: white;
+  box-shadow: -10px 0 30px rgba(0,0,0,0.15);
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+}
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.drawer-body {
+  overflow: auto;
+  padding-bottom: 20px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 70;
+}
+.modal {
+  width: min(720px, 96vw);
+  background: white;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+  padding: 14px;
+}
+.modal-header {
+  margin-bottom: 10px;
+}

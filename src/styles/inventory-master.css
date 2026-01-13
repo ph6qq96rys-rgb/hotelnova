@@ -1,0 +1,157 @@
+/* Inventory Master Home — scoped to prevent conflicts */
+/* Force this page to look correct even inside dark admin shell */
+.im-home {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+
+  background: #f7f8fb;          /* IMPORTANT */
+  color: #0f172a;               /* IMPORTANT */
+  border-radius: 16px;          /* nice when inside dark layout */
+}
+
+.im-home__header {
+  margin-bottom: 18px;
+}
+
+.im-home__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.im-home__subtitle {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.45;
+  max-width: 75ch;
+}
+
+/* Grid */
+.im-home__grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+/* Card */
+.im-card {
+  display: block;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 18px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.im-card:hover {
+  border-color: #2563eb;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+  transform: translateY(-2px);
+}
+
+.im-card__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.im-card__title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.im-card__desc {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+}
+.im-home .im-home__grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.im-home a.im-card {
+  display: block;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 18px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.im-home a.im-card:hover {
+  border-color: #2563eb;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+  transform: translateY(-2px);
+}
+.im-home__debug {
+  padding: 8px 10px;
+  background: #22c55e;
+  color: white;
+  font-weight: 900;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+/* Alerts */
+.inv-page .inv-alert{
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--inv-border2);
+  font-size: 14px;
+}
+.inv-page .inv-alert--error{
+  color: #dc2626;
+  background: #fff5f5;
+}
+.inv-page .inv-link{
+  font-weight: 800;
+  text-decoration: underline;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+/* Registration grid (12-col like your md:grid-cols-12) */
+.inv-page .inv-form-grid{
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+}
+.inv-page .inv-col-2{ grid-column: span 2 / span 2; }
+.inv-page .inv-col-3{ grid-column: span 3 / span 3; }
+.inv-page .inv-col-4{ grid-column: span 4 / span 4; }
+.inv-page .inv-col-5{ grid-column: span 5 / span 5; }
+
+@media (max-width: 768px){
+  .inv-page .inv-form-grid{ grid-template-columns: 1fr; }
+  .inv-page .inv-col-2,
+  .inv-page .inv-col-3,
+  .inv-page .inv-col-4,
+  .inv-page .inv-col-5{ grid-column: auto; }
+}
+
+/* Make Field component consistent */
+.inv-page .field label{
+  display:block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--inv-muted);
+  letter-spacing: .02em;
+}

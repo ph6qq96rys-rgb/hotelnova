@@ -1,0 +1,13 @@
+﻿Add to your routeConfig.tsx (appRoutes array) so it shows in sidebar:
+
+{
+  path: "/inventory-master",
+  label: "Inventory Master",
+  element: <InventoryMasterHomePage />,
+  nav: true,
+  section: "Inventory",
+  permissions: ["inventory.view"],
+}
+
+You can also add direct links:
+{ path: "/inventory-master/items", label: "Items", element: <ItemsPage />, nav: true, section:"Inventory", permissions:["inventory.view"] }

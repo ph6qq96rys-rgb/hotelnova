@@ -2,7 +2,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
 import { stockTransfersApi } from "../api/stockTransfersApi";
-import  {type StockTransferListDto, StockTransferStatus } from "../types";
+import  {STOCK_TRANSFER_STATUS, type StockTransferListDto } from "../types";
 import { DocHeader, KpiRow, Kpi, Card, StatusPill } from "../../../../shared/ui/DocUI";
 
 export default function StockTransferApprovalsPage() {
@@ -18,7 +18,7 @@ export default function StockTransferApprovalsPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await stockTransfersApi.list(companyId, StockTransferStatus.Submitted);
+      const data = await stockTransfersApi.list(companyId, STOCK_TRANSFER_STATUS.Submitted);
       setRows(data);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load approval inbox");

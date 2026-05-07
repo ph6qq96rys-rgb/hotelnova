@@ -1,12 +1,18 @@
-  export enum StockTransferStatus {
-  Draft = 0,
-  Submitted = 1,
-  Approved = 2,
-  Rejected = 3,
-  Posted = 4,
-  Reversed = 5,
 
-};
+export const STOCK_TRANSFER_STATUS = {
+  Draft: "Draft",
+  Submitted: "Submitted",
+  Approved: "Approved",
+  Rejected: "Rejected",
+  Posted: "Posted",
+  Reversed: "Reversed",
+  Cancelled: "Cancelled",
+} as const;
+
+export type StockTransferStatus =
+  typeof STOCK_TRANSFER_STATUS[keyof typeof STOCK_TRANSFER_STATUS];
+
+
 export type StockLocationDto = {
   id: string;
   companyId: string;

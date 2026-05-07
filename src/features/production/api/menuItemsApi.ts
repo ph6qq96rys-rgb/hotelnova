@@ -1,20 +1,68 @@
 import { http } from "../../../api/http";
-import type {CreateMenuItemRequest,MenuItemLite}from "../types"
-
+import type {CreateMenuItemRequest, SaveMenuItemRecipeEditorRequest}from "../types"
 export const menuItemsApi = {
-  async list(companyId: string, branchId: string, q = "", activeOnly = true) {
-    const r = await http.get<MenuItemLite[]>(
+  list: async (
+    companyId: string,
+    branchId: string,
+    q?: string,
+    activeOnly = true
+  ) => {
+    const res = await http.get(
       `/companies/${companyId}/branches/${branchId}/menu/items`,
-      { params: { q, activeOnly } }
+      {
+        params: { q, activeOnly },
+      }
     );
-    return r.data;
+    return res.data;
   },
 
-  async create(companyId: string, branchId: string, body: CreateMenuItemRequest) {
-    const r = await http.post<{ id: string }>(
+  create: async (
+    companyId: string,
+    branchId: string,
+    payload: CreateMenuItemRequest
+  ) => {
+    const res = await http.post(
       `/companies/${companyId}/branches/${branchId}/menu/items`,
-      body
+      payload
     );
-    return r.data;
+
+    return res.data;
+  },
+
+  getRecipeEditor: async (
+    companyId: string,
+    branchId: string,
+    menuItemId: string
+  ) => {
+    const res = await http.get(
+      `/companies/${companyId}/branches/${branchId}/menu/items/${menuItemId}/recipe-editor`
+    );
+
+    return res.data;
+  },
+listCategories: async (companyId: string, branchId: string) => {
+  const res = await http.get(
+    `/companies/${companyId}/branches/${branchId}/menu/categories`,
+    {
+      params: {
+        activeOnly: true,
+      },
+    }
+  );
+
+  return res.data;
+},
+  saveRecipeEditor: async (
+    companyId: string,
+    branchId: string,
+    menuItemId: string,
+    payload: SaveMenuItemRecipeEditorRequest
+  ) => {
+    const res = await http.put(
+      `/companies/${companyId}/branche/${branchId}/menu/items/${menuItemId}/recipe-editor`,
+      payload
+    );
+
+    return res.data;
   },
 };

@@ -16,8 +16,8 @@ type Step = 1 | 2 | 3;
 
 export function AssignRoleWizard({ userId, onClose, onAssigned }: Props) {
   const { companyId } = useAppScope();
-  const { roles, loading: rolesLoading } = useRoles();
-  const { branches, loading: branchesLoading } = useBranches();
+  const { roles, loading: rolesLoading } = useRoles(companyId);
+  const { branches, loading: branchesLoading } = useBranches(companyId);
 
   const [step, setStep] = useState<Step>(1);
   const [branchId, setBranchId] = useState<string>(""); // empty = company-wide
@@ -52,7 +52,7 @@ export function AssignRoleWizard({ userId, onClose, onAssigned }: Props) {
       // });
 
       // ✅ Fallback: use existing API today (global membership)
-      await securityApi.addUserToRole(roleId, userId); // :contentReference[oaicite:14]{index=14}
+      await securityApi.addUserToRole(companyId, roleId, userId); // :contentReference[oaicite:14]{index=14}
 
       onAssigned?.();
       onClose();

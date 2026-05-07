@@ -12,12 +12,13 @@ import RequireCompany from "../auth/RequireCompany";
 import AppShell from "../layouts/AppShell";
 
 import { routeConfig } from "./routeConfig";
-import { companyRoutes, BranchRoutes } from "./companyRoutes";
-import { grnRoutes } from "./grnroutes";
-
-
+import { companyRoutes } from "./companyRoutes";
+import { useInventoryRoutes } from "./grnroutes";
 
 export default function AppRoutes() {
+  // ✅ Hooks only at the top level of a component
+  const inventoryRoutes = useInventoryRoutes();
+
   return (
     <Routes>
       {/* ================= PUBLIC ================= */}
@@ -38,8 +39,7 @@ export default function AppRoutes() {
       >
         {renderRoutes(routeConfig)}
         {renderRoutes(companyRoutes)}
-        {renderRoutes(BranchRoutes)}
-        {renderRoutes(grnRoutes)}
+        {renderRoutes(inventoryRoutes)}
       </Route>
 
       {/* ================= FALLBACK ================= */}
@@ -49,31 +49,25 @@ export default function AppRoutes() {
 }
 
 /** ✅ Render RouteObject / AppRoute trees (supports children + index routes) */
-function renderRoutes(routes: Array<RouteObject & { path?: string; element?: ReactNode }>) {
+function renderRoutes(
+  routes: Array<RouteObject & { path?: string; element?: ReactNode }>
+) {
   return routes.map((r, i) => {
     const key = r.path ?? `index-${i}`;
 
     // index route
     if ((r as any).index) {
-      return (
-        <Route
-          key={key}
-          index
-          element={r.element as ReactNode}
-        />
-      );
+      return <Route key={key} index element={r.element as ReactNode} />;
     }
 
     // normal route (path required for non-index)
     const path = r.path ? stripLeadingSlash(r.path) : undefined;
 
     return (
-      <Route
-        key={key}
-        path={path}
-        element={r.element as ReactNode}
-      >
-        {Array.isArray((r as any).children) ? renderRoutes((r as any).children) : null}
+      <Route key={key} path={path} element={r.element as ReactNode}>
+        {Array.isArray((r as any).children)
+          ? renderRoutes((r as any).children)
+          : null}
       </Route>
     );
   });

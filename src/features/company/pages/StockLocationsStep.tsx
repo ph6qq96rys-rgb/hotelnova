@@ -1,24 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { branchSetupApi } from "../api/branchSetupApi";
-import type { StockLocation } from "../types";
+import type { StockLocation} from "../types";
 
-const locationTypes = ["Warehouse", "Kitchen", "Bar", "Transit", "WIP"] as const;
+/**
+ * Must match your .NET enum numeric values exactly.
+ * Update numbers here if your backend uses different ones.
+ */
+export enum StockLocationType {
+  Warehouse = 1,
+  Kitchen = 2,
+  Bar = 3,
+  Transit = 4,
+  WIP = 5,
+}
+
+const locationTypeOptions = [
+  { label: "Warehouse", value: StockLocationType.Warehouse },
+  { label: "Kitchen", value: StockLocationType.Kitchen },
+  { label: "Bar", value: StockLocationType.Bar },
+  { label: "Transit", value: StockLocationType.Transit },
+  { label: "WIP", value: StockLocationType.WIP },
+] as const;
 
 function requireParam(name: string, value: string | undefined): string {
   if (!value) throw new Error(`Missing route param: ${name}`);
   return value;
 }
 
+function typeLabel(t: unknown): string {
+  // backend may return number or string; handle both safely
+  if (typeof t === "string") return t;
+  if (typeof t === "number") return StockLocationType[t] ?? String(t);
+  return "—";
+}
+
 export default function StockLocationsStep() {
   const params = useParams();
 
   const companyId = requireParam("companyId", params.companyId);
-  const branchId  = requireParam("branchId", params.branchId);
+  const branchId = requireParam("branchId", params.branchId);
 
   const [items, setItems] = useState<StockLocation[]>([]);
   const [name, setName] = useState("");
-  const [type, setType] = useState<(typeof locationTypes)[number]>("Warehouse");
+  const [type, setType] = useState<StockLocationType>(StockLocationType.Warehouse);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -46,14 +71,19 @@ export default function StockLocationsStep() {
   async function create() {
     if (!canCreate) return;
     setErr(null);
-    await branchSetupApi.createStockLocation(companyId, branchId, { name: name.trim(), type });
-    setName("");
-    await load();
+    try {
+      await branchSetupApi.createStockLocation(companyId, branchId, {
+        name: name.trim(),
+        code: name.trim().toLowerCase().replace(/\s+/g, "-"), // simple code generation
+        locationType: type, // ✅ sends number (enum)
+      });
+      setName("");
+      setType(StockLocationType.Warehouse);
+      await load();
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to create stock location");
+    }
   }
-
-  // ...rest unchanged
-
-
 
   async function setDefaultReceiving(id: string) {
     setBusyId(id);
@@ -115,11 +145,11 @@ export default function StockLocationsStep() {
             <select
               className="mt-1 w-full px-3 py-2 rounded-lg border"
               value={type}
-              onChange={(e) => setType(e.target.value as any)}
+              onChange={(e) => setType(Number(e.target.value) as StockLocationType)}
             >
-              {locationTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {locationTypeOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
                 </option>
               ))}
             </select>
@@ -161,7 +191,7 @@ export default function StockLocationsStep() {
               {items.map((x) => (
                 <tr key={x.id} className="border-t">
                   <td className="p-3">{x.name}</td>
-                  <td className="p-3">{x.type}</td>
+                  <td className="p-3">{typeLabel((x as any).type)}</td>
                   <td className="p-3">
                     <div className="flex gap-2">
                       {x.isDefaultReceiving && (

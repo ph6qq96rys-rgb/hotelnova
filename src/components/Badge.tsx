@@ -1,25 +1,32 @@
-import clsx from "clsx";
+import * as React from "react";
 
-export function Badge({
-  children,
-  variant = "default"
-}: {
-  children: React.ReactNode;
-  variant?: "default" | "blue" | "purple" | "danger";
-}) {
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
+  variant?: "default" | "secondary" | "outline" | "success" | "warning" | "destructive";
+  
+}
+
+const variants: Record<NonNullable<BadgeProps["variant"]>, string> = {
+  default: "bg-primary text-primary-foreground",
+  secondary: "bg-muted text-foreground",
+  outline: "border border-input text-foreground",
+  success: "bg-emerald-600 text-white",
+  warning: "bg-amber-500 text-black",
+  destructive: "bg-destructive text-destructive-foreground",
+};
+
+export function Badge({ className, variant = "default", ...props }: BadgeProps) {
   return (
     <span
-      className={clsx(
+      className={cn(
         "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-        {
-          "bg-slate-100 text-slate-700": variant === "default",
-          "bg-blue-100 text-blue-700": variant === "blue",
-          "bg-purple-100 text-purple-700": variant === "purple",
-          "bg-red-100 text-red-700": variant === "danger"
-        }
+        variants[variant],
+        className
       )}
-    >
-      {children}
-    </span>
+      {...props}
+    />
   );
 }

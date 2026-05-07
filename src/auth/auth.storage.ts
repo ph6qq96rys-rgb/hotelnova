@@ -21,6 +21,8 @@ export type AuthState = {
   // optional app scope
   companyId?: string | null;
   branchId?: string | null;
+  departmentId?: string | null;
+  currentLocationId?: string | null;
   permissions?: string[];
 };
 
@@ -53,6 +55,8 @@ export function loadAuth(): AuthState | null {
     expiresAt: safeString((data as any).expiresAt),
     companyId: (data as any).companyId ?? null,
     branchId: (data as any).branchId ?? null,
+    departmentId: (data as any).departmentId ?? null,
+    currentLocationId: (data as any).currentLocationId ?? null,
     permissions: Array.isArray((data as any).permissions) ? (data as any).permissions.map(String)  : [],
 
   };
@@ -67,6 +71,8 @@ export function saveAuth(next: AuthState): void {
     expiresAt: safeString(next.expiresAt),
     companyId: next.companyId ?? null,
     branchId: next.branchId ?? null,
+    departmentId: next.departmentId ?? null,
+    currentLocationId: next.currentLocationId ?? null,
     permissions: Array.isArray(next.permissions) ? next.permissions.map(String) : [],
 
   };

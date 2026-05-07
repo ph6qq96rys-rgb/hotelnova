@@ -1,5 +1,5 @@
-import { http } from "./http";
-import type {LoginRequest, RegisterRequest, LoginResponse,AuthUser, ResetPasswordRequest } from "../auth/auth.types";
+import { http } from "../api/http";
+import type {LoginRequest, RegisterRequest, LoginResponse,AuthUser, ResetPasswordRequest } from "./auth.types";
 
 export async function resetPassword(payload: ResetPasswordRequest) {
   const { data }= await http.post("/auth/reset-password", payload);

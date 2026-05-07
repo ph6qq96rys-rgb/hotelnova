@@ -180,13 +180,7 @@ export default function BranchSetupWizardPage() {
     }
   }
 
-  /*function onContinue() {
-    if (!companyId) return;
-    if (!selected) { setError("Select a branch to continue."); return; }
-    setError(null);
-    setBranchId(selected);
-    goNext(companyId, selected);
-  }*/
+
  
  function onContinue() {
   if (!companyId) return;
@@ -194,10 +188,7 @@ export default function BranchSetupWizardPage() {
       console.log("Before clear:", { companyId, branchId, selected });
       setError(null);
       console.log("After clear:", { companyId, branchId, selected });
-  // ✅ remove race: don’t clear error before navigation
   nav(`/companies/${companyId}/branches/${selected}/setup/store-location`, { replace: true });
-
-  // ✅ update scope (optional) — but do NOT rely on it for routing
   setBranchId(selected);
 }
 

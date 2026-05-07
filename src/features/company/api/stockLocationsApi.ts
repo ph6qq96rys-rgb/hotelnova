@@ -1,5 +1,5 @@
 import { http } from "../../../api/http";
-import type { CreateStockLocationRequest } from "../types";
+import type { CreateStockLocationPayload } from "../types";
 
 export type StockLocationDto = { id: string; name: string; code?: string | null; branchId: string };
 
@@ -12,9 +12,16 @@ export const stockLocationsApi = {
   async create(
     companyId: string,
     branchId: string,
-    body: CreateStockLocationRequest
+    body: CreateStockLocationPayload
   ): Promise<StockLocationDto> {
     const res = await http.post(`/companies/${companyId}/branches/${branchId}/stock-locations`, body);
+    return res.data;
+  },
+  async setStoreIssueLocation(companyId: string, branchId: string, stockLocationId: string) {
+    const res = await http.post(
+      `/companies/${companyId}/branches/${branchId}/stock-locations/${stockLocationId}/set-issue-location`,
+      {}
+    );
     return res.data;
   },
 };

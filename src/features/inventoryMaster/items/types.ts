@@ -1,88 +1,116 @@
 ﻿import type { ItemType } from "./constants/itemTypes";
 
-export type InventoryItemDto = {
-  id: string;
-  companyId: string;
+/* =========================
+   Catalog / Lookup DTOs
+   ========================= */
 
-  name: string;
-  sku?: string | null;
-
-  categoryId?: string | null;
-  baseUomId: string;
-  issueUomId?: string | null;
-
-  itemType: ItemType;
-
-  trackInventory: boolean;
-  isActive: boolean;
-};
-
-export type CreateInventoryItemDto = {
-  name: string;
-  sku?: string | null;
-
-  categoryId?: string | null;
-  baseUomId: string;
-  issueUomId?: string | null;
-
-  itemType: ItemType;
-
-  trackInventory: boolean;
-};
-
-export type UpdateInventoryItemDto = CreateInventoryItemDto & {
-  isActive: boolean;
-};
-
-export type ItemDto = {
-  id: string;
-  name: string;
-  sku?: string | null;
-
-  uomId: string;
-  categoryId?: string | null;
-  itemTypeId?: string | null;
-
-  defaultCost?: number | null;
-  defaultPrice?: number | null;
-  isActive?: boolean;
-};
-export type ItemUomDto = {
-  uomId: string;
-  code: string;
-  name: string;
-  conversionFactorToBase?: number | null;
-  isBase?: boolean;
-  isIssue?: boolean;
-  isActive?: boolean;
-};
 export type CategoryDto = {
   id: string;
   name: string;
-  description?: string | null;
-  isActive?:boolean|null;
+  description: string | null;
+  isActive: boolean | null;
 };
 
 export type UomDto = {
   id: string;
   name: string;
-  symbol?: string | null;
+  symbol?: string | null; // ✅ optional so other module's UomDto[] is assignable
+  code?: string | null;   // ✅ optional (helps your conversions grid too)
   isBase?: boolean;
+  isActive?: boolean | null;
 };
 
-export type ItemTypeDto = {
-  id: string;
+export type ItemTypeCatalogDto = {
+   code: ItemType;
+   name: string;
+};
+export type ItemDto = {
+  Id: string;
   name: string;
-  description?: string | null;
 };
-
+export type CostingMethodDto = {
+  code: string;
+  name: string;
+};
 
 export interface InventoryCatalogs {
-  itemTypes: { code: ItemType; name: string }[];
+  itemTypes: ItemTypeCatalogDto[];
   categories: { id: string; name: string }[];
   uoms: { id: string; code: string; name: string }[];
-  costingMethods: { code: string; name: string }[];
+  costingMethods: CostingMethodDto[];
 }
+
+export type ItemUomDto = {
+  uomId: string;
+  code: string;
+  name: string;
+  toBaseFactor: number;
+  isBase: boolean;
+  isIssue: boolean;
+  isActive: boolean;
+};
+
+export type CreateInventoryItemRequest = {
+  name: string| null;
+  sku: string | null;
+  barcode: string | null;
+  categoryId: string | null;
+  baseUomId: string;
+  type: ItemType;
+  allowedUoms: ItemUomDto[] | null;
+  trackInventory: boolean;
+  defaultCost: number | null;
+  defaultPrice: number | null;
+  isActive: boolean | null;
+  reorderLevel:number;
+  
+};
+
+export type CreateInventoryItemResponse = {
+  id: string;
+};
+export type Guid = string;
+
+export type InventorySearchItemDto = {
+  id: Guid;
+  name: string;
+  sku?: string | null;
+  barcode?: string | null;
+  baseUomId?: Guid | null;
+  baseUomCode?: string | null;
+  isActive?: boolean;
+};
+
+export type InventoryItemDto = {
+  id: string;
+  companyId: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  categoryId: string | null;
+  baseUomId: string;
+  issueUomId: string | null;
+  type: ItemType;
+  allowedUoms: ItemUomDto[]; // when reading, usually normalized to [] instead of null
+  trackInventory: boolean;
+  costingMethod:string|null;
+  defaultCost: number | null;
+  defaultPrice: number | null;
+  isActive: boolean;
+};
+
+/**
+ * If your update endpoint uses the same payload as create, keep this.
+ * Otherwise define a proper UpdateInventoryItemRequest separately.
+ */
+export type UpdateInventoryItemRequest = Omit<CreateInventoryItemRequest, "id" | "companyId"> & {
+  // if id is in route for update, omit it from payload
+  // if companyId is in route, omit it too
+};
+
+/* =========================
+   List / View Models (UI)
+   ========================= */
 
 export interface ItemListDto {
   id: string;
@@ -93,22 +121,25 @@ export interface ItemListDto {
   active: boolean;
 }
 
-export interface ItemDesDto extends ItemListDto {
+export interface ItemDetailsDto extends ItemListDto {
   description?: string;
   trackStock: boolean;
   costingMethod?: string;
 }
 
-export interface CreateItemRequest {
-  companyId: string;
-  name: string;
-  type: ItemType;
-  categoryId: string;
-  baseUomId: string;
-  allowedUoms: { uomId: string; 
-  toBaseFactor: number }[];
-  trackStock: boolean;
-  costingMethod?: string;
-}
+/* =========================
+   Helpers
+   ========================= */
 
-export type UpdateItemRequest = CreateItemRequest;
+export function mapAllowedUomsToDto(rows: ItemUomDto[] | null | undefined): ItemUomDto[] {
+  const safe = rows ?? [];
+  return safe.map((r) => ({
+    uomId: r.uomId,
+    code: r.code,
+    name: r.name,
+    toBaseFactor: r.toBaseFactor ?? null,
+    isBase: !!r.isBase,
+    isIssue: !!r.isIssue,
+    isActive: r.isActive !== false,
+  }));
+}

@@ -1,352 +1,332 @@
 // src/features/production/pages/ProductionBatchPage.tsx
-import { useEffect, useMemo, useState } from "react";
+
+import { useCallback, useEffect, useMemo,  useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+
 import { useAppScope } from "../../../app/useAppScope";
-import { productionApi } from "../api/productionApi";
 import { http } from "../../../api/http";
-import type {LocationLite,MenuItemLite,ApplyRecipeRequest,
-  CreateProductionBatchRequest,ProductionLineVm,ProductionBatchDto,UpdateProductionLinesRequest} from "../types";
+import {
+  ApiError,
+  createScopedProductionBatchesApi,
+  type ProductionBatchDto,
+  type CreateProductionBatchRequest,
+  type UpdateProductionLinesRequest,
+  type ApplyRecipeRequest,
+} from "../api/productionBatchesApi";
+import { stockLocationsApi } from "../../inventory/stock-locations/api/stockLocationsApi";
+import type { LocationLite, MenuItemLite, ProductionLineVm } from "../types";
 
-// -----------------------------
-// Types (keep minimal & strict)
-// -----------------------------
+// ── Local types ───────────────────────────────────────────────────────────────
 
+type InventoryItemLite = {
+  id: string;
+  name: string;
+  code?: string | null;
+  uomId?: string | null;
+  uomName?: string | null;
+  defaultUomId?: string | null;
+  defaultUomName?: string | null;
+  isActive?: boolean;
+};
 
-async function fetchLocations(companyId: string): Promise<LocationLite[]> {
-  if (!companyId) return [];
-  return http.get<LocationLite[]>(`/companies/${companyId}/locations`).then((r) => r.data);
+// ── Pure helpers ──────────────────────────────────────────────────────────────
+
+function hasText(v: unknown): v is string {
+  return typeof v === "string" && v.trim().length > 0;
 }
 
-async function fetchMenuItems(companyId: string): Promise<MenuItemLite[]> {
-  if (!companyId) return [];
-  return http.get<MenuItemLite[]>(`/companies/${companyId}/menu/items`).then((r) => r.data);
+function safeNum(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-function fmtDate(s?: string | null) {
-  if (!s) return "—";
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleString();
+function fmtDate(value?: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
 }
 
-function safeNum(n: any, fallback = 0) {
-  const x = Number(n);
-  return Number.isFinite(x) ? x : fallback;
+function isDraft(batch: ProductionBatchDto | null): boolean {
+  if (!batch) return false; // no batch loaded = not editable as draft
+  return String(batch.status).toLowerCase() === "draft";
 }
 
-function nextLineNo(lines: ProductionLineVm[]) {
-  const max = lines.reduce((m, l) => Math.max(m, l.lineNo), 0);
-  return max + 1;
+function isAbortError(e: unknown): boolean {
+  return (e as { name?: string })?.name === "AbortError";
 }
+
+function getApiError(e: unknown, fallback: string): string {
+  if (e instanceof ApiError) {
+    if (e.errors) {
+      return Object.entries(e.errors)
+        .flatMap(([field, msgs]) => msgs.map((m) => `${field}: ${m}`))
+        .join("\n");
+    }
+    return e.detail ?? e.title ?? fallback;
+  }
+  const err = e as any;
+  return (
+    err?.response?.data?.message ??
+    err?.response?.data?.title ??
+    err?.message ??
+    fallback
+  );
+}
+
+function nextLineNo(lines: ProductionLineVm[]): number {
+  return lines.reduce((max, l) => Math.max(max, l.lineNo ?? 0), 0) + 1;
+}
+
+function mapBatchInputs(batch: ProductionBatchDto): ProductionLineVm[] {
+  return (batch.inputs ?? []).map((l, i) => ({
+    id: l.id ?? `${l.lineNo ?? i + 1}-${i}`,
+    lineNo: l.lineNo ?? i + 1,
+    itemId: l.itemId ?? "",
+    itemName: l.itemName ?? "",
+    uomId: l.uomId ?? null,
+    uomName: l.uomName ?? null,
+    qty: safeNum(l.qty, 0),
+    qtyBase: l.qtyBase ?? null,
+    source: (l.source as ProductionLineVm["source"]) ?? "manual",
+    recipeLineId: l.recipeLineId ?? null,
+  }));
+}
+
+// ── Catalog fetchers ──────────────────────────────────────────────────────────
+
+async function fetchLocations(cid: string, bid: string): Promise<LocationLite[]> {
+  return stockLocationsApi.list(cid, bid);
+}
+
+async function fetchMenuItems(cid: string, bid: string): Promise<MenuItemLite[]> {
+  const res = await http.get<MenuItemLite[]>(
+    `/companies/${cid}/branches/${bid}/menu/items`,
+    { params: { activeOnly: true } }
+  );
+  return res.data ?? [];
+}
+
+async function fetchInventoryItems(cid: string, bid: string): Promise<InventoryItemLite[]> {
+  const res = await http.get<InventoryItemLite[]>(
+    `/companies/${cid}/inventory-items/search`,
+    { params: { branchId: bid, activeOnly: true, q: " " } }
+  );
+  return res.data ?? [];
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ProductionBatchPage() {
   const nav = useNavigate();
-  const { batchId: batchIdParam } = useParams<{ batchId?: string }>();
-  const { companyId } = useAppScope();
+  const { batchId: routeBatchId } = useParams<{ batchId?: string }>();
+  const scope = useAppScope();
 
-  // Company guard (fix TS2345)
-  if (!companyId) {
-    return (
-      <div className="page">
-        <div className="card">
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Company not selected</div>
-          <div style={{ opacity: 0.75, marginTop: 6 }}>
-            Please select a company to create or open a production batch.
-          </div>
-        </div>
-      </div>
-    );
-  }
-  const cid = companyId;
+  const companyId = scope.companyId?.trim() ?? "";
+  const branchId  = scope.branchId?.trim()  ?? "";
+  const hasScope  = Boolean(companyId) && Boolean(branchId);
 
-  // -----------------------------
-  // Catalogs
-  // -----------------------------
-  const [locations, setLocations] = useState<LocationLite[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItemLite[]>([]);
+  // The route param tells us whether we are editing an existing batch
+  const existingBatchId = hasText(routeBatchId) ? routeBatchId.trim() : null;
+  const isNewPage = !existingBatchId;
+
+  // ── Scoped API ──────────────────────────────────────────────────────────────
+
+  const api = useMemo(
+    () =>
+      hasScope
+        ? createScopedProductionBatchesApi(companyId, branchId)
+        : null,
+    [hasScope, companyId, branchId]
+  );
+
+  // ── Catalog state ───────────────────────────────────────────────────────────
+
+  const [locations,      setLocations]      = useState<LocationLite[]>([]);
+  const [menuItems,      setMenuItems]      = useState<MenuItemLite[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItemLite[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogErr, setCatalogErr] = useState<string | null>(null);
+  const [catalogReady,   setCatalogReady]   = useState(false);
 
-  // -----------------------------
-  // Batch state
-  // -----------------------------
-  const [loading, setLoading] = useState(false);
+  // ── Batch / form state ──────────────────────────────────────────────────────
+
+  const [batch,            setBatch]           = useState<ProductionBatchDto | null>(null);
+  const [inputs,           setInputs]          = useState<ProductionLineVm[]>([]);
+  const [menuItemId,       setMenuItemId]      = useState("");
+  const [plannedQty,       setPlannedQty]      = useState<number>(1);
+  const [issueLocationId,  setIssueLocationId] = useState("");
+  const [outputLocationId, setOutputLocationId] = useState("");
+
+  // ── Loading / error state ───────────────────────────────────────────────────
+
+  const [loading,     setLoading]     = useState(false);
   const [savingLines, setSavingLines] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [error,       setError]       = useState<string | null>(null);
 
-  const [batch, setBatch] = useState<ProductionBatchDto | null>(null);
+  // ── Derived ─────────────────────────────────────────────────────────────────
 
-  // Create form (top card)
-  const [menuItemId, setMenuItemId] = useState<string>("");
-  const [plannedQty, setPlannedQty] = useState<number>(1);
+  const hasBatch = Boolean(batch?.id);
+  // On a new page: form is always editable until batch is created.
+  // On an existing page: only editable if batch status is Draft.
+  const canEdit = isNewPage ? !hasBatch : isDraft(batch);
 
-  const [issueLocationId, setIssueLocationId] = useState<string>("");
-  const [outputLocationId, setOutputLocationId] = useState<string>("");
-
-  // Editable lines (inputs)
-  const [inputs, setInputs] = useState<ProductionLineVm[]>([]);
-
-  /*const locationById = useMemo(
-    () => new Map(locations.map((l) => [l.id, l.name])),
-    [locations]
-  );*/
   const menuById = useMemo(
     () => new Map(menuItems.map((m) => [m.id, m.name])),
     [menuItems]
   );
 
-  // -----------------------------
-  // Load catalogs
-  // -----------------------------
+  const totalInputQty = useMemo(
+    () => inputs.reduce((sum, l) => sum + safeNum(l.qty, 0), 0),
+    [inputs]
+  );
+
+  // ── Sync form from a loaded batch ───────────────────────────────────────────
+
+  const syncFormFromBatch = useCallback((b: ProductionBatchDto) => {
+    setBatch(b);
+    setInputs(mapBatchInputs(b));
+    setMenuItemId(b.menuItemId ?? "");
+    setPlannedQty(safeNum(b.plannedQty, 1));
+    setIssueLocationId(b.issueLocationId ?? "");
+    setOutputLocationId(b.outputLocationId ?? "");
+  }, []);
+
+  // ── Reload batch after mutations ────────────────────────────────────────────
+
+  const reloadBatch = useCallback(
+    async (signal?: AbortSignal) => {
+      const id = batch?.id;
+      if (!api || !id) return;
+      setLoading(true);
+      setError(null);
+      try {
+        syncFormFromBatch(await api.get(id, signal));
+      } catch (e) {
+        if (!isAbortError(e)) setError(getApiError(e, "Failed to reload batch."));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [api, batch?.id, syncFormFromBatch]
+  );
+
+  // ── Load catalogs ───────────────────────────────────────────────────────────
+
   useEffect(() => {
-    let mounted = true;
-    setCatalogLoading(true);
-    setCatalogErr(null);
+    if (!hasScope) {
+      setLocations([]);
+      setMenuItems([]);
+      setInventoryItems([]);
+      setCatalogReady(false);
+      return;
+    }
 
-    Promise.all([fetchLocations(cid), fetchMenuItems(cid)])
-      .then(([locs, menus]) => {
-        if (!mounted) return;
+    const ctrl = new AbortController();
+    setCatalogReady(false);
 
-        const activeLocs = locs.filter((x) => x.isActive);
-        const activeMenus = menus.filter((x) => x.isActive);
+    async function load() {
+      setCatalogLoading(true);
+      setError(null);
+
+      try {
+        const [locs, menus, items] = await Promise.all([
+          fetchLocations(companyId, branchId),
+          fetchMenuItems(companyId, branchId),
+          fetchInventoryItems(companyId, branchId),
+        ]);
+
+        if (ctrl.signal.aborted) return;
+
+        const activeLocs  = locs.filter((l) => l.isActive !== false);
+        const activeMenus = menus.filter((m) => m.isActive !== false);
+        const activeItems = items.filter((i) => i.isActive !== false);
 
         setLocations(activeLocs);
         setMenuItems(activeMenus);
+        setInventoryItems(activeItems);
+        setCatalogReady(true);
 
-        // defaults
-        if (!issueLocationId && activeLocs.length > 0) setIssueLocationId(activeLocs[0].id);
-        if (!outputLocationId && activeLocs.length > 0) setOutputLocationId(activeLocs[0].id);
-        if (!menuItemId && activeMenus.length > 0) setMenuItemId(activeMenus[0].id);
-      })
-      .catch((e: unknown) => {
-        if (!mounted) return;
-        setCatalogErr(e instanceof Error ? e.message : "Failed to load catalogs");
-      })
-      .finally(() => {
-        if (!mounted) return;
-        setCatalogLoading(false);
-      });
+        // Only seed defaults on a new (no route param) page
+        if (isNewPage) {
+          setIssueLocationId((prev) =>
+            activeLocs.some((l) => l.id === prev) ? prev : activeLocs[0]?.id ?? ""
+          );
+          setOutputLocationId((prev) =>
+            activeLocs.some((l) => l.id === prev) ? prev : activeLocs[0]?.id ?? ""
+          );
+          setMenuItemId((prev) =>
+            activeMenus.some((m) => m.id === prev) ? prev : activeMenus[0]?.id ?? ""
+          );
+        }
+      } catch (e) {
+        if (!ctrl.signal.aborted)
+          setError(getApiError(e, "Failed to load catalogs."));
+      } finally {
+        if (!ctrl.signal.aborted) setCatalogLoading(false);
+      }
+    }
 
-    return () => {
-      mounted = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cid]);
+    void load();
+    return () => ctrl.abort();
+  }, [hasScope, companyId, branchId, isNewPage]);
 
-  // -----------------------------
-  // Load batch if route has id
-  // -----------------------------
+  // ── Load existing batch ─────────────────────────────────────────────────────
+  // Waits for catalogs to be ready so selects render with the correct value
+  // already highlighted rather than showing "Select…" on first paint.
+
   useEffect(() => {
-    if (!batchIdParam) return;
+    if (!existingBatchId || !api || !catalogReady) return;
 
-    let mounted = true;
-    setLoading(true);
-    setErr(null);
+    const ctrl = new AbortController();
 
-    productionApi
-      .getBatch(cid, batchIdParam)
-      .then((b: ProductionBatchDto) => {
-        if (!mounted) return;
-
-        setBatch(b);
-
-        // hydrate form selections from batch
-        setMenuItemId(b.menuItemId ?? "");
-        setPlannedQty(safeNum(b.plannedQty, 1));
-        setIssueLocationId(b.issueLocationId ?? "");
-        setOutputLocationId(b.outputLocationId ?? "");
-
-        // hydrate inputs
-        const lines = (b.inputs ?? []).map((x, idx) => ({
-          id: x.id ?? `${x.lineNo}-${idx}`,
-          lineNo: x.lineNo,
-          itemId: x.itemId,
-          itemName: x.itemName,
-          uomId: x.uomId ?? null,
-          uomName: x.uomName ?? null,
-          qty: safeNum(x.qty, 0),
-          qtyBase: x.qtyBase ?? null,
-          source: (x.source as any) ?? "manual",
-          recipeLineId: x.recipeLineId ?? null,
-        }));
-        setInputs(lines);
-      })
-      .catch((e: unknown) => {
-        if (!mounted) return;
-        setErr(e instanceof Error ? e.message : "Failed to load batch");
-      })
-      .finally(() => {
-        if (!mounted) return;
-        setLoading(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, [cid, batchIdParam]);
-
-  // -----------------------------
-  // Actions
-  // -----------------------------
-  async function createNewBatch() {
-    setErr(null);
-
-    if (!menuItemId) return setErr("Select a menu item.");
-    if (!issueLocationId) return setErr("Select Issue Location.");
-    if (!outputLocationId) return setErr("Select Output Location.");
-    if (plannedQty <= 0) return setErr("Planned Qty must be greater than 0.");
-
-    setLoading(true);
-    try {
-      const req: CreateProductionBatchRequest = {
-        menuItemId,
-        plannedQty: safeNum(plannedQty, 1),
-        issueLocationId,
-        outputLocationId,
-      };
-
-      const id = await productionApi.createBatch(cid, req);
-      // navigate to detail route (adjust to your route)
-      nav(`/production/batches/${id}`);
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Failed to create batch");
-    } finally {
-      setLoading(false);
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        syncFormFromBatch(await api!.get(existingBatchId!, ctrl.signal));
+      } catch (e) {
+        if (!ctrl.signal.aborted)
+          setError(getApiError(e, "Failed to load production batch."));
+      } finally {
+        if (!ctrl.signal.aborted) setLoading(false);
+      }
     }
+
+    void load();
+    return () => ctrl.abort();
+  }, [existingBatchId, api, catalogReady, syncFormFromBatch]);
+
+  // ── Line helpers ─────────────────────────────────────────────────────────────
+
+  function updateLine(lineNo: number, patch: Partial<ProductionLineVm>) {
+    setInputs((prev) =>
+      prev.map((l) => (l.lineNo === lineNo ? { ...l, ...patch } : l))
+    );
   }
 
-  async function reloadBatch() {
-    if (!batch?.id) return;
-    setLoading(true);
-    setErr(null);
-    try {
-      const b = await productionApi.getBatch(cid, batch.id);
-      setBatch(b);
-
-      const lines = (b.inputs ?? []).map((x, idx) => ({
-        id: x.id ?? `${x.lineNo}-${idx}`,
-        lineNo: x.lineNo,
-        itemId: x.itemId,
-        itemName: x.itemName,
-        uomId: x.uomId ?? null,
-        uomName: x.uomName ?? null,
-        qty: safeNum(x.qty, 0),
-        qtyBase: x.qtyBase ?? null,
-        source: (x.source as any) ?? "manual",
-        recipeLineId: x.recipeLineId ?? null,
-      }));
-      setInputs(lines);
-
-      // keep selections aligned
-      setMenuItemId(b.menuItemId ?? menuItemId);
-      setPlannedQty(safeNum(b.plannedQty, plannedQty));
-      setIssueLocationId(b.issueLocationId ?? issueLocationId);
-      setOutputLocationId(b.outputLocationId ?? outputLocationId);
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Failed to reload batch");
-    } finally {
-      setLoading(false);
-    }
+  function selectInputItem(lineNo: number, itemId: string) {
+    const item = inventoryItems.find((x) => x.id === itemId);
+    updateLine(lineNo, {
+      itemId,
+      itemName: item?.name ?? "",
+      uomId:    item?.defaultUomId ?? item?.uomId ?? null,
+      uomName:  item?.defaultUomName ?? item?.uomName ?? null,
+    });
   }
 
-  async function applyRecipe() {
-    if (!batch?.id) return setErr("Create or open a batch first.");
-    if (!menuItemId) return setErr("Select a menu item.");
-    if (plannedQty <= 0) return setErr("Planned Qty must be greater than 0.");
-
-    setLoading(true);
-    setErr(null);
-    try {
-      const req: ApplyRecipeRequest = {
-        menuItemId,
-        plannedQty: safeNum(plannedQty, 1),
-      };
-
-      await productionApi.applyRecipe(cid, batch.id, req);
-      await reloadBatch();
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Failed to apply recipe");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveLines() {
-    if (!batch?.id) return setErr("Create or open a batch first.");
-
-    // basic validation
-    const bad = inputs.find((x) => !x.itemId || x.qty <= 0);
-    if (bad) return setErr("All input lines must have Item and Qty > 0.");
-
-    setSavingLines(true);
-    setErr(null);
-    try {
-      const req: UpdateProductionLinesRequest = {
-        inputs: inputs
-          .slice()
-          .sort((a, b) => a.lineNo - b.lineNo)
-          .map((x) => ({
-            lineNo: x.lineNo,
-            itemId: x.itemId,
-            qty: safeNum(x.qty, 0),
-            uomId: x.uomId ?? null,
-            source: x.source ?? "manual",
-            recipeLineId: x.recipeLineId ?? null,
-          })),
-      };
-
-      await productionApi.updateLines(cid, batch.id, req);
-      await reloadBatch();
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Failed to save lines");
-    } finally {
-      setSavingLines(false);
-    }
-  }
-
-  async function postBatch() {
-    if (!batch?.id) return setErr("Create or open a batch first.");
-    setLoading(true);
-    setErr(null);
-    try {
-      await productionApi.post(cid, batch.id);
-      await reloadBatch();
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Failed to post");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function reverseBatch() {
-    if (!batch?.id) return setErr("Create or open a batch first.");
-    setLoading(true);
-    setErr(null);
-    try {
-      await productionApi.reverse(cid, batch.id);
-      await reloadBatch();
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Failed to reverse");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // -----------------------------
-  // Inputs table helpers
-  // -----------------------------
   function addManualLine() {
     setInputs((prev) => {
-      const ln = nextLineNo(prev);
+      const lineNo = nextLineNo(prev);
       return [
         ...prev,
         {
-          id: `new-${Date.now()}-${ln}`,
-          lineNo: ln,
+          id: `new-${Date.now()}-${lineNo}`,
+          lineNo,
           itemId: "",
           itemName: "",
           qty: 1,
-          source: "manual",
+          qtyBase: null,
+          source: "manual" as const,
           uomId: null,
           uomName: null,
           recipeLineId: null,
@@ -356,254 +336,469 @@ export default function ProductionBatchPage() {
   }
 
   function removeLine(lineNo: number) {
-    setInputs((prev) => prev.filter((x) => x.lineNo !== lineNo));
+    setInputs((prev) => prev.filter((l) => l.lineNo !== lineNo));
   }
 
-  function updateLine(lineNo: number, patch: Partial<ProductionLineVm>) {
-    setInputs((prev) =>
-      prev.map((x) => (x.lineNo === lineNo ? { ...x, ...patch } : x))
-    );
+  // ── Validation ────────────────────────────────────────────────────────────────
+
+  function validateCreate(): string | null {
+    if (!hasText(menuItemId))       return "Menu item is required.";
+    if (!hasText(issueLocationId))  return "Issue location is required.";
+    if (!hasText(outputLocationId)) return "Output location is required.";
+    if (issueLocationId === outputLocationId)
+      return "Issue and output locations cannot be the same.";
+    if (!plannedQty || plannedQty <= 0)
+      return "Planned quantity must be greater than zero.";
+    return null;
   }
 
-  // --------------------------------
-  // GRN-style UI blocks
-  // --------------------------------
+  // ── Actions ───────────────────────────────────────────────────────────────────
+
+  async function createBatch() {
+    if (!api) return setError("Select company and branch first.");
+
+    const validationError = validateCreate();
+    if (validationError) return setError(validationError);
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const req: CreateProductionBatchRequest = {
+        menuItemId:      menuItemId.trim(),
+        plannedQty:      safeNum(plannedQty, 1),
+        issueLocationId:  issueLocationId.trim(),
+        outputLocationId: outputLocationId.trim(),
+      };
+
+      const id = await api.create(req);
+      // Navigate to the edit page — the batch load effect will fire there
+      nav(`/production/batches/${id}`);
+    } catch (e) {
+      setError(getApiError(e, "Failed to create production batch."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function applyRecipe() {
+    const id = batch?.id;
+    if (!api || !id)     return setError("Create or open a batch first.");
+    if (!menuItemId)     return setError("Select a menu item.");
+    if (plannedQty <= 0) return setError("Planned quantity must be greater than zero.");
+
+    setLoading(true);
+    setError(null);
+    try {
+      const req: ApplyRecipeRequest = { menuItemId, plannedQty: safeNum(plannedQty, 1) };
+      await api.applyRecipe(id, req);
+      await reloadBatch();
+    } catch (e) {
+      setError(getApiError(e, "Failed to apply recipe."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveLines() {
+    const id = batch?.id;
+    if (!api || !id) return setError("Create or open a batch first.");
+
+    const badLine = inputs.find((l) => !l.itemId || safeNum(l.qty, 0) <= 0);
+    if (badLine)
+      return setError("Every line must have an item and quantity greater than zero.");
+
+    setSavingLines(true);
+    setError(null);
+    try {
+      const req: UpdateProductionLinesRequest = {
+        inputs: inputs
+          .slice()
+          .sort((a, b) => a.lineNo - b.lineNo)
+          .map((l) => ({
+            lineNo:       l.lineNo,
+            itemId:       l.itemId,
+            qty:          safeNum(l.qty, 0),
+            uomId:        l.uomId ?? null,
+            source:       l.source ?? "manual",
+            recipeLineId: l.recipeLineId ?? null,
+          })),
+      };
+      await api.updateLines(id, req);
+      await reloadBatch();
+    } catch (e) {
+      setError(getApiError(e, "Failed to save input lines."));
+    } finally {
+      setSavingLines(false);
+    }
+  }
+
+  async function postBatch() {
+    const id = batch?.id;
+    if (!api || !id) return setError("Create or open a batch first.");
+    if (inputs.length === 0) return setError("Add at least one input line before posting.");
+
+    setLoading(true);
+    setError(null);
+    try {
+      await api.post(id);
+      await reloadBatch();
+    } catch (e) {
+      setError(getApiError(e, "Failed to post production batch."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function reverseBatch() {
+    const id = batch?.id;
+    if (!api || !id) return setError("Create or open a batch first.");
+    if (!window.confirm("Reverse this batch? This will reinstate all consumed stock."))
+      return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      await api.reverse(id);
+      await reloadBatch();
+    } catch (e) {
+      setError(getApiError(e, "Failed to reverse production batch."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Create-button disabled logic ─────────────────────────────────────────────
+  // Disabled once a batch exists on this page (already created),
+  // or while fields are missing / loading.
+
+  const createDisabled =
+    hasBatch ||
+    loading ||
+    catalogLoading ||
+    !hasText(menuItemId) ||
+    !hasText(issueLocationId) ||
+    !hasText(outputLocationId) ||
+    (plannedQty ?? 0) <= 0;
+
+  // ── Guard renders ─────────────────────────────────────────────────────────────
+
+  if (!companyId) return <ScopeMessage message="Select a company first." />;
+  if (!branchId)  return <ScopeMessage message="Select a branch first." />;
+
+  // ── Render ────────────────────────────────────────────────────────────────────
+
+  const batchStatus = batch?.status ?? "Draft";
+  const statusColor =
+    batchStatus === "Posted"   ? "#16a34a" :
+    batchStatus === "Reversed" ? "#dc2626" : "#92400e";
+
   return (
     <div className="page">
-      {/* Header */}
-      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+
+      {/* ── Page header ── */}
+      <div style={pageHeaderStyle}>
         <div>
-          <div style={{ fontSize: 20, fontWeight: 800 }}>Production Batch</div>
-          <div style={{ opacity: 0.7, marginTop: 4 }}>
-            Create, apply recipe, edit inputs, then post (issues stock + creates outputs).
+          <div style={titleStyle}>Production Batch</div>
+          <div style={subtitleStyle}>
+            Create production batches, apply recipes, consume inputs, and post
+            finished goods.
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={actionRowStyle}>
           <button className="btn" onClick={() => nav("/production")} disabled={loading}>
-            Back
+            ← Back
           </button>
-          <button className="btn" onClick={reloadBatch} disabled={!batch?.id || loading}>
+          <button
+            className="btn"
+            onClick={() => void reloadBatch()}
+            disabled={!hasBatch || loading}
+          >
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Errors */}
-      {(catalogErr || err) && (
-        <div className="alert alert-danger" style={{ marginTop: 10 }}>
-          {catalogErr ?? err}
+      {/* ── Error banner ── */}
+      {error && (
+        <div
+          className="alert alert-danger"
+          style={{ marginTop: 12, whiteSpace: "pre-line" }}
+          role="alert"
+        >
+          {error}
+          <button
+            style={dismissBtnStyle}
+            onClick={() => setError(null)}
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      {/* Card: Create / Summary */}
+      {/* ── Batch header card ── */}
       <div className="card" style={{ marginTop: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+        <div style={docHeaderStyle}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 16 }}>
-              {batch?.id ? `Batch # ${batch.batchNo ?? batch.id}` : "New Batch"}
+            <div style={sectionTitleStyle}>
+              {batch?.batchNo ? `Batch #${batch.batchNo}` : "New Production Batch"}
             </div>
-            <div style={{ opacity: 0.7, marginTop: 2 }}>
-              Status: <b>{batch?.status ?? "draft"}</b> · Created: {fmtDate(batch?.createdAt)}
+            <div style={docMetaStyle}>
+              Status:{" "}
+              <b style={{ color: statusColor }}>{batchStatus}</b>
+              {" · "}
+              Created: {fmtDate(batch?.createdAt)}
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <button className="btn btn-primary" onClick={createNewBatch} disabled={loading || catalogLoading}>
-              + Create Batch
-            </button>
-            <button className="btn" onClick={applyRecipe} disabled={loading || !batch?.id}>
+          {/* ── Action buttons ── */}
+          <div style={actionRowStyle}>
+            {/* Create — only relevant on the /new page */}
+            {isNewPage && (
+              <button
+                className="btn btn-primary"
+                onClick={() => void createBatch()}
+                disabled={createDisabled}
+                title={hasBatch ? "Batch already created" : ""}
+              >
+                {loading && !hasBatch ? "Creating…" : "Create Batch"}
+              </button>
+            )}
+
+            <button
+              className="btn"
+              onClick={() => void applyRecipe()}
+              disabled={loading || !hasBatch || !canEdit}
+              title="Populate input lines from the selected menu item's recipe"
+            >
               Apply Recipe
             </button>
-            <button className="btn" onClick={saveLines} disabled={savingLines || !batch?.id}>
+
+            <button
+              className="btn"
+              onClick={() => void saveLines()}
+              disabled={savingLines || !hasBatch || !canEdit || inputs.length === 0}
+            >
               {savingLines ? "Saving…" : "Save Inputs"}
             </button>
-            <button className="btn btn-success" onClick={postBatch} disabled={loading || !batch?.id}>
+
+            <button
+              className="btn btn-success"
+              onClick={() => void postBatch()}
+              disabled={loading || !hasBatch || !isDraft(batch)}
+              title="Post batch and update inventory"
+            >
               Post
             </button>
-            <button className="btn btn-danger" onClick={reverseBatch} disabled={loading || !batch?.id}>
+
+            <button
+              className="btn btn-danger"
+              onClick={() => void reverseBatch()}
+              disabled={loading || !hasBatch || batchStatus !== "Posted"}
+              title="Reverse a posted batch"
+            >
               Reverse
             </button>
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12, marginTop: 14 }}>
-          {/* Menu Item */}
-          <div>
-            <label className="label">Menu Item</label>
+        {/* ── Summary boxes ── */}
+        <div style={summaryGridStyle}>
+          <SummaryBox label="Menu Item"      value={menuById.get(menuItemId) ?? "—"} />
+          <SummaryBox label="Planned Qty"    value={plannedQty > 0 ? String(plannedQty) : "—"} />
+          <SummaryBox label="Input Lines"    value={String(inputs.length)} />
+          <SummaryBox label="Total Input Qty" value={inputs.length ? totalInputQty.toFixed(4) : "—"} />
+        </div>
+      </div>
+
+      {/* ── Document information ── */}
+      <div className="card" style={{ marginTop: 12 }}>
+        <div style={sectionTitleStyle}>Document Information</div>
+
+        <div style={formGridStyle}>
+          <Field label="Menu Item" required>
             <select
               className="input"
               value={menuItemId}
               onChange={(e) => setMenuItemId(e.target.value)}
-              disabled={catalogLoading || loading}
+              disabled={catalogLoading || loading || !canEdit}
             >
-              {catalogLoading ? (
-                <option value="">Loading…</option>
-              ) : menuItems.length === 0 ? (
-                <option value="">No menu items</option>
-              ) : (
-                menuItems.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                    {m.code ? ` (${m.code})` : ""}
-                  </option>
-                ))
-              )}
+              <option value="">
+                {catalogLoading ? "Loading menu items…" : "Select menu item"}
+              </option>
+              {menuItems.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}{m.code ? ` (${m.code})` : ""}
+                </option>
+              ))}
             </select>
-            <div className="hint">Recipe is attached to the selected menu item.</div>
-          </div>
+          </Field>
 
-          {/* Planned Qty */}
-          <div>
-            <label className="label">Planned Qty</label>
+          <Field label="Planned Quantity" required>
             <input
               className="input"
               type="number"
-              min={0}
+              min={0.01}
               step="0.01"
               value={plannedQty}
               onChange={(e) => setPlannedQty(safeNum(e.target.value, 0))}
-              disabled={loading}
+              disabled={loading || !canEdit}
             />
-            <div className="hint">Used to scale recipe quantities.</div>
-          </div>
+          </Field>
 
-          {/* Quick info */}
-          <div style={{ borderLeft: "1px solid rgba(0,0,0,0.06)", paddingLeft: 12 }}>
-            <div style={{ fontSize: 13, opacity: 0.75 }}>Selected</div>
-            <div style={{ marginTop: 6 }}>
-              <div style={{ fontWeight: 700 }}>{menuById.get(menuItemId) ?? "—"}</div>
-              <div style={{ opacity: 0.75, marginTop: 2 }}>Qty: {plannedQty}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Locations */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14 }}>
-          <div>
-            <label className="label">Issue Location (Raw materials)</label>
+          <Field label="Issue Location — Raw Materials" required>
             <select
               className="input"
               value={issueLocationId}
               onChange={(e) => setIssueLocationId(e.target.value)}
-              disabled={catalogLoading || loading}
+              disabled={catalogLoading || loading || !canEdit}
             >
-              {catalogLoading ? (
-                <option value="">Loading…</option>
-              ) : locations.length === 0 ? (
-                <option value="">No active locations</option>
-              ) : (
-                locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))
-              )}
+              <option value="">
+                {catalogLoading ? "Loading locations…" : "Select issue location"}
+              </option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
             </select>
-            <div className="hint">Ingredients will be deducted from this location.</div>
-          </div>
+          </Field>
 
-          <div>
-            <label className="label">Output Location (Finished goods)</label>
+          <Field label="Output Location — Finished Goods" required>
             <select
               className="input"
               value={outputLocationId}
               onChange={(e) => setOutputLocationId(e.target.value)}
-              disabled={catalogLoading || loading}
+              disabled={catalogLoading || loading || !canEdit}
             >
-              {catalogLoading ? (
-                <option value="">Loading…</option>
-              ) : locations.length === 0 ? (
-                <option value="">No active locations</option>
-              ) : (
-                locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))
-              )}
+              <option value="">
+                {catalogLoading ? "Loading locations…" : "Select output location"}
+              </option>
+              {locations
+                .filter((l) => l.id !== issueLocationId) // prevent same-location selection
+                .map((l) => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
             </select>
-            <div className="hint">Finished goods will be received into this location.</div>
-          </div>
+          </Field>
         </div>
       </div>
 
-      {/* Card: Inputs */}
+      {/* ── Input lines ── */}
       <div className="card" style={{ marginTop: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+        <div style={tableHeaderStyle}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 16 }}>Inputs (Consumption)</div>
-            <div style={{ opacity: 0.7, marginTop: 2 }}>
-              Recipe lines will appear after <b>Apply Recipe</b>. You can add manual lines too.
+            <div style={sectionTitleStyle}>Input Lines / Consumption</div>
+            <div style={subtitleStyle}>
+              Select an inventory item — UoM fills automatically.
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn" onClick={addManualLine} disabled={loading}>
-              + Add Line
-            </button>
-          </div>
+          <button
+            className="btn"
+            onClick={addManualLine}
+            disabled={loading || !canEdit || !hasBatch}
+            title={!hasBatch ? "Create batch first" : ""}
+          >
+            + Add Line
+          </button>
         </div>
 
         <div style={{ overflowX: "auto", marginTop: 12 }}>
           <table className="table" style={{ width: "100%" }}>
             <thead>
               <tr>
-                <th style={{ width: 70 }}>Line</th>
-                <th>Item</th>
+                <th style={{ width: 60 }}>#</th>
+                <th style={{ minWidth: 300 }}>Item</th>
+                <th style={{ width: 160 }}>UoM</th>
                 <th style={{ width: 140, textAlign: "right" }}>Qty</th>
                 <th style={{ width: 120 }}>Source</th>
-                <th style={{ width: 120, textAlign: "right" }}>Actions</th>
+                <th style={{ width: 100, textAlign: "right" }}>Action</th>
               </tr>
             </thead>
+
             <tbody>
               {inputs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: 14, opacity: 0.7 }}>
-                    No input lines yet. Click <b>Apply Recipe</b> or <b>Add Line</b>.
+                  <td colSpan={6} style={emptyCellStyle}>
+                    {hasBatch
+                      ? <>No input lines yet — click <b>Apply Recipe</b> or <b>+ Add Line</b>.</>
+                      : "Create the batch first, then add input lines."}
                   </td>
                 </tr>
               ) : (
                 inputs
                   .slice()
                   .sort((a, b) => a.lineNo - b.lineNo)
-                  .map((ln) => (
-                    <tr key={ln.id ?? ln.lineNo}>
-                      <td>{ln.lineNo}</td>
+                  .map((line) => (
+                    <tr key={line.id ?? line.lineNo}>
+                      <td style={{ color: "#6b7280", fontSize: 13 }}>{line.lineNo}</td>
+
+                      <td>
+                        <select
+                          className="input"
+                          value={line.itemId ?? ""}
+                          disabled={!canEdit}
+                          onChange={(e) => selectInputItem(line.lineNo, e.target.value)}
+                        >
+                          <option value="">— select item —</option>
+                          {inventoryItems.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}{item.code ? ` (${item.code})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
                       <td>
                         <input
                           className="input"
-                          placeholder="Item name (display only)"
-                          value={ln.itemName}
-                          onChange={(e) => updateLine(ln.lineNo, { itemName: e.target.value })}
+                          value={line.uomName ?? ""}
+                          placeholder="Auto"
+                          readOnly
+                          disabled
+                          style={{ background: "rgba(0,0,0,0.03)", cursor: "default" }}
                         />
-                        <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>
-                          ItemId:{" "}
-                          <input
-                            className="input"
-                            style={{ maxWidth: 360 }}
-                            placeholder="Paste ItemId (GUID)"
-                            value={ln.itemId}
-                            onChange={(e) => updateLine(ln.lineNo, { itemId: e.target.value })}
-                          />
-                        </div>
                       </td>
-                      <td style={{ textAlign: "right" }}>
+
+                      <td>
                         <input
                           className="input"
                           type="number"
                           min={0}
                           step="0.0001"
-                          value={ln.qty}
-                          onChange={(e) => updateLine(ln.lineNo, { qty: safeNum(e.target.value, 0) })}
+                          value={line.qty}
+                          disabled={!canEdit}
                           style={{ textAlign: "right" }}
+                          onChange={(e) =>
+                            updateLine(line.lineNo, { qty: safeNum(e.target.value, 0) })
+                          }
                         />
                       </td>
+
                       <td>
-                        <span className="badge">{ln.source ?? "manual"}</span>
+                        <span
+                          className="badge"
+                          style={{
+                            background:
+                              line.source === "recipe" ? "#dbeafe" : "#f3f4f6",
+                            color:
+                              line.source === "recipe" ? "#1d4ed8" : "#374151",
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                            fontSize: 12,
+                          }}
+                        >
+                          {line.source ?? "manual"}
+                        </span>
                       </td>
+
                       <td style={{ textAlign: "right" }}>
-                        <button className="btn btn-sm btn-danger" onClick={() => removeLine(ln.lineNo)}>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => removeLine(line.lineNo)}
+                          disabled={!canEdit}
+                        >
                           Remove
                         </button>
                       </td>
@@ -611,57 +806,153 @@ export default function ProductionBatchPage() {
                   ))
               )}
             </tbody>
-          </table>
-        </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, opacity: 0.75 }}>
-          <div>
-            Total lines: <b>{inputs.length}</b>
-          </div>
-          <div>
-            Tip: Keep <b>ItemId</b> correct; posting will FIFO-consume by location + item.
-          </div>
-        </div>
-      </div>
-
-      {/* Card: Outputs (read-only from backend) */}
-      <div className="card" style={{ marginTop: 12 }}>
-        <div style={{ fontWeight: 800, fontSize: 16 }}>Outputs (Produced)</div>
-        <div style={{ opacity: 0.7, marginTop: 2 }}>This section updates after posting.</div>
-
-        <div style={{ overflowX: "auto", marginTop: 12 }}>
-          <table className="table" style={{ width: "100%" }}>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th style={{ width: 160, textAlign: "right" }}>Qty (Base)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(batch?.outputs ?? []).length === 0 ? (
+            {inputs.length > 0 && (
+              <tfoot>
                 <tr>
-                  <td colSpan={2} style={{ padding: 14, opacity: 0.7 }}>
-                    No outputs yet. Post the batch to create finished goods.
+                  <td colSpan={3} style={{ textAlign: "right", fontWeight: 700, padding: "8px 12px" }}>
+                    Total
                   </td>
+                  <td style={{ textAlign: "right", fontWeight: 700, padding: "8px 12px" }}>
+                    {totalInputQty.toFixed(4)}
+                  </td>
+                  <td colSpan={2} />
                 </tr>
-              ) : (
-                (batch?.outputs ?? []).map((o, idx) => (
-                  <tr key={`${o.itemId}-${idx}`}>
-                    <td>
-                      <div style={{ fontWeight: 700 }}>{o.itemName}</div>
-                      <div style={{ fontSize: 12, opacity: 0.6 }}>{o.itemId}</div>
-                    </td>
-                    <td style={{ textAlign: "right" }}>{o.qtyBase}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
 
-      {/* Footer space */}
       <div style={{ height: 30 }} />
     </div>
   );
 }
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function ScopeMessage({ message }: { message: string }) {
+  return (
+    <div className="page">
+      <div className="card" style={{ padding: 24, color: "#92400e" }}>{message}</div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <label className="label" style={{ display: "block", marginBottom: 4, fontWeight: 600, fontSize: 13 }}>
+        {label}{required && <span style={{ color: "crimson", marginLeft: 2 }}>*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function SummaryBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={summaryBoxStyle}>
+      <div style={{ fontSize: 12, opacity: 0.6, letterSpacing: "0.02em" }}>{label}</div>
+      <div style={{ fontSize: 17, fontWeight: 800, marginTop: 4 }}>{value}</div>
+    </div>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const pageHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+};
+
+const titleStyle: React.CSSProperties = {
+  fontSize: 22,
+  fontWeight: 900,
+};
+
+const subtitleStyle: React.CSSProperties = {
+  fontSize: 13,
+  opacity: 0.65,
+  marginTop: 3,
+};
+
+const actionRowStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+  alignItems: "center",
+};
+
+const docHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 12,
+};
+
+const sectionTitleStyle: React.CSSProperties = {
+  fontWeight: 900,
+  fontSize: 16,
+};
+
+const docMetaStyle: React.CSSProperties = {
+  fontSize: 13,
+  opacity: 0.7,
+  marginTop: 4,
+};
+
+const summaryGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 12,
+  marginTop: 16,
+};
+
+const summaryBoxStyle: React.CSSProperties = {
+  border: "1px solid rgba(0,0,0,0.08)",
+  borderRadius: 10,
+  padding: "10px 14px",
+  background: "rgba(0,0,0,0.02)",
+};
+
+const formGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 16,
+  marginTop: 14,
+};
+
+const tableHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+};
+
+const emptyCellStyle: React.CSSProperties = {
+  padding: 20,
+  textAlign: "center",
+  opacity: 0.6,
+  fontSize: 13,
+};
+
+const dismissBtnStyle: React.CSSProperties = {
+  float: "right",
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  fontSize: 14,
+  opacity: 0.6,
+};

@@ -5,6 +5,8 @@ export type AppScope = {
   companyId: string;
   branchId: string;
   userId?: string | null;
+  departmentId?: string | null;
+  currentLocationId?: string | null;
 };
 
 export function useAppScope(): AppScope {
@@ -14,7 +16,9 @@ export function useAppScope(): AppScope {
     const companyId = auth?.companyId ?? "";
     const branchId = auth?.branchId ?? "";
     const userId = auth?.user?.id ?? null;
+    const departmentId = auth?.departmentId ?? null;
+    const currentLocationId = auth?.currentLocationId ?? null;
 
-    return { companyId, branchId, userId };
-  }, [auth?.companyId, auth?.branchId, auth?.user?.id]);
+    return { companyId, branchId, userId, departmentId, currentLocationId };
+  }, [auth?.companyId, auth?.branchId, auth?.user?.id, auth?.departmentId, auth?.currentLocationId]);
 }

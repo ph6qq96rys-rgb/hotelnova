@@ -21,7 +21,7 @@ export default function CategoriesPage() {
     setErr(null);
     try {
       const res = await inventoryItemsApi.getCategories(companyId);
-      setItems(res ?? []);
+      setItems(res);
     } catch (e: any) {
       setErr(e?.message ?? "Failed to load categories");
     } finally {

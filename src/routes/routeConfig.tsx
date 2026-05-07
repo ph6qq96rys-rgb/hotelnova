@@ -13,20 +13,14 @@ import InventoryMasterHomePage from '../features/inventoryMaster/pages/Inventory
 import UomsPage from '../features/inventoryMaster/pages/UomsPage';
 import CategoriesPage from '../features/inventoryMaster/pages/CategoriesPage';
 import InventoryItemsPage from '../features/inventoryMaster/items/pages/InventoryItemsPage';
-import GrnCreatePage  from "../features/inventory/grn/pages/GrnCreatePage";
 import InventoryLedgerPage from "../features/inventory/ledger/pages/InventoryLedgerPage";
 
 // Pages
 import OrgLocationsPage from "../features/org/pages/OrgLocationsPage";
-//import StockTransfersPage from "../features/inventory/stock-transfers/pages/StockTransfersPage";
-//import StockTransferCreatePage from "../features/inventory/stock-transfers/pages/StockTransferCreatePage";
-//import StockTransferDetailPage from "../features/inventory/stock-transfers/pages/StockTransferDetailPage";
 import StockTransferEditPage from "../features/inventory/stock-transfers/pages/StockTransferEditPage";
 import StockTransfersPage from "../features/inventory/stock-transfers/pages/StockTransfersPage"
-import StockTransferDetailPage from "../features/inventory/stock-transfers/pages/StockTransferDetailPage"
 import StockTransferApprovalsPage from "../features/inventory/stock-transfers/pages/StockTransferApprovalsPage";
 import StockTransferCreatePage from "../features/inventory/stock-transfers/pages/StockTransferCreatePage";
-import InventoryAdjustmentsPage from "../features/inventory-adjustments/pages/InventoryAdjustmentsPage";
 import ProductionBatchPage from "../features/production/pages/ProductionBatchPage";
 import RecipeEditorPage from "../features/production/pages/RecipeEditorPage"
 import ItemsPage from "../features/inventoryMaster/items/pages/ItemsPage";
@@ -34,14 +28,19 @@ import ItemUpsertPage from "../features/inventoryMaster/items/pages/ItemUpsertPa
 import MenuItemCreatePage from "../features/production/pages/MenuItemCreatePage"
 import MenuItemDetailPage from "../features/production/pages/MenuItemDetailPage";
 
-import RolesPermissionsPage from "../pages/RolesPermissionsPage";
+import AssignAccessPage from "../pages/RolesPermissionsPage";
 import BranchSetupWizardPage from "../features/company/pages/BranchSetupWizardPage";
 import StoreLocationSetupPage from "../features/company/pages/StoreLocationSetupPage";
 import SetupLayout from "../features/company/pages/SetupLayout";
 import CompanySettingsPage from "../features/company/pages/Companysettingspage";
-/*import RegisterPage from "../pages/RegisterPage";
+import RegisterPage from "../pages/RegisterPage";
 import ForgotPasswordPage from "../pages/ForgotPasswordPage";
-import ResetPasswordPage from "../pages/ResetPasswordPage";*/
+import ResetPasswordPage from "../pages/ResetPasswordPage";
+import RolesPermissionsPage from "../features/security/pages/RolesPermissionsPage";
+import AdjustmentListPage from "../features/inventory/adjustments/pages/AdjustmentListPage";
+import AdjustmentDetailsPage from "../features/inventory/adjustments/pages/AdjustmentDetailsPage";
+import AdjustmentApprovalPage from "../features/inventory/adjustments/pages/AdjustmentApprovalPage";
+import AdjustmentDraftEditorPage from "../features/inventory/adjustments/pages/AdjustmentDraftEditorPage";
 
 
 
@@ -89,17 +88,23 @@ export const routeConfig: AppRoute[] = [
     icon: <Building2 size={18} />,
     nav: true,
     section: "Company",
-    //permissions: ["companies.view"], // (DEV mode: you can ignore permissions in sidebar filter)
+   // permissions: ["companies.view"], // (DEV mode: you can ignore permissions in sidebar filter)
   },
  
   {
       path: "/companies/:companyId/branches/:branchId/setup",
       element: <SetupLayout />,
       children: [
-        { index: true, element: <BranchSetupWizardPage /> },
-        { path: "store-location", element: <StoreLocationSetupPage /> },
+        { index: true, 
+          element: <BranchSetupWizardPage />
+         },
+        { path: "store-location", 
+          element: <StoreLocationSetupPage /> 
+        },
+
       ]
     },
+    
   {
     path: "/users",
     label: "Users",
@@ -107,9 +112,24 @@ export const routeConfig: AppRoute[] = [
     icon: <Users size={18} />,
     nav: true,
     section: "Identity",
-   //permissions: ["users.view"],
+   permissions: ["users.view"],
   },
-  
+  {
+    path: "/register",
+    label: "Register",
+    element: <RegisterPage />,
+  },
+  {
+    path: "/forgot-password",
+    label: "Forgot Password",
+    element: <ForgotPasswordPage />,
+  },
+  {
+    path: "/reset-password",
+    label: "Reset Password",
+    element: <ResetPasswordPage />,
+  },
+
   {
     path: "/roles",
     label: "Roles",
@@ -117,7 +137,7 @@ export const routeConfig: AppRoute[] = [
     icon: <Shield size={18} />,
     nav: true,
     section: "Identity",
-    //permissions: ["roles.view"],
+    permissions: ["roles.view"],
   },
 {
     path: "/Permissions",
@@ -126,7 +146,7 @@ export const routeConfig: AppRoute[] = [
     icon: <Shield size={18} />,
     nav: true,
     section: "Identity",
-    //permissions: ["roles.view"],
+    permissions: ["permissions.view"],
   },
   
   {
@@ -136,7 +156,16 @@ export const routeConfig: AppRoute[] = [
     icon: <Shield size={18} />,
     nav: true,
     section: "Identity",
-    //permissions: ["roles.view"],
+    permissions: ["roles.view"],
+  },
+   {
+    path: "/companies/:companyId/access-control",
+    label: "Assign Access",
+    element: <AssignAccessPage />,
+    icon: <Shield size={18} />,
+    nav: true,
+    section: "Identity",
+    permissions: ["roles.view"],
   },
   // ✅ Inventory
 {
@@ -146,7 +175,7 @@ export const routeConfig: AppRoute[] = [
   icon: <Settings size={18} />,
   nav: true,
   section: "Inventory",
- //permissions: ["inventory.view"],
+ permissions: ["inventory.view"],
 },
 {
   path: "/inventory-master/uoms",
@@ -155,7 +184,7 @@ export const routeConfig: AppRoute[] = [
   icon: <Settings size={18} />,
   nav: false,
   section: "Inventory",
-  //permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/inventory-master/items",
@@ -164,8 +193,9 @@ export const routeConfig: AppRoute[] = [
   icon: <Settings size={18} />,
   nav: true,
   section: "Inventory",
-  //permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
+
 {
   path: "/inventory-master/leger",
   label: "Inventory Ledger",
@@ -173,7 +203,7 @@ export const routeConfig: AppRoute[] = [
   icon: <Settings size={18} />,
   nav: true,
   section: "Inventory",
-  //permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 
 {
@@ -183,17 +213,9 @@ export const routeConfig: AppRoute[] = [
   icon: <Settings size={18} />,
   nav: false,
   section: "Inventory",
-  //permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
-{
-  path: "/grn/new",
-  label: "Grn",
-  element: <GrnCreatePage />,
-  icon: <Settings size={18} />,
-  nav: true,
-  section: "Inventory",
-  //permissions: ["inventory.view"],
-},
+
 {
   path: "/stock-transfers",
   label: "Stock Transfers",
@@ -201,7 +223,7 @@ export const routeConfig: AppRoute[] = [
   icon: <Settings size={18} />,
   nav: true,
   section: "Inventory",
-  //permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/inventory/stock-transfers/new",
@@ -210,15 +232,15 @@ export const routeConfig: AppRoute[] = [
   icon: <Settings size={18} />,
   nav: false,
   section: "Stock Transfers",
-  //permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/inventory/stock-transfers/:id",
   label: "Transfer Detail",
-  element: <StockTransferDetailPage />,
+  element: <StockTransferEditPage />,
   nav: false,
   section: "Stock Transfers",
-  //permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/inventory/stock-transfers/:id/edit",
@@ -226,7 +248,7 @@ export const routeConfig: AppRoute[] = [
   element: <StockTransferEditPage />,
   nav: false,
   section: "Stock Transfers",
-  //permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/inventory/inventory/stock-transfers/approvals",
@@ -234,20 +256,55 @@ export const routeConfig: AppRoute[] = [
   element: <StockTransferApprovalsPage />,
   nav: false,
   section: "Stock Transfers",
-  //permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
-  path: "/inventory/inventory-adjustments",
-  label: "Inventory Adjustments",
-  element: <InventoryAdjustmentsPage />,
+  path: "/inventory/adjustments",
+  element: <AdjustmentListPage />,
   nav: true,
-  section: "Adjustments",
-  //permissions: ["inventory.view"],
+  section: "Inventory",
+  permissions: ["inventory.view"],
+  label: "Inventory Adjustments",
+},
+{
+  path: "/inventory/adjustments/new",
+  element: <AdjustmentDraftEditorPage />,
+},
+{
+  path: "/inventory/adjustments/drafts/:adjustmentId",
+  element: <AdjustmentDraftEditorPage />,
+},
+{
+  path: "/inventory/adjustments/:adjustmentId/edit",
+  element: <AdjustmentDraftEditorPage />,
+},
+{
+  path: "/inventory/adjustments/:adjustmentId",
+  element: <AdjustmentDetailsPage />,
+},
+{
+  path: "/inventory/adjustments/:adjustmentId/approve",
+  element: <AdjustmentApprovalPage />,
 },
 
-{ path:"/inventory/items", label:"Item Enrollment", element:<ItemsPage />, nav:true,section:"Inventory"},
-{ path:"/inventory/items/new", label:"New Item Enrollment", element:<ItemUpsertPage/>,nav:false, section:"Inventory"},
-{ path:"/inventory/items/:id", label:"Edit Item Enrollment", element:<ItemUpsertPage/>,nav:true, section:"Inventory"},
+{ path:"/inventory/items", 
+  label:"Item Enrollment", 
+  element:<ItemsPage />, 
+  nav:true,
+  section:"Inventory"
+},
+{ path:"/inventory/items/new",
+   label:"New Item Enrollment", 
+   element:<ItemUpsertPage/>,
+   nav:false,
+    section:"Inventory"
+  },
+{ path:"/inventory/items/:id", 
+  label:"Edit Item Enrollment", 
+  element:<ItemUpsertPage/>,
+  nav:true, 
+  section:"Inventory"
+},
 
 {
   path:"/production/batches/new",
@@ -255,41 +312,37 @@ export const routeConfig: AppRoute[] = [
   element:<ProductionBatchPage/>,
   nav:true,
   section:"Production",
- // permissions:["inventory.view"],
+ permissions:["inventory.view"],
 },
 {
   path:"/production/batches/:batchId",
   label:"Production",
   element:<ProductionBatchPage/>,
-  nav:false,
-  section:"Production",
- // permissions:["inventory.view"],
-},
-{
-  path:"/production/menu/new/",
-  label:"Create Menu Item",
-  element:<MenuItemCreatePage/>,
   nav:true,
   section:"Production",
- // permissions:["inventory.view"],
+ permissions:["inventory.view"],
 },
 {
-  path:"/production/menu/new/:id",
-  label:"Create Menu Item",
-  element:<MenuItemDetailPage/>,
-  nav:false,
-  section:"Production",
- // permissions:["inventory.view"],
-},
-{
-  path:"/production/recipes",
-  label:"Recipes",
-  element:<RecipeEditorPage/>,
+  path: "/production/menu/items/new",
+  label:"Create Menu",
+  element: <MenuItemCreatePage />,
   nav:true,
   section:"Production",
-  //permissions:["inventory.view"],
 },
 
+{
+  path: "/production/menu/items/:id",
+  element: <MenuItemDetailPage />,
+  nav:false,
+  section:"Production",
+},
+
+{
+  path: "/production/menu/items/:id/recipe",
+  element: <RecipeEditorPage />,
+  nav:false,
+  section:"Production",
+},
 //Organazation & Locations
 {
   path: "/org",

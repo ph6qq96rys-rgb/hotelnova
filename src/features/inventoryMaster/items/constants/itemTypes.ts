@@ -15,6 +15,8 @@ export const ITEM_TYPES: { value: ItemType; label: string; help: string }[] = [
   { value: "FinishedGood", label: "Finished Good", help: "Sellable item / final product" },
   { value: "Service",      label: "Service",       help: "No stock, no FIFO" },
   { value: "NonStock",     label: "Non-Stock",     help: "Master only, no FIFO" },
+  { value: "Ingredient",   label: "Ingredient",     help: "Used in recipes, not stocked" },
+  { value: "StockItem",    label: "Stock Item",     help: "Generic stock item, not used in production" },
 ];
 export function itemTypeLabel(type: ItemType): string {
   return ITEM_TYPES.find(t => t.value === type)?.label ?? "—";

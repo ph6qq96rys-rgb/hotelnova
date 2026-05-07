@@ -1,0 +1,163 @@
+/* Hero */
+.hna-hero {
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 22px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.02);
+  margin-bottom: 16px;
+}
+
+.hna-hero__bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(900px 260px at 0% 0%, rgba(255,255,255,0.08), transparent 60%),
+    radial-gradient(700px 220px at 100% 0%, rgba(255,255,255,0.06), transparent 55%),
+    linear-gradient(to bottom, rgba(255,255,255,0.04), rgba(0,0,0,0));
+  pointer-events: none;
+}
+
+.hna-hero__content {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+}
+
+.hna-kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
+}
+
+.hna-title {
+  margin: 6px 0 0;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+
+.hna-subtitle {
+  margin: 6px 0 0;
+  color: rgba(255,255,255,0.62);
+  font-size: 13px;
+}
+
+.hna-hero__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Chip */
+.hna-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+}
+
+.hna-chip--muted { opacity: 0.75; }
+
+.hna-chip-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.55);
+  letter-spacing: 0.02em;
+}
+
+.hna-chip-value {
+  font-size: 12px;
+  color: rgba(255,255,255,0.85);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Divider */
+.hna-divider { margin: 16px 0; }
+.hna-divider__line {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,0.10), transparent);
+}
+
+/* Stat card tuning */
+.hna-card--stat .hna-card-label {
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  letter-spacing: 0.02em;
+}
+
+.hna-card--stat .hna-card-value {
+  margin-top: 6px;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.hna-card--stat .hna-card-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+}
+
+.hna-card--stat.is-good {
+  border-color: rgba(120,255,190,0.20);
+  background: rgba(120,255,190,0.05);
+}
+
+.hna-card--stat.is-warn {
+  border-color: rgba(255,190,120,0.18);
+  background: rgba(255,190,120,0.05);
+}
+
+/* Action tiles */
+.hna-tile {
+  display: block;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.02);
+  border-radius: 20px;
+  padding: 14px;
+  text-decoration: none;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.hna-tile:hover {
+  transform: translateY(-1px);
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.14);
+}
+
+.hna-tile--primary {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.14);
+}
+
+.hna-tile-title {
+  font-weight: 800;
+  color: rgba(255,255,255,0.92);
+}
+
+.hna-tile-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.58);
+  line-height: 1.35;
+}
+
+.hna-tile-arrow {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  color: rgba(255,255,255,0.45);
+}
+
+/* Skeleton variants */
+.hna-skeleton--stat { height: 110px; }
+.hna-skeleton--tile { height: 90px; }

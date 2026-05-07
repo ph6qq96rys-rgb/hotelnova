@@ -2,7 +2,7 @@
 import { usersApi } from "../api/usersApi";
 import type { PagedResult, UserDto, UserFilter } from "../types";
 
-export function useUsers(initial: UserFilter = { page: 1, pageSize: 10 }) {
+export function useUsers(companyId: string, initial: UserFilter = { page: 1, pageSize: 10 }) {
   const [filter, setFilter] = useState<UserFilter>(initial);
   const [data, setData] = useState<PagedResult<UserDto> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -12,7 +12,7 @@ export function useUsers(initial: UserFilter = { page: 1, pageSize: 10 }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await usersApi.list(filter);
+      const res = await usersApi.list(companyId, filter);
       setData(res.data);
     } catch (e) {
       setError(e);

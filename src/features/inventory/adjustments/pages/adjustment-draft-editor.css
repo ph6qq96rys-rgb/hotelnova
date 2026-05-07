@@ -1,0 +1,383 @@
+/* adjustment-draft-editor.css */
+
+/* ── Page shell ─────────────────────────────────────────────────────────── */
+.adj-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem 0;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text-primary);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.adj-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.adj-kicker {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: 4px;
+}
+
+.adj-header-left h1 {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.adj-subtitle {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  max-width: 500px;
+  line-height: 1.55;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.adj-btn-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.adj-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border: 0.5px solid var(--color-border-secondary, #ccc);
+  border-radius: 8px;
+  background: var(--color-background-primary, #fff);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background 0.12s, opacity 0.12s;
+  white-space: nowrap;
+}
+
+.adj-btn:hover:not(:disabled) {
+  background: var(--color-background-secondary);
+}
+
+.adj-btn:active:not(:disabled) {
+  opacity: 0.8;
+}
+
+.adj-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.adj-btn.primary {
+  background: var(--color-text-primary);
+  color: var(--color-background-primary);
+  border-color: var(--color-text-primary);
+}
+
+.adj-btn.primary:hover:not(:disabled) {
+  opacity: 0.85;
+  background: var(--color-text-primary);
+}
+
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+.adj-alert {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  border-left: 3px solid;
+}
+
+.adj-alert.error {
+  background: var(--color-background-danger);
+  color: var(--color-text-danger);
+  border-color: var(--color-text-danger);
+}
+
+.adj-alert.success {
+  background: var(--color-background-success);
+  color: var(--color-text-success);
+  border-color: var(--color-text-success);
+}
+
+.adj-alert.info {
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-primary);
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+.adj-card {
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+/* ── Form grid ───────────────────────────────────────────────────────────── */
+.adj-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 1rem;
+}
+
+.adj-field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: 5px;
+}
+
+.adj-field .req {
+  color: var(--color-text-danger);
+}
+
+.adj-remarks {
+  margin-top: 0;
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+input,
+select,
+textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-background-secondary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--color-border-primary);
+}
+
+input:disabled,
+select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--color-background-tertiary);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+
+/* Status color tints on the disabled status input */
+input[data-status="Draft"]     { color: var(--color-text-warning); }
+input[data-status="Submitted"] { color: var(--color-text-success); }
+input[data-status="Posted"]    { color: var(--color-text-info);    }
+input[data-status="Rejected"]  { color: var(--color-text-danger);  }
+
+/* Sign-based coloring for read-only numeric fields */
+input[data-sign="neg"] { color: var(--color-text-danger); font-weight: 500; }
+input[data-sign="pos"] { color: var(--color-text-success); font-weight: 500; }
+
+/* Warn border for notes when variance has no notes */
+input[data-required="true"] {
+  border-color: var(--color-border-warning);
+}
+
+/* ── Section head ────────────────────────────────────────────────────────── */
+.adj-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.adj-section-head h2 {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.adj-section-head p {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+/* ── Badge ───────────────────────────────────────────────────────────────── */
+.adj-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 11px;
+  border-radius: 100px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.adj-badge.warn {
+  background: var(--color-background-warning);
+  color: var(--color-text-warning);
+}
+
+.adj-badge.ok {
+  background: var(--color-background-success);
+  color: var(--color-text-success);
+}
+
+/* ── Metric summary row ──────────────────────────────────────────────────── */
+.adj-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 640px) {
+  .adj-metrics { grid-template-columns: repeat(2, 1fr); }
+}
+
+.adj-metric {
+  background: var(--color-background-secondary);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.adj-metric-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 4px;
+}
+
+.adj-metric-value {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.adj-metric-value[data-sign="neg"] { color: var(--color-text-danger); }
+.adj-metric-value[data-sign="pos"] { color: var(--color-text-success); }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.adj-table-wrap {
+  overflow-x: auto;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 8px;
+}
+
+.adj-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.adj-table th {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+  padding: 9px 10px;
+  text-align: left;
+  background: var(--color-background-secondary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  white-space: nowrap;
+}
+
+.adj-table th.num,
+.adj-table td.num {
+  text-align: right;
+}
+
+.adj-table td {
+  padding: 6px 10px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  vertical-align: middle;
+}
+
+.adj-table tbody tr:last-child td { border-bottom: none; }
+
+.adj-table tfoot td {
+  font-weight: 500;
+  font-size: 12px;
+  background: var(--color-background-secondary);
+  border-top: 0.5px solid var(--color-border-tertiary);
+  padding: 8px 10px;
+}
+
+.adj-table tfoot td[data-sign="neg"] { color: var(--color-text-danger); }
+.adj-table tfoot td[data-sign="pos"] { color: var(--color-text-success); }
+
+/* Compact inputs inside table cells */
+.adj-td-input {
+  padding: 4px 6px !important;
+}
+
+.adj-td-input input,
+.adj-lot-select {
+  font-size: 12px;
+  padding: 5px 8px;
+  background: var(--color-background-primary);
+}
+
+/* Disabled fields in table look clean without a visible box */
+.adj-table td input:disabled {
+  background: transparent;
+  border-color: transparent;
+  padding: 5px 4px;
+  opacity: 0.75;
+  cursor: default;
+}
+
+.adj-lot-select {
+  width: 100%;
+  min-width: 200px;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.adj-empty {
+  text-align: center;
+  color: var(--color-text-tertiary);
+  padding: 2.5rem 1rem !important;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ── Remove button ───────────────────────────────────────────────────────── */
+.adj-remove-btn {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: var(--color-text-danger);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+
+.adj-remove-btn:hover:not(:disabled) {
+  background: var(--color-background-danger);
+}
+
+.adj-remove-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

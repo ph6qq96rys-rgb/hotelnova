@@ -12,7 +12,7 @@
 //   /inventory/grns/drafts/:draftId
 //   /inventory/grns/:grnId
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
 
@@ -23,6 +23,19 @@ import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryI
 import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
 import type { SelectOption,  GrnDto, CreateGrnDraftRequest } from "../types/grn";
 import { SelectDropdown } from "../../../../components/controls/SelectDropdown";
+import {
+  cardStyle,
+  labelStyle,
+  inputStyle,
+  errorStyle,
+  tableStyle,
+  thStyle,
+  tdStyle,
+  primaryBtn,
+  secondaryBtn,
+  dangerBtn,
+  stickyBar,totRow} from "../../../../shared/inventoryStyles"
+
 
 /** ================= Helpers ================= */
 const todayDateOnly = () => new Date().toISOString().slice(0, 10);
@@ -389,14 +402,15 @@ export default function GrnDraftEditorPage() {
       const payload = buildPayload();
 
       if (!form.id) {
-        // Create
-        const created = await grnApi.createDraft(companyId, payload);
-        setForm((f) => ({ ...f, id: created.id }));
-        nav(`/inventory/grns/drafts/${created.id}`, { replace: true });
-      } else {
-        // Update
-        await grnApi.updateDraft(companyId, form.id, payload);
-      }
+              const created = await grnApi.createDraft(companyId, payload);
+              setForm((f) => ({ ...f, id: created.id }));
+
+              nav(`/companies/${companyId}/grns/drafts/${created.id}`, {
+                replace: true,
+              });
+            } else {
+              await grnApi.updateDraft(companyId, form.id, payload);
+            }
     } catch (err: any) {
       setSubmitError(err?.response?.data?.title ?? err?.message ?? "Failed to save draft");
     } finally {
@@ -419,14 +433,22 @@ export default function GrnDraftEditorPage() {
         const created = await grnApi.createDraft(companyId, buildPayload());
         id = created.id;
         setForm((f) => ({ ...f, id }));
-        nav(`/inventory/grns/drafts/${id}`, { replace: true });
+        nav(`/companies/${companyId}/grns/drafts/${id}`, { replace: true });
       }
 
       const posted = await grnApi.postDraft(companyId, id);
 
-      // go detail
-      nav(`/inventory/grns/${(posted as any).id ?? posted}`);
-    } catch (err: any) {
+        const postedId =
+          typeof posted === "string"
+            ? posted
+            : posted?.id;
+
+        if (!postedId) {
+          throw new Error("Posted GRN response did not return an id.");
+        }
+      nav(`/companies/${companyId}/grns/${postedId}`);
+    } 
+    catch (err: any) {
       setSubmitError(err?.response?.data?.title ?? err?.message ?? "Failed to post GRN");
     } finally {
       setPosting(false);
@@ -698,7 +720,7 @@ export default function GrnDraftEditorPage() {
         </div>
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button style={secondaryBtn} onClick={() => nav(`/inventory/grns/drafts`)}>
+          <button style={secondaryBtn} onClick={() => nav(`/companies/${companyId}/grns/drafts`)}>
             Drafts
           </button>
 
@@ -715,109 +737,3 @@ export default function GrnDraftEditorPage() {
   );
 }
 
-/* ---------------- Styles ---------------- */
-const cardStyle: React.CSSProperties = {
-  marginTop: 14,
-  border: "1px solid rgba(0,0,0,0.10)",
-  borderRadius: 12,
-  padding: 14,
-  background: "white",
-};
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 800,
-  opacity: 0.75,
-  marginBottom: 6,
-};
-
-const inputStyle = (invalid: boolean): React.CSSProperties => ({
-  width: "100%",
-  padding: "10px 10px",
-  borderRadius: 10,
-  border: invalid ? "1px solid rgba(220, 38, 38, 0.9)" : "1px solid rgba(0,0,0,0.15)",
-  outline: "none",
-  background: "white",
-});
-
-const errorStyle: React.CSSProperties = {
-  color: "rgb(220, 38, 38)",
-  fontSize: 12,
-  marginTop: 6,
-};
-
-const tableStyle: React.CSSProperties = {
-  width: "100%",
-  borderCollapse: "separate",
-  borderSpacing: 0,
-  border: "1px solid rgba(0,0,0,0.10)",
-  borderRadius: 12,
-  overflow: "hidden",
-};
-
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  fontSize: 12,
-  padding: "10px 10px",
-  background: "rgba(0,0,0,0.03)",
-  borderBottom: "1px solid rgba(0,0,0,0.10)",
-  whiteSpace: "nowrap",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "10px 10px",
-  borderBottom: "1px solid rgba(0,0,0,0.06)",
-  verticalAlign: "top",
-};
-
-const totRow: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  padding: "8px 0",
-};
-
-const primaryBtn: React.CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid rgba(0,0,0,0.15)",
-  background: "black",
-  color: "white",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const secondaryBtn: React.CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid rgba(0,0,0,0.15)",
-  background: "white",
-  color: "black",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const dangerBtn: React.CSSProperties = {
-  padding: "8px 10px",
-  borderRadius: 10,
-  border: "1px solid rgba(220, 38, 38, 0.35)",
-  background: "rgba(220, 38, 38, 0.08)",
-  color: "rgb(220, 38, 38)",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const stickyBar: React.CSSProperties = {
-  position: "sticky",
-  bottom: 0,
-  marginTop: 14,
-  padding: 12,
-  borderRadius: 12,
-  border: "1px solid rgba(0,0,0,0.12)",
-  background: "rgba(255,255,255,0.95)",
-  backdropFilter: "blur(6px)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-};

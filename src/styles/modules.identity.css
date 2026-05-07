@@ -177,3 +177,478 @@ label.row { display: flex; align-items: center; gap: 10px; }
 .lux-table th { font-size: 12px; opacity: 0.7; letter-spacing: 0.06em; text-transform: uppercase; }
 .lux-row { border-top: 1px solid rgba(255,255,255,0.06); }
 .lux-row:hover { background: rgba(255,255,255,0.03); }
+/* Search clear button */
+.lux-iconBtn {
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  padding: 6px 10px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.lux-iconBtn:disabled { cursor: not-allowed; opacity: 0.4; }
+.lux-iconBtn:hover { opacity: 1; }
+
+/* small spacing helper */
+.lux-ml { margin-left: 10px; }
+
+/* Skeleton loader */
+.lux-skeleton { padding: 16px; }
+.lux-skeleton__row {
+  height: 14px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.08);
+  margin: 10px 0;
+  overflow: hidden;
+}
+.lux-skeleton__row::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 50%;
+  background: rgba(255,255,255,0.35);
+  transform: translateX(-100%);
+  animation: lux-shimmer 1.2s infinite;
+}
+@keyframes lux-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(220%); }
+}
+
+/* Empty state */
+.lux-empty {
+  padding: 28px;
+  text-align: center;
+}
+.lux-empty__title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.lux-empty__hint {
+  opacity: 0.8;
+  margin-bottom: 16px;
+}
+.lux-empty__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Modal busy overlay (prevents clicks + shows activity) */
+.lux-modal { position: relative; }
+.lux-modalBusy {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.65);
+  backdrop-filter: blur(2px);
+  z-index: 5;
+}
+
+/* Reset password modal */
+.lux-resetPw { padding: 18px; }
+.lux-resetPw__title {
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+.lux-resetPw__subtitle { opacity: 0.85; margin-bottom: 14px; }
+
+.lux-label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.lux-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.lux-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+/* Executive ribbon */
+.lux-ribbon {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lux-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  border-radius: 999px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.78);
+}
+
+.lux-chip--soft {
+  background: rgba(255,255,255,0.02);
+  color: rgba(255,255,255,0.70);
+}
+
+.lux-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.55);
+}
+
+/* Keyboard hint */
+.lux-kbd {
+  margin-left: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.20);
+  border-radius: 10px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.70);
+}
+
+/* Table surface + loading veil */
+.lux-tableSurface {
+  position: relative;
+}
+
+.lux-veil {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  background: radial-gradient(
+    circle at 50% 0%,
+    rgba(255,255,255,0.06),
+    rgba(0,0,0,0.35)
+  );
+  backdrop-filter: blur(6px);
+  border-radius: 18px;
+}
+
+.lux-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid rgba(255,255,255,0.22);
+  border-top-color: rgba(255,255,255,0.75);
+  animation: luxspin 0.85s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes luxspin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error alert row layout if missing */
+.lux-alert__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lux-modalSheet { width: 100%; }
+
+.lux-modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 2px 6px;
+}
+
+.lux-modalTitle {
+  margin: 6px 0 0;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.lux-modalSub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: rgba(255,255,255,0.60);
+  line-height: 1.35;
+}
+
+.lux-divider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,0.12), transparent);
+  margin: 14px 0;
+}
+
+.lux-modalBody { padding: 2px 0; }
+
+.lux-formGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 720px) {
+  .lux-formGrid { grid-template-columns: 1fr 1fr; }
+  .lux-field--span2 { grid-column: span 2; }
+}
+
+.lux-field { display: grid; gap: 8px; }
+
+.lux-labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lux-label {
+  font-size: 12px;
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 0.01em;
+}
+
+.lux-pill {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.03);
+  color: rgba(255,255,255,0.65);
+}
+
+.lux-pill--ok {
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.82);
+}
+
+.lux-pill--warn {
+  border-color: rgba(255,130,130,0.35);
+  background: rgba(255,90,90,0.10);
+  color: rgba(255,180,180,0.95);
+}
+
+.lux-hint {
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+}
+
+.lux-hint--warn {
+  color: rgba(255,180,180,0.92);
+}
+
+.lux-chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.lux-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.82);
+}
+
+.lux-chipX {
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,0.55);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.lux-chipX:hover { color: rgba(255,255,255,0.90); }
+
+.lux-modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+/* Table container */
+.lux-table {
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.02);
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+/* Scroll region */
+.lux-table__scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Table base */
+.lux-table__el {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 860px; /* keeps columns readable */
+  font-size: 13px;
+}
+
+/* Header */
+.lux-table__el thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  padding: 12px 14px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.72);
+  background: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+
+/* Rows */
+.lux-table__el tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.82);
+  vertical-align: middle;
+}
+
+.lux-table__el tbody tr:hover td {
+  background: rgba(255,255,255,0.03);
+}
+
+.lux-table__el tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* User cell */
+.lux-userCell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.lux-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.85);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.lux-userCell__meta { min-width: 0; }
+.lux-userCell__title {
+  font-weight: 700;
+  color: rgba(255,255,255,0.90);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lux-userCell__sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Monospace-ish columns */
+.lux-mono {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12.5px;
+  color: rgba(255,255,255,0.75);
+}
+
+/* Status pill */
+.lux-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  font-size: 12px;
+  color: rgba(255,255,255,0.78);
+}
+.lux-status__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.45);
+}
+.lux-status--ok {
+  border-color: rgba(120,255,190,0.25);
+  background: rgba(120,255,190,0.08);
+  color: rgba(220,255,240,0.92);
+}
+.lux-status--ok .lux-status__dot { background: rgba(140,255,200,0.85); }
+
+.lux-status--muted {
+  border-color: rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.02);
+  color: rgba(255,255,255,0.60);
+}
+.lux-status--muted .lux-status__dot { background: rgba(255,255,255,0.35); }
+
+/* Actions */
+.lux-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Small button variants (works with your lux-btn base if present) */
+.lux-btn--sm {
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 14px;
+}
+
+.lux-btn--danger {
+  border-color: rgba(255,120,120,0.22);
+  background: rgba(255,90,90,0.10);
+}
+.lux-btn--danger:hover {
+  background: rgba(255,90,90,0.14);
+}
+
+/* Footer hint */
+.lux-table__foot {
+  padding: 10px 14px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.55);
+  font-size: 12px;
+}
+
+/* Empty inline */
+.lux-emptyInline {
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.02);
+  border-radius: 18px;
+}
+.lux-emptyInline__title { font-weight: 800; color: rgba(255,255,255,0.90); }
+.lux-emptyInline__hint { margin-top: 6px; color: rgba(255,255,255,0.60); font-size: 13px; }

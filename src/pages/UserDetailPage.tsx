@@ -12,7 +12,8 @@ import { Can } from "../auth/Can";
 
 export default function UserDetailPage() {
   const { userId } = useParams();
-  const { user, refresh } = useUser(userId!);
+  const companyId = useParams<{ companyId?: string }>().companyId || "";
+  const { user, refresh } = useUser(companyId, userId!);
 
 
   if (!user) return null;

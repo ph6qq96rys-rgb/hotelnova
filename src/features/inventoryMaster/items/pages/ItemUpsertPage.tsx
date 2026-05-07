@@ -1,435 +1,597 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { itemsApi } from "../api/itemsApi";
-import type { InventoryCatalogs } from "../types";
-import type { ItemType } from "../constants/itemTypes";
-import { useAppScope } from "../../../../app/useAppScope";
-import UomConversionGrid, {type AllowedUomRow } from "../components/UomConversionGrid";
-import OpeningStockModal from "../components/OpeningStockModal";
 
-type Model = {
-  id?: string;
-  name: string;
-  type: ItemType;
-  categoryId: string;
-  baseUomId: string;
-  allowedUoms: AllowedUomRow[];
-  trackStock: boolean;
-  costingMethod?: string;
-  active?: boolean;
+
+import { useAppScope } from "../../../../app/useAppScope";
+import { itemsApi } from "../api/itemsApi";
+import type { InventoryCatalogs, ItemUomDto } from "../types";
+import type { ItemType } from "../constants/itemTypes";
+import UomConversionGrid from "../components/UomConversionGrid";
+
+import type { CreateInventoryItemRequest } from "../types";
+import { mapAllowedUomsToDto } from "../types";
+
+/* ============================ GRN STYLE (copied) ============================ */
+
+const pageWrap: React.CSSProperties = {
+  maxWidth: 1180,
+  margin: "0 auto",
+  padding: "18px 14px 28px",
 };
+
+const headerRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "flex-end",
+  justifyContent: "space-between",
+  gap: 12,
+  marginBottom: 14,
+  flexWrap: "wrap",
+};
+
+const titleStyle: React.CSSProperties = {
+  fontSize: 22,
+  fontWeight: 800,
+  letterSpacing: -0.3,
+  color: "#0f172a",
+};
+
+const subtitleStyle: React.CSSProperties = {
+  marginTop: 4,
+  fontSize: 12.5,
+  opacity: 0.75,
+  color: "#0f172a",
+};
+
+const cardStyle: React.CSSProperties = {
+  marginTop: 14,
+  border: "1px solid rgba(0,0,0,0.10)",
+  borderRadius: 12,
+  padding: 14,
+  background: "white",
+  color: "#0f172a",
+};
+
+const sectionHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  alignItems: "flex-start",
+  paddingBottom: 10,
+  marginBottom: 12,
+  borderBottom: "1px solid rgba(0,0,0,0.08)",
+};
+
+const sectionTitle: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const sectionHint: React.CSSProperties = {
+  marginTop: 3,
+  fontSize: 12,
+  color: "#0f172a",
+  opacity: 0.65,
+};
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#181822ff",
+  opacity: 0.75,
+  marginBottom: 6,
+};
+
+const inputStyle = (invalid: boolean): React.CSSProperties => ({
+  width: "100%",
+  padding: "10px 10px",
+  borderRadius: 10,
+  border: invalid ? "1px solid rgba(220, 38, 38, 0.9)" : "1px solid rgba(0,0,0,0.15)",
+  outline: "none",
+  background: "white",
+  color: "#0f172a",
+});
+
+const errorStyle: React.CSSProperties = {
+  color: "rgb(220, 38, 38)",
+  fontSize: 12,
+  marginTop: 6,
+};
+
+const noteStyle: React.CSSProperties = {
+  marginTop: 6,
+  fontSize: 11.5,
+  opacity: 0.7,
+};
+
+const primaryBtn: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,0.15)",
+  background: "black",
+  color: "white",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const secondaryBtn: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,0.15)",
+  background: "white",
+  color: "#0f172a",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+/* ============================ HELPERS ============================ */
+
+function normalizeCatalogs(c: any): InventoryCatalogs {
+  return {
+    ...c,
+    categories: c?.categories ?? c?._categories ?? [],
+    costingMethods: c?.costingMethods ?? c?._costingMethods ?? [],
+    itemTypes: c?.itemTypes ?? [],
+    uoms: c?.uoms ?? [],
+    items: c?.items ?? [],
+  } as InventoryCatalogs;
+}
 
 function isPhysical(type: ItemType) {
   return type !== "Service";
 }
 
+function validateUoms(rows: ItemUomDto[]) {
+  if (!rows?.length) return true; // allow empty
+  const ids = rows.map((r) => r.uomId).filter(Boolean);
+  const uniq = new Set(ids);
+  if (uniq.size !== ids.length) return false;
+  if (rows.some((r) => !r.uomId || !r.toBaseFactor || r.toBaseFactor <= 0)) return false;
+  return true;
+}
+
+function ensureBaseRow(rows: ItemUomDto[], baseUomId: string, uoms: any[]): ItemUomDto[] {
+  if (!baseUomId) return rows;
+  const hasBase = rows.some((r) => r.isBase && r.uomId === baseUomId);
+  if (hasBase) return rows;
+
+  const u = uoms.find((x: any) => x.id === baseUomId);
+  if (!u) return rows;
+
+  // prepend base row with factor 1
+  return [
+    {
+      uomId: baseUomId,
+      code: u.code,
+      name: u.name,
+      toBaseFactor: 1,
+      isBase: true,
+      isIssue: false,
+      isActive: true,
+    },
+    ...rows,
+  ];
+}
+
+/* ============================ PAGE ============================ */
+
+type Model = {
+  id?: string;
+
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+
+  type: ItemType;
+  categoryId: string;
+  baseUomId: string;
+
+  allowedUoms: ItemUomDto[];
+
+  trackInventory: boolean;
+
+  defaultCost: number | null;
+  defaultPrice: number | null;
+
+  costingMethod: string;
+  active: boolean;
+  reorderLevel:number;
+};
+
 export default function ItemUpsertPage() {
-  const { id } = useParams();
-  const isEdit = !!id;
   const nav = useNavigate();
   const { companyId } = useAppScope();
-
-  const [step, setStep] = useState(1);
-  const [catalogs, setCatalogs] = useState<InventoryCatalogs>();
-  const [loading, setLoading] = useState(true);
+  const goToList = () => nav("/inventory/items");
+ const { id } = useParams<{ id: string }>();
+  const isEdit = !!id;
+  const [catalogs, setCatalogs] = useState<InventoryCatalogs | null>(null);
+  //const [loading, setLoading] = useState(true);
 
   const [model, setModel] = useState<Model>({
+  name: "",
+  sku: null,
+  barcode: null,
+  type: "Ingredient",
+  categoryId: "",
+  baseUomId: "",
+  allowedUoms: [],
+  trackInventory: true,
+  defaultCost: null,
+  defaultPrice: null,
+  costingMethod: "",
+  active: true,reorderLevel:1
+});
+
+
+  const [saving, setSaving] = useState(false);
+  const [errorTop, setErrorTop] = useState<string | null>(null);
+
+  const [touched, setTouched] = useState({
+    name: false,
+    categoryId: false,
+    baseUomId: false,
+    uoms: false,
+  });
+
+ useEffect(() => {
+  if (!companyId) return;
+
+  (async () => {
+    const cRaw = await itemsApi.load(companyId);
+    setCatalogs(normalizeCatalogs(cRaw));
+
+    if (id) {
+      const dto = await itemsApi.get(companyId, id);
+     setModel({
+        id: dto.id,
+        name: dto.name ?? "",
+          sku: dto.sku ?? null,
+        barcode: dto.barcode ?? null,
+
+        type: dto.type ?? "Ingredient",
+        categoryId: dto.categoryId ?? "",
+        baseUomId: dto.baseUomId ?? "",
+
+        allowedUoms: Array.isArray(dto.allowedUoms) ? dto.allowedUoms : [],
+
+        trackInventory: dto.trackInventory ?? true,
+
+        defaultCost: dto.defaultCost ?? null,
+        defaultPrice: dto.defaultPrice ?? null,
+
+        costingMethod: dto.costingMethod ?? "",
+        active: dto.isActive ?? true,reorderLevel:1
+});
+
+   } else {
+  setModel({
     name: "",
+    sku: null,
+    barcode: null,
     type: "Ingredient",
     categoryId: "",
     baseUomId: "",
     allowedUoms: [],
-    trackStock: true,
+    trackInventory: true,
+    defaultCost: null,
+    defaultPrice: null,
     costingMethod: "",
     active: true,
+    reorderLevel:1
   });
+}
 
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  })();
+}, [companyId, id]);
 
-  // post-save opening stock modal
-  const [openStock, setOpenStock] = useState(false);
-  const [savedItemId, setSavedItemId] = useState<string | null>(null);
 
-  useEffect(() => {
-    //if (!companyId) return;
-    setLoading(true);
-    Promise.all([
-      itemsApi.load(companyId).then(setCatalogs),
-      isEdit ? itemsApi.get(companyId,id!).then((dto: any) => {
-        // Map DTO -> model (assuming dto already contains ids needed)
-        setModel({
-          id: dto.id,
-          name: dto.name,
-          type: dto.type,
-          categoryId: dto.categoryId ?? "",
-          baseUomId: dto.baseUomId ?? "",
-          allowedUoms: dto.allowedUoms ?? [],
-          trackStock: dto.trackStock ?? true,
-          costingMethod: dto.costingMethod ?? "",
-          active: dto.active ?? true,
-        });
-      }) : Promise.resolve(),
-    ])
-      .catch(e => setError(e?.message ?? "Failed to load item data"))
-      .finally(() => setLoading(false));
-  }, [id]);
-
-  const title = isEdit ? "Edit Item" : "New Item";
-  const physical = isPhysical(model.type);
-
-  const canGoStep2 = model.name.trim().length > 1 && !!model.type && !!model.categoryId;
-  const canGoStep3 = !physical || !!model.baseUomId; // Service can skip units
-  const canSave =
-    canGoStep2 &&
-    canGoStep3 &&
-    (!physical || (!!model.baseUomId && validateUoms(model.allowedUoms)));
-
+  const itemTypes = catalogs?.itemTypes ?? [];
+  const categories = (catalogs as any)?.categories ?? [];
   const uoms = catalogs?.uoms ?? [];
 
-  const baseUom = useMemo(() => uoms.find(u => u.id === model.baseUomId), [uoms, model.baseUomId]);
+  const physical = isPhysical(model.type);
 
-  function validateUoms(rows: AllowedUomRow[]) {
-    // allow empty rows; if present must be > 0 and unique uomId
-    const ids = rows.map(r => r.uomId).filter(Boolean);
-    const uniq = new Set(ids);
-    if (uniq.size !== ids.length) return false;
-    if (rows.some(r => !r.uomId || !r.toBaseFactor || r.toBaseFactor <= 0)) return false;
-    return true;
+  const v = useMemo(() => {
+    const nameOk = model.name.trim().length > 1;
+    const catOk = !!model.categoryId;
+
+    const baseOk = !physical || !!model.baseUomId;
+    const uomsOk = !physical || validateUoms(model.allowedUoms);
+
+    return { nameOk, catOk, baseOk, uomsOk };
+  }, [model, physical]);
+
+  const canSave = v.nameOk && v.catOk && v.baseOk && v.uomsOk;
+
+  function set<K extends keyof Model>(key: K, value: Model[K]) {
+    setModel((m) => ({ ...m, [key]: value }));
   }
 
-  const save = async (openOpeningStockAfter: boolean) => {
+  const save = async () => {
     if (!companyId) return;
-    setError(null);
+
+    setTouched((t) => ({ ...t, name: true, categoryId: true, baseUomId: true, uoms: true }));
+
+    if (!v.nameOk || !v.catOk) {
+      setErrorTop("Please complete required fields.");
+      return;
+    }
+    if (physical && !v.baseOk) {
+      setErrorTop("Please select Base UOM.");
+      return;
+    }
+    if (physical && !v.uomsOk) {
+      setErrorTop("Fix unit conversions (unique units and factor > 0).");
+      return;
+    }
+
+    const cost = model.defaultCost ? Number(model.defaultCost) : null;
+    const price = model.defaultPrice ? Number(model.defaultPrice) : null;
+    if (cost !== null && Number.isNaN(cost)) return setErrorTop("Default cost must be a number.");
+    if (price !== null && Number.isNaN(price)) return setErrorTop("Default price must be a number.");
+
+    setErrorTop(null);
     setSaving(true);
+    
 
     try {
-      // build payload for server
-      const payload: any = {
-        companyId,
+      const normalizedRows = physical
+        ? ensureBaseRow(model.allowedUoms, model.baseUomId, uoms as any)
+        : [];
+
+      const dto: CreateInventoryItemRequest = {
         name: model.name.trim(),
+        sku: model.sku?.trim() ? model.sku.trim() : null,
+        barcode: model.barcode?.trim() ? model.barcode.trim() : null,
+        categoryId: model.categoryId || null,
+        baseUomId: physical ? model.baseUomId : ("" as any), // backend requires; if Service, you likely want a different endpoint/DTO
         type: model.type,
-        categoryId: model.categoryId,
-        baseUomId: physical ? model.baseUomId : null,
-        allowedUoms: physical ? model.allowedUoms : [],
-        trackStock: physical ? model.trackStock : false,
-        costingMethod: physical ? (model.costingMethod || null) : null,
-        active: model.active ?? true,
+        allowedUoms: physical ? mapAllowedUomsToDto(normalizedRows) : [],
+        trackInventory: physical ? !!model.trackInventory : false,
+        defaultCost: cost,
+        defaultPrice: price,
+        isActive: !!model.active,
+        reorderLevel:model.reorderLevel
       };
+    const res = isEdit
+          ? await itemsApi.update(companyId, id, dto)
+          : await itemsApi.create(companyId, dto);
 
-      if (isEdit) {
-        await itemsApi.update(id!, payload);
-        nav("..");
-      } else {
-        const res = await itemsApi.create(payload);
-        // If your create returns the created id in body, use it.
-        // If not, you can switch to: itemsApi.create(...).then(r=>r.data.id)
-        const newId =
-          res?.data?.id ||
-          res?.data?.itemId ||
-          res?.headers?.location?.split("/").pop() ||
-          null;
 
-        if (openOpeningStockAfter && newId) {
-          setSavedItemId(newId);
-          setOpenStock(true);
-        } else {
-          nav("..");
-        }
-      }
+      if(!res) throw new Error("Invalid response from server.");
+
+      goToList(); // match your upsert UX
+      //nav(`/inventory/items/${newId}`)
+       nav(`/inventory/items`);
     } catch (e: any) {
-      setError(e?.response?.data ?? e?.message ?? "Save failed");
+      setErrorTop(e?.response?.data?.message ?? e?.message ?? "Save failed.");
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading || !catalogs) return <div className="page">Loading…</div>;
+  if (!companyId) {
+    return (
+      <div style={pageWrap}>
+        <div style={cardStyle}>
+          <div style={{ fontSize: 13, fontWeight: 800 }}>Select a company</div>
+          <div style={{ ...noteStyle, marginTop: 6 }}>Choose your company context to create items.</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!catalogs) {
+    return (
+      <div style={pageWrap}>
+        <div style={cardStyle}>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>Loading…</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="page max-w-6xl mx-auto">
-      <div className="flex items-start justify-between gap-4 mb-4">
+    <div style={pageWrap}>
+      {/* Header */}
+      <div style={headerRow}>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-          <div className="text-sm text-slate-500">
-            Register items with base unit, conversions, costing, and optional opening stock.
-          </div>
+          <div style={titleStyle}>New Item</div>
+          <div style={subtitleStyle}>Register items with base unit and conversions.</div>
         </div>
 
-        <div className="flex gap-2">
-          <button className="btn" onClick={() => nav("./dashboard")} disabled={saving}>Cancel</button>
-          <button className="btn" onClick={() => save(false)} disabled={!canSave || saving}>
-            {saving ? "Saving…" : "Save"}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button style={secondaryBtn} onClick={goToList} disabled={saving}>
+            Cancel
           </button>
-          {!isEdit && (
-            <button className="btn btn-primary" onClick={() => save(true)} disabled={!canSave || saving}>
-              {saving ? "Saving…" : "Save + Opening Stock"}
-            </button>
-          )}
+          <button style={primaryBtn} onClick={save} disabled={!canSave || saving}>
+            {saving ? "Saving…" : "Create"}
+          </button>
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {String(error)}
+      {/* Top error */}
+      {errorTop && (
+        <div
+          style={{
+            ...cardStyle,
+            marginTop: 10,
+            border: "1px solid rgba(220,38,38,0.35)",
+            background: "rgba(220,38,38,0.06)",
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 12, color: "rgb(220,38,38)" }}>Action needed</div>
+          <div style={{ marginTop: 6, fontSize: 12, color: "rgb(220,38,38)" }}>{String(errorTop)}</div>
         </div>
       )}
 
-      {/* Stepper */}
-      <div className="card mb-4 p-4">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <StepChip label="1) Basics" active={step === 1} done={step > 1} onClick={() => setStep(1)} />
-          <StepChip label="2) Units" active={step === 2} done={step > 2} onClick={() => setStep(2)} disabled={!canGoStep2} />
-          <StepChip label="3) Inventory & Costing" active={step === 3} done={false} onClick={() => setStep(3)} disabled={!canGoStep2 || !canGoStep3} />
+      {/* Basics */}
+      <div style={cardStyle}>
+        <div style={sectionHeader}>
+          <div>
+            <div style={sectionTitle}>Basics</div>
+            <div style={sectionHint}>Item identity and classification.</div>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
+          <div style={{ gridColumn: "span 6" }}>
+            <label style={labelStyle}>
+              Item name <span style={{ color: "rgb(220,38,38)" }}>*</span>
+            </label>
+            <input
+              style={inputStyle(touched.name && !v.nameOk)}
+              value={model.name}
+              placeholder="e.g., Flour, Mineral Water 500ml, Pizza Box"
+              onChange={(e) => set("name", e.target.value)}
+              onBlur={() => setTouched((t) => ({ ...t, name: true }))}
+            />
+            {touched.name && !v.nameOk && <div style={errorStyle}>Enter a name (min 2 characters).</div>}
+          </div>
+
+          <div style={{ gridColumn: "span 3" }}>
+            <label style={labelStyle}>SKU</label>
+            <input style={inputStyle(false)} value={model.sku??""} onChange={(e) => set("sku", e.target.value)} />
+            <div style={noteStyle}>Optional.</div>
+          </div>
+
+          <div style={{ gridColumn: "span 3" }}>
+            <label style={labelStyle}>Barcode</label>
+            <input style={inputStyle(false)} value={model.barcode??""} onChange={(e) => set("barcode", e.target.value)} />
+            <div style={noteStyle}>Optional.</div>
+          </div>
+
+          <div style={{ gridColumn: "span 6" }}>
+            <label style={labelStyle}>
+              Item type <span style={{ color: "rgb(220,38,38)" }}>*</span>
+            </label>
+            <select
+              style={inputStyle(false)}
+              value={model.type}
+              onChange={(e) => {
+                const type = e.target.value as ItemType;
+                setModel((m) => ({
+                  ...m,
+                  type,
+                  trackInventory: type === "Service" ? false : m.trackInventory,
+                  baseUomId: type === "Service" ? "" : m.baseUomId,
+                  allowedUoms: type === "Service" ? [] : m.allowedUoms,
+                }));
+              }}
+            >
+              {itemTypes.map((t: any) => (
+                <option key={t.code} value={t.code}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ gridColumn: "span 6" }}>
+            <label style={labelStyle}>
+              Category <span style={{ color: "rgb(220,38,38)" }}>*</span>
+            </label>
+            <select
+              style={inputStyle(touched.categoryId && !v.catOk)}
+              value={model.categoryId}
+              onChange={(e) => set("categoryId", e.target.value)}
+              onBlur={() => setTouched((t) => ({ ...t, categoryId: true }))}
+            >
+              <option value="">Select category</option>
+              {categories.map((c: any) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {touched.categoryId && !v.catOk && <div style={errorStyle}>Select a category.</div>}
+          </div>
+
+          <div style={{ gridColumn: "span 6" }}>
+            <label style={labelStyle}>Status</label>
+            <select
+              style={inputStyle(false)}
+              value={model.active ? "Active" : "Inactive"}
+              onChange={(e) => set("active", e.target.value === "Active")}
+            >
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* Step 1 */}
-      {step === 1 && (
-        <div className="card p-5 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="Item name" required>
-              <input
-                className="input"
-                placeholder="e.g., Flour, Mineral Water 500ml, Pizza Box"
-                value={model.name}
-                onChange={e => setModel({ ...model, name: e.target.value })}
-              />
-            </Field>
-
-            <Field label="Item type" required>
-              <select
-                className="input"
-                value={model.type}
-                onChange={e => {
-                  const type = e.target.value as ItemType;
-                  setModel(m => ({
-                    ...m,
-                    type,
-                    // Service should not track stock
-                    trackStock: type === "Service" ? false : m.trackStock,
-                  }));
-                }}
-              >
-                {catalogs.itemTypes.map(t => (
-                  <option key={t.code} value={t.code}>{t.name}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Category" required>
-              <select
-                className="input"
-                value={model.categoryId}
-                onChange={e => setModel({ ...model, categoryId: e.target.value })}
-              >
-                <option value="">Select category</option>
-                {catalogs.categories.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Status">
-              <select
-                className="input"
-                value={(model.active ?? true) ? "Active" : "Inactive"}
-                onChange={e => setModel({ ...model, active: e.target.value === "Active" })}
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-            </Field>
-          </div>
-
-          <div className="flex justify-end">
-            <button className="btn btn-primary" disabled={!canGoStep2} onClick={() => setStep(2)}>
-              Next
-            </button>
+      {/* Units */}
+      <div style={cardStyle}>
+        <div style={sectionHeader}>
+          <div>
+            <div style={sectionTitle}>Units</div>
+            <div style={sectionHint}>Define base unit and conversions for purchasing/issuing.</div>
           </div>
         </div>
-      )}
 
-      {/* Step 2 */}
-      {step === 2 && (
-        <div className="card p-5 space-y-5">
-          {!physical ? (
-            <div className="text-sm text-slate-600">
-              Service items do not require units or conversions.
+        {!physical ? (
+          <div style={{ fontSize: 12.5, opacity: 0.75 }}>Service items do not require units or conversions.</div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
+              <div style={{ gridColumn: "span 6" }}>
+                <label style={labelStyle}>
+                  Base UOM <span style={{ color: "rgb(220,38,38)" }}>*</span>
+                </label>
+                <select
+                  style={inputStyle(touched.baseUomId && !v.baseOk)}
+                  value={model.baseUomId}
+                  onChange={(e) => set("baseUomId", e.target.value)}
+                  onBlur={() => setTouched((t) => ({ ...t, baseUomId: true }))}
+                >
+                  <option value="">Select base unit</option>
+                  {uoms.map((u: any) => (
+                    <option key={u.id} value={u.id}>
+                      {u.code} — {u.name}
+                    </option>
+                  ))}
+                </select>
+                {touched.baseUomId && !v.baseOk && <div style={errorStyle}>Base UOM is required.</div>}
+              </div>
             </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Base UOM" required>
-                  <select
-                    className="input"
-                    value={model.baseUomId}
-                    onChange={e => setModel({ ...model, baseUomId: e.target.value })}
-                  >
-                    <option value="">Select base unit</option>
-                    {catalogs.uoms.map(u => (
-                      <option key={u.id} value={u.id}>
-                        {u.code} — {u.name}
-                      </option>
-                    ))}
-                  </select>
 
-                  <div className="text-xs text-slate-500 mt-1">
-                    Choose the smallest authoritative unit (e.g., G, ML, PCS).
-                  </div>
-                </Field>
-
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs font-semibold text-slate-700">Tip</div>
-                  <div className="text-xs text-slate-600 mt-1">
-                    If you buy in KG but store in grams, set base to <b>G</b> and add KG conversion = 1000.
-                  </div>
-                  <div className="text-xs text-slate-600 mt-1">
-                    If you buy eggs in BOX(12), base = <b>PCS</b>, BOX(12) conversion = 12.
-                  </div>
-                </div>
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.85, marginBottom: 8 }}>
+                Allowed UOMs & Conversions
               </div>
 
               <UomConversionGrid
                 baseUomId={model.baseUomId}
-                uoms={catalogs.uoms}
+                uoms={uoms as any}
                 rows={model.allowedUoms}
-                onChange={(rows) => setModel({ ...model, allowedUoms: rows })}
+                onChange={(rows) => {
+                  set("allowedUoms", rows);
+                  setTouched((t) => ({ ...t, uoms: true }));
+                }}
               />
 
-              {!validateUoms(model.allowedUoms) && model.allowedUoms.length > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  Fix conversions: units must be unique and factors must be greater than 0.
+              {touched.uoms && !v.uomsOk && model.allowedUoms.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    borderRadius: 12,
+                    border: "1px solid rgba(245,158,11,0.35)",
+                    background: "rgba(245,158,11,0.10)",
+                    padding: 12,
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(120,53,15,1)" }}>Fix conversions</div>
+                  <div style={{ marginTop: 6, fontSize: 12, color: "rgba(120,53,15,1)" }}>
+                    Units must be unique and factors must be greater than 0.
+                  </div>
                 </div>
               )}
-            </>
-          )}
-
-          <div className="flex justify-between">
-            <button className="btn" onClick={() => setStep(1)}>Back</button>
-            <button className="btn btn-primary" disabled={!canGoStep3} onClick={() => setStep(3)}>
-              Next
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 3 */}
-      {step === 3 && (
-        <div className="card p-5 space-y-5">
-          {!physical ? (
-            <div className="text-sm text-slate-600">
-              Service items do not track stock or costing.
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-2xl border border-slate-200 p-4">
-                <div className="text-sm font-semibold text-slate-900">Stock tracking</div>
-                <div className="text-xs text-slate-500 mb-3">Enable on-hand calculations and ledger updates.</div>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={!!model.trackStock}
-                    onChange={e => setModel({ ...model, trackStock: e.target.checked })}
-                  />
-                  Track stock for this item
-                </label>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 p-4">
-                <div className="text-sm font-semibold text-slate-900">Costing</div>
-                <div className="text-xs text-slate-500 mb-3">Controls how inventory cost is calculated.</div>
-
-                <Field label="Costing method" required>
-                  <select
-                    className="input"
-                    value={model.costingMethod ?? ""}
-                    onChange={e => setModel({ ...model, costingMethod: e.target.value })}
-                  >
-                    <option value="">Select costing method</option>
-                    {catalogs.costingMethods.map(c => (
-                      <option key={c.code} value={c.code}>{c.name}</option>
-                    ))}
-                  </select>
-                </Field>
-
-                {baseUom && (
-                  <div className="text-xs text-slate-500 mt-2">
-                    Base unit: <span className="font-semibold">{baseUom.code}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-between">
-            <button className="btn" onClick={() => setStep(2)}>Back</button>
-            <div className="flex gap-2">
-              <button className="btn" onClick={() => save(false)} disabled={!canSave || saving}>
-                {saving ? "Saving…" : "Save"}
-              </button>
-              {!isEdit && (
-                <button className="btn btn-primary" onClick={() => save(true)} disabled={!canSave || saving}>
-                  {saving ? "Saving…" : "Save + Opening Stock"}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Opening stock modal */}
-      {savedItemId && catalogs && model.baseUomId && (
-        <OpeningStockModal
-          open={openStock}
-          onClose={() => {
-            setOpenStock(false);
-            nav("..");
-          }}
-          companyId={companyId!}
-          itemId={savedItemId}
-          itemName={model.name}
-          uoms={catalogs.uoms}
-          baseUomId={model.baseUomId}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Small UI helpers */
-function StepChip(props: {
-  label: string;
-  active: boolean;
-  done: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  const { label, active, done, onClick, disabled } = props;
-  const cls =
-    "px-3 py-1.5 rounded-full border text-xs font-semibold " +
-    (active
-      ? "bg-slate-900 text-white border-slate-900"
-      : done
-      ? "bg-slate-100 text-slate-700 border-slate-200"
-      : "bg-white text-slate-600 border-slate-200") +
-    (disabled ? " opacity-50 cursor-not-allowed" : " cursor-pointer");
-
-  return (
-    <button type="button" className={cls} onClick={disabled ? undefined : onClick}>
-      {label}
-    </button>
-  );
-}
-
-function Field(props: { label: string; required?: boolean; children: any }) {
-  return (
-    <div>
-      <div className="label">
-        {props.label} {props.required ? <span className="text-rose-600">*</span> : null}
+          </>
+        )}
       </div>
-      {props.children}
     </div>
   );
 }

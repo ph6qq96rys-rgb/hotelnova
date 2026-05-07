@@ -1,56 +1,88 @@
-import type {OnboardingStatus,StockLocation,Store} from "../types"
+// branchSetupApi.ts
+import type { OnboardingStatus, StockLocation, Store, CreateStockLocationPayload,CreateStockLocationResponse } from "../types";
+import { http } from "../../../api/http";
 
-async function http<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    ...init,
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw Object.assign(new Error(body?.error ?? "Request failed"), { status: res.status, body });
+function asJson<T>(data: any): T {
+  if (typeof data === "string") {
+    const trimmed = data.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return JSON.parse(trimmed) as T;
+      } catch {
+        // fall through
+      }
+    }
   }
-  return res.json();
+  return data as T;
+}
+
+function unwrapArray<T>(data: any): T[] {
+  const parsed = asJson<any>(data);
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && typeof parsed === "object") {
+    const items = parsed.items ?? parsed.data ?? parsed.results;
+    if (Array.isArray(items)) return items;
+  }
+  return [];
 }
 
 export const branchSetupApi = {
-  status(companyId: string, branchId: string) {
-    return http<OnboardingStatus>(`onboarding/companies/${companyId}/branches/${branchId}/onboarding/status`);
+  async status(companyId: string, branchId: string): Promise<OnboardingStatus> {
+    const res = await http.get(`/companies/${companyId}/branches/${branchId}/onboarding/status`);
+    return asJson<OnboardingStatus>(res.data);
   },
 
-  listStockLocations(companyId: string, branchId: string) {
-    return http<StockLocation[]>(`onboarding/companies/${companyId}/branches/${branchId}/stock-locations`);
-  },
-  createStockLocation(companyId: string, branchId: string, payload: { name: string; type: string }) {
-    return http<string>(`onboarding/companies/${companyId}/branches/${branchId}/stock-locations`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
-  setDefaultReceiving(companyId: string, branchId: string, id: string) {
-    return http<void>(`onboarding/companies/${companyId}/branches/${branchId}/stock-locations/${id}/set-default-receiving`, {
-      method: "POST",
-    });
-  },
-  setDefaultIssue(companyId: string, branchId: string, id: string) {
-    return http<void>(`onboarding/companies/${companyId}/branches/${branchId}/stock-locations/${id}/set-default-issue`, {
-      method: "POST",
-    });
+  async listStores(companyId: string, branchId: string): Promise<Store[]> {
+    const res = await http.get(`/companies/${companyId}/branches/${branchId}/stores`);
+    return unwrapArray<Store>(res.data);
   },
 
-  listStores(companyId: string, branchId: string) {
-    return http<Store[]>(`onboarding/companies/${companyId}/branches/${branchId}/stores`);
+  async listStockLocations(companyId: string, branchId: string): Promise<StockLocation[]> {
+    const res = await http.get(`/companies/${companyId}/branches/${branchId}/stock-locations`);
+    return unwrapArray<StockLocation>(res.data);
   },
-  createStore(companyId: string, branchId: string, payload: { name: string; storeType: string }) {
-    return http<string>(`onboarding/companies/${companyId}/branches/${branchId}/stores`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+
+ async createStockLocation(
+  companyId: string,
+  branchId: string,
+  payload: CreateStockLocationPayload
+): Promise<string> {
+  // sanitize (backend validates Code + Name)
+  const body: CreateStockLocationPayload = {
+    ...payload,
+    name: payload.name?.trim(),
+    code: payload.code?.trim()?.toUpperCase(),
+  };
+
+  // ✅ IMPORTANT: pick ONE of these depending on your http baseURL
+  // If http baseURL already includes "/api", use this:
+  const url = `/companies/${companyId}/branches/${branchId}/stock-locations`;
+
+  // If http baseURL does NOT include "/api", use this instead:
+  // const url = `/api/companies/${companyId}/branches/${branchId}/stock-locations`;
+
+  const res = await http.post<CreateStockLocationResponse>(url, body);
+
+  const d = res.data;
+
+  // support every common backend shape
+  const id =
+    d?.id ??
+    d?.Id ??
+    d?.locationId ??
+    d?.LocationId ??
+    d?.data?.id ??
+    d?.data?.Id ??
+    "";
+
+  return id;
+},
+
+  async setDefaultReceiving(companyId: string, branchId: string, id: string): Promise<void> {
+    await http.post(`/companies/${companyId}/branches/${branchId}/stock-locations/${id}/set-default-receiving`);
   },
-  setStoreIssueLocation(companyId: string, branchId: string, storeId: string, stockLocationId: string) {
-    return http<void>(`onboarding/companies/${companyId}/branches/${branchId}/stores/${storeId}/set-default-issue-location`, {
-      method: "POST",
-      body: JSON.stringify({ stockLocationId }),
-    });
+
+  async setDefaultIssue(companyId: string, branchId: string, id: string): Promise<void> {
+    await http.post(`/companies/${companyId}/branches/${branchId}/stock-locations/${id}/set-default-issue`);
   },
 };

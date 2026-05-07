@@ -1,0 +1,124 @@
+.lux-modalSheet { width: 100%; }
+
+.lux-modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 2px 6px;
+}
+
+.lux-modalTitle {
+  margin: 6px 0 0;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.lux-modalSub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: rgba(255,255,255,0.60);
+  line-height: 1.35;
+}
+
+.lux-divider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,0.12), transparent);
+  margin: 14px 0;
+}
+
+.lux-modalBody { padding: 2px 0; }
+
+.lux-formGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 720px) {
+  .lux-formGrid { grid-template-columns: 1fr 1fr; }
+  .lux-field--span2 { grid-column: span 2; }
+}
+
+.lux-field { display: grid; gap: 8px; }
+
+.lux-labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lux-label {
+  font-size: 12px;
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 0.01em;
+}
+
+.lux-pill {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.03);
+  color: rgba(255,255,255,0.65);
+}
+
+.lux-pill--ok {
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.82);
+}
+
+.lux-pill--warn {
+  border-color: rgba(255,130,130,0.35);
+  background: rgba(255,90,90,0.10);
+  color: rgba(255,180,180,0.95);
+}
+
+.lux-hint {
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+}
+
+.lux-hint--warn {
+  color: rgba(255,180,180,0.92);
+}
+
+.lux-chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.lux-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.82);
+}
+
+.lux-chipX {
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,0.55);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.lux-chipX:hover { color: rgba(255,255,255,0.90); }
+
+.lux-modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}

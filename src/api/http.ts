@@ -19,7 +19,6 @@ export const http = axios.create({
 // Normalize to a pathname-ish string for matching
 function getUrlPath(url?: string) {
   if (!url) return "";
-  // url can be relative ("/auth/login") or absolute ("http://.../api/auth/login")
   try {
     if (url.startsWith("http")) return new URL(url).pathname;
   } catch {}

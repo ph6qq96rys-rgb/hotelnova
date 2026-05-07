@@ -224,3 +224,8 @@ export type MenuItemRecipeEditorDto = {
   outputUomId?: string | null;
   lines: RecipeEditorLineDto[];
 };
+export type CreateMenuItemDto = {
+   name: string;
+  code?: string | null;
+   isActive: boolean;
+}

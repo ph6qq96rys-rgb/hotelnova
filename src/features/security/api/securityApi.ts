@@ -9,9 +9,9 @@ export type RoleDto = {
 };
 
 export type PermissionDto = {
-  key: string;            // e.g. "inventory.manage"
-  group: string;          // e.g. "Inventory"
-  description?: string;   // e.g. "Create/update inventory master data"
+  key: string;
+  group: string;
+  description?: string;
 };
 
 export type UserLiteDto = {
@@ -26,28 +26,59 @@ export type RoleDetailDto = {
   users: UserLiteDto[];
 };
 
+// If your axios baseURL already includes "/api", remove "/api" here.
+const base = (companyId: string) => `/companies/${companyId}/security`;
+
 export const securityApi = {
+  // =========================
+  // Permissions
+  // =========================
+  listPermissions: (companyId: string) =>
+    http.get<PermissionDto[]>(`${base(companyId)}/permissions`).then((r) => r.data),
+
+  // =========================
   // Roles
-  listRoles: () => http.get<RoleDto[]>("/security/roles"),
-  getRole: (roleId: string) => http.get<RoleDetailDto>(`/api/security/roles/${roleId}`),
-  createRole: (payload: { name: string; description?: string | null }) =>
-    http.post<string>("/security/roles", payload), // returns roleId
-  updateRole: (roleId: string, payload: { name: string; description?: string | null }) =>
-    http.put<void>(`/security/roles/${roleId}`, payload),
-  deleteRole: (roleId: string) => http.delete<void>(`/security/roles/${roleId}`),
+  // =========================
+  listRoles: (companyId: string) =>
+    http.get<RoleDto[]>(`${base(companyId)}/roles`).then((r) => r.data),
 
-  // Permissions catalog
-  listPermissions: () => http.get<PermissionDto[]>("/security/permissions"),
+  getRole: (companyId: string, roleId: string) =>
+    http.get<RoleDetailDto>(`${base(companyId)}/roles/${roleId}`).then((r) => r.data),
 
-  // Role permissions assignment
-  setRolePermissions: (roleId: string, permissionKeys: string[]) =>
-    http.put<void>(`/security/roles/${roleId}/permissions`, { permissionKeys }),
+  createRole: (companyId: string, payload: { name: string; description?: string | null }) =>
+    http.post<string>(`${base(companyId)}/roles`, payload).then((r) => r.data), // returns Guid
 
-  // Users + role membership
-  searchUsers: (q: string) =>
-    http.get<UserLiteDto[]>(`/security/users/search?q=${encodeURIComponent(q)}`),
-  addUserToRole: (roleId: string, userId: string) =>
-    http.post<void>(`/security/roles/${roleId}/users`, { userId }),
-  removeUserFromRole: (roleId: string, userId: string) =>
-    http.delete<void>(`/security/roles/${roleId}/users/${userId}`),
+  updateRole: (companyId: string, roleId: string, payload: { name: string; description?: string | null }) =>
+    http.put<void>(`${base(companyId)}/roles/${roleId}`, payload).then((r) => r.data),
+
+  deleteRole: (companyId: string, roleId: string) =>
+    http.delete<void>(`${base(companyId)}/roles/${roleId}`).then((r) => r.data),
+
+  // =========================
+  // Role permissions
+  // =========================
+  setRolePermissions: (companyId: string, roleId: string, permissionKeys: string[]) =>
+    http.put<void>(`${base(companyId)}/roles/${roleId}/permissions`, { permissionKeys }).then((r) => r.data),
+
+  // =========================
+  // Users search + membership
+  // =========================
+  // Backend: [HttpGet("search")] => GET /security/search?q=...
+  searchUsers: (companyId: string, q: string) =>
+    http.get<UserLiteDto[]>(`${base(companyId)}/search`, { params: { q } }).then((r) => r.data),
+
+  addUserToRole: (companyId: string, roleId: string, userId: string) =>
+    http.post<void>(`${base(companyId)}/roles/${roleId}/users`, { userId }).then((r) => r.data),
+
+  removeUserFromRole: (companyId: string, roleId: string, userId: string) =>
+    http.delete<void>(`${base(companyId)}/roles/${roleId}/users/${userId}`).then((r) => r.data),
+
+  // =========================
+  // Auth actions under /security
+  // =========================
+  logout: (companyId: string, refreshToken: string) =>
+    http.post<void>(`${base(companyId)}/logout`, { refreshToken }).then((r) => r.data),
+
+  refresh: (companyId: string, payload: { refreshToken: string }) =>
+    http.post<{ accessToken: string; refreshToken: string }>(`${base(companyId)}/refresh`, payload).then((r) => r.data),
 };

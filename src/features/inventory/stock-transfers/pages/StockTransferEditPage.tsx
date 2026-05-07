@@ -1,324 +1,476 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { http } from "../../../../api/http";
 import { useAppScope } from "../../../../app/useAppScope";
-import { usePageMeta } from "../../../../hooks/usePageMeta";
-
 import { stockTransfersApi } from "../api/stockTransfersApi";
-import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryItemsApi";
-import { lookupsApi } from "../../../inventoryMaster/lookups/api/lookupsApi";
-//import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
-import {locationsApi} from "../../stock-transfers/api/locationsApi"
+import {
+  STOCK_TRANSFER_STATUS,
+  type StockTransferDetailDto,
+  type StockTransferStatus,
+  type StockLocationDto,
+} from "../types";
 
-import  {type StockTransferDetailDto, StockTransferStatus } from "../types";
-import type { UomDto, InventoryItemDto } from "../../../inventoryMaster/items/types";
-import type { SelectOption } from "../../../../components/controls/SelectDropdown";
-import { SelectDropdown } from "../../../../components/controls/SelectDropdown";
+/* =========================
+   CONFIG: Fix endpoints here
+   ========================= */
+const LOOKUP_ENDPOINTS = {
+  locations: (companyId: string, branchId: string) =>
+    `/companies/${companyId}/branches/${branchId}/stock-locations`,
 
-import { DocHeader, StatusPill, KpiRow, Kpi } from "../../../../shared/ui/DocUI";
+  // ⚠️ MUST be real endpoints returning IDs
+  items: (companyId: string) => `/companies/${companyId}/inventory/items`,
+  uoms: (companyId: string) => `/companies/${companyId}/inventory-master/uoms`,
+};
+/* ========================= */
 
-/* ---------------- Status rules ---------------- */
+type SelectOption<T> = { value: T; label: string };
 
-const statusTone: Record<StockTransferStatus, string> = {
-  [StockTransferStatus.Draft]: "bg-slate-100 text-slate-700",
-  [StockTransferStatus.Submitted]: "bg-amber-100 text-amber-800",
-  [StockTransferStatus.Approved]: "bg-blue-100 text-blue-800",
-  [StockTransferStatus.Rejected]: "bg-rose-100 text-rose-800",
-  [StockTransferStatus.Posted]: "bg-emerald-100 text-emerald-800",
-  [StockTransferStatus.Reversed]: "bg-purple-100 text-purple-800",
+type ItemLookupDto = {
+  id: string;
+  code?: string | null;
+  name?: string | null;
+  label?: string | null;
+  defaultUomId?: string | null;
+  uoms?: Array<{ uomId: string }>;
 };
 
-const canEdit = (s: StockTransferStatus) =>
-  s === StockTransferStatus.Draft ||
-  s === StockTransferStatus.Rejected;
+type UomLookupDto = {
+  id: string;
+  code?: string | null;
+  name?: string | null;
+};
 
-//const canEdit = (s: StockTransferStatus) => s === "Draft" || s === "Rejected";
-const canSubmit = (s: StockTransferStatus) => s === StockTransferStatus.Draft || s === StockTransferStatus.Rejected;
-const canCancel = (s: StockTransferStatus) => s === StockTransferStatus.Submitted || s === StockTransferStatus.Approved;
-const canPost = (s: StockTransferStatus) => s === StockTransferStatus.Approved;
-
-/* ---------------- Helpers ---------------- */
-
-function toDateInput(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
-}
-
-// Send a DateOnly (yyyy-mm-dd) as UTC ISO at midnight
-
-
-function qtyOk(v: string) {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0;
-}
-
-/* ---------------- Form types ---------------- */
+type MsgTone = "success" | "error" | "info";
+type Msg = { tone: MsgTone; text: string } | null;
 
 type FormLine = {
-  tempId: string;
-  itemId: string | null;
-  uomId: string | null;
-  qty: string;
-  note?: string | null;
+  id: string; // stable UI key
+  inventoryItemId: string;
+  unitId: string;
+  qty: number;
+  note: string;
+  // keep display in case mapping fails
+  _itemCode?: string;
+  _itemName?: string;
+  _uomText?: string;
 };
 
 type FormState = {
+  fromLocationId: string;
+  toLocationId: string;
   transferDate: string; // yyyy-mm-dd
   reference: string;
-  fromLocationId: string | null;
-  toLocationId: string | null;
   lines: FormLine[];
 };
 
-const newTempId = () => crypto.randomUUID();
+type FieldErrors = {
+  fromLocationId?: string;
+  toLocationId?: string;
+  transferDate?: string;
+  lines?: string;
+  lineErrors?: Record<number, Partial<Record<keyof FormLine, string>>>;
+};
 
-/* ================================================================= */
+function clean(v: any) {
+  const s = String(v ?? "").trim();
+  return s.length ? s : "";
+}
+function norm(v: any) {
+  return clean(v).toLowerCase();
+}
+function newKey() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+function isoToDateOnly(iso: string | null | undefined) {
+  const s = clean(iso);
+  if (!s) return "";
+  return s.includes("T") ? s.slice(0, 10) : s;
+}
+function dateOnlyToUtcIso(dateOnly: string) {
+  if (!dateOnly) return null;
+  const [y, m, d] = dateOnly.split("-").map((x) => Number(x));
+  if (!y || !m || !d) return null;
+  return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0)).toISOString();
+}
+function apiErr(e: any) {
+  return String(e?.response?.data?.message || e?.response?.data || e?.message || "Request failed");
+}
 
+/** Status normalization (no number casts!) */
+const STATUS_VALUES = new Set<StockTransferStatus>(Object.values(STOCK_TRANSFER_STATUS));
+function isStatus(v: any): v is StockTransferStatus {
+  return STATUS_VALUES.has(v);
+}
+function normalizeStatus(raw: any): StockTransferStatus {
+  if (isStatus(raw)) return raw;
+  const v = norm(raw);
+  if (v === "draft") return STOCK_TRANSFER_STATUS.Draft;
+  if (v === "submitted") return STOCK_TRANSFER_STATUS.Submitted;
+  if (v === "approved") return STOCK_TRANSFER_STATUS.Approved;
+  if (v === "rejected") return STOCK_TRANSFER_STATUS.Rejected;
+  if (v === "posted") return STOCK_TRANSFER_STATUS.Posted;
+  if (v === "reversed") return STOCK_TRANSFER_STATUS.Reversed;
+  if (v === "cancelled" || v === "canceled") return STOCK_TRANSFER_STATUS.Cancelled;
+  return STOCK_TRANSFER_STATUS.Draft;
+}
+
+const canEdit = (s: StockTransferStatus) =>
+  s === STOCK_TRANSFER_STATUS.Draft || s === STOCK_TRANSFER_STATUS.Rejected;
+const canSubmit = canEdit;
+const canCancel = (s: StockTransferStatus) =>
+  s === STOCK_TRANSFER_STATUS.Draft || s === STOCK_TRANSFER_STATUS.Submitted || s === STOCK_TRANSFER_STATUS.Approved;
+const canPost = (s: StockTransferStatus) => s === STOCK_TRANSFER_STATUS.Approved;
+
+/* ======================
+   Lookups (no custom hooks)
+   ====================== */
+async function listLocations(companyId: string, branchId: string): Promise<StockLocationDto[]> {
+  const res = await http.get(LOOKUP_ENDPOINTS.locations(companyId, branchId));
+  return res.data ?? [];
+}
+async function listItems(companyId: string): Promise<ItemLookupDto[]> {
+  const res = await http.get(LOOKUP_ENDPOINTS.items(companyId));
+  const data = res.data;
+  const rows = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data?.data)
+        ? data.data
+        : [];
+  return (rows ?? []) as ItemLookupDto[];
+}
+async function listUoms(companyId: string): Promise<UomLookupDto[]> {
+  const res = await http.get(LOOKUP_ENDPOINTS.uoms(companyId));
+  const data = res.data;
+  const rows = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data?.data)
+        ? data.data
+        : [];
+  return (rows ?? []) as UomLookupDto[];
+}
+
+/* ======================
+   Read-only table (non-draft)
+   ====================== */
+function ReadOnlyLinesTable(props: { items: StockTransferDetailDto["items"] }) {
+  const { items } = props;
+  return (
+    <div style={{ marginTop: 14, overflowX: "auto" }}>
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={{ ...thStyle, width: 150 }}>Item Code</th>
+            <th style={{ ...thStyle, width: 420 }}>Item Name</th>
+            <th style={{ ...thStyle, width: 120 }}>UOM</th>
+            <th style={{ ...thStyle, width: 120 }}>Qty</th>
+            <th style={{ ...thStyle, width: 140 }}>Avg Cost</th>
+            <th style={{ ...thStyle, width: 140 }}>Line Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(items ?? []).length === 0 ? (
+            <tr>
+              <td colSpan={6} style={{ padding: 18, opacity: 0.75 }}>
+                No items.
+              </td>
+            </tr>
+          ) : (
+            items.map((x) => (
+              <tr key={x.id}>
+                <td style={tdStyle}>{x.itemCode}</td>
+                <td style={tdStyle}>{x.itemName}</td>
+                <td style={tdStyle}>{x.uom}</td>
+                <td style={tdStyle}>{x.quantity}</td>
+                <td style={tdStyle}>{x.avgUnitCost ?? "—"}</td>
+                <td style={tdStyle}>{x.lineValue ?? "—"}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ======================
+   PAGE
+   ====================== */
 export default function StockTransferEditPage() {
-  const { id } = useParams<{ id: string }>();
   const nav = useNavigate();
   const { companyId, branchId } = useAppScope();
+  const { id } = useParams<{ id: string }>();
 
   const [detail, setDetail] = useState<StockTransferDetailDto | null>(null);
+  const [locations, setLocations] = useState<StockLocationDto[]>([]);
+  const [items, setItems] = useState<ItemLookupDto[]>([]);
+  const [uoms, setUoms] = useState<UomLookupDto[]>([]);
+
   const [form, setForm] = useState<FormState>({
+    fromLocationId: "",
+    toLocationId: "",
     transferDate: "",
     reference: "",
-    fromLocationId: null,
-    toLocationId: null,
     lines: [],
   });
 
-  // catalogs
-  const [stockLocations, setStockLocations] = useState<Array<{ id: string; name: string }>>([]);
-  const [items, setItems] = useState<InventoryItemDto[]>([]);
-  const [uoms, setUoms] = useState<UomDto[]>([]);
-
-  const [loading, setLoading] = useState(true);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [msg, setMsg] = useState<Msg>(null);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [acting, setActing] = useState<null | "submit" | "cancel" | "post">(null);
-  const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [needsRemap, setNeedsRemap] = useState(false);
 
-  usePageMeta({
-    title: "Stock Transfer",
-    subtitle: "Edit transfer and manage workflow",
-  });
+  const status: StockTransferStatus = useMemo(() => normalizeStatus(detail?.status), [detail]);
+  const editable = !!detail && canEdit(status);
+  const busy = loading || saving || acting !== null;
 
-  /* ---------------- Load catalogs ---------------- */
+  const locationOptions = useMemo<SelectOption<string>[]>(
+    () => locations.map((x) => ({ value: x.id, label: clean(x.name) || clean(x.code) || "Location" })),
+    [locations]
+  );
 
-  const loadCatalogs = useCallback(async () => {
-    if (!companyId) return;
+  const itemOptions = useMemo<SelectOption<string>[]>(
+    () =>
+      items
+        .filter((x) => clean(x.id))
+        .map((x) => ({
+          value: String(x.id),
+          label: clean(x.label) || `${clean(x.code)} ${clean(x.name)}`.trim() || "Item",
+        })),
+    [items]
+  );
 
-    try {
-      const [locs, invItems, units] = await Promise.all([
-        locationsApi.list(companyId,branchId),
-        inventoryItemsApi.list(companyId),
-        lookupsApi.uoms(companyId),
-      ]);
+  const uomOptionsAll = useMemo<SelectOption<string>[]>(
+    () =>
+      uoms
+        .filter((x) => clean(x.id))
+        .map((x) => ({
+          value: String(x.id),
+          label: clean(x.name) || clean(x.code) || "UOM",
+        })),
+    [uoms]
+  );
 
-      setStockLocations(locs ?? []);
-      setItems(invItems ?? []);
-      setUoms(units.data ?? []);
-    } catch (e: any) {
-      // keep page usable, but show message
-      setError(e?.message ?? "Failed to load catalogs (locations/items/uoms).");
+  const itemById = useMemo(() => new Map(items.map((it) => [String(it.id), it])), [items]);
+
+  const totals = useMemo(() => {
+    if (!editable && detail) {
+      return {
+        qty: Number(detail.totalQuantity ?? 0) || 0,
+        lines: detail.items?.length ?? 0,
+      };
     }
-  }, [companyId]);
+    return {
+      qty: form.lines.reduce((a, l) => a + (Number(l.qty) || 0), 0),
+      lines: form.lines.length,
+    };
+  }, [editable, detail, form.lines]);
 
-  /* ---------------- Load transfer ---------------- */
+  function uomOptionsForLine(inventoryItemId: string): SelectOption<string>[] {
+    const it = inventoryItemId ? itemById.get(inventoryItemId) : undefined;
+    const allowed = (it?.uoms ?? []).map((x) => String(x.uomId)).filter(Boolean);
+    if (allowed.length) {
+      const set = new Set(allowed);
+      return uoms
+        .filter((u) => set.has(String(u.id)))
+        .map((u) => ({ value: String(u.id), label: clean(u.name) || clean(u.code) || "UOM" }));
+    }
+    return uomOptionsAll;
+  }
 
-  const load = useCallback(async () => {
-    if (!companyId || !id) return;
+  /* ===========
+     LOAD
+     =========== */
+  async function loadAll() {
+    if (!companyId || !branchId || !id) return;
 
     setLoading(true);
-    setError(null);
+    setMsg(null);
 
     try {
-      // load catalogs and detail in parallel
-      const [_, d] = await Promise.all([loadCatalogs(), stockTransfersApi.get(companyId, id)]);
+      const [d, locs, its, us] = await Promise.all([
+        stockTransfersApi.get(companyId, id),
+        listLocations(companyId, branchId),
+        listItems(companyId),
+        listUoms(companyId),
+      ]);
+
       setDetail(d);
+      setLocations(locs);
+      setItems(its);
+      setUoms(us);
+
+      // Build mapping tables immediately (use fresh its/us)
+      const itemIdByCode = new Map<string, string>();
+      its.forEach((it) => {
+        const code = norm(it.code);
+        if (code) itemIdByCode.set(code, String(it.id));
+      });
+
+      const uomIdByCodeOrName = new Map<string, string>();
+      us.forEach((u) => {
+        const code = norm(u.code);
+        const name = norm(u.name);
+        if (code) uomIdByCodeOrName.set(code, String(u.id));
+        if (name) uomIdByCodeOrName.set(name, String(u.id));
+      });
+
+      // ✅ ALWAYS build form.lines from detail.items so draft lines show on open
+      const mappedLines: FormLine[] = (d.items ?? []).map((x: any) => {
+        const mappedItemId =
+          clean(x.inventoryItemId) ||
+          itemIdByCode.get(norm(x.itemCode)) ||
+          "";
+
+        const mappedUnitId =
+          clean(x.unitId) ||
+          uomIdByCodeOrName.get(norm(x.uom)) ||
+          "";
+
+        return {
+          id: clean(x.id) || newKey(),
+          inventoryItemId: mappedItemId,
+          unitId: mappedUnitId,
+          qty: Number(x.quantity) || 0,
+          note: clean(x.notes) || "",
+          _itemCode: clean(x.itemCode),
+          _itemName: clean(x.itemName),
+          _uomText: clean(x.uom),
+        };
+      });
+
+      setNeedsRemap(mappedLines.some((l) => !clean(l.inventoryItemId) || !clean(l.unitId)));
 
       setForm({
-        transferDate: toDateInput((d as any).transferDateUtc),
-        reference: (d as any).reference ?? "",
-        fromLocationId: (d as any).fromLocationId ?? null,
-        toLocationId: (d as any).toLocationId ?? null,
-        lines: ((d as any).items ?? []).map((x: any) => ({
-          tempId: newTempId(),
-          itemId: x.itemId ?? null,
-          uomId: x.uomId ?? null,
-          qty: String(x.quantity ?? 0),
-          note: x.note ?? null,
-        })),
+        fromLocationId: clean((d as any).fromLocationId),
+        toLocationId: clean((d as any).toLocationId),
+        transferDate: isoToDateOnly(d.transferDateUtc),
+        reference: clean(d.reference),
+        lines: mappedLines, // ✅ draft lines show immediately
       });
+
+      setErrors({});
     } catch (e: any) {
-      setError(e?.message ?? "Failed to load stock transfer.");
+      setMsg({ tone: "error", text: apiErr(e) });
     } finally {
       setLoading(false);
     }
-  }, [companyId, id, loadCatalogs]);
+  }
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, branchId, id]);
 
-  /* ---------------- Derived ---------------- */
+  /* ===========
+     EDIT HELPERS
+     =========== */
+  const updateHeader = (patch: Partial<FormState>) => setForm((s) => ({ ...s, ...patch }));
 
-  const status: StockTransferStatus = (detail as any)?.status ?? "Draft";
-  const editable = detail ? canEdit(status) : false;
+  const updateLine = (idx: number, patch: Partial<FormLine>) =>
+    setForm((s) => ({ ...s, lines: s.lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)) }));
 
-  const locationOptions: SelectOption<string>[] = useMemo(
-    () => stockLocations.map((x) => ({ value: x.id, label: x.name })),
-    [stockLocations]
-  );
-const itemOptions = useMemo(
-  () => items.map((x) => ({ value: x.id, label: x.name })), // adjust label field if needed
-  [items]
-);
-
-  
-  const uomOptions = useMemo(
-  () => uoms.map((x) => ({ value: x.id, label: x.name })), // adjust label field if needed
-  [items]
-);
-
-  const totals = useMemo(() => {
-    return {
-      lines: form.lines.length,
-      qty: form.lines.reduce((a, b) => a + (Number(b.qty) || 0), 0),
-    };
-  }, [form.lines]);
-
-  const validation = useMemo(() => {
-    const issues: string[] = [];
-
-    if (!form.fromLocationId) issues.push("From location is required.");
-    if (!form.toLocationId) issues.push("To location is required.");
-    if (form.fromLocationId && form.toLocationId && form.fromLocationId === form.toLocationId)
-      issues.push("From and To locations must be different.");
-    if (!form.transferDate) issues.push("Transfer date is required.");
-    if (!form.lines.length) issues.push("At least one line is required.");
-
-    form.lines.forEach((l, i) => {
-      if (!l.itemId) issues.push(`Line ${i + 1}: item is required.`);
-      if (!l.uomId) issues.push(`Line ${i + 1}: UOM is required.`);
-      if (!qtyOk(l.qty)) issues.push(`Line ${i + 1}: quantity must be > 0.`);
-    });
-
-    return { ok: issues.length === 0, issues };
-  }, [form]);
-const locationCodeById = useMemo(() => {
-  const m = new Map<string, string>();
-  stockLocations.forEach((x: any) => m.set(x.id, x.code)); // stock location must have "code"
-  return m;
-}, [stockLocations]);
-
-  /* ---------------- Line helpers ---------------- */
-
-  function updateHeader(patch: Partial<FormState>) {
-    setForm((s) => ({ ...s, ...patch }));
-  }
-
-  function addLine() {
+  const addLine = () => {
     setForm((s) => ({
       ...s,
-      lines: [
-        ...s.lines,
-        { tempId: newTempId(), itemId: null, uomId: null, qty: "1", note: null },
-      ],
+      lines: [...s.lines, { id: newKey(), inventoryItemId: "", unitId: "", qty: 1, note: "" }],
     }));
-  }
+  };
 
-  function removeLine(tempId: string) {
-    setForm((s) => ({ ...s, lines: s.lines.filter((x) => x.tempId !== tempId) }));
-  }
+  const removeLine = (idx: number) => {
+    setForm((s) => ({ ...s, lines: s.lines.filter((_, i) => i !== idx) }));
+  };
 
-  function updateLine(tempId: string, patch: Partial<FormLine>) {
-    setForm((s) => ({
-      ...s,
-      lines: s.lines.map((x) => (x.tempId === tempId ? { ...x, ...patch } : x)),
-    }));
-  }
-
-  function onItemChange(tempId: string, itemId: string | null) {
-    const item = items.find((x) => x.id === itemId);
-    updateLine(tempId, {
-      itemId,
-      // auto-pick default UOM if item has one AND line UOM empty
-      uomId: item?.baseUomId ?? null,
+  const onItemChange = (idx: number, inventoryItemId: string) => {
+    const it = inventoryItemId ? itemById.get(inventoryItemId) : undefined;
+    updateLine(idx, {
+      inventoryItemId,
+      unitId: clean(it?.defaultUomId) || "",
     });
+  };
+
+  /* ===========
+     VALIDATION
+     =========== */
+  function validate(current: FormState): FieldErrors {
+    const e: FieldErrors = {};
+    if (!clean(current.fromLocationId)) e.fromLocationId = "From location is required.";
+    if (!clean(current.toLocationId)) e.toLocationId = "To location is required.";
+    if (clean(current.fromLocationId) && clean(current.toLocationId) && current.fromLocationId === current.toLocationId) {
+      e.toLocationId = "From and To locations must be different.";
+    }
+    if (!clean(current.transferDate)) e.transferDate = "Transfer date is required.";
+    if (!current.lines.length) e.lines = "Add at least one line.";
+
+    const lineErrors: NonNullable<FieldErrors["lineErrors"]> = {};
+    current.lines.forEach((l, idx) => {
+      const le: Partial<Record<keyof FormLine, string>> = {};
+      if (!clean(l.inventoryItemId)) le.inventoryItemId = "Item is required.";
+      if (!clean(l.unitId)) le.unitId = "UOM is required.";
+      if (!Number.isFinite(l.qty) || l.qty <= 0) le.qty = "Qty must be > 0.";
+      if (Object.keys(le).length) lineErrors[idx] = le;
+    });
+
+    if (Object.keys(lineErrors).length) e.lineErrors = lineErrors;
+    return e;
   }
 
-  /* ---------------- Mutations ---------------- */
-
-  async function saveDraft() {
-  if (!companyId || !id || !detail) return;
-
-  if (!validation.ok) {
-    setError(validation.issues.join(" "));
-    return;
+  function hasErrors(e: FieldErrors) {
+    return !!(e.fromLocationId || e.toLocationId || e.transferDate || e.lines || (e.lineErrors && Object.keys(e.lineErrors).length));
   }
 
-  const fromCode = form.fromLocationId ? locationCodeById.get(form.fromLocationId) : undefined;
-  const toCode = form.toLocationId ? locationCodeById.get(form.toLocationId) : undefined;
+  /* ===========
+     SAVE / ACTIONS
+     =========== */
+  async function save() {
+    if (!companyId || !id) return;
+    setMsg(null);
 
-  if (!toCode) {
-    setError("To location is required.");
-    return;
+    const e = validate(form);
+    setErrors(e);
+    if (hasErrors(e)) return;
+
+    setSaving(true);
+    try {
+      const dto: any = {
+        companyId,
+        fromLocationId: form.fromLocationId,
+        toLocationId: form.toLocationId,
+        reference: clean(form.reference) ? clean(form.reference) : null,
+        transferDateUtc: form.transferDate ? dateOnlyToUtcIso(form.transferDate) : null,
+        items: form.lines.map((l) => ({
+          inventoryItemId: l.inventoryItemId,
+          unitId: l.unitId,
+          quantity: Number(l.qty),
+          notes: clean(l.note) ? clean(l.note) : null,
+        })),
+      };
+
+      await stockTransfersApi.update(companyId, id, dto);
+      await loadAll();
+      setMsg({ tone: "success", text: "Saved." });
+    } catch (e: any) {
+      setMsg({ tone: "error", text: apiErr(e) });
+    } finally {
+      setSaving(false);
+    }
   }
-  if (!fromCode) {
-    // optional per DTO, but you probably want it
-    setError("From location is required.");
-    return;
-  }
-  if (fromCode === toCode) {
-    setError("From and To locations must be different.");
-    return;
-  }
-
-  setSaving(true);
-  setError(null);
-  setToast(null);
-
-  try {
-    const payload = {
-      companyId,
-      fromLocationCode: fromCode, // optional but included
-      toLocationCode: toCode,     // required
-      reference: form.reference.trim() ? form.reference.trim() : null,
-      transferDate: form.transferDate ? form.transferDate : null, // yyyy-mm-dd
-      items: form.lines.map((l) => ({
-        inventoryItemId: l.itemId!,   // or l.inventoryItemId if you renamed
-        unitId: l.uomId!,             // or l.unitId
-        quantity: Number(l.qty),
-        notes: l.note?.trim() ? l.note.trim() : null,
-      })),
-    } satisfies import("../types").UpdateStockTransferRequest;
-
-    await stockTransfersApi.update(companyId, id, payload);
-
-    await load();
-    setToast("Saved.");
-  } catch (e: any) {
-    setError(e?.response?.data?.message ?? e?.message ?? "Failed to save.");
-  } finally {
-    setSaving(false);
-  }
-}
-
 
   async function doAction(kind: "submit" | "cancel" | "post") {
     if (!companyId || !id) return;
-
+    setMsg(null);
     setActing(kind);
-    setError(null);
-    setToast(null);
 
     try {
       if (kind === "submit") {
-        if (!validation.ok) {
-          setError(validation.issues.join(" "));
+        const e = validate(form);
+        setErrors(e);
+        if (hasErrors(e)) {
+          setMsg({ tone: "error", text: "Fix validation errors before submitting." });
           return;
         }
         await stockTransfersApi.submit(companyId, id);
@@ -328,212 +480,414 @@ const locationCodeById = useMemo(() => {
         await stockTransfersApi.post(companyId, id);
       }
 
-      await load();
-      setToast(kind === "post" ? "Posted." : "Action completed.");
+      await loadAll();
+      setMsg({ tone: "success", text: "Done." });
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.message ?? "Action failed.");
+      setMsg({ tone: "error", text: apiErr(e) });
     } finally {
       setActing(null);
     }
   }
 
-  if (!companyId) return <div className="p-4">Select company</div>;
+  /* ===========
+     GUARDS
+     =========== */
+  if (!companyId) return <div style={{ padding: 16 }}>Select a company first.</div>;
+  if (!branchId) return <div style={{ padding: 16 }}>Select a branch first.</div>;
+  if (!id) return <div style={{ padding: 16 }}>Missing transfer id.</div>;
 
-  /* ========================== RENDER ========================== */
+  const transferNo = clean(detail?.transferNumber);
 
   return (
-    <div className="page space-y-4 pb-24">
-      <DocHeader
-        title={
-          <div className="flex items-center gap-2">
-            Stock Transfer{" "}
-            <span className="font-semibold">{(detail as any)?.transferNumber ?? ""}</span>
-           {detail && (
-                <StatusPill
-                  text={StockTransferStatus[status]}
-                  tone={statusTone[status]}
-                />
-              )}
+    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 900 }}>
+            Stock Transfer {transferNo ? <span style={{ fontWeight: 700 }}>{transferNo}</span> : ""}
           </div>
-        }
-        subtitle="Edit transfer and manage workflow actions."
-        right={
-          <div className="flex gap-2">
-            <button className="btn btn-secondary" onClick={() => nav(-1)}>
-              Back
-            </button>
-            <button className="btn btn-primary" disabled={!editable || saving} onClick={saveDraft}>
-              {saving ? "Saving…" : "Save"}
-            </button>
+          <div style={{ opacity: 0.78, marginTop: 6 }}>
+            Status: <b>{String(status)}</b> {editable ? "• Editable" : "• Read-only"}
           </div>
-        }
-      />
 
-      {loading && <div className="card p-4">Loading…</div>}
-      {error && <div className="alert danger">{error}</div>}
-      {toast && <div className="alert success">{toast}</div>}
-
-      {!loading && detail && (
-        <>
-          <KpiRow>
-            <Kpi label="Lines" value={totals.lines} />
-            <Kpi label="Total Qty" value={totals.qty} />
-            <Kpi label="From" value={(detail as any).fromLocationName} />
-            <Kpi label="To" value={(detail as any).toLocationName} />
-            <Kpi label="Status" value={status} />
-          </KpiRow>
-
-          {/* ================= Header ================= */}
-          <div className="card p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-            <SelectDropdown<string>
-              label="From Location"
-              value={form.fromLocationId}
-              options={locationOptions}
-              placeholder="Select from…"
-              disabled={!editable}
-              onChange={(v) => updateHeader({ fromLocationId: v })}
-            />
-
-            <SelectDropdown<string>
-              label="To Location"
-              value={form.toLocationId}
-              options={locationOptions}
-              placeholder="Select to…"
-              disabled={!editable}
-              onChange={(v) => updateHeader({ toLocationId: v })}
-            />
-
-            <div>
-              <label className="text-sm font-medium">Transfer Date</label>
-              <input
-                className="input mt-1 w-full"
-                type="date"
-                value={form.transferDate}
-                disabled={!editable}
-                onChange={(e) => updateHeader({ transferDate: e.target.value })}
-              />
+          {editable && needsRemap && (
+            <div style={{ marginTop: 10, ...warnStyle }}>
+              Some draft rows could not be mapped to Item/UOM IDs.
+              Those rows will show empty dropdowns — select Item and UOM then Save.
             </div>
+          )}
 
-            <div>
-              <label className="text-sm font-medium">Reference</label>
-              <input
-                className="input mt-1 w-full"
-                value={form.reference}
-                disabled={!editable}
-                onChange={(e) => updateHeader({ reference: e.target.value })}
-                placeholder="Optional"
-              />
+          {msg && (
+            <div style={{ marginTop: 10, ...(msg.tone === "success" ? successStyle : msg.tone === "info" ? infoStyle : errorStyle) }}>
+              {msg.text}
             </div>
+          )}
+        </div>
+
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 12, opacity: 0.75 }}>Total Qty</div>
+          <div style={{ fontSize: 22, fontWeight: 900 }}>{totals.qty}</div>
+          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+            Lines: <b>{totals.lines}</b>
           </div>
+        </div>
+      </div>
 
-          {/* ================= Lines ================= */}
-          <div className="card p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="font-semibold">Lines</div>
-              <button className="btn btn-secondary" disabled={!editable} onClick={addLine}>
-                + Add line
-              </button>
-            </div>
-
-            {form.lines.length === 0 && (
-              <div className="text-sm text-slate-500">No lines yet.</div>
-            )}
-
-            {form.lines.map((l, idx) => (
-              <div key={l.tempId} className="grid grid-cols-1 md:grid-cols-12 gap-3 border-t pt-3">
-                <div className="md:col-span-5">
-                  <SelectDropdown<string>
-                    label={`Item ${idx + 1}`}
-                    value={l.itemId}
-                    options={itemOptions}
-                    placeholder="Select item…"
-                    disabled={!editable}
-                    onChange={(v) => onItemChange(l.tempId, v)}
-                  />
-                </div>
-
-                <div className="md:col-span-3">
-                  <SelectDropdown<string>
-                    label="UOM"
-                    value={l.uomId}
-                    options={uomOptions}
-                    placeholder="Select UOM…"
-                    disabled={!editable || !l.itemId}
-                    onChange={(v) => updateLine(l.tempId, { uomId: v })}
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium">Qty</label>
-                  <input
-                    className="input mt-1 w-full"
-                    value={l.qty}
-                    disabled={!editable}
-                    onChange={(e) => updateLine(l.tempId, { qty: e.target.value })}
-                    inputMode="decimal"
-                  />
-                </div>
-
-                <div className="md:col-span-2 flex items-end gap-2">
-                  <button
-                    className="btn btn-secondary w-full"
-                    disabled={!editable}
-                    onClick={() => removeLine(l.tempId)}
-                  >
-                    Remove
-                  </button>
-                </div>
-
-                <div className="md:col-span-12">
-                  <label className="text-sm font-medium">Note</label>
-                  <input
-                    className="input mt-1 w-full"
-                    value={l.note ?? ""}
-                    disabled={!editable}
-                    onChange={(e) => updateLine(l.tempId, { note: e.target.value })}
-                    placeholder="Optional"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* ================= Sticky Actions ================= */}
-          <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 border-t">
-            <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between">
-              <div className="text-xs text-slate-500">
-                {editable ? "Review and save, then submit when ready." : "Read-only in current status."}
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  className="btn btn-primary"
-                  disabled={!canSubmit(status) || acting !== null}
-                  onClick={() => doAction("submit")}
-                >
-                  Submit
-                </button>
-
-                <button
-                  className="btn btn-secondary"
-                  disabled={!canCancel(status) || acting !== null}
-                  onClick={() => doAction("cancel")}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  className="btn btn-primary"
-                  disabled={!canPost(status) || acting !== null}
-                  onClick={() => doAction("post")}
-                >
-                  Post
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
+      {loading && (
+        <div style={{ ...cardStyle, marginTop: 14 }}>
+          <div style={{ padding: 6, opacity: 0.75 }}>Loading…</div>
+        </div>
       )}
+
+      {/* Header Card */}
+      <div style={cardStyle}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
+          <div style={{ gridColumn: "span 4" }}>
+            <label style={labelStyle}>From Location *</label>
+            <select
+              style={inputStyle(!!errors.fromLocationId)}
+              value={form.fromLocationId || ""}
+              disabled={!editable || busy}
+              onChange={(e) => updateHeader({ fromLocationId: e.target.value || "" })}
+            >
+              {!form.fromLocationId && <option value="" disabled>Select from…</option>}
+              {locationOptions
+                .filter((o) => o.value !== form.toLocationId)
+                .map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+            </select>
+            {errors.fromLocationId && <div style={errorStyle}>{errors.fromLocationId}</div>}
+          </div>
+
+          <div style={{ gridColumn: "span 4" }}>
+            <label style={labelStyle}>To Location *</label>
+            <select
+              style={inputStyle(!!errors.toLocationId)}
+              value={form.toLocationId || ""}
+              disabled={!editable || busy}
+              onChange={(e) => updateHeader({ toLocationId: e.target.value || "" })}
+            >
+              {!form.toLocationId && <option value="" disabled>Select to…</option>}
+              {locationOptions
+                .filter((o) => o.value !== form.fromLocationId)
+                .map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+            </select>
+            {errors.toLocationId && <div style={errorStyle}>{errors.toLocationId}</div>}
+          </div>
+
+          <div style={{ gridColumn: "span 2" }}>
+            <label style={labelStyle}>Transfer Date *</label>
+            <input
+              style={inputStyle(!!errors.transferDate)}
+              type="date"
+              value={form.transferDate}
+              disabled={!editable || busy}
+              onChange={(e) => updateHeader({ transferDate: e.target.value })}
+            />
+            {errors.transferDate && <div style={errorStyle}>{errors.transferDate}</div>}
+          </div>
+
+          <div style={{ gridColumn: "span 2" }}>
+            <label style={labelStyle}>Reference</label>
+            <input
+              style={inputStyle(false)}
+              value={form.reference}
+              disabled={!editable || busy}
+              onChange={(e) => updateHeader({ reference: e.target.value })}
+              placeholder="Optional"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Lines Card */}
+      <div style={cardStyle}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 900 }}>Draft Items</div>
+            <div style={{ opacity: 0.75, marginTop: 4 }}>
+              Draft opens with items listed + edit + remove.
+            </div>
+          </div>
+
+          <button style={primaryBtn} disabled={!editable || busy} onClick={addLine}>
+            + Add line
+          </button>
+        </div>
+
+        {/* Non-draft shows read-only inventory */}
+        {!editable && detail ? (
+          <ReadOnlyLinesTable items={detail.items} />
+        ) : (
+          <>
+            {errors.lines && <div style={{ ...errorStyle, marginTop: 10 }}>{errors.lines}</div>}
+
+            <div style={{ marginTop: 14, overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={{ ...thStyle, width: 420 }}>Item *</th>
+                    <th style={{ ...thStyle, width: 240 }}>UOM *</th>
+                    <th style={{ ...thStyle, width: 160 }}>Qty *</th>
+                    <th style={{ ...thStyle, width: 360 }}>Note</th>
+                    <th style={{ ...thStyle, width: 120, textAlign: "right" }}>Remove</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.lines.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ padding: 18, opacity: 0.75 }}>
+                        No draft lines yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    form.lines.map((l, idx) => {
+                      const le = errors.lineErrors?.[idx] ?? {};
+                      const uomOpts = uomOptionsForLine(l.inventoryItemId);
+
+                      return (
+                        <tr key={l.id}>
+                          <td style={tdStyle}>
+                            <select
+                              style={inputStyle(!!le.inventoryItemId)}
+                              value={l.inventoryItemId || ""}
+                              disabled={!editable || busy}
+                              onChange={(e) => onItemChange(idx, e.target.value || "")}
+                            >
+                              {!l.inventoryItemId && (
+                                <option value="" disabled>
+                                  {l._itemCode ? `Map failed (${l._itemCode}) - select item…` : "Select item…"}
+                                </option>
+                              )}
+                              {itemOptions.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            {le.inventoryItemId && <div style={errorStyle}>{le.inventoryItemId}</div>}
+                          </td>
+
+                          <td style={tdStyle}>
+                            <select
+                              style={inputStyle(!!le.unitId)}
+                              value={l.unitId || ""}
+                              disabled={!editable || busy || !l.inventoryItemId}
+                              onChange={(e) => updateLine(idx, { unitId: e.target.value || "" })}
+                            >
+                              {!l.unitId && (
+                                <option value="" disabled>
+                                  {l._uomText ? `Map failed (${l._uomText}) - select UOM…` : "Select UOM…"}
+                                </option>
+                              )}
+                              {uomOpts.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            {le.unitId && <div style={errorStyle}>{le.unitId}</div>}
+                          </td>
+
+                          <td style={tdStyle}>
+                            <input
+                              style={inputStyle(!!le.qty)}
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={Number.isFinite(l.qty) ? l.qty : 0}
+                              disabled={!editable || busy}
+                              onChange={(e) => updateLine(idx, { qty: Number(e.target.value) })}
+                            />
+                            {le.qty && <div style={errorStyle}>{le.qty}</div>}
+                          </td>
+
+                          <td style={tdStyle}>
+                            <input
+                              style={inputStyle(false)}
+                              value={l.note}
+                              disabled={!editable || busy}
+                              onChange={(e) => updateLine(idx, { note: e.target.value })}
+                              placeholder="Optional"
+                            />
+                          </td>
+
+                          <td style={{ ...tdStyle, textAlign: "right" }}>
+                            <button style={dangerBtn} disabled={!editable || busy} onClick={() => removeLine(idx)}>
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Sticky Bar */}
+      <div style={stickyBar}>
+        <div style={{ opacity: 0.85 }}>
+          <b>Workflow:</b> Draft → Submit → Approve → Post
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button style={secondaryBtn} onClick={() => nav(-1)} disabled={busy}>
+            Back
+          </button>
+
+          <button style={secondaryBtn} onClick={loadAll} disabled={busy}>
+            Refresh
+          </button>
+
+          <button style={secondaryBtn} disabled={!editable || busy} onClick={save}>
+            {saving ? "Saving..." : "Save"}
+          </button>
+
+          <button style={primaryBtn} disabled={!canSubmit(status) || busy} onClick={() => doAction("submit")}>
+            {acting === "submit" ? "Submitting..." : "Submit"}
+          </button>
+
+          <button style={secondaryBtn} disabled={!canCancel(status) || busy} onClick={() => doAction("cancel")}>
+            {acting === "cancel" ? "Cancelling..." : "Cancel"}
+          </button>
+
+          <button style={primaryBtn} disabled={!canPost(status) || busy} onClick={() => doAction("post")}>
+            {acting === "post" ? "Posting..." : "Post"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
+
+/* ---------------- Styles ---------------- */
+
+const cardStyle: React.CSSProperties = {
+  marginTop: 14,
+  border: "1px solid rgba(0,0,0,0.10)",
+  borderRadius: 12,
+  padding: 14,
+  background: "white",
+  color: "#0f172a",
+};
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 12,
+  fontWeight: 900,
+  opacity: 0.75,
+  marginBottom: 6,
+};
+
+const inputStyle = (invalid: boolean): React.CSSProperties => ({
+  width: "100%",
+  padding: "10px 10px",
+  borderRadius: 10,
+  border: invalid ? "1px solid rgba(220, 38, 38, 0.55)" : "1px solid rgba(0,0,0,0.15)",
+  outline: "none",
+  background: "white",
+  color: "#0f172a",
+});
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  minWidth: 1100,
+  borderCollapse: "collapse",
+  tableLayout: "fixed",
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: "left",
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: 0.2,
+  padding: "10px 10px",
+  borderBottom: "1px solid rgba(0,0,0,0.12)",
+  whiteSpace: "nowrap",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "10px 10px",
+  borderBottom: "1px solid rgba(0,0,0,0.08)",
+  verticalAlign: "top",
+};
+
+const errorStyle: React.CSSProperties = {
+  color: "rgb(220, 38, 38)",
+  fontSize: 12,
+};
+
+const successStyle: React.CSSProperties = {
+  color: "rgb(22, 163, 74)",
+  fontSize: 12,
+};
+
+const infoStyle: React.CSSProperties = {
+  color: "rgb(2, 132, 199)",
+  fontSize: 12,
+};
+
+const warnStyle: React.CSSProperties = {
+  borderRadius: 12,
+  border: "1px solid rgba(234, 179, 8, 0.35)",
+  background: "rgba(234, 179, 8, 0.10)",
+  padding: "10px 12px",
+  fontSize: 12,
+  color: "#0f172a",
+};
+
+const primaryBtn: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,0.15)",
+  background: "#0f172a",
+  color: "white",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const secondaryBtn: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,0.15)",
+  background: "white",
+  color: "#0f172a",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const dangerBtn: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid rgba(220, 38, 38, 0.35)",
+  background: "rgba(220, 38, 38, 0.08)",
+  color: "rgb(220, 38, 38)",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const stickyBar: React.CSSProperties = {
+  position: "sticky",
+  bottom: 0,
+  marginTop: 14,
+  padding: 12,
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.12)",
+  background: "rgba(255,255,255,0.95)",
+  backdropFilter: "blur(6px)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+};

@@ -57,7 +57,7 @@ export const companyApi = {
 
   async listStores(companyId: string, branchId?: string) {
     // ✅ baseURL already includes "/api"
-    const res = await http.get<StoreVm[]>(`/companies/${companyId}/stores`, {
+    const res = await http.get<StoreVm[]>(`/companies/${companyId}/branches/${branchId}/stores`, {
       params: branchId ? { branchId } : undefined,
     });
     return res.data;
@@ -65,7 +65,7 @@ export const companyApi = {
 
   async addStore(companyId: string, dto: CreateStoreDto) {
     const res = await http.post<{ id: string }>(
-      `/companies/${companyId}/stores`,
+      `/companies/${companyId}/branches/${dto.branchId}/stores`,
       dto
     );
     return res.data.id;

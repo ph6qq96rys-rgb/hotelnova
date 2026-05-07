@@ -1,132 +1,151 @@
-﻿import { http } from "../../../../api/http";
+﻿// src/features/inventory/items/api/inventoryItemsApi.ts
+
+import { http } from "../../../../api/http";
 import type {
+  InventoryCatalogs,
   InventoryItemDto,
-  CreateInventoryItemDto,
-  UpdateInventoryItemDto,
+  CategoryDto,
   UomDto,
-  ItemTypeDto,
-  ItemUomDto
+  ItemUomDto,
 } from "../types";
 
-function base(companyId: string) {
-  return `/companies/${companyId}/inventory-master`;
-}
-export function encodeParam(value: unknown): string | undefined {
-  if (value === null || value === undefined) return undefined;
-  return encodeURIComponent(String(value));
-}
-type InventoryItemListParams = {
-  q?: string | null;
-  page?: number;
-  pageSize?: number;
+// ─── Shared types ─────────────────────────────────────────────────────────────
+
+export type CreateItemBody = {
+  companyId: string;
+  name: string;
+  localName: string | null;
+  sku: string | null;
+  barcode: string | null;
+  categoryId: string | null;
+  baseUomId: string;
+  type: string;
+  allowedUoms: ItemUomDto[];
+  trackInventory: boolean;
+  defaultCost: number | null;
+  defaultPrice: number | null;
+  reorderLevel: number;
+  isActive: true;
 };
+
+export type UpdateItemBody = Omit<CreateItemBody, "isActive"> & {
+  id: string;
+  isActive: boolean;
+};
+
+export type CreateUomBody = {
+  name: string;
+  symbol: string | null;
+  isBase: boolean;
+};
+
+export type CreateCategoryBody = {
+  name: string;
+  description?: string | null;
+};
+
+export type UomConversionFactor = {
+  toBaseFactor: number;
+} | null;
+
+// ─── URL factory ──────────────────────────────────────────────────────────────
+
+function masterUrl(companyId: string, path = ""): string {
+  return `/companies/${companyId}/inventory-master${path}`;
+}
+
+// ─── API ──────────────────────────────────────────────────────────────────────
+
 export const inventoryItemsApi = {
-  // =========================
-  // ITEMS
-  // =========================
- list(companyId: string, params?: InventoryItemListParams) {
-  return http
-    .get<InventoryItemDto[]>(`${base(companyId)}/items`, {
-      params: {
-        q: params?.q ?? undefined,
-        page: params?.page ?? undefined,
-        pageSize: params?.pageSize ?? undefined,
-      },
-    })
-    .then((r) => r.data);
-},
-
-
-  getById(companyId: string, id: string) {
-    return http.get<InventoryItemDto>(`${base(companyId)}/items/${id}`);
+  /** Load all catalogs (categories, UOMs, etc.) in one shot. */
+  loadCatalogs(companyId: string): Promise<InventoryCatalogs> {
+    return http
+      .get<InventoryCatalogs>(masterUrl(companyId, "/catalogs"), {
+        params: { activeOnly: true },
+      })
+      .then((r) => r.data);
   },
 
-  create(companyId: string, dto: CreateInventoryItemDto) {
-    return http.post<string>(`${base(companyId)}/items`, dto);
+  // ── Items ──────────────────────────────────────────────────────────────────
+
+  list(companyId: string, q?: string): Promise<InventoryItemDto[]> {
+    return http
+      .get<InventoryItemDto[]>(masterUrl(companyId, "/items"), {
+        params: q ? { q } : undefined,
+      })
+      .then((r) => r.data);
   },
 
-  update(companyId: string, id: string, dto: UpdateInventoryItemDto) {
-    return http.put<void>(`${base(companyId)}/items/${id}`, dto);
+  get(companyId: string, id: string): Promise<InventoryItemDto> {
+    return http
+      .get<InventoryItemDto>(masterUrl(companyId, `/items/${id}`))
+      .then((r) => r.data);
   },
 
-  // ✅ used by InventoryItemsPage.tsx
-  setActive(companyId: string, id: string, isActive: boolean) {
-    // Recommended dedicated endpoint:
-    return http.put<void>(`/companies/${companyId}/inventory/items/${id}/active`, { isActive });
-
-    // If you don't want a new endpoint, use this instead:
-    // return http.put<void>(`${base(companyId)}/items/${id}`, { isActive });
-  },
-setDeactivate(companyId: string, id: string, isActive: boolean) {
-    // Recommended dedicated endpoint:
-    return http.put<void>(`/companies/${companyId}/inventory/items/${id}/deactivate`, { isActive });
-
-    // If you don't want a new endpoint, use this instead:
-    // return http.put<void>(`${base(companyId)}/items/${id}`, { isActive });
+  create(companyId: string, body: CreateItemBody): Promise<{ id: string }> {
+    return http
+      .post<{ id: string }>(masterUrl(companyId, "/items"), body)
+      .then((r) => r.data);
   },
 
-  // =========================
-  // CATEGORIES
-  // =========================
-  getCategories(companyId: string,  params?: InventoryItemListParams) {
-
-    return http.get<InventoryItemDto[]>(`${base(companyId)}/categories`, {
-      params: {
-        q: params?.q ?? undefined,
-      },
-    })
-    .then((r) => r.data);
+  update(companyId: string, id: string, body: UpdateItemBody): Promise<void> {
+    return http
+      .put<void>(masterUrl(companyId, `/items/${id}`), body)
+      .then(() => undefined);
   },
 
-  createCategory(companyId: string, dto: { name: string; description?: string | null }) {
-    return http.post<string>(`${base(companyId)}/categories`, dto);
+  setActive(companyId: string, id: string, isActive: boolean): Promise<void> {
+    return http
+      .patch<void>(masterUrl(companyId, `/items/${id}/active`), { isActive })
+      .then(() => undefined);
   },
 
-  updateCategory(companyId: string, id: string, dto: { name?: string; description?: string | null; isActive?: boolean | null }) {
-    return http.put<void>(`${base(companyId)}/categories/${id}`, dto);
+  // ── Categories ─────────────────────────────────────────────────────────────
+
+  getCategories(companyId: string): Promise<CategoryDto[]> {
+    return http
+      .get<CategoryDto[]>(masterUrl(companyId, "/categories"))
+      .then((r) => r.data);
   },
 
-  deleteCategory(companyId: string, id: string) {
-    return http.delete<void>(`${base(companyId)}/categories/${id}`);
+  createCategory(
+    companyId: string,
+    body: CreateCategoryBody
+  ): Promise<{ id: string }> {
+    return http
+      .post<{ id: string }>(masterUrl(companyId, "/categories"), body)
+      .then((r) => r.data);
   },
 
-  // =========================
-  // UOMS
-  // =========================
-  getUoms(companyId: string, params?: InventoryItemListParams) {
-    return http.get<UomDto[]>(`${base(companyId)}/uoms`, {
-      params: {
-        q: params?.q ?? undefined,
-      },
-    }).then((r) => r.data);
+  // ── UOMs ───────────────────────────────────────────────────────────────────
+
+  getUoms(companyId: string): Promise<UomDto[]> {
+    return http
+      .get<UomDto[]>(masterUrl(companyId, "/uoms"))
+      .then((r) => r.data);
   },
 
-  createUom(companyId: string, dto: { name: string; symbol?: string | null; isBase?: boolean }) {
-    return http.post<string>(`${base(companyId)}/uoms`, dto);
+  getUom(companyId: string, id: string): Promise<UomDto> {
+    return http
+      .get<UomDto>(masterUrl(companyId, `/uoms/${id}`))
+      .then((r) => r.data);
   },
 
-  updateUom(companyId: string, id: string, dto: { name?: string; symbol?: string | null; isBase?: boolean }) {
-    return http.put<void>(`${base(companyId)}/uoms/${id}`, dto);
+  createUom(companyId: string, body: CreateUomBody): Promise<{ id: string }> {
+    return http
+      .post<{ id: string }>(masterUrl(companyId, "/uoms"), body)
+      .then((r) => r.data);
   },
 
-  deleteUom(companyId: string, id: string) {
-    return http.delete<void>(`${base(companyId)}/uoms/${id}`);
-  },
-  listForItem: (companyId: string, itemId: string) =>
-    http.get<ItemUomDto[]>(`/companies/${companyId}/inventory-items/${itemId}/uoms`).then((r) => r.data),
-
-  // =========================
-  // ITEM TYPES (optional)
-  // =========================
-  getItemTypes(companyId: string, q?: string) {
-    return http.get<ItemTypeDto[]>(`${base(companyId)}/item-types`, {
-      params: {
-        q: q ?? undefined,
-      },
-    }).then((r) => r.data); 
-  },
-
-  createItemType(companyId: string, dto: { name: string; description?: string | null }) {
-    return http.post<string>(`${base(companyId)}/item-types`, dto);
+  getUomConversionFactor(
+    companyId: string,
+    baseUomId: string,
+    uomId: string
+  ): Promise<UomConversionFactor> {
+    return http
+      .get<UomConversionFactor>(masterUrl(companyId, "/uom-conversions"), {
+        params: { baseUomId, uomId },
+      })
+      .then((r) => r.data);
   },
 };

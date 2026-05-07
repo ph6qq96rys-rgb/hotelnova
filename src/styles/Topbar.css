@@ -1,0 +1,22 @@
+.hna-user-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  max-width: 160px;
+}
+
+.hna-user-meta strong,
+.hna-user-meta span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hna-user-meta strong {
+  font-size: 12px;
+}
+
+.hna-user-meta span {
+  font-size: 11px;
+  color: rgba(255,255,255,.65);
+}

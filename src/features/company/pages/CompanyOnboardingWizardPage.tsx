@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import WizardSteps from "../components/WizardSteps";
 import CompanyForm from "../components/CompanyForm";
@@ -11,12 +11,14 @@ import { companyApi } from "../api/companyApi";
 import type {
   BranchVm,
   CompanySettingsDto,
+  CreateBranchDto,
   CreateCompanyAdminUserDto,
   CreateCompanyDto,
-  StoreVm
+  CreateStoreDto,
+  StoreVm,
 } from "../types";
 
-const labels = ["Company", "Branches", "Stores", "Settings", "Admin User", "Review"];
+const labels = ["Company", "Branches", "Stores", "Settings", "Admin User", "Review"] as const;
 
 export default function CompanyOnboardingWizardPage() {
   const nav = useNavigate();
@@ -57,58 +59,84 @@ export default function CompanyOnboardingWizardPage() {
   });
 
   const [busy, setBusy] = useState(false);
-  const canNext =
-    (step === 0 ? company.legalName.trim().length > 0 : true) &&
-    (step === 1 ? branches.length > 0 : true);
 
-  async function ensureCompanyCreated() {
+  const canNext = useMemo(() => {
+    if (step === 0) return company.legalName.trim().length > 0;
+    if (step === 1) return branches.length > 0;
+    return true;
+  }, [step, company.legalName, branches.length]);
+
+  async function ensureCompanyCreated(): Promise<string> {
     if (companyId) return companyId;
     const created = await companyApi.createCompany(company);
     setCompanyId(created.id);
     return created.id;
   }
 
-  async function refresh(companyId: string) {
-    const [b, s, set] = await Promise.all([
-      companyApi.listBranches(companyId),
-      companyApi.listStores(companyId),
-      companyApi.getSettings(companyId),
-    ]);
+  async function refreshBranches(id: string) {
+    const b = await companyApi.listBranches(id);
     setBranches(b);
-    setStores(s);
-    setSettings(set);
   }
 
+  async function refreshStores(id: string) {
+    const s = await companyApi.listStores(id);
+    setStores(s);
+  }
+
+  async function refreshSettings(id: string) {
+    const s = await companyApi.getSettings(id);
+    setSettings(s);
+  }
+
+  // Step-driven refresh so the UI is always up-to-date when user enters a step.
   useEffect(() => {
     if (!companyId) return;
-    refresh(companyId);
-  }, [companyId]);
+
+    if (step === 1) {
+      refreshBranches(companyId);
+    } else if (step === 2) {
+      // Stores depend on branches + company
+      refreshBranches(companyId);
+      refreshStores(companyId);
+    } else if (step === 3) {
+      refreshSettings(companyId);
+    } else if (step === 4) {
+      // Admin form usually needs branches/stores
+      refreshBranches(companyId);
+      refreshStores(companyId);
+    } else if (step === 5) {
+      // Review wants everything current
+      refreshBranches(companyId);
+      refreshStores(companyId);
+      refreshSettings(companyId);
+    }
+  }, [companyId, step]);
 
   async function next() {
     if (!canNext) return;
     setStep((x) => Math.min(x + 1, labels.length - 1));
   }
 
-  async function prev() {
+  function prev() {
     setStep((x) => Math.max(x - 1, 0));
   }
 
-  async function addBranch(dto: any) {
+  async function addBranch(dto: CreateBranchDto) {
     const id = await ensureCompanyCreated();
     await companyApi.addBranch(id, dto);
-    await refresh(id);
+    await refreshBranches(id);
   }
 
-  async function addStore(dto: any) {
+  async function addStore(dto: CreateStoreDto) {
     const id = await ensureCompanyCreated();
     await companyApi.addStore(id, dto);
-    await refresh(id);
+    await refreshStores(id);
   }
 
   async function saveSettings() {
     const id = await ensureCompanyCreated();
     await companyApi.updateSettings(id, settings);
-    await refresh(id);
+    await refreshSettings(id);
   }
 
   async function complete() {
@@ -116,13 +144,8 @@ export default function CompanyOnboardingWizardPage() {
     try {
       const id = await ensureCompanyCreated();
 
-      // Save settings
       await companyApi.updateSettings(id, settings);
-
-      // Create company admin
       await companyApi.createCompanyAdmin(id, admin);
-
-      // Activate (seeds defaults + activates in API)
       await companyApi.activateCompany(id);
 
       nav(`/companies/${id}`);
@@ -140,12 +163,22 @@ export default function CompanyOnboardingWizardPage() {
         </div>
       </div>
 
-      <WizardSteps step={step} setStep={setStep} labels={labels} />
+      <WizardSteps step={step} setStep={setStep} labels={[...labels]} />
 
       <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
         {step === 0 && <CompanyForm value={company} onChange={setCompany} />}
+
         {step === 1 && <BranchesForm branches={branches} onAdd={addBranch} />}
-        {step === 2 && <StoresForm companyId={companyId} branches={branches} stores={stores} onAdd={addStore} />}
+
+        {step === 2 && (
+          <StoresForm
+            companyId={companyId}
+            branches={branches}
+            stores={stores}
+            onAdd={addStore}
+          />
+        )}
+
         {step === 3 && (
           <div style={{ display: "grid", gap: 12 }}>
             <SettingsForm value={settings} onChange={setSettings} />
@@ -154,14 +187,33 @@ export default function CompanyOnboardingWizardPage() {
             </button>
           </div>
         )}
-        {step === 4 && <AdminUserForm branches={branches} stores={stores} value={admin} onChange={setAdmin} />}
-        {step === 5 && <ReviewSubmit company={company} branches={branches} stores={stores} settings={settings} admin={admin} />}
+
+        {step === 4 && (
+          <AdminUserForm
+            branches={branches}
+            stores={stores}
+            value={admin}
+            onChange={setAdmin}
+          />
+        )}
+
+        {step === 5 && (
+          <ReviewSubmit
+            company={company}
+            branches={branches}
+            stores={stores}
+            settings={settings}
+            admin={admin}
+          />
+        )}
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <button style={btnGhost} onClick={prev} disabled={step === 0 || busy}>Back</button>
+        <button style={btnGhost} onClick={prev} disabled={step === 0 || busy}>
+          Back
+        </button>
 
-        {step < 5 ? (
+        {step < labels.length - 1 ? (
           <button style={btnPrimary} onClick={next} disabled={!canNext || busy}>
             Next
           </button>
@@ -181,5 +233,19 @@ export default function CompanyOnboardingWizardPage() {
   );
 }
 
-const btnPrimary: React.CSSProperties = { padding: "10px 12px", borderRadius: 10, background: "#111", color: "#fff", border: "none", cursor: "pointer" };
-const btnGhost: React.CSSProperties = { padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd", background: "#fff", cursor: "pointer" };
+const btnPrimary: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 10,
+  background: "#111",
+  color: "#fff",
+  border: "none",
+  cursor: "pointer",
+};
+
+const btnGhost: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #ddd",
+  background: "#fff",
+  cursor: "pointer",
+};

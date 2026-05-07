@@ -1,0 +1,727 @@
+/* inventory-items.css
+   Single stylesheet for InventoryItemsPage + InventoryItemForm.
+   Import once in InventoryItemsPage.tsx — the form inherits it.
+   ─────────────────────────────────────────────────────────────── */
+
+/* ── Design tokens ───────────────────────────────────────────────────────── */
+:root {
+  --inv-accent:        #C9922A;
+  --inv-accent-soft:   rgba(201, 146, 42, 0.12);
+  --inv-accent-border: rgba(201, 146, 42, 0.35);
+  --inv-row-hover:     rgba(0, 0, 0, 0.022);
+  --inv-radius:        10px;
+  --inv-radius-sm:     6px;
+  --inv-ease:          0.14s ease;
+}
+
+/* ── Page shell ──────────────────────────────────────────────────────────── */
+.inv-page {
+  padding: 2rem 2rem 3rem;
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.inv-page-guard {
+  padding: 2rem;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+/* ── Banner ──────────────────────────────────────────────────────────────── */
+.inv-banner {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  padding: 2rem 2rem 1.75rem;
+  border-radius: var(--inv-radius);
+  background: var(--color-text-primary);
+  color: var(--color-background-primary);
+  overflow: hidden;
+}
+
+/* Amber accent rule along the top */
+.inv-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--inv-accent);
+}
+
+/* Subtle tonal circle, decorative */
+.inv-banner::after {
+  content: "";
+  position: absolute;
+  top: -50px;
+  right: -50px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.025);
+  pointer-events: none;
+}
+
+.inv-banner__kicker {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--inv-accent);
+  margin-bottom: 8px;
+}
+
+.inv-banner__title {
+  font-size: 26px;
+  font-weight: 300;
+  letter-spacing: -0.025em;
+  margin: 0 0 6px;
+  line-height: 1.1;
+  color: var(--color-background-primary);
+}
+
+.inv-banner__subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.48);
+  max-width: 480px;
+  line-height: 1.6;
+}
+
+.inv-banner__right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+.inv-banner__count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.inv-banner__count-label {
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.inv-banner__count-value {
+  font-size: 30px;
+  font-weight: 200;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--color-background-primary);
+}
+
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+.inv-alert {
+  padding: 12px 16px;
+  border-radius: var(--inv-radius-sm);
+  font-size: 13px;
+  border-left: 3px solid;
+}
+
+.inv-alert--error {
+  background: var(--color-background-danger);
+  color: var(--color-text-danger);
+  border-color: var(--color-text-danger);
+}
+
+/* ── Card (item register wrapper) ────────────────────────────────────────── */
+.inv-card {
+  background: var(--color-background-primary);
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--inv-radius);
+  overflow: hidden;
+}
+
+.inv-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.125rem 1.5rem;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  background: var(--color-background-secondary);
+}
+
+.inv-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.inv-card__subtitle {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+
+/* ── Search ──────────────────────────────────────────────────────────────── */
+.inv-search-wrap {
+  min-width: 260px;
+  position: relative;
+}
+
+/* Magnifying glass glyph via CSS — no extra element */
+.inv-search-wrap::before {
+  content: "⌕";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.inv-search {
+  width: 100%;
+  height: 34px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 0 11px 0 32px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--inv-radius-sm);
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color var(--inv-ease);
+}
+
+.inv-search::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.inv-search:focus {
+  border-color: var(--inv-accent);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+/*
+  --outline   light bordered  (table rows, banner)
+  --primary   dark filled     (Activate)
+  --danger    red bordered    (Deactivate)
+  --ghost     white bordered  (form header Cancel — on dark bg)
+  --solid     white filled    (form header Save — on dark bg)
+  --sm        compact height  (table row actions)
+*/
+.inv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  height: 34px;
+  padding: 0 15px;
+  border-radius: var(--inv-radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity var(--inv-ease), background var(--inv-ease), border-color var(--inv-ease);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.inv-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.inv-btn--sm {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+/* Neutral bordered */
+.inv-btn--outline {
+  background: transparent;
+  border-color: var(--color-border-secondary);
+  color: var(--color-text-primary);
+}
+
+.inv-btn--outline:hover:not(:disabled) {
+  background: var(--color-background-secondary);
+  border-color: var(--color-border-primary);
+}
+
+/* Banner override — sits on dark bg */
+.inv-banner .inv-btn--outline {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--color-background-primary);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.inv-banner .inv-btn--outline:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.38);
+}
+
+/* Dark filled */
+.inv-btn--primary {
+  background: var(--color-text-primary);
+  color: var(--color-background-primary);
+  border-color: var(--color-text-primary);
+}
+
+.inv-btn--primary:hover:not(:disabled) {
+  opacity: 0.82;
+}
+
+/* Danger — transparent by default, fill on hover */
+.inv-btn--danger {
+  background: transparent;
+  color: var(--color-text-danger);
+  border-color: var(--color-border-danger, var(--color-text-danger));
+}
+
+.inv-btn--danger:hover:not(:disabled) {
+  background: var(--color-background-danger);
+}
+
+/* Form header — on dark bg */
+.inv-btn--ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.inv-btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.36);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.inv-btn--solid {
+  background: var(--color-background-primary);
+  border-color: var(--color-background-primary);
+  color: var(--color-text-primary);
+}
+
+.inv-btn--solid:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.inv-table-wrap {
+  overflow-x: auto;
+}
+
+.inv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.inv-table thead th {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: var(--color-background-secondary);
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  white-space: nowrap;
+}
+
+.inv-table thead th:first-child {
+  padding-left: 24px;
+}
+
+.inv-table thead th:last-child {
+  padding-right: 24px;
+}
+
+.inv-table tbody td {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  vertical-align: middle;
+  color: var(--color-text-primary);
+}
+
+.inv-table tbody td:first-child {
+  padding-left: 24px;
+}
+
+.inv-table tbody td:last-child {
+  padding-right: 24px;
+}
+
+.inv-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.inv-table tbody tr {
+  transition: background var(--inv-ease);
+}
+
+.inv-table tbody tr:hover {
+  background: var(--inv-row-hover);
+}
+
+.inv-table__name {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.inv-table__empty {
+  text-align: center;
+  padding: 4rem 1rem !important;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.inv-table__actions-col {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.inv-table__actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* ── Status badge ────────────────────────────────────────────────────────── */
+.inv-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.inv-badge--active {
+  background: var(--color-background-success);
+  color: var(--color-text-success);
+}
+
+.inv-badge--inactive {
+  background: transparent;
+  color: var(--color-text-tertiary);
+  border-color: var(--color-border-tertiary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   INVENTORY ITEM FORM  (InventoryItemForm.tsx)
+   iif- prefix = form-private layout
+   inv- prefix = shared element styles
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Form shell ──────────────────────────────────────────────────────────── */
+.iif-shell {
+  background: var(--color-background-primary);
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--inv-radius);
+  overflow: hidden;
+}
+
+/* ── Form header ─────────────────────────────────────────────────────────── */
+.iif-header {
+  position: relative;
+  padding: 20px 24px;
+  background: var(--color-text-primary);
+  color: var(--color-background-primary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Shared amber top-rule with the banner */
+.iif-header::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--inv-accent);
+}
+
+.iif-header__left {
+  display: flex;
+  flex-direction: column;
+}
+
+.iif-header__kicker {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--inv-accent);
+  margin-bottom: 6px;
+}
+
+.iif-header__title {
+  font-size: 18px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--color-background-primary);
+}
+
+.iif-header__subtitle {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.42);
+  margin-top: 4px;
+}
+
+.iif-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Status chip ─────────────────────────────────────────────────────────── */
+.inv-status-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.inv-status-chip--draft {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.5);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.inv-status-chip--success {
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+.inv-status-chip--danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.28);
+}
+
+/* ── Form alert ──────────────────────────────────────────────────────────── */
+.iif-alert {
+  margin: 16px 20px 0;
+  padding: 11px 14px;
+  border-radius: var(--inv-radius-sm);
+  border-left: 3px solid var(--color-text-danger);
+  background: var(--color-background-danger);
+  color: var(--color-text-danger);
+  font-size: 13px;
+}
+
+/* ── Form body ───────────────────────────────────────────────────────────── */
+.iif-body {
+  padding: 20px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Form sections ───────────────────────────────────────────────────────── */
+.inv-section {
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--inv-radius);
+  overflow: hidden;
+}
+
+.inv-section__head {
+  padding: 11px 16px;
+  background: var(--color-background-secondary);
+  border-bottom: 1px solid var(--color-border-tertiary);
+}
+
+.inv-section__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: 0.01em;
+}
+
+.inv-section__subtitle {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+
+.inv-section__body {
+  padding: 16px;
+}
+
+/* ── Form grid ───────────────────────────────────────────────────────────── */
+.inv-form-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.inv-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.inv-field--span-1  { grid-column: span 1; }
+.inv-field--span-2  { grid-column: span 2; }
+.inv-field--span-3  { grid-column: span 3; }
+.inv-field--span-4  { grid-column: span 4; }
+.inv-field--span-5  { grid-column: span 5; }
+.inv-field--span-6  { grid-column: span 6; }
+.inv-field--span-7  { grid-column: span 7; }
+.inv-field--span-8  { grid-column: span 8; }
+.inv-field--span-9  { grid-column: span 9; }
+.inv-field--span-10 { grid-column: span 10; }
+.inv-field--span-11 { grid-column: span 11; }
+.inv-field--span-12 { grid-column: span 12; }
+
+/* ── Field label ─────────────────────────────────────────────────────────── */
+.inv-field__label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* ── Form inputs ─────────────────────────────────────────────────────────── */
+.inv-input {
+  width: 100%;
+  height: 36px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 0 11px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--inv-radius-sm);
+  background: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color var(--inv-ease), background var(--inv-ease);
+  -moz-appearance: textfield;
+}
+
+.inv-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.inv-input:hover:not(:disabled) {
+  border-color: var(--color-border-secondary);
+}
+
+.inv-input:focus {
+  border-color: var(--inv-accent);
+  background: var(--color-background-primary);
+}
+
+.inv-input:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Checkbox row ────────────────────────────────────────────────────────── */
+.inv-checkbox-row {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 11px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--inv-radius-sm);
+  background: var(--color-background-secondary);
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  transition: border-color var(--inv-ease);
+}
+
+.inv-checkbox-row:hover {
+  border-color: var(--color-border-secondary);
+}
+
+.inv-checkbox-row input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--inv-accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.inv-checkbox-row--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── Read-only field ─────────────────────────────────────────────────────── */
+.inv-readonly-field {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 11px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--inv-radius-sm);
+  background: var(--color-background-tertiary);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* ── UOM conversion block ────────────────────────────────────────────────── */
+.iif-conv-section {
+  margin-top: 16px;
+}
+
+.iif-conv-section__label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.iif-conv-section__body {
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--inv-radius-sm);
+  padding: 14px;
+  background: var(--color-background-secondary);
+}
+
+.iif-conv-section__empty {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { authApi } from "../api/auth.api";
+import { authApi } from "../auth/auth.api";
 
 export default function ResetPasswordPage() {
   const nav = useNavigate();

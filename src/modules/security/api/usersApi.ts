@@ -1,58 +1,55 @@
 ﻿import { http } from "../../../api/http";
-import type {
-  PagedResult,
-  UserDto,
-  UsersQuery,
-  CreateUserRequest,
-  UpdateUserRequest,
-  ResetPasswordRequest,
-} from "../../../api/identity/identityTypes";
+import type { UserDto, CreateUserRequest, UpdateUserRequest, ResetPasswordRequest } from "../../../api/identity/identityTypes";
 
-/**
- * Backend routes (exactly as Swagger)
- * GET    /api/identity/Users
- * POST   /api/identity/Users
- * GET    /api/identity/Users/{id}
- * PUT    /api/identity/Users/{id}
- * DELETE /api/identity/Users/{id}/deactivate
- * POST   /api/identity/Users/{id}/reset-password
- */
-const BASE = "/identity/Users";
+const base = (companyId: string) => `/companies/${companyId}/identity/users`;
 
-export function getUsers(
-  query: UsersQuery
-): Promise<PagedResult<UserDto>> {
-  return http.get(BASE, { params: query });
-}
+export const usersApi = {
+  async getUserById(companyId: string, userId: string, signal?: AbortSignal): Promise<UserDto> {
+    const res = await http.get<UserDto>(`${base(companyId)}/${userId}`, { signal });
+    return (res as any).data ?? res; // supports both axios-style and fetch-wrapper style
+  },
 
-export function createUser(
-  body: CreateUserRequest
-): Promise<UserDto> {
-  return http.post(BASE, body);
-}
+  async listUsers(companyId: string, signal?: AbortSignal): Promise<UserDto[]> {
+    const res = await http.get<UserDto[]>(base(companyId), { signal });
+    const data = (res as any).data ?? res;
 
-export function getUserById(
-  id: string
-): Promise<UserDto> {
-  return http.get(`${BASE}/${id}`);
-}
+  return Array.isArray(data)
+    ? data
+    : Array.isArray(data?.items)
+    ? data.items
+    : [];
+  },
 
-export function updateUser(
-  id: string,
-  body: UpdateUserRequest
-): Promise<UserDto> {
-  return http.put(`${BASE}/${id}`, body);
-}
+  async createUser(companyId: string, body: CreateUserRequest): Promise<UserDto> {
+    const res = await http.post<UserDto>(base(companyId), body);
+    return (res as any).data ?? res;
+  },
 
-export function deactivateUser(
-  id: string
-): Promise<void> {
-  return http.delete(`${BASE}/${id}/deactivate`);
-}
+  async updateUser(companyId: string, id: string, body: UpdateUserRequest): Promise<UserDto> {
+    const res = await http.put<UserDto>(`${base(companyId)}/${id}`, body);
+    return (res as any).data ?? res;
+  },
 
-export function resetUserPassword(
-  id: string,
-  body: ResetPasswordRequest
-): Promise<void> {
-  return http.post(`${BASE}/${id}/reset-password`, body);
-}
+  deactivateUser(companyId: string, id: string): Promise<void> {
+    return http.delete(`${base(companyId)}/${id}/deactivate`);
+  },
+
+  resetUserPassword(companyId: string, id: string, body: ResetPasswordRequest): Promise<void> {
+    return http.post(`${base(companyId)}/${id}/reset-password`, body);
+  },
+
+  async getUserPermissions(companyId: string, userId: string): Promise<string[]> {
+    const res = await http.get<string[]>(`${base(companyId)}/${userId}/permissions`);
+    return (res as any).data ?? res;
+  },
+
+  setUserPermissions(companyId: string, payload: { userId: string; permissionKeys: string[] }): Promise<void> {
+    const { userId, permissionKeys } = payload;
+    return http.put(`${base(companyId)}/${userId}/permissions`, { permissionKeys });
+  },
+
+  setUserRoles(companyId: string, payload: { userId: string; roleNames: string[] }): Promise<void> {
+    const { userId, roleNames } = payload;
+    return http.put(`${base(companyId)}/${userId}/roles`, { roleNames });
+  },
+};

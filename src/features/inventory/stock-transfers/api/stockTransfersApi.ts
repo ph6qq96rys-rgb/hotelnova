@@ -4,14 +4,35 @@ import type {
   StockTransferDetailDto,
   StockTransferStatus,
   UpdateStockTransferRequest,
-  CreateStockTransferRequestDto,
+  CreateStockTransferRequest,
 } from "../types";
+export type ItemLookupDto = {
+  id: string;
+  code?: string | null;
+  name?: string | null;
+  label?: string | null;
+  defaultUomId?: string | null;
+};
 
+export type UomLookupDto = {
+  id: string;
+  code?: string | null;
+  name?: string | null;
+};
 export const stockTransfersApi = {
+  listItems: (companyId: string) =>
+    http
+      .get<ItemLookupDto[]>(`/companies/${companyId}/inventory/items`) // <-- change if needed
+      .then((r) => r.data ?? []),
+
+  listUoms: (companyId: string) =>
+    http
+      .get<UomLookupDto[]>(`/companies/${companyId}/inventory/uoms`) // <-- change if needed
+      .then((r) => r.data ?? []),
   list: (companyId: string, status?: StockTransferStatus | null) =>
     http
       .get<StockTransferListDto[]>(`/companies/${companyId}/stock-transfers`, {
-        params: { status: status ?? undefined }, // ✅ don't repeat companyId
+        params: { status: status ?? undefined }, 
       })
       .then((r) => r.data),
 
@@ -20,7 +41,7 @@ export const stockTransfersApi = {
       .get<StockTransferDetailDto>(`/companies/${companyId}/stock-transfers/${id}`)
       .then((r) => r.data),
 
-  create: (companyId: string, body: CreateStockTransferRequestDto) =>
+  create: (companyId: string, body: CreateStockTransferRequest) =>
     http
       .post<string>(`/companies/${companyId}/stock-transfers`, body)
       .then((r) => r.data),

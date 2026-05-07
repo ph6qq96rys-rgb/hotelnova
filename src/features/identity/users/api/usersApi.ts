@@ -4,15 +4,11 @@ import type {
   PagedResult,
   UpdateUserDto,
   UserDto,
-  UserFilter
+  UserFilter,
 } from "../types";
-import { Dot } from "lucide-react";
 
-const base = import.meta.env.VITE_API_BASE_URL ?? "";
-
-
-/** Build query string from filter */
-function qs(filter: UserFilter) {
+/** Build query string from filter (excluding companyId since it's in the path) */
+function qs(filter: Omit<UserFilter, "companyId">) {
   const p = new URLSearchParams();
 
   if (filter.q) p.set("q", filter.q);
@@ -20,78 +16,62 @@ function qs(filter: UserFilter) {
   if (filter.pageSize) p.set("pageSize", String(filter.pageSize));
   if (filter.role) p.set("role", filter.role);
   if (filter.isActive !== undefined) p.set("isActive", String(filter.isActive));
-  if (filter.companyId) p.set("companyId", filter.companyId);
   if (filter.branchId) p.set("branchId", filter.branchId);
   if (filter.storeId) p.set("storeId", filter.storeId);
 
   const s = p.toString();
   return s ? `?${s}` : "";
-  
 }
+
+const base = (companyId: string) => `/companies/${companyId}/identity/users`;
 
 export const usersApi = {
   /** List users with filters */
-  list: (filter: UserFilter) =>
-    http<PagedResult<UserDto>>(
-      `${base}/api/identity/users/users${qs(filter)}`,{
-        method:"get",
-        data:Dot
-      }
-    ),
+  list: (companyId: string, filter: Omit<UserFilter, "companyId">) =>
+    http<PagedResult<UserDto>>(`${base(companyId)}${qs(filter)}`, {
+      method: "GET",
+    }),
 
   /** Get single user */
-  get: (id: string) =>
-    http<UserDto>(
-      `${base}/api/identity/users/${id}`
-    ),
+  get: (companyId: string, id: string) =>
+    http<UserDto>(`${base(companyId)}/${id}`, { method: "GET" }),
 
   /** Create user */
-  create: (dto: CreateUserDto) =>
-    http<UserDto>(
-      `${base}/api/identity/users`,
-      {
-        method: "POST",
-        data: dto,
-      }
-    ),
+  create: (companyId: string, dto: CreateUserDto) =>
+    http<UserDto>(`${base(companyId)}`, {
+      method: "POST",
+      data: dto,
+    }),
 
   /** Update user */
-  update: (id: string, dto: UpdateUserDto) =>
-    http<UserDto>(
-      `${base}/api/identity/users/${id}`,
-      {
-        method: "PUT",
-        data:dto,
-      }
-    ),
+  update: (companyId: string, id: string, dto: UpdateUserDto) =>
+    http<UserDto>(`${base(companyId)}/${id}`, {
+      method: "PUT",
+      data: dto,
+    }),
 
   /** Activate / Deactivate user */
-  setActive: (id: string, isActive: boolean) =>
-    http<void>(
-      `${base}/api/identity/users/${id}/active`,
-      {
-        method: "PUT",
-        data:isActive,
-      }
-    ),
+  setActive: (companyId: string, id: string, isActive: boolean) =>
+    http<void>(`${base(companyId)}/${id}/active`, {
+      method: "PUT",
+      data: { isActive }, // safer than sending raw boolean
+    }),
 
   /** Reset user password */
-  resetPassword: (id: string, newPassword: string) =>
-    http<void>(
-      `${base}/api/identity/users/${id}/password`,
-      {
-        method: "PUT",
-        data:{newPassword},
-      }
-    ),
-    async addToBranch(companyId: string, branchId: string, userId: string) {
-    return http.post(
-      `/companies/${companyId}/branches/${branchId}/users`,
-      { userId }
-    );
-  },
+  resetPassword: (companyId: string, id: string, newPassword: string) =>
+    http<void>(`${base(companyId)}/${id}/password`, {
+      method: "PUT",
+      data: { newPassword },
+    }),
 
-  async listBranchUsers(companyId: string, branchId: string) {
-    return http.get(`/companies/${companyId}/branches/${branchId}/users`);
-  },
+  addToBranch: (companyId: string, branchId: string, userId: string) =>
+    http<void>(`/companies/${companyId}/branches/${branchId}/users`, {
+      method: "POST",
+      data: { userId },
+    }),
+
+  listBranchUsers: (companyId: string, branchId: string) =>
+    http<UserDto[]>(`/companies/${companyId}/branches/${branchId}/users`, {
+      method: "GET",
+    }),
 };

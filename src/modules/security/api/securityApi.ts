@@ -1,4 +1,4 @@
-// src/modules/security/api/securityApi.ts
+import { http } from "../../../api/http";
 export type RoleDto = {
   id: string;
   name: string;
@@ -19,69 +19,113 @@ export type RoleDetailDto = {
   users: UserLiteDto[];
 };
 
-// ⬇️ Replace with your existing fetch/axios wrapper if you have one.
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    credentials: "include", // if you use cookies; remove if JWT-only
-    ...init
-  });
+export type PermissionCatalogItem = {
+  key: string;
+  group: string;
+  description: string;
+};
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+/** Use this shape if your backend returns a structured error body. */
+type ApiErrorBody =
+  | { message?: string; error?: string; errors?: Record<string, string[]> }
+  | unknown;
+
+export class ApiError extends Error {
+  status: number;
+  body: ApiErrorBody;
+
+  constructor(message: string, status: number, body: ApiErrorBody) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
   }
-
-  // NoContent
-  if (res.status === 204) return undefined as unknown as T;
-
-  return (await res.json()) as T;
 }
+
+function buildQuery(params: Record<string, string | number | boolean | undefined | null>) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
+
+
+const base = (companyId: string) => `/companies/${companyId}/security`;
 
 export const securityApi = {
   // Roles
-  listRoles: () => request<RoleDto[]>("/api/security/roles"), // GET :contentReference[oaicite:1]{index=1}
-  getRole: (roleId: string) =>
-    request<RoleDetailDto>(`/api/security/roles/${roleId}`), // GET :contentReference[oaicite:2]{index=2}
+  listRoles: (companyId: string, signal?: AbortSignal) =>
+    http.get<RoleDto[]>(
+      `${base(companyId)}/roles`,
+      { signal }
+    ),
 
-  createRole: (payload: { name: string; description?: string | null }) =>
-    request<string>("/api/security/roles", {
+  getRole: (companyId: string, roleId: string, signal?: AbortSignal) =>
+    http.get<RoleDetailDto>(`${base(companyId)}/roles/${roleId}`, { signal }),
+
+  createRole: (
+    companyId: string,
+    payload: { name: string; description?: string | null },
+    signal?: AbortSignal  
+  ) =>
+    http.post<string>(`${base(companyId)}/roles`, {
       method: "POST",
-      body: JSON.stringify(payload)
-    }), // POST :contentReference[oaicite:3]{index=3}
+      body: JSON.stringify({ ...payload, companyId }),
+      signal,
+    }),
 
-  updateRole: (roleId: string, payload: { name: string; description?: string | null }) =>
-    request<void>(`/api/security/roles/${roleId}`, {
+  updateRole: (
+    companyId: string,
+    roleId: string,
+    payload: { name: string; description?: string | null },
+    signal?: AbortSignal
+  ) =>
+    http.put<void>(`${base(companyId)}/roles/${encodeURIComponent(roleId)}`, {
       method: "PUT",
-      body: JSON.stringify(payload)
-    }), // PUT :contentReference[oaicite:4]{index=4}
+      body: JSON.stringify({ ...payload, companyId }),
+      signal,
+    }),
 
-  deleteRole: (roleId: string) =>
-    request<void>(`/api/security/roles/${roleId}`, { method: "DELETE" }), // DELETE :contentReference[oaicite:5]{index=5}
+  deleteRole: (companyId: string, roleId: string, signal?: AbortSignal) =>
+    http.delete<void>(
+      `${base(companyId)}/roles/${encodeURIComponent(roleId)}${buildQuery({ companyId })}`,
+      { signal }
+    ),
 
   // Permissions catalog
-  listPermissions: () => request<Array<{ key: string; group: string; description: string }>>(
-    "/api/security/permissions"
-  ), // GET :contentReference[oaicite:6]{index=6}
+  listPermissions: (companyId: string, signal?: AbortSignal) =>
+    http.get<PermissionCatalogItem[]>(`${base(companyId)}/permissions`, { signal }),
 
   // Role permissions assignment
-  setRolePermissions: (roleId: string, permissionKeys: string[]) =>
-    request<void>(`/api/security/roles/${roleId}/permissions`, {
+  setRolePermissions: (companyId: string, roleId: string, permissionKeys: string[], signal?: AbortSignal) =>
+    http.put<void>(`${base(companyId)}/roles/${encodeURIComponent(roleId)}/permissions`, {
       method: "PUT",
-      body: JSON.stringify({ permissionKeys })
-    }), // PUT :contentReference[oaicite:7]{index=7}
+      body: JSON.stringify({ permissionKeys }),
+      signal,
+    }),
 
   // Users search
-  searchUsers: (q: string) =>
-    request<UserLiteDto[]>(`/api/security/users/search?q=${encodeURIComponent(q)}`), // GET :contentReference[oaicite:8]{index=8}
+  searchUsers: (companyId: string, q: string, signal?: AbortSignal) =>
+    http.get<UserLiteDto[]>(
+      `${base(companyId)}/users/search${buildQuery({ q })}`,
+      { signal }
+    ),
 
-  // Role membership (existing behavior)
-  addUserToRole: (roleId: string, userId: string) =>
-    request<void>(`/api/security/roles/${roleId}/users`, {
+  // Role membership
+  addUserToRole: (companyId: string, roleId: string, userId: string, signal?: AbortSignal) =>
+    http.post<void>(`${base(companyId)}/roles/${encodeURIComponent(roleId)}/users`, {
       method: "POST",
-      body: JSON.stringify({ userId })
-    }), // POST :contentReference[oaicite:9]{index=9}
+      body: JSON.stringify({ userId }),
+      signal,
+    }),
 
-  removeUserFromRole: (roleId: string, userId: string) =>
-    request<void>(`/api/security/roles/${roleId}/users/${userId}`, { method: "DELETE" }) // DELETE :contentReference[oaicite:10]{index=10}
+  removeUserFromRole: (companyId: string, roleId: string, userId: string, signal?: AbortSignal) =>
+    http.delete<void>(
+      `${base(companyId)}/roles/${encodeURIComponent(roleId)}/users/${encodeURIComponent(userId)}`,
+      { signal }
+    ),
 };

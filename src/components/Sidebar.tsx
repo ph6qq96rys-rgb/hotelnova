@@ -1,7 +1,8 @@
 ﻿import { useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import type { ReactNode } from "react";
-import { appRoutes } from "../routes/routeDefConfig";
+
+import { useAppRoutes } from "../routes/routeDefConfig";
 import type { AppRoute } from "../routes/routeConfig";
 import { useAuth } from "../auth/AuthProvider";
 import { useAppScope } from "../app/useAppScope";
@@ -50,11 +51,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const { hasPermission, isAuthenticated } = useAuth();
   const { companyId, branchId } = useAppScope();
 
+  // ✅ routes are computed during render (safe), not at module import time
+  const appRoutes = useAppRoutes();
+
   const groups = useMemo(() => {
     if (!isAuthenticated) return [];
 
     const rows: NavRow[] = appRoutes
-      .filter(isNavRoute) // ✅ now r.path/r.label are string
+      .filter(isNavRoute)
       .filter((r) => canSee(r.permissions, hasPermission, companyId, branchId))
       .map((r) => {
         const section = r.section ?? "General";
@@ -65,7 +69,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           section,
           path,
           label: r.label,
-          icon: r.icon
+          icon: r.icon,
         };
       });
 
@@ -85,7 +89,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
     }
 
     return Array.from(map.entries()).map(([section, items]) => ({ section, items }));
-  }, [isAuthenticated, hasPermission, companyId, branchId]);
+  }, [appRoutes, isAuthenticated, hasPermission, companyId, branchId]);
 
   return (
     <>

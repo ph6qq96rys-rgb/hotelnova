@@ -126,6 +126,8 @@ export type StockLocation = {
 
 export type Store = {
   id: string;
+  companyId:string;
+  branchId:string;
   name: string;
   storeType: string;
   defaultIssueStockLocationId?: string | null;
@@ -146,11 +148,7 @@ export type CreateStoreRequest = {
   locationType?: number; 
 };
 
-export type CreateStockLocationRequest = {
-  name: string;
-  code?: string | null;
-  locationType?: number; 
-};
+
 export type BranchRole = "BranchAdmin" | "Staff";
 
 export type CreateBranchUserFormValue = {
@@ -162,3 +160,17 @@ export type CreateBranchUserFormValue = {
   role: BranchRole;
 };
 
+export type CreateStockLocationPayload = {
+  name: string;
+  code: string;
+  address?: string | null;
+  locationType: number;
+  isActive?: boolean | null;
+};
+
+export type CreateStockLocationResponse =
+  | { id: string }
+  | { Id: string }
+  | { locationId: string }
+  | { LocationId: string }
+  | any;

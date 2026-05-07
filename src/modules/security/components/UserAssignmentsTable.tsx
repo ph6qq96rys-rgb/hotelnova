@@ -76,8 +76,11 @@ export function UserAssignmentsTable({
               </Td>
 
               <Td>
-                <Badge variant={a.branchId ? "purple" : "blue"}>
+                <Badge variant={a.branchId ? "default" : "destructive"}>
                   {a.branchName ?? "Company"}
+                </Badge>
+                <Badge variant="secondary" className="ml-2">
+                  {a.branchId ? "Branch" : "Company"}
                 </Badge>
               </Td>
 

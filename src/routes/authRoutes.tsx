@@ -2,6 +2,7 @@ import LoginPage from "../pages/LoginPage";
 import RegisterPage from "../pages/RegisterPage";
 import ForgotPasswordPage from "../pages/ForgotPasswordPage";
 import ResetPasswordPage from "../pages/ResetPasswordPage";
+import RolesPermissionsPage from "../features/security/pages/RolesPermissionsPage";
 
 import type { RouteObject } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -27,19 +28,19 @@ export const authRoutes: AppRoute[] = [
         path: "/login",
         element: <LoginPage />,
         label: "Login",
-        nav: false,
+        nav: true,
     },
     {
         path: "/register",
         element: <RegisterPage />,
         label: "Register",
-        nav: false,
+        nav: true,
     },
     {
         path: "/forgot-password",
         element: <ForgotPasswordPage />,
         label: "Forgot Password",
-        nav: false,
+        nav: true,
     },
     {
         path: "/reset-password",
@@ -47,4 +48,10 @@ export const authRoutes: AppRoute[] = [
         label: "Reset Password",
         nav: false,
     },
+    {
+        path: "/roles-permission",
+        element: <RolesPermissionsPage />,
+        label: "Roles & Permissions",
+        nav: true,
+    }
 ];

@@ -1,4 +1,5 @@
 import { useAuth } from "../auth/AuthProvider";
+import "../styles/Topbar.css";
 
 type Props = {
   onOpenSidebar: () => void;
@@ -6,41 +7,67 @@ type Props = {
   subtitle?: string;
 };
 
+function Icon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg
+      className="hna-ico"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      {children}
+    </svg>
+  );
+}
+
 function BellIcon() {
   return (
-    <svg className="hna-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <Icon>
       <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
+    </Icon>
   );
 }
 
 function MenuIcon() {
   return (
-    <svg className="hna-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <Icon>
       <path d="M3 12h18" />
       <path d="M3 6h18" />
       <path d="M3 18h18" />
-    </svg>
+    </Icon>
   );
 }
 
 function SearchIcon() {
   return (
-    <svg className="hna-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <Icon>
       <circle cx="11" cy="11" r="8" />
       <path d="M21 21l-4.3-4.3" />
-    </svg>
+    </Icon>
   );
 }
 
-export default function Topbar({ onOpenSidebar, title = "Dashboard", subtitle = "Overview & quick actions" }: Props) {
+export default function Topbar({
+  onOpenSidebar,
+  title = "Dashboard",
+  subtitle = "Overview & quick actions",
+}: Props) {
   const { user, logout } = useAuth();
+
+  const displayName = user?.fullName || user?.email || "Admin";
+  const email = user?.email || "";
 
   return (
     <header className="hna-topbar">
       <div className="hna-top-left">
-        <button className="hna-btn ghost hna-mobile-btn" onClick={onOpenSidebar} aria-label="Open menu">
+        <button
+          type="button"
+          className="hna-btn ghost hna-mobile-btn"
+          onClick={onOpenSidebar}
+          aria-label="Open menu"
+        >
           <MenuIcon />
         </button>
 
@@ -56,24 +83,22 @@ export default function Topbar({ onOpenSidebar, title = "Dashboard", subtitle = 
       </div>
 
       <div className="hna-actions">
-        <button className="hna-btn" title="Notifications" aria-label="Notifications">
+        <button type="button" className="hna-btn" title="Notifications">
           <BellIcon />
         </button>
 
         <div className="hna-pill">
           <div className="hna-avatar" />
-          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1, maxWidth: 160 }}>
-            <strong style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {user?.fullName ?? user?.email ?? "Admin"}
 
-            </strong>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,.65)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {user?.email ?? ""}
-            </span>
+          <div className="hna-user-meta">
+            <strong>{displayName}</strong>
+            <span>{email}</span>
           </div>
         </div>
 
-        <button className="hna-btn" onClick={logout}>Logout</button>
+        <button type="button" className="hna-btn" onClick={logout}>
+          Logout
+        </button>
       </div>
     </header>
   );

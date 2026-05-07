@@ -1,17 +1,18 @@
 ﻿import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { stockTransfersApi } from "../api/stockTransfersApi";
-import  { type StockTransferDetailDto, StockTransferStatus } from "../types";
+import  { STOCK_TRANSFER_STATUS, type StockTransferDetailDto, type StockTransferStatus } from "../types";
 import { DocHeader, StatusPill, KpiRow, Kpi, Card, InfoGrid, Info } from "../../../../shared/ui/DocUI";
 import { useAppScope } from "../../../../app/useAppScope";
 
 const statusTone: Record<StockTransferStatus, string> = {
-  [StockTransferStatus.Draft]: "bg-slate-100 text-slate-700",
-  [StockTransferStatus.Submitted]: "bg-amber-100 text-amber-800",
-  [StockTransferStatus.Approved]: "bg-blue-100 text-blue-800",
-  [StockTransferStatus.Rejected]: "bg-rose-100 text-rose-800",
-  [StockTransferStatus.Posted]: "bg-emerald-100 text-emerald-800",
-  [StockTransferStatus.Reversed]: "bg-purple-100 text-purple-800",
+  [STOCK_TRANSFER_STATUS.Draft]: "bg-slate-100 text-slate-700",
+  [STOCK_TRANSFER_STATUS.Submitted]: "bg-amber-100 text-amber-800",
+  [STOCK_TRANSFER_STATUS.Approved]: "bg-blue-100 text-blue-800",
+  [STOCK_TRANSFER_STATUS.Rejected]: "bg-rose-100 text-rose-800",
+  [STOCK_TRANSFER_STATUS.Posted]: "bg-emerald-100 text-emerald-800",
+  [STOCK_TRANSFER_STATUS.Reversed]: "bg-purple-100 text-purple-800",
+  [STOCK_TRANSFER_STATUS.Cancelled]: "bg-gray-100 text-gray-800",
 };
 export default function StockTransferDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -40,9 +41,9 @@ const {companyId}=useAppScope();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const canSubmit = data?.status === StockTransferStatus.Draft;
-  const canApproveReject = data?.status === StockTransferStatus.Submitted;
-  const canPost = data?.status === StockTransferStatus.Approved;
+  const canSubmit = data?.status === STOCK_TRANSFER_STATUS.Draft;
+  const canApproveReject = data?.status === STOCK_TRANSFER_STATUS.Submitted;
+  const canPost = data?.status === STOCK_TRANSFER_STATUS.Approved;
 
   const act = async (name: string, fn: () => Promise<any>) => {
     if (!id) return;
@@ -70,7 +71,7 @@ const {companyId}=useAppScope();
         title={
           <div className="flex items-center gap-2">
             <span>Stock Transfer {data?.transferNumber ?? ""}</span>
-            {data?.status && <StatusPill text={StockTransferStatus[data.status]} tone={statusTone[data.status]} />}
+            {data?.status && <StatusPill text={STOCK_TRANSFER_STATUS[data.status]} tone={statusTone[data.status]} />}
           </div>
         }
         subtitle="HQ → Branch inventory distribution, controlled by approval workflow."
@@ -90,7 +91,7 @@ const {companyId}=useAppScope();
             <Kpi label="To (Branch)" value={data.toLocationName} />
           </KpiRow>
 
-          {data.status === StockTransferStatus.Rejected && data.rejectionReason && (
+          {data.status === STOCK_TRANSFER_STATUS.Rejected && data.rejectionReason && (
             <div className="card">
               <div className="p-4 bg-rose-50 text-rose-700 border border-rose-100 rounded-2xl">
                 <div className="font-semibold">Rejected</div>

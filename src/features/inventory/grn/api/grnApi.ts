@@ -36,15 +36,12 @@ export const grnApi = {
 
   // GET /companies/{companyId}/grns/drafts/{draftId}
   async getDraftById(companyId: string, draftId: string): Promise<GrnDto> {
-    const res = await http.get(`/companies/${companyId}/grns/${draftId}/drafts`);
+    const res = await http.get(`/companies/${companyId}/grns/${draftId}`);
     return unwrap<GrnDto>(res.data);
   },
 
-  // PUT /companies/{companyId}/grns/drafts/{draftId}
-  async updateDraft(companyId: string, draftId: string, body: CreateGrnDraftRequest): Promise<GrnDto> {
-    const res = await http.put(`/companies/${companyId}/grns/${draftId}/drafts`, body);
-    return unwrap<GrnDto>(res.data);
-  },
+   updateDraft: (companyId: string, draftId: string, body: CreateGrnDraftRequest) =>
+    http.put(`/companies/${companyId}/grns/drafts/${draftId}`, body).then((r) => r.data),
 
   // POST /companies/{companyId}/grns/drafts/{draftId}/post
   async postDraft(companyId: string, draftId: string): Promise<GrnDto> {
@@ -86,7 +83,7 @@ export const grnApi = {
 
   async reverseByNumber(companyId: string, grnNumber: string, body: { reason: string | null }) {
     const res = await http.post(
-      `/companies/${companyId}/grns/by-number/${encodeURIComponent(grnNumber)}/reverse`,
+      `/companies/${companyId}/grns/${encodeURIComponent(grnNumber)}/reverse`,
       body
     );
     return unwrap<GrnDto>(res.data);

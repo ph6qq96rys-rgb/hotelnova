@@ -1,508 +1,634 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-import LocationSelect from "../components/LocationSelect";
-import { SelectDropdown, type SelectOption } from "../../../../components/controls/SelectDropdown";
-
-import { stockTransfersApi } from "../api/stockTransfersApi";
-import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryItemsApi";
-import { lookupsApi } from "../../../inventoryMaster/lookups/api/lookupsApi";
-import type { UomDto, InventoryItemDto } from "../../../inventoryMaster/items/types";
 import { useAppScope } from "../../../../app/useAppScope";
 
-/** ================= Types ================= */
-type DraftLine = {
-  tempId: string;
-  inventoryItemId: string | null;
-  unitId: string | null;
-  quantity: number;
-  notes: string; // UI-only; send null when empty
+import { stockTransfersApi } from "../api/stockTransfersApi";
+import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
+import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryItemsApi";
+
+import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
+
+import {
+  cardStyle,
+  labelStyle,
+  inputStyle,
+  errorStyle,
+  tableStyle,
+  thStyle,
+  tdStyle,
+  primaryBtn,
+  secondaryBtn,
+  dangerBtn,
+  stickyBar,
+} from "../../../../shared/inventoryStyles";
+
+/** ================= Helpers ================= */
+
+type SelectOption<T extends string> = { value: T; label: string };
+
+const todayDateOnly = () => new Date().toISOString().slice(0, 10);
+
+function dateOnlyToUtcIso(dateOnly: string) {
+  const [y, m, d] = dateOnly.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toISOString();
+}
+
+const clean = (s?: string | null) => (s ?? "").trim();
+
+function getErrorMessage(e: any) {
+  return e?.response?.data?.title ?? e?.response?.data?.message ?? e?.message ?? "Request failed";
+}
+
+/** ================= Item VM (same spirit as GRN) ================= */
+
+type ItemUomVm = {
+  uomId: string;
+  uomName: string;
+  isDefault?: boolean;
 };
 
-type TouchedHeader = { from?: boolean; to?: boolean; date?: boolean };
-type FieldErrors = { from?: string; to?: string; date?: string };
+type ItemVm = {
+  id: string;
+  label: string;
+  uoms: ItemUomVm[];
+  defaultUomId: string;
+};
 
-type LineTouched = { item?: boolean; unit?: boolean; qty?: boolean };
-type LineErrors = { item?: string; unit?: string; qty?: string };
+function toItemVm(dto: InventoryItemDto): ItemVm {
+  const d: any = dto;
 
-const newTempId = () => crypto.randomUUID();
+  const id = clean(d.id);
+  const name = clean(d.name) || "Item";
+  const code = clean(d.code) || clean(d.sku) || "";
+
+  const uomsRaw: any[] =
+    Array.isArray(d.uoms) ? d.uoms : Array.isArray(d.itemUoms) ? d.itemUoms : Array.isArray(d.allowedUoms) ? d.allowedUoms : [];
+
+  const uoms: ItemUomVm[] = (uomsRaw ?? [])
+    .map((u: any) => {
+      const uomId = clean(u.uomId ?? u.id);
+      const uomName = clean(u.uomName ?? u.name ?? u.code ?? "UOM");
+      const isDefault = !!u.isDefaultIssue || !!u.isDefaultPurchase || !!u.isDefault || !!u.isBase;
+      return { uomId, uomName, isDefault };
+    })
+    .filter((x) => !!x.uomId);
+
+  const baseUomId = clean(d.baseUomId);
+  const baseUomName = clean(d.baseUomName ?? d.baseUomCode ?? d.baseUom?.name ?? d.baseUom?.code);
+
+  if (!uoms.length && baseUomId) {
+    uoms.push({ uomId: baseUomId, uomName: baseUomName || "Base UOM", isDefault: true });
+  }
+
+  const defaultUomId = uoms.find((x) => x.isDefault)?.uomId ?? baseUomId ?? (uoms[0]?.uomId ?? "");
+  const label = code ? `${code} — ${name}` : name;
+
+  return { id, label, uoms, defaultUomId };
+}
+
+/** ================= Draft Types ================= */
+
+type TransferLineDraft = {
+  inventoryItemId: string;
+  unitId: string;
+  quantity: number;
+  notes: string;
+};
+
+type TransferDraft = {
+  fromLocationId: string;
+  toLocationId: string;
+  transferDate: string; // date-only
+  reference: string;
+  lines: TransferLineDraft[];
+};
+
+type FieldErrors = {
+  fromLocationId?: string;
+  toLocationId?: string;
+  transferDate?: string;
+  lines?: string;
+  lineErrors?: Record<number, Partial<Record<keyof TransferLineDraft, string>>>;
+};
 
 export default function StockTransferCreatePage() {
   const nav = useNavigate();
+  const { companyId, branchId } = useAppScope();
 
-  // TODO: replace with AppScope/context later
-  const {companyId} =useAppScope();// localStorage.getItem("company_id") ?? "";
+  /** Form */
+  const [form, setForm] = useState<TransferDraft>({
+    fromLocationId: "",
+    toLocationId: "",
+    transferDate: todayDateOnly(),
+    reference: "",
+    lines: [],
+  });
 
-  /** ===== Header ===== */
-  const [fromLocationId, setFromLocationId] = useState("");
-  const [toLocationId, setToLocationId] = useState("");
-  const [transferDate, setTransferDate] = useState<Date>(() => new Date());
-  const [reference, setReference] = useState("");
+  const setHeader = (patch: Partial<TransferDraft>) => setForm((f) => ({ ...f, ...patch }));
+  const updateLine = (idx: number, patch: Partial<TransferLineDraft>) =>
+    setForm((f) => ({ ...f, lines: f.lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)) }));
 
-  /** ===== UI state ===== */
+  /** Warehouses / Locations (same as GRN) */
+  const [locationOptions, setLocationOptions] = useState<SelectOption<string>[]>([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+
+  const [locationLabelById, setLocationLabelById] = useState<Record<string, string>>({});
+  const fetchedLocationRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setLocationOptions([]);
+    if (!companyId || !branchId) return;
+
+    setLocationsLoading(true);
+    stockLocationsApi
+      .list(companyId, branchId)
+      .then((rows: any[]) => {
+        const opts: SelectOption<string>[] = (rows ?? []).map((x) => ({
+          value: String(x.id),
+          label: clean(x.name) || "Location",
+        }));
+        setLocationOptions(opts);
+      })
+      .catch(() => setLocationOptions([]))
+      .finally(() => setLocationsLoading(false));
+  }, [companyId, branchId]);
+
+  // cache labels
+  useEffect(() => {
+    if (!locationOptions.length) return;
+    setLocationLabelById((prev) => {
+      const next = { ...prev };
+      locationOptions.forEach((o) => (next[o.value] = o.label));
+      return next;
+    });
+  }, [locationOptions]);
+
+  // best-effort getById if location saved but not in options (optional, like GRN)
+  useEffect(() => {
+    const ids = [clean(form.fromLocationId), clean(form.toLocationId)].filter(Boolean);
+    if (!companyId || !branchId) return;
+
+    ids.forEach((id) => {
+      if (!id) return;
+      if (locationLabelById[id]) return;
+      if (fetchedLocationRef.current.has(id)) return;
+
+      const apiAny: any = stockLocationsApi as any;
+      if (typeof apiAny.getById !== "function") {
+        setLocationLabelById((prev) => ({ ...prev, [id]: "Saved location" }));
+        fetchedLocationRef.current.add(id);
+        return;
+      }
+
+      fetchedLocationRef.current.add(id);
+      (async () => {
+        try {
+          const loc = await apiAny.getById(companyId, branchId, id);
+          const name = clean(loc?.name) || "Location";
+          setLocationLabelById((prev) => ({ ...prev, [id]: name }));
+        } catch {
+          setLocationLabelById((prev) => ({ ...prev, [id]: "Saved location" }));
+        }
+      })();
+    });
+  }, [companyId, branchId, form.fromLocationId, form.toLocationId, locationLabelById]);
+
+  /** Items */
+  const [items, setItems] = useState<ItemVm[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(true);
+
+  const [itemLabelById, setItemLabelById] = useState<Record<string, string>>({});
+  const [uomLabelById, setUomLabelById] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadItems() {
+      if (!companyId) {
+        if (!alive) return;
+        setItems([]);
+        setItemsLoading(false);
+        return;
+      }
+
+      setItemsLoading(true);
+      try {
+        const res = await inventoryItemsApi.list(companyId);
+        const list: InventoryItemDto[] = Array.isArray(res) ? res : res ?? [];
+        const vms = (list ?? []).map(toItemVm);
+
+        if (!alive) return;
+        setItems(vms);
+
+        setItemLabelById((prev) => {
+          const next = { ...prev };
+          vms.forEach((it) => (next[it.id] = it.label));
+          return next;
+        });
+        setUomLabelById((prev) => {
+          const next = { ...prev };
+          vms.forEach((it) => it.uoms.forEach((u) => (next[u.uomId] = u.uomName)));
+          return next;
+        });
+      } catch {
+        if (!alive) return;
+        setItems([]);
+      } finally {
+        if (!alive) return;
+        setItemsLoading(false);
+      }
+    }
+
+    loadItems();
+    return () => {
+      alive = false;
+    };
+  }, [companyId]);
+
+  const itemById = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
+  const itemOptions = useMemo<SelectOption<string>[]>(() => items.map((it) => ({ value: it.id, label: it.label })), [items]);
+
+  /** Validation / submit */
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  /** ===== Touched ===== */
-  const [touched, setTouched] = useState<TouchedHeader>({});
-  const [touchedLines, setTouchedLines] = useState<Record<string, LineTouched>>({});
-
-  /** ===== Lookups ===== */
-  const [items, setItems] = useState<InventoryItemDto[]>([]);
-  const [units, setUnits] = useState<UomDto[]>([]);
-  const [itemsLoading, setItemsLoading] = useState(true);
-  const [unitsLoading, setUnitsLoading] = useState(true);
-
-  /** ===== Lines ===== */
-  const [lines, setLines] = useState<DraftLine[]>([]);
-
-  /**============Helper======================= */
-function unwrapList<T>(res: any): T[] {
-  const d = res?.data ?? res; // axios or raw
-
-  if (Array.isArray(d)) return d;
-
-  // common shapes
-  if (Array.isArray(d?.items)) return d.items;
-  if (Array.isArray(d?.results)) return d.results;
-  if (Array.isArray(d?.value)) return d.value; // some APIs use "value"
-
-  // fallback: nothing usable
-  return [];
-}
-
-  /** ================= Validation ================= */
-  const fieldErrors: FieldErrors = useMemo(() => {
+  const validate = (current: TransferDraft): FieldErrors => {
     const e: FieldErrors = {};
-    if (!fromLocationId) e.from = "From location is required.";
-    if (!toLocationId) e.to = "To location is required.";
-    if (fromLocationId && toLocationId && fromLocationId === toLocationId) {
-      e.to = "To location must be different from From location.";
+
+    if (!clean(current.fromLocationId)) e.fromLocationId = "From location is required.";
+    if (!clean(current.toLocationId)) e.toLocationId = "To location is required.";
+    if (clean(current.fromLocationId) && clean(current.toLocationId) && current.fromLocationId === current.toLocationId) {
+      e.toLocationId = "To location must be different from From location.";
     }
-    if (!transferDate) e.date = "Transfer date is required.";
-    return e;
-  }, [fromLocationId, toLocationId, transferDate]);
+    if (!clean(current.transferDate)) e.transferDate = "Transfer date is required.";
 
-  const validateLine = (l: DraftLine): LineErrors => {
-    const e: LineErrors = {};
-    if (!l.inventoryItemId) e.item = "Item is required.";
-    if (!l.unitId) e.unit = "Unit is required.";
-    if (!Number.isFinite(l.quantity) || l.quantity <= 0) e.qty = "Quantity must be greater than 0.";
-    return e;
-  };
+    if (!current.lines.length) e.lines = "Add at least one line.";
 
-  const hasLineErrors = useMemo(() => {
-    if (lines.length === 0) return true;
-    return lines.some((l) => {
-      const e = validateLine(l);
-      return Boolean(e.item || e.unit || e.qty);
+    const lineErrors: FieldErrors["lineErrors"] = {};
+    current.lines.forEach((l, idx) => {
+      const le: Partial<Record<keyof TransferLineDraft, string>> = {};
+      if (!clean(l.inventoryItemId)) le.inventoryItemId = "Item is required.";
+      if (!clean(l.unitId)) le.unitId = "Unit is required.";
+      if (!Number.isFinite(l.quantity) || l.quantity <= 0) le.quantity = "Qty must be > 0.";
+      if (Object.keys(le).length) lineErrors[idx] = le;
     });
-  }, [lines]);
 
-  const canCreate =
-    Boolean(companyId) &&
-    !busy &&
-    !itemsLoading &&
-    !unitsLoading &&
-    !fieldErrors.from &&
-    !fieldErrors.to &&
-    !fieldErrors.date &&
-    lines.length > 0 &&
-    !hasLineErrors;
-
-  /** ================= Load lookups ================= */
-  useEffect(() => {
-  let alive = true;
-  async function loadLookups() {
-    if (!companyId) {
-      if (!alive) return;
-      setItems([]);
-      setUnits([]);
-      setItemsLoading(false);
-      setUnitsLoading(false);
-      setSubmitError("companyId is missing (localStorage).");
-      return;
-    }
-
-    setSubmitError(null);
-    setItemsLoading(true);
-    setUnitsLoading(true);
-
-    try {
-      const [itemsRes, unitsRes] = await Promise.all([
-        inventoryItemsApi.list(companyId),
-        lookupsApi.uoms(companyId),
-      ]);
-
-      if (!alive) return;
-
-      const itemsData = unwrapList<InventoryItemDto>(itemsRes);
-      const unitsData = unwrapList<UomDto>(unitsRes);
-
-      setItems(itemsData);
-      setUnits(unitsData);
-
-      // 🔍 quick visibility while debugging
-      if (itemsData.length === 0 || unitsData.length === 0) {
-        console.log("LOOKUPS RAW:", { itemsRes, unitsRes });
-        console.log("LOOKUPS UNWRAPPED:", { itemsData, unitsData });
-      }
-    } catch (e: any) {
-      if (!alive) return;
-      setSubmitError(e?.response?.data?.title ?? e?.message ?? "Failed to load Items / Units");
-    } finally {
-      if (!alive) return;
-      setItemsLoading(false);
-      setUnitsLoading(false);
-    }
-  }
-
-  loadLookups();
-  return () => {
-    alive = false;
+    if (Object.keys(lineErrors).length) e.lineErrors = lineErrors;
+    return e;
   };
-}, [companyId]);
 
+  const hasErrors = (e: FieldErrors) =>
+    !!(e.fromLocationId || e.toLocationId || e.transferDate || e.lines || (e.lineErrors && Object.keys(e.lineErrors).length));
 
-  /** ================= Options ================= */
-  const itemOptions: SelectOption<string>[] = useMemo(
-  () => items.map((x) => ({ value: x.id, label: x.name })),
-  [items]
-);
-
-const unitOptions: SelectOption<string>[] = useMemo(
-  () => units.map((x) => ({ value: x.id, label: x.name })),
-  [units]
-);
-
-
-  /** ================= Line helpers ================= */
   const addLine = () => {
-    const id = newTempId();
-    setLines((prev) => [
-      ...prev,
-      { tempId: id, inventoryItemId: null, unitId: null, quantity: 1, notes: "" },
-    ]);
-    setTouchedLines((prev) => ({ ...prev, [id]: {} }));
-  };
-
-  const removeLine = (tempId: string) => {
-    setLines((prev) => prev.filter((x) => x.tempId !== tempId));
-    setTouchedLines((prev) => {
-      const copy = { ...prev };
-      delete copy[tempId];
-      return copy;
-    });
-  };
-
-  const updateLine = (tempId: string, patch: Partial<DraftLine>) => {
-    setLines((prev) => prev.map((l) => (l.tempId === tempId ? { ...l, ...patch } : l)));
-  };
-
-  const touchLine = (tempId: string, patch: Partial<LineTouched>) => {
-    setTouchedLines((prev) => ({
-      ...prev,
-      [tempId]: { ...(prev[tempId] ?? {}), ...patch },
+    setForm((f) => ({
+      ...f,
+      lines: [...f.lines, { inventoryItemId: "", unitId: "", quantity: 1, notes: "" }],
     }));
   };
 
-  const markAllTouched = () => {
-    setTouched({ from: true, to: true, date: true });
-    setTouchedLines((prev) => {
-      const next = { ...prev };
-      for (const l of lines) next[l.tempId] = { item: true, unit: true, qty: true };
-      return next;
-    });
-  };
+  const removeLine = (idx: number) => {
+  setForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== idx) }));
 
-  /** ================= Submit ================= */
+  setErrors((prev) => {
+    const next: FieldErrors = { ...prev };
+
+    if (next.lineErrors) {
+      const remapped: NonNullable<FieldErrors["lineErrors"]> = {};
+
+      Object.entries(next.lineErrors).forEach(([k, v]) => {
+        const i = Number(k);
+        if (!Number.isFinite(i)) return;
+
+        if (i < idx) remapped[i] = v as Partial<Record<keyof TransferLineDraft, string>>;
+        else if (i > idx) remapped[i - 1] = v as Partial<Record<keyof TransferLineDraft, string>>;
+      });
+
+      next.lineErrors = remapped;
+    }
+
+    return next;
+  });
+};
+
+
   const onCreateDraftAndContinue = async () => {
     setSubmitError(null);
-    markAllTouched();
 
-    if (!companyId) return;
-
-    if (!canCreate) {
-      if (lines.length === 0) setSubmitError("Add at least one line item.");
-      return;
-    }
+    const e = validate(form);
+    setErrors(e);
+    if (hasErrors(e) || !companyId) return;
 
     setBusy(true);
     try {
-      const body = {
+      const body: any = {
         companyId,
-        fromLocationId,
-        toLocationId,
-        requestedAtUtc: transferDate.toISOString(),
-        notes: reference.trim() ? reference.trim() : null,
-        lines: lines.map((l) => ({
-          inventoryItemId: l.inventoryItemId!,
+        fromLocationId: form.fromLocationId,
+        toLocationId: form.toLocationId,
+        requestedAtUtc: dateOnlyToUtcIso(form.transferDate),
+        notes: clean(form.reference) ? clean(form.reference) : null,
+        lines: form.lines.map((l) => ({
+          inventoryItemId: l.inventoryItemId,
           quantity: Number(l.quantity),
-          unitId: l.unitId!,
-          notes: l.notes.trim() ? l.notes.trim() : null,
+          unitId: l.unitId,
+          notes: clean(l.notes) ? clean(l.notes) : null,
         })),
       };
 
       const id = await stockTransfersApi.create(companyId, body);
       nav(`/inventory/stock-transfers/${id}/edit`);
-    } catch (e: any) {
-      const data = e?.response?.data;
-      const msg =
-        data?.title ??
-        (data?.errors
-          ? Object.entries(data.errors)
-              .map(([k, v]: any) => `${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
-              .join(" | ")
-          : null) ??
-        e?.message ??
-        "Failed to create draft";
-
-      setSubmitError(msg);
+    } catch (err: any) {
+      setSubmitError(getErrorMessage(err));
     } finally {
       setBusy(false);
     }
   };
 
-  /** ================= Render ================= */
+  /** Render guards */
+  if (!companyId) return <div style={{ padding: 16 }}>Select a company first.</div>;
+  if (!branchId) return <div style={{ padding: 16 }}>Select a branch first.</div>;
+
+  /** Saved location handling (name-first) */
+  const fromId = clean(form.fromLocationId);
+  const toId = clean(form.toLocationId);
+
+  const fromExists = fromId ? locationOptions.some((o) => o.value === fromId) : false;
+  const toExists = toId ? locationOptions.some((o) => o.value === toId) : false;
+
+  const fromLabel = locationLabelById[fromId] || (fromId ? "Saved location" : "");
+  const toLabel = locationLabelById[toId] || (toId ? "Saved location" : "");
+
   return (
-    <div style={{ padding: 16, maxWidth: 1100 }}>
-      <h2 style={{ marginBottom: 12 }}>Create Stock Transfer</h2>
-
-      {submitError && (
-        <div style={{ marginBottom: 12, color: "#b91c1c", fontSize: 13 }}>{submitError}</div>
-      )}
-
-      {/* ---------- Header ---------- */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
         <div>
-          <LocationSelect
-            label="From Location (Branch)"
-            value={fromLocationId}
-            onChange={(v: string | null) => {
-              if (!v) return;
-              setFromLocationId(v);
-              setTouched((t) => ({ ...t, from: true }));
-            }}
-            placeholder="Select branch…"
-            excludeId={toLocationId}
-          />
-          {touched.from && fieldErrors.from && (
-            <div className="mt-1 text-xs text-rose-600">{fieldErrors.from}</div>
-          )}
-        </div>
-
-        <div>
-          <LocationSelect
-            label="To Location (Branch)"
-            value={toLocationId}
-            onChange={(v: string | null) => {
-              if (!v) return;
-              setToLocationId(v);
-              setTouched((t) => ({ ...t, to: true }));
-            }}
-            placeholder="Select branch…"
-            excludeId={fromLocationId}
-          />
-          {touched.to && fieldErrors.to && (
-            <div className="mt-1 text-xs text-rose-600">{fieldErrors.to}</div>
-          )}
-        </div>
-
-        <div>
-          <label style={labelStyle}>Transfer Date</label>
-          <input
-            type="date"
-            value={transferDate.toISOString().slice(0, 10)}
-            onChange={(e) => {
-              const [y, m, d] = e.target.value.split("-").map(Number);
-              setTransferDate(new Date(Date.UTC(y, m - 1, d)));
-              setTouched((t) => ({ ...t, date: true }));
-            }}
-            style={inputStyle}
-          />
-          {touched.date && fieldErrors.date && (
-            <div className="mt-1 text-xs text-rose-600">{fieldErrors.date}</div>
-          )}
-        </div>
-
-        <div>
-          <label style={labelStyle}>Notes (optional)</label>
-          <input
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
-            placeholder="Optional…"
-            style={inputStyle}
-          />
-        </div>
-      </div>
-
-      <hr style={{ margin: "18px 0" }} />
-
-      {/* ---------- Lines ---------- */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0 }}>Line Items</h3>
-        <button type="button" onClick={addLine} disabled={busy} style={btnStyle}>
-          + Add Line
-        </button>
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        {lines.length === 0 ? (
-          <div style={{ opacity: 0.7, fontSize: 13 }}>
-            No line items. Add at least one item to create the draft.
+          <div style={{ fontSize: 22, fontWeight: 800 }}>Create Stock Transfer</div>
+          <div style={{ opacity: 0.75, marginTop: 6 }}>
+            Choose From/To locations, add line items, then continue to the editor.
           </div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {lines.map((l, idx) => {
-              const t = touchedLines[l.tempId] ?? {};
-              const e = validateLine(l);
 
-              return (
-                <div key={l.tempId} style={lineCard}>
-                  {/* Item */}
-                  <div>
-                    <SelectDropdown<string>
-                      label={`Item ${idx + 1}`}
-                      value={l.inventoryItemId}
-                      options={itemOptions}
-                      placeholder="Select item…"
-                      loading={itemsLoading}
-                      onChange={(inventoryItemId) => {
-                        updateLine(l.tempId, { inventoryItemId });
-                        touchLine(l.tempId, { item: true });
-                      }}
-                    />
-                    {t.item && e.item && <div className="mt-1 text-xs text-rose-600">{e.item}</div>}
-                  </div>
-
-                  {/* Unit */}
-                  <div>
-                    <SelectDropdown<string>
-                      label="Unit (UOM)"
-                      value={l.unitId}
-                      options={unitOptions}
-                      placeholder="Select unit…"
-                      loading={unitsLoading}
-                      onChange={(unitId) => {
-                        updateLine(l.tempId, { unitId });
-                        touchLine(l.tempId, { unit: true });
-                      }}
-                    />
-                    {t.unit && e.unit && <div className="mt-1 text-xs text-rose-600">{e.unit}</div>}
-                  </div>
-
-                  {/* Quantity */}
-                  <div>
-                    <label style={labelStyle}>Quantity</label>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      step="0.01"
-                      min={0}
-                      value={Number.isFinite(l.quantity) ? l.quantity : 0}
-                      onChange={(ev) => {
-                        updateLine(l.tempId, { quantity: Number(ev.target.value) });
-                        touchLine(l.tempId, { qty: true });
-                      }}
-                      style={inputStyle}
-                    />
-                    {t.qty && e.qty && <div className="mt-1 text-xs text-rose-600">{e.qty}</div>}
-                  </div>
-
-                  {/* Notes */}
-                  <div>
-                    <label style={labelStyle}>Notes (optional)</label>
-                    <input
-                      value={l.notes}
-                      onChange={(ev) => updateLine(l.tempId, { notes: ev.target.value })}
-                      placeholder="Optional…"
-                      style={inputStyle}
-                    />
-                  </div>
-
-                  {/* Remove */}
-                  <button
-                    type="button"
-                    onClick={() => removeLine(l.tempId)}
-                    style={{ ...btnStyle, height: 42 }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+          {submitError && <div style={{ marginTop: 10, ...errorStyle }}>{submitError}</div>}
+        </div>
       </div>
 
-      <hr style={{ margin: "18px 0" }} />
+      {/* Header Card */}
+      <div style={cardStyle}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
+          <div style={{ gridColumn: "span 4" }}>
+            <label style={labelStyle}>From Location *</label>
+            <select
+              style={inputStyle(!!errors.fromLocationId)}
+              value={fromId || ""}
+              disabled={locationsLoading || busy}
+              onChange={(e) => {
+                const v = e.target.value || "";
+                setHeader({ fromLocationId: v });
 
-      {/* ---------- Actions ---------- */}
-      <button
-        type="button"
-        onClick={onCreateDraftAndContinue}
-        disabled={!canCreate}
-        style={primaryBtn(canCreate)}
-      >
-        {busy ? "Creating…" : "Create Draft & Continue"}
-      </button>
+                // if selecting same as "to", clear to
+                if (v && v === clean(form.toLocationId)) setHeader({ toLocationId: "" });
+              }}
+            >
+              {!fromExists && fromId && <option value={fromId}>{fromLabel}</option>}
 
-      {!canCreate && (
-        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
-          {fieldErrors.from ||
-            fieldErrors.to ||
-            fieldErrors.date ||
-            (lines.length === 0
-              ? "Add at least one line item."
-              : hasLineErrors
-              ? "Fix line item errors."
-              : "")}
+              {!fromId && (
+                <option value="" disabled>
+                  {locationsLoading ? "Loading locations..." : "Select from location…"}
+                </option>
+              )}
+
+              {locationOptions
+                .filter((o) => o.value !== toId) // exclude currently selected "to"
+                .map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+            </select>
+            {errors.fromLocationId && <div style={errorStyle}>{errors.fromLocationId}</div>}
+          </div>
+
+          <div style={{ gridColumn: "span 4" }}>
+            <label style={labelStyle}>To Location *</label>
+            <select
+              style={inputStyle(!!errors.toLocationId)}
+              value={toId || ""}
+              disabled={locationsLoading || busy}
+              onChange={(e) => {
+                const v = e.target.value || "";
+                setHeader({ toLocationId: v });
+
+                // if selecting same as "from", clear from
+                if (v && v === clean(form.fromLocationId)) setHeader({ fromLocationId: "" });
+              }}
+            >
+              {!toExists && toId && <option value={toId}>{toLabel}</option>}
+
+              {!toId && (
+                <option value="" disabled>
+                  {locationsLoading ? "Loading locations..." : "Select to location…"}
+                </option>
+              )}
+
+              {locationOptions
+                .filter((o) => o.value !== fromId) // exclude currently selected "from"
+                .map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+            </select>
+            {errors.toLocationId && <div style={errorStyle}>{errors.toLocationId}</div>}
+          </div>
+
+          <div style={{ gridColumn: "span 4" }}>
+            <label style={labelStyle}>Transfer Date *</label>
+            <input
+              style={inputStyle(!!errors.transferDate)}
+              type="date"
+              value={form.transferDate}
+              onChange={(e) => setHeader({ transferDate: e.target.value })}
+            />
+            {errors.transferDate && <div style={errorStyle}>{errors.transferDate}</div>}
+          </div>
+
+          <div style={{ gridColumn: "span 12" }}>
+            <label style={labelStyle}>Notes</label>
+            <input
+              style={inputStyle(false)}
+              value={form.reference}
+              onChange={(e) => setHeader({ reference: e.target.value })}
+              placeholder="Optional…"
+            />
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Lines */}
+      <div style={cardStyle}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>Line Items</div>
+            <div style={{ opacity: 0.75, marginTop: 4 }}>Units are filtered by each item’s allowed UOM list.</div>
+          </div>
+
+          <button style={primaryBtn} onClick={addLine} disabled={busy}>
+            + Add Line
+          </button>
+        </div>
+
+        {errors.lines && <div style={{ ...errorStyle, marginTop: 10 }}>{errors.lines}</div>}
+
+        <div style={{ marginTop: 14, overflowX: "auto" }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Item *</th>
+                <th style={thStyle}>Qty *</th>
+                <th style={thStyle}>Unit (UOM) *</th>
+                <th style={thStyle}>Notes</th>
+                <th style={{ ...thStyle, textAlign: "right" }}></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {form.lines.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: 18, opacity: 0.75 }}>
+                    No lines yet. Click <b>Add Line</b>.
+                  </td>
+                </tr>
+              ) : (
+                form.lines.map((l, idx) => {
+                  const le = errors.lineErrors?.[idx] ?? {};
+
+                  const savedItemId = clean(l.inventoryItemId);
+                  const savedUomId = clean(l.unitId);
+
+                  const item = savedItemId ? itemById.get(savedItemId) : undefined;
+                  const uomOptions: SelectOption<string>[] =
+                    item?.uoms.map((u) => ({ value: u.uomId, label: u.uomName })) ?? [];
+
+                  const itemExists = savedItemId ? itemById.has(savedItemId) : false;
+                  const uomExists = savedUomId ? uomOptions.some((o) => o.value === savedUomId) : false;
+
+                  const savedItemLabel = itemLabelById[savedItemId] || (savedItemId ? "Saved item" : "");
+                  const savedUomLabel = uomLabelById[savedUomId] || (savedUomId ? "Saved unit" : "");
+
+                  return (
+                    <tr key={idx}>
+                      <td style={tdStyle}>
+                        <select
+                          style={inputStyle(!!le.inventoryItemId)}
+                          value={savedItemId || ""}
+                          disabled={itemsLoading || busy}
+                          onChange={(e) => {
+                            const id = e.target.value || "";
+                            const it = id ? itemById.get(id) : undefined;
+
+                            updateLine(idx, {
+                              inventoryItemId: id,
+                              unitId: it?.defaultUomId ?? "",
+                            });
+                          }}
+                        >
+                          {!itemExists && savedItemId && <option value={savedItemId}>{savedItemLabel}</option>}
+
+                          {!savedItemId && (
+                            <option value="" disabled>
+                              {itemsLoading ? "Loading items..." : "Select item…"}
+                            </option>
+                          )}
+
+                          {itemOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        {le.inventoryItemId && <div style={errorStyle}>{le.inventoryItemId}</div>}
+                      </td>
+
+                      <td style={tdStyle}>
+                        <input
+                          style={inputStyle(!!le.quantity)}
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={Number.isFinite(l.quantity) ? l.quantity : 0}
+                          onChange={(e) => updateLine(idx, { quantity: Number(e.target.value) })}
+                        />
+                        {le.quantity && <div style={errorStyle}>{le.quantity}</div>}
+                      </td>
+
+                      <td style={tdStyle}>
+                        <select
+                          style={inputStyle(!!le.unitId)}
+                          value={savedUomId || ""}
+                          disabled={!savedItemId || busy}
+                          onChange={(e) => updateLine(idx, { unitId: e.target.value || "" })}
+                        >
+                          {!uomExists && savedUomId && <option value={savedUomId}>{savedUomLabel}</option>}
+
+                          {!savedUomId && (
+                            <option value="" disabled>
+                              {!savedItemId
+                                ? "Select item first…"
+                                : uomOptions.length === 0
+                                ? "Loading units..."
+                                : "Select unit…"}
+                            </option>
+                          )}
+
+                          {uomOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        {le.unitId && <div style={errorStyle}>{le.unitId}</div>}
+                      </td>
+
+                      <td style={tdStyle}>
+                        <input
+                          style={inputStyle(false)}
+                          value={l.notes}
+                          onChange={(e) => updateLine(idx, { notes: e.target.value })}
+                          placeholder="Optional"
+                        />
+                      </td>
+
+                      <td style={{ ...tdStyle, textAlign: "right" }}>
+                        <button style={dangerBtn} onClick={() => removeLine(idx)} disabled={busy}>
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Sticky Action Bar */}
+      <div style={stickyBar}>
+        <div style={{ opacity: 0.85 }}>
+          <b>Tip:</b> Create draft and continue to edit/submit.
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button style={secondaryBtn} onClick={() => nav(`/inventory/stock-transfers`)} disabled={busy}>
+            Transfers
+          </button>
+
+          <button style={primaryBtn} onClick={onCreateDraftAndContinue} disabled={busy || !companyId}>
+            {busy ? "Creating..." : "Create Draft & Continue"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
-
-/** ===== Small inline styles (keeps your GRN-like look) ===== */
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 700,
-  opacity: 0.75,
-  marginBottom: 6,
-  display: "block",
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid rgba(0,0,0,0.15)",
-  width: "100%",
-  background: "white",
-};
-
-const btnStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid rgba(0,0,0,0.15)",
-  background: "white",
-  cursor: "pointer",
-};
-
-const lineCard: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.12)",
-  borderRadius: 12,
-  padding: 12,
-  display: "grid",
-  gridTemplateColumns: "2fr 1.5fr 1fr 2fr auto",
-  gap: 10,
-  alignItems: "end",
-};
-
-const primaryBtn = (enabled: boolean): React.CSSProperties => ({
-  padding: "12px 14px",
-  borderRadius: 12,
-  border: "1px solid rgba(0,0,0,0.15)",
-  background: enabled ? "white" : "rgba(0,0,0,0.05)",
-  cursor: enabled ? "pointer" : "not-allowed",
-  fontWeight: 700,
-});

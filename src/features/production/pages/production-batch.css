@@ -1,0 +1,174 @@
+/* production-batch.css
+   Page-specific styles for ProductionBatchPage.
+   Depends on erp-tokens.css being imported first.
+   ─────────────────────────────────────────────── */
+
+/* ── Page header ──────────────────────────────────────────────────────────── */
+
+.pb-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.pb-kicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+  margin: 0 0 6px;
+}
+
+.pb-title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0 0 5px;
+  line-height: 1.1;
+  color: var(--erp-text);
+}
+
+.pb-subtitle {
+  font-size: 13px;
+  color: var(--erp-text-muted);
+  margin: 0;
+  line-height: 1.5;
+  max-width: 520px;
+}
+
+/* ── Batch header card ────────────────────────────────────────────────────── */
+
+.pb-doc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--erp-border-soft);
+}
+
+.pb-batch-no {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+  color: var(--erp-text);
+}
+
+.pb-batch-no--new {
+  color: var(--erp-text-muted);
+  font-weight: 600;
+}
+
+.pb-meta {
+  font-size: 12px;
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pb-meta__sep { opacity: 0.35; }
+
+/* Action button group — primary action visually separated */
+.pb-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.pb-actions__divider {
+  width: 1px;
+  height: 28px;
+  background: var(--erp-border);
+  margin: 0 2px;
+}
+
+/* ── Section title ────────────────────────────────────────────────────────── */
+
+.pb-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--erp-text);
+  margin: 0 0 2px;
+}
+
+.pb-section-sub {
+  font-size: 12px;
+  color: var(--erp-text-muted);
+  margin: 0;
+}
+
+/* ── Table section head ───────────────────────────────────────────────────── */
+
+.pb-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px 14px;
+  border-bottom: 1px solid var(--erp-border-soft);
+  background: var(--erp-surface-2);
+}
+
+/* ── Input line row number ────────────────────────────────────────────────── */
+
+.pb-line-no {
+  font-family: var(--erp-mono);
+  font-size: 11px;
+  color: var(--erp-text-soft);
+  text-align: center;
+}
+
+/* ── Dismiss button on alert ──────────────────────────────────────────────── */
+
+.pb-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+/* ── Scope guard ──────────────────────────────────────────────────────────── */
+
+.pb-scope-guard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+.pb-scope-guard__inner {
+  text-align: center;
+  padding: 40px;
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-r-xl);
+  max-width: 360px;
+}
+
+.pb-scope-guard__icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+.pb-scope-guard__msg {
+  font-size: 14px;
+  color: var(--erp-text-muted);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .pb-header   { flex-direction: column; }
+  .pb-doc-head { flex-direction: column; }
+  .pb-actions  { justify-content: flex-start; }
+}

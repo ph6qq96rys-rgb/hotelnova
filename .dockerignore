@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.gitignore
+
+.env
+.env.*
+.eve
+.eve.*
+
+*.log
+Dockerfile
+docker-compose*.yml

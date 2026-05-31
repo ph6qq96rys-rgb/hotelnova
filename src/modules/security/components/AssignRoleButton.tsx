@@ -1,11 +1,13 @@
+// src/modules/security/components/AssignRoleButton.tsx
+
 import { useState } from "react";
 import { AssignRoleWizard } from "./AssignRoleWizard";
 
-type Props = {
-  userId: string;
-  onAssigned?: () => void; // call this to refresh user detail
-  label?: string;
-};
+interface Props {
+  userId:      string;
+  onAssigned?: () => void;
+  label?:      string;
+}
 
 export function AssignRoleButton({ userId, onAssigned, label = "Assign role" }: Props) {
   const [open, setOpen] = useState(false);
@@ -14,11 +16,10 @@ export function AssignRoleButton({ userId, onAssigned, label = "Assign role" }: 
     <>
       <button
         type="button"
+        className="sec-btn sec-btn--primary"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 active:bg-slate-900 disabled:opacity-50"
       >
-        <span className="text-base leading-none">+</span>
-        {label}
+        + {label}
       </button>
 
       {open && (

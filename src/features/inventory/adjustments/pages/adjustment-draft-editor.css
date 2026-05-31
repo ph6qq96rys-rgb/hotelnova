@@ -1,4 +1,7 @@
-/* adjustment-draft-editor.css */
+/* adjustment-draft-editor.css
+   Scoped to .adj-page — no global pollution.
+   Tokens from global.css (--text, --surface, --border, etc.)
+   ──────────────────────────────────────────────────────────── */
 
 /* ── Page shell ─────────────────────────────────────────────────────────── */
 .adj-page {
@@ -6,8 +9,8 @@
   flex-direction: column;
   gap: 1.25rem;
   padding: 1.5rem 0;
-  font-family: var(--font-sans, system-ui, sans-serif);
-  color: var(--color-text-primary);
+  color: var(--text);
+  font-size: 13px;
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -24,25 +27,27 @@
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-text-tertiary);
+  color: var(--text-soft);
   margin-bottom: 4px;
+  font-family: var(--mono);
 }
 
 .adj-header-left h1 {
   font-size: 20px;
-  font-weight: 500;
-  color: var(--color-text-primary);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
 }
 
 .adj-subtitle {
   font-size: 13px;
-  color: var(--color-text-secondary);
+  color: var(--text-muted);
   margin-top: 4px;
-  max-width: 500px;
+  max-width: 540px;
   line-height: 1.55;
 }
 
-/* ── Buttons ─────────────────────────────────────────────────────────────── */
+/* ── Button row ──────────────────────────────────────────────────────────── */
 .adj-btn-row {
   display: flex;
   gap: 8px;
@@ -50,75 +55,17 @@
   flex-wrap: wrap;
 }
 
-.adj-btn {
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 7px 14px;
-  border: 0.5px solid var(--color-border-secondary, #ccc);
-  border-radius: 8px;
-  background: var(--color-background-primary, #fff);
-  color: var(--color-text-primary);
-  cursor: pointer;
-  transition: background 0.12s, opacity 0.12s;
-  white-space: nowrap;
-}
-
-.adj-btn:hover:not(:disabled) {
-  background: var(--color-background-secondary);
-}
-
-.adj-btn:active:not(:disabled) {
-  opacity: 0.8;
-}
-
-.adj-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.adj-btn.primary {
-  background: var(--color-text-primary);
-  color: var(--color-background-primary);
-  border-color: var(--color-text-primary);
-}
-
-.adj-btn.primary:hover:not(:disabled) {
-  opacity: 0.85;
-  background: var(--color-text-primary);
-}
+/* Reuse global .btn — no extra button CSS needed */
 
 /* ── Alerts ──────────────────────────────────────────────────────────────── */
-.adj-alert {
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  border-left: 3px solid;
-}
-
-.adj-alert.error {
-  background: var(--color-background-danger);
-  color: var(--color-text-danger);
-  border-color: var(--color-text-danger);
-}
-
-.adj-alert.success {
-  background: var(--color-background-success);
-  color: var(--color-text-success);
-  border-color: var(--color-text-success);
-}
-
-.adj-alert.info {
-  background: var(--color-background-secondary);
-  color: var(--color-text-secondary);
-  border-color: var(--color-border-primary);
-}
+/* Reuse global .alert .alert-danger .alert-success .alert-info */
 
 /* ── Cards ───────────────────────────────────────────────────────────────── */
 .adj-card {
-  background: var(--color-background-primary);
-  border: 0.5px solid var(--color-border-tertiary);
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-xs);
   padding: 1.25rem;
 }
 
@@ -132,72 +79,69 @@
 
 .adj-field label {
   display: block;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-text-tertiary);
+  color: var(--text-muted);
   margin-bottom: 5px;
+  font-family: var(--mono);
 }
 
-.adj-field .req {
-  color: var(--color-text-danger);
-}
+.adj-field .req { color: var(--danger); }
 
-.adj-remarks {
-  margin-top: 0;
-}
+.adj-remarks { margin-top: 0; }
 
-/* ── Inputs ──────────────────────────────────────────────────────────────── */
-input,
-select,
-textarea {
+/* ── Inputs — scoped to .adj-page only ──────────────────────────────────── */
+.adj-page input,
+.adj-page select,
+.adj-page textarea {
   width: 100%;
   font-family: inherit;
   font-size: 13px;
-  color: var(--color-text-primary);
-  background: var(--color-background-secondary);
-  border: 0.5px solid var(--color-border-tertiary);
-  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
   padding: 7px 10px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
   box-sizing: border-box;
 }
 
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: var(--color-border-primary);
+.adj-page input:focus,
+.adj-page select:focus,
+.adj-page textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(184,115,51,0.10);
 }
 
-input:disabled,
-select:disabled {
-  opacity: 0.6;
+.adj-page input:disabled,
+.adj-page select:disabled {
+  background: var(--surface-3);
+  color: var(--text-muted);
   cursor: not-allowed;
-  background: var(--color-background-tertiary);
+  border-color: var(--border-soft);
 }
 
-textarea {
+.adj-page textarea {
   resize: vertical;
   min-height: 72px;
   line-height: 1.5;
 }
 
-/* Status color tints on the disabled status input */
-input[data-status="Draft"]     { color: var(--color-text-warning); }
-input[data-status="Submitted"] { color: var(--color-text-success); }
-input[data-status="Posted"]    { color: var(--color-text-info);    }
-input[data-status="Rejected"]  { color: var(--color-text-danger);  }
+/* Status colour on read-only status input */
+.adj-page input[data-status="Draft"]     { color: var(--warn); }
+.adj-page input[data-status="Submitted"] { color: var(--success); }
+.adj-page input[data-status="Posted"]    { color: var(--info); }
+.adj-page input[data-status="Rejected"]  { color: var(--danger); }
 
-/* Sign-based coloring for read-only numeric fields */
-input[data-sign="neg"] { color: var(--color-text-danger); font-weight: 500; }
-input[data-sign="pos"] { color: var(--color-text-success); font-weight: 500; }
+/* Variance colour on read-only numeric inputs */
+.adj-page input[data-sign="neg"] { color: var(--danger);  font-weight: 500; }
+.adj-page input[data-sign="pos"] { color: var(--success); font-weight: 500; }
 
-/* Warn border for notes when variance has no notes */
-input[data-required="true"] {
-  border-color: var(--color-border-warning);
-}
+/* Warn border when notes are required but empty */
+.adj-page input[data-required="true"] { border-color: var(--warn); }
 
 /* ── Section head ────────────────────────────────────────────────────────── */
 .adj-section-head {
@@ -210,36 +154,31 @@ input[data-required="true"] {
 }
 
 .adj-section-head h2 {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
 }
 
 .adj-section-head p {
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
-/* ── Badge ───────────────────────────────────────────────────────────────── */
+/* ── Status badge ────────────────────────────────────────────────────────── */
 .adj-badge {
   font-size: 11px;
   font-weight: 500;
-  padding: 4px 11px;
-  border-radius: 100px;
-  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 20px;
   white-space: nowrap;
+  border: 1px solid transparent;
+  font-family: var(--mono);
 }
 
-.adj-badge.warn {
-  background: var(--color-background-warning);
-  color: var(--color-text-warning);
-}
-
-.adj-badge.ok {
-  background: var(--color-background-success);
-  color: var(--color-text-success);
-}
+.adj-badge.warn { background: var(--warn-bg);    color: var(--warn);    border-color: var(--warn-border); }
+.adj-badge.ok   { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
 
 /* ── Metric summary row ──────────────────────────────────────────────────── */
 .adj-metrics {
@@ -249,37 +188,37 @@ input[data-required="true"] {
   margin-bottom: 1rem;
 }
 
-@media (max-width: 640px) {
-  .adj-metrics { grid-template-columns: repeat(2, 1fr); }
-}
-
 .adj-metric {
-  background: var(--color-background-secondary);
-  border-radius: 8px;
-  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
 }
 
 .adj-metric-label {
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-family: var(--mono);
   margin-bottom: 4px;
 }
 
 .adj-metric-value {
   font-size: 18px;
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
 }
 
-.adj-metric-value[data-sign="neg"] { color: var(--color-text-danger); }
-.adj-metric-value[data-sign="pos"] { color: var(--color-text-success); }
+.adj-metric-value[data-sign="neg"] { color: var(--danger); }
+.adj-metric-value[data-sign="pos"] { color: var(--success); }
 
 /* ── Table ───────────────────────────────────────────────────────────────── */
 .adj-table-wrap {
   overflow-x: auto;
-  border: 0.5px solid var(--color-border-tertiary);
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
 }
 
 .adj-table {
@@ -289,75 +228,75 @@ input[data-required="true"] {
 }
 
 .adj-table th {
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-text-tertiary);
-  font-weight: 500;
+  color: var(--text-muted);
+  font-weight: 600;
   padding: 9px 10px;
   text-align: left;
-  background: var(--color-background-secondary);
-  border-bottom: 0.5px solid var(--color-border-tertiary);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  font-family: var(--mono);
 }
 
 .adj-table th.num,
-.adj-table td.num {
-  text-align: right;
-}
+.adj-table td.num { text-align: right; }
 
 .adj-table td {
   padding: 6px 10px;
-  border-bottom: 0.5px solid var(--color-border-tertiary);
+  border-bottom: 1px solid var(--border-soft);
   vertical-align: middle;
+  color: var(--text);
 }
 
 .adj-table tbody tr:last-child td { border-bottom: none; }
+.adj-table tbody tr:hover td { background: var(--surface-2); }
 
 .adj-table tfoot td {
-  font-weight: 500;
+  font-weight: 600;
   font-size: 12px;
-  background: var(--color-background-secondary);
-  border-top: 0.5px solid var(--color-border-tertiary);
+  color: var(--text);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
   padding: 8px 10px;
+  font-family: var(--mono);
 }
 
-.adj-table tfoot td[data-sign="neg"] { color: var(--color-text-danger); }
-.adj-table tfoot td[data-sign="pos"] { color: var(--color-text-success); }
+.adj-table tfoot td[data-sign="neg"] { color: var(--danger); }
+.adj-table tfoot td[data-sign="pos"] { color: var(--success); }
 
-/* Compact inputs inside table cells */
-.adj-td-input {
-  padding: 4px 6px !important;
-}
+/* ── Compact inputs inside table cells ──────────────────────────────────── */
+.adj-td-input { padding: 4px 6px !important; }
 
 .adj-td-input input,
 .adj-lot-select {
   font-size: 12px;
   padding: 5px 8px;
-  background: var(--color-background-primary);
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
 }
 
-/* Disabled fields in table look clean without a visible box */
+/* Disabled fields in table — borderless read-only */
 .adj-table td input:disabled {
   background: transparent;
   border-color: transparent;
   padding: 5px 4px;
   opacity: 0.75;
   cursor: default;
+  color: var(--text-muted);
 }
 
-.adj-lot-select {
-  width: 100%;
-  min-width: 200px;
-}
+.adj-lot-select { width: 100%; min-width: 200px; }
 
 /* ── Empty state ─────────────────────────────────────────────────────────── */
 .adj-empty {
   text-align: center;
-  color: var(--color-text-tertiary);
+  color: var(--text-soft);
   padding: 2.5rem 1rem !important;
   font-size: 13px;
-  font-style: italic;
 }
 
 /* ── Remove button ───────────────────────────────────────────────────────── */
@@ -367,17 +306,75 @@ input[data-required="true"] {
   padding: 4px 8px;
   border: none;
   background: none;
-  color: var(--color-text-danger);
+  color: var(--danger);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   transition: background 0.12s;
 }
 
-.adj-remove-btn:hover:not(:disabled) {
-  background: var(--color-background-danger);
+.adj-remove-btn:hover:not(:disabled) { background: var(--danger-bg); }
+.adj-remove-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Add to src/features/inventory/adjustments/pages/adjustment-draft-editor.css */
+
+.adj-policy-banner {
+  margin: 12px 0 14px;
+  padding: 11px 14px;
+  border-radius: var(--r-md, 12px);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(15, 23, 42, 0.04);
+  color: var(--text, #0f172a);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.adj-remove-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+.adj-variance-row--warning {
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.adj-variance-row--high {
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.adj-variance-row--critical {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.adj-variance-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.adj-variance-badge--warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.adj-variance-badge--high {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
+.adj-variance-badge--critical {
+  background: #fecaca;
+  color: #991b1b;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .adj-header   { flex-direction: column; }
+  .adj-btn-row  { width: 100%; }
+  .adj-form-grid { grid-template-columns: 1fr 1fr; }
+  .adj-metrics  { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 480px) {
+  .adj-form-grid { grid-template-columns: 1fr; }
 }

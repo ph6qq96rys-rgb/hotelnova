@@ -1,73 +1,55 @@
 ﻿import { Link } from "react-router-dom";
-import { Boxes, List, Ruler } from "lucide-react";
-import "../../../styles/inventory-master.css";
+import { Boxes, List, Ruler, ArrowRight } from "lucide-react";
+
+const cards = [
+  {
+    to: "/inventory-master/uoms",
+    icon: <Ruler size={18} />,
+    title: "Units of measure",
+    description:
+      "Define base and alternate units (kg, g, l, ml, pcs) used for stock, recipes, and FIFO calculations.",
+    cta: "Manage UoMs",
+  },
+  {
+    to: "/inventory-master/categories",
+    icon: <List size={18} />,
+    title: "Item categories",
+    description:
+      "Organize inventory items by type — raw material, semi-finished, finished goods, and packaging.",
+    cta: "Manage categories",
+  },
+  {
+    to: "/inventory-master/items",
+    icon: <Boxes size={18} />,
+    title: "Inventory items",
+    description:
+      "Create and manage stock items with default units, categories, costing, and FIFO tracking.",
+    cta: "Manage items",
+  },
+];
 
 export default function InventoryMasterHomePage() {
   return (
     <div className="page">
-      {/* Page Header */}
       <div className="page-header">
-        <h1>Inventory Master Data</h1>
+        <h1>Inventory master data</h1>
         <p className="muted">
           Configure core inventory definitions used across purchasing, GRN,
           production, FIFO, and sales.
         </p>
       </div>
 
-      {/* Cards */}
       <div className="grid grid-3">
-        <Link to="/inventory-master/uoms" className="card card-link">
-          <div className="card-icon">
-            <Ruler size={28} />
-          </div>
-          <h3>Units of Measure (UoM)</h3>
-          <p>
-            Define base and alternate units (kg, g, l, ml, pcs) used for stock,
-            recipes, and FIFO calculations.
-          </p>
-        </Link>
-
-        <Link to="/inventory-master/categories" className="card card-link">
-          <div className="card-icon">
-            <List size={28} />
-          </div>
-          <h3>Item Categories</h3>
-          <p>
-            Organize inventory items by type (Raw Material, Semi-Finished,
-            Finished Goods, Packaging).
-          </p>
-        </Link>
-
-        <Link to="/inventory-master/items" className="card card-link">
-          <div className="card-icon">
-            <Boxes size={28} />
-          </div>
-          <h3>Inventory Items</h3>
-          <p>
-            Create and manage stock items with default units, categories,
-            costing, and FIFO tracking.
-          </p>
-        </Link>
-          <Link to="/inventory-master/items" className="card card-link">
-          <div className="card-icon">
-            <Boxes size={28} />
-          </div>
-          <h3>Inventory Items</h3>
-          <p>
-            Create and manage stock items with default units, categories,
-            costing, and FIFO tracking.
-          </p>
-        </Link>
-          <Link to="/inventory-master/items" className="card card-link">
-          <div className="card-icon">
-            <Boxes size={28} />
-          </div>
-          <h3>Inventory Items</h3>
-          <p>
-            Create and manage stock items with default units, categories,
-            costing, and FIFO tracking.
-          </p>
-        </Link>
+        {cards.map((card) => (
+          <Link key={card.to} to={card.to} className="card card-link">
+            <div className="card-icon">{card.icon}</div>
+            <h3>{card.title}</h3>
+            <p>{card.description}</p>
+            <span className="card-cta">
+              <ArrowRight size={14} /> {card.cta}
+            </span>
+          </Link>
+        ))}
       </div>
     </div>
   );

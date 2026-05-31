@@ -1,258 +1,235 @@
-// GrnDetailPage.tsx (UI/UX aligned with GrnDraftEditorPage)
-// ✅ shared inventoryStyles (card/table/buttons/sticky bar)
-// ✅ safer date formatting + empty states
-// ✅ shows Reverse action for POSTED only (uses reverseByNumber with GRN number) — optional
-//    (remove the Reverse bits if you don't want actions on detail page)
+// ─── GrnDetailPage ────────────────────────────────────────────────────────────
+// Read-only view of a posted GRN with optional reversal action.
 
-import { useEffect, useMemo, useState } from "react";
-import { NavLink, useNavigate, useParams } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
+
+import { useGrnDetail } from "../hooks/useGrn.hooks";
 import { grnApi } from "../api/grnApi";
-import type { GrnDetailDto } from "../types/grn";
-
 import {
-  cardStyle,
-  errorStyle,
-  tableStyle,
-  thStyle,
-  tdStyle,
-  secondaryBtn,
-  dangerBtn,
-  stickyBar,
-} from "../../../../shared/inventoryStyles";
-
-const clean = (s?: string | null) => (s ?? "").trim();
-const norm = (v: unknown) => String(v ?? "").trim().toUpperCase();
-
-function getErrorMessage(e: unknown) {
-  const anyE = e as any;
-  return anyE?.response?.data?.message ?? anyE?.message ?? "Failed to load GRN";
-}
-
-function fmtDateTime(v?: string | null) {
-  const s = clean(v);
-  if (!s) return "—";
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleString();
-}
-
-function fmtDateOnly(v?: string | null) {
-  const s = clean(v);
-  if (!s) return "—";
-  // if ISO date, slice; else fallback to Date parse
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toISOString().slice(0, 10);
-}
-
-/**
- * If your GrnDetailDto has a better issued indicator, use it here.
- * Otherwise, this is a conservative heuristic:
- * - if any line has batchNo (or issue-related markers), assume issuance may have happened.
- * Adjust as per your domain rules.
- */
-function hasIssuedFromPostedGrn(value: GrnDetailDto): boolean {
-  const anyV = value as any;
-  const issueStatus = norm(anyV?.issueStatus);
-  if (issueStatus === "ISSUED") return true;
-
-  // Heuristic fallback — change/remove if wrong for your system
-  return Boolean(anyV?.issued ?? anyV?.issuedAtUtc);
-}
+  normalize, trim, fmtDateTime, fmtDateOnly, money, moneyInt,
+  hasIssuedFromPostedGrn, extractApiError,
+} from "../utils/grn.utils";
+import {
+  pageWrap, cardStyle, stickyBar, tableStyle, tableWrap,
+  thStyle, tdStyle, secondaryBtn, dangerBtn, StatusBadge,
+  StatCard, PageHeader, InlineAlert, EmptyRow, NavBtn,
+  SectionHead, tokens, IssuedBadge,
+} from "../components/grn.ui";
 
 export default function GrnDetailPage() {
   const nav = useNavigate();
   const { companyId } = useAppScope();
   const { grnId } = useParams<{ grnId: string }>();
 
-  const [value, setValue] = useState<GrnDetailDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { value, loading, error, refresh } = useGrnDetail(grnId);
 
   const [busy, setBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    if (!companyId || !grnId) return;
-
-    setLoading(true);
-    setError(null);
-
-    grnApi
-      .getById(companyId, grnId)
-      .then((v) => alive && setValue(v))
-      .catch((e) => alive && setError(getErrorMessage(e)))
-      .finally(() => alive && setLoading(false));
-
-    return () => {
-      alive = false;
-    };
-  }, [companyId, grnId]);
-
-  const status = useMemo(() => norm((value as any)?.status), [value]);
+  const status = useMemo(() => normalize((value as any)?.status), [value]);
   const isPosted = status === "POSTED";
   const issued = value ? hasIssuedFromPostedGrn(value) : false;
   const canReverse = isPosted && !issued;
 
-  async function onReverse() {
-    if (!companyId || !value) return;
+  const totalCost = useMemo(
+    () => (value?.lines ?? []).reduce((acc, l) => acc + (Number(l.quantity) || 0) * (Number(l.unitCost) || 0), 0),
+    [value]
+  );
 
+  const onReverse = async () => {
+    if (!companyId || !value || !canReverse) return;
+    if (!window.confirm(`Reverse GRN "${value.grnNumber}"? This cannot be undone.`)) return;
     setActionMsg(null);
     setActionErr(null);
-
-    if (!canReverse) return;
-
-    const ok = window.confirm("Reverse this posted GRN? This cannot be undone.");
-    if (!ok) return;
-
     setBusy(true);
     try {
-      // Uses your existing reverseByNumber API. Assumes backend reverses by GRN number.
-      await grnApi.reverseByNumber(companyId, value.grnNumber, { reason: null });
-      setActionMsg("Reversal submitted successfully.");
+      await grnApi.reverseById(companyId, value.grnNumber!, { reason: null });
+      setActionMsg("Reversal submitted. Refreshing…");
+      refresh();
     } catch (e) {
-      setActionErr(getErrorMessage(e));
+      setActionErr(extractApiError(e, "Reversal failed"));
     } finally {
       setBusy(false);
     }
-  }
+  };
 
-  if (!companyId) return <div style={{ padding: 16 }}>Select a company first.</div>;
-  if (loading) return <div style={{ padding: 16 }}>Loading…</div>;
-  if (error) return <div style={{ padding: 16, ...errorStyle }}>{error}</div>;
-  if (!value) return <div style={{ padding: 16 }}>Not found.</div>;
+  if (!companyId) return <div style={{ padding: 24 }}>Select a company to continue.</div>;
+  if (loading) return <div style={{ padding: 24, color: tokens.colorMuted }}>Loading GRN…</div>;
+  if (error) return <div style={{ padding: 24 }}><InlineAlert type="error" message={error} /></div>;
+  if (!value) return <div style={{ padding: 24 }}>GRN not found.</div>;
+
+  const anyV = value as any;
 
   return (
-    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
-      {/* Header (Editor-style) */}
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>GRN {value.grnNumber}</div>
-          <div style={{ opacity: 0.75, marginTop: 6 }}>
-            Supplier: <b>{clean(value.supplierName) || "—"}</b> • Received: <b>{fmtDateTime((value as any).receiptDate)}</b> • Status:{" "}
-            <b>{clean((value as any).status) || "—"}</b>
-            {isPosted ? (
-              <>
-                {" "}
-                • Issued: <b>{issued ? "Yes" : "No"}</b>
-              </>
-            ) : null}
-          </div>
+    <div style={pageWrap}>
+      {/* Header */}
+      <PageHeader
+        title={`GRN ${value.grnNumber || "—"}`}
+        subtitle={`${trim(value.supplierName) || "No supplier"}  ·  ${fmtDateTime(anyV.receiptDate)}`}
+        errorMsg={actionErr}
+        successMsg={actionMsg}
+        rightSlot={
+          <>
+            <NavBtn to={`/companies/${companyId}/grns`} style={secondaryBtn}>← All GRNs</NavBtn>
+            {isPosted && (
+              <button
+                style={{
+                  ...dangerBtn,
+                  opacity: canReverse ? 1 : 0.4,
+                  cursor: canReverse ? "pointer" : "not-allowed",
+                }}
+                disabled={!canReverse || busy}
+                onClick={onReverse}
+                title={!canReverse ? "Cannot reverse (already issued or not posted)" : "Reverse this GRN"}
+              >
+                {busy ? "Reversing…" : "Reverse GRN"}
+              </button>
+            )}
+          </>
+        }
+      />
 
-          {actionMsg && <div style={{ marginTop: 10, fontSize: 12, color: "green" }}>{actionMsg}</div>}
-          {actionErr && <div style={{ marginTop: 10, ...errorStyle }}>{actionErr}</div>}
-        </div>
-
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <NavLink to={`/companies/${companyId}/grns`} style={{ textDecoration: "none" }}>
-            <button style={secondaryBtn}>Back to List</button>
-          </NavLink>
-
-          {/* Optional action */}
-          {isPosted ? (
-            <button
-              style={dangerBtn}
-              disabled={!canReverse || busy}
-              onClick={onReverse}
-              title={!canReverse ? "Cannot reverse (already issued or not posted)" : "Reverse this posted GRN"}
-            >
-              {busy ? "Reversing..." : "Reverse"}
-            </button>
-          ) : null}
-        </div>
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginTop: 20 }}>
+        <StatCard label="Status" value={trim(anyV?.status) || "—"} />
+        <StatCard label="Lines" value={value.lines?.length ?? 0} />
+        <StatCard label="Total cost" value={`$${moneyInt(totalCost)}`} accent />
+        <StatCard label="Issued" value={isPosted ? (issued ? "Yes" : "No") : "N/A"} />
       </div>
 
-      {/* Summary Card */}
+      {/* Header Card */}
       <div style={cardStyle}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
-          <div style={{ gridColumn: "span 4" }}>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>Supplier</div>
-            <div style={{ fontWeight: 800 }}>{clean(value.supplierName) || "—"}</div>
-          </div>
-
-          <div style={{ gridColumn: "span 4" }}>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>Receipt Date</div>
-            <div style={{ fontWeight: 800 }}>{fmtDateTime((value as any).receiptDate)}</div>
-          </div>
-
-          <div style={{ gridColumn: "span 4" }}>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>Status</div>
-            <div style={{ fontWeight: 800 }}>{clean((value as any).status) || "—"}</div>
-          </div>
-
-          {(value as any).notes ? (
-            <div style={{ gridColumn: "span 12" }}>
-              <div style={{ fontSize: 12, opacity: 0.75 }}>Notes</div>
-              <div style={{ fontWeight: 600, opacity: 0.9 }}>{String((value as any).notes)}</div>
-            </div>
-          ) : null}
+        <SectionHead title="Receipt information" />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginTop: 16 }}>
+          <Field label="GRN Number" value={value.grnNumber} bold />
+          <Field label="Status" value={<StatusBadge status={trim(anyV?.status)} />} />
+          <Field label="Issued" value={isPosted ? <IssuedBadge issued={issued} /> : <span style={{ color: tokens.colorHint }}>N/A</span>} />
+          <Field label="Supplier" value={trim(value.supplierName)} />
+          <Field label="Receipt Date" value={fmtDateTime(anyV?.receiptDate)} />
+          <Field label="Location" value={trim(anyV?.locationName)} />
+          {anyV?.createdAtUtc && <Field label="Created" value={fmtDateTime(anyV.createdAtUtc)} />}
+          {anyV?.postedAtUtc && <Field label="Posted" value={fmtDateTime(anyV.postedAtUtc)} />}
+          {anyV?.reversedAtUtc && <Field label="Reversed" value={fmtDateTime(anyV.reversedAtUtc)} />}
+          {anyV?.reversedByUser && <Field label="Reversed by" value={trim(anyV.reversedByUser)} />}
+          {anyV?.reverseReason && <Field label="Reversal reason" value={trim(anyV.reverseReason)} />}
+          {anyV?.notes && <Field label="Notes" value={trim(anyV.notes)} span={3} />}
         </div>
       </div>
 
       {/* Lines Card */}
       <div style={cardStyle}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 800 }}>Lines</div>
-          <div style={{ opacity: 0.75, marginTop: 4 }}>Items received in this GRN.</div>
-        </div>
-
-        <div style={{ marginTop: 14, overflowX: "auto" }}>
+        <SectionHead
+          title="Line items"
+          subtitle={`${value.lines?.length ?? 0} item${(value.lines?.length ?? 0) !== 1 ? "s" : ""} received`}
+        />
+        <div style={tableWrap}>
           <table style={tableStyle}>
             <thead>
               <tr>
+                <th style={thStyle}>#</th>
                 <th style={thStyle}>Item</th>
-                <th style={thStyle}>Qty</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Qty</th>
                 <th style={thStyle}>UOM</th>
-                <th style={thStyle}>Unit Cost</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Unit Cost</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Line Total</th>
                 <th style={thStyle}>Batch</th>
                 <th style={thStyle}>Expiry</th>
+                <th style={thStyle}>Notes</th>
               </tr>
             </thead>
-
             <tbody>
               {(value.lines ?? []).length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: 18, opacity: 0.75 }}>
-                    No lines.
-                  </td>
-                </tr>
+                <EmptyRow message="No line items on this GRN." colSpan={9} />
               ) : (
-                value.lines.map((l: any, idx: number) => (
-                  <tr key={idx}>
-                    {/* You currently show itemId; if you have itemName in DTO, swap it in */}
-                    <td style={{ ...tdStyle, fontWeight: 800 }}>{clean(l.itemName) || clean(l.itemCode) || clean(l.itemId) || "—"}</td>
-                    <td style={tdStyle}>{Number(l.quantity ?? 0)}</td>
-                    <td style={tdStyle}>{clean(l.uomName) || clean(l.uomCode) || "—"}</td>
-                    <td style={tdStyle}>{Number(l.unitCost ?? 0)}</td>
-                    <td style={tdStyle}>{clean(l.batchNo) || "—"}</td>
-                    <td style={tdStyle}>{fmtDateOnly(l.expiryDate)}</td>
-                  </tr>
-                ))
+                value.lines.map((l: any, idx: number) => {
+                  const lineTotal = (Number(l.quantity) || 0) * (Number(l.unitCost) || 0);
+                  return (
+                    <tr key={idx}>
+                      <td style={{ ...tdStyle, color: tokens.colorHint, fontSize: 12 }}>{idx + 1}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>
+                        {trim(l.itemName) || trim(l.itemCode) || trim(l.itemId) || "—"}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {Number(l.quantity ?? 0).toLocaleString()}
+                      </td>
+                      <td style={tdStyle}>{trim(l.uomName) || trim(l.uomCode) || "—"}</td>
+                      <td style={{ ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        ${money(Number(l.unitCost ?? 0))}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: tokens.accent }}>
+                        ${money(lineTotal)}
+                      </td>
+                      <td style={tdStyle}>{trim(l.batchNo) || <span style={{ color: tokens.colorHint }}>—</span>}</td>
+                      <td style={tdStyle}>{fmtDateOnly(l.expiryDate)}</td>
+                      <td style={{ ...tdStyle, color: tokens.colorMuted }}>{trim(l.notes) || "—"}</td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Grand Total */}
+        {(value.lines ?? []).length > 0 && (
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+            <div style={{ minWidth: 220, borderTop: `1px solid #E8EAF0`, paddingTop: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 700 }}>
+                <span>Total</span>
+                <span style={{ fontVariantNumeric: "tabular-nums", color: tokens.accent }}>${moneyInt(totalCost)}</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Sticky Bar (Editor-style) */}
+      {/* Sticky */}
       <div style={stickyBar}>
-        <div style={{ opacity: 0.85 }}>
-          <b>Tip:</b> Posted GRNs can be reversed only if they have not been issued.
-        </div>
-
+        <span style={{ fontSize: 12, color: tokens.colorMuted }}>
+          {isPosted && !canReverse && "This GRN has been issued and cannot be reversed."}
+          {isPosted && canReverse && "This GRN can be reversed — stock will be credited back."}
+          {!isPosted && `GRN is ${trim(anyV?.status) || "—"}.`}
+        </span>
         <div style={{ display: "flex", gap: 10 }}>
-          <button style={secondaryBtn} onClick={() => nav(`/companies/${companyId}/grns`)}>
-            Back
-          </button>
-
-          {isPosted ? (
-            <button style={dangerBtn} disabled={!canReverse || busy} onClick={onReverse}>
-              {busy ? "Reversing..." : "Reverse"}
+          <button style={secondaryBtn} onClick={() => nav(`/companies/${companyId}/grns`)}>← Back</button>
+          {isPosted && (
+            <button
+              style={{ ...dangerBtn, opacity: canReverse ? 1 : 0.4 }}
+              disabled={!canReverse || busy}
+              onClick={onReverse}
+            >
+              {busy ? "Reversing…" : "Reverse GRN"}
             </button>
-          ) : null}
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Field Display Helper ──────────────────────────────────────────────────────
+
+function Field({
+  label,
+  value,
+  bold,
+  span,
+}: {
+  label: string;
+  value: React.ReactNode;
+  bold?: boolean;
+  span?: number;
+}) {
+  return (
+    <div style={{ gridColumn: span ? `span ${span}` : undefined }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: tokens.colorMuted, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 14, fontWeight: bold ? 700 : 500, color: tokens.colorPrimary }}>
+        {value || <span style={{ color: tokens.colorHint }}>—</span>}
       </div>
     </div>
   );

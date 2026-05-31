@@ -1,28 +1,35 @@
-import { http } from "../../../api/http";
-import type { CreateStoreRequest } from "../types";
+// src/modules/company/api/storesApi.ts
 
-export type StoreDto = {
-  id: string;
-  name: string;
-  code?: string | null;
-  branchId: string;
-};
+import { http } from "../../../api/http";
+import type { StoreDto, CreateStoreDto } from "../types/company.types";
+export type { StoreDto };
+
+const base = (companyId: string, branchId: string) =>
+  `/companies/${companyId}/branches/${branchId}/stores`;
+
+function unwrap<T>(raw: unknown): T[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw as T[];
+  const r = raw as Record<string, unknown>;
+  if (Array.isArray(r.items))   return r.items   as T[];
+  if (Array.isArray(r.data))    return r.data     as T[];
+  if (Array.isArray(r.results)) return r.results  as T[];
+  return [];
+}
 
 export const storesApi = {
-  async list(companyId: string, branchId: string): Promise<StoreDto[]> {
-    const res = await http.get(`/companies/${companyId}/branches/${branchId}/stores`);
-    return res.data ?? [];
+
+  list: async (companyId: string, branchId: string): Promise<StoreDto[]> => {
+    const res = await http.get<unknown>(base(companyId, branchId));
+    return unwrap<StoreDto>(res.data);
   },
 
-  async create(
+  create: async (
     companyId: string,
     branchId: string,
-    body: CreateStoreRequest
-  ): Promise<StoreDto> {
-    const res = await http.post(
-      `/companies/${companyId}/branches/${branchId}/stores`,
-      body
-    );
+    body: CreateStoreDto,
+  ): Promise<StoreDto> => {
+    const res = await http.post<StoreDto>(base(companyId, branchId), body);
     return res.data;
   },
 };

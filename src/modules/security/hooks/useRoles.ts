@@ -1,49 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// src/modules/security/hooks/useRoles.ts
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { securityApi } from "../api/securityApi";
-import type { RoleDto } from "../../../features/security/api/securityApi";
+import { isCancelled, extractSecurityError } from "../utils/security.utils";
+import { useAbortable } from "./useAbortable";
+import type { RoleDto } from "../types/security.types";
 
-export function useRoles(companyId: string) {
-  const [roles, setRoles] = useState<RoleDto[]>([]);
-  const [loading, setLoading] = useState<boolean>(!!companyId);
-  const [error, setError] = useState<string | null>(null);
-
-  // request sequencing to ignore stale responses
-  const seqRef = useRef(0);
+export function useRoles(companyId: string | null) {
+  const [roles,   setRoles]   = useState<RoleDto[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
+  const { begin, abort } = useAbortable();
 
   const load = useCallback(async () => {
-    if (!companyId) {
-      setRoles([]);
-      setLoading(false);
-      setError("Missing companyId in route.");
-      return;
-    }
-
-    const seq = ++seqRef.current;
-    setLoading(true);
-    setError(null);
-
+    if (!companyId) { setRoles([]); setError(null); return; }
+    const signal = begin();
+    setLoading(true); setError(null);
     try {
-      const res = await securityApi.listRoles(companyId);
-      if (seq !== seqRef.current) return;
-
-      // axios response: res.data
-      const list = res ?? [];
-      setRoles(Array.isArray(list) ? list : []);
-    } catch (e: unknown) {
-      if (seq !== seqRef.current) return;
+      const res = await securityApi.listRoles(companyId, signal);
+      setRoles(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      if (isCancelled(e)) return;
       setRoles([]);
-      setError(e instanceof Error ? e.message : "Failed to load roles");
-    } finally {
-      if (seq === seqRef.current) setLoading(false);
-    }
-  }, [companyId]);
+      setError(extractSecurityError(e, "Failed to load roles."));
+    } finally { setLoading(false); }
+  }, [companyId, begin]);
 
-  useEffect(() => {
-    load();
-    return () => {
-      seqRef.current++;
-    };
-  }, [load]);
+  useEffect(() => { void load(); return abort; }, [load, abort]);
 
   const byId = useMemo(() => new Map(roles.map((r) => [r.id, r])), [roles]);
 

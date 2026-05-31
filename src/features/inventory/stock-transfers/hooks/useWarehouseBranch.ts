@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { branchesApi } from "../../../company/api/branchesApi";
-import type { BranchDto } from "../../../company/types";
+import type { BranchDto } from "../../../company/types/company.types";
 
 export function useWarehouseBranch(companyId: string | null) {
   const [hqBranchId, setHqBranchId] = useState<string | null>(null);

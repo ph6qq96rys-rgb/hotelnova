@@ -1,222 +1,118 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿// src/features/inventory/items/components/InventoryItemForm.tsx
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItemDto, ItemUomDto } from "../types";
-import { ITEM_TYPES, type ItemType } from "../constants/itemTypes";
-import UomConversionGrid from "../components/UomConversionGrid";
+import { ITEM_TYPES, isServiceLikeType, type ItemType } from "../constants/itemTypes";
+import UomConversionGrid from "./UomConversionGrid";
 import { useAppScope } from "../../../../app/useAppScope";
 import { inventoryItemsApi } from "../api/inventoryItemsApi";
-// Styles live in inventory-items.css — imported once by InventoryItemsPage.
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-type SelectOption = {
-  id: string;
-  name: string;
+export interface SelectOption {
+  id:    string;
+  name:  string;
   code?: string | null;
-};
+}
 
-type ConversionFactorResponse = {
-  toBaseFactor?: number | null;
-};
-
-export type InventoryItemFormDto = {
-  name: string;
-  sku: string | null;
-  localName: string | null;
-  barcode: string | null;
-  categoryId: string | null;
-  baseUomId: string;
-  type: ItemType;
-  allowedUoms: ItemUomDto[];
+export interface InventoryItemFormDto {
+  name:           string;
+  sku:            string | null;
+  localName:      string | null;
+  barcode:        string | null;
+  categoryId:     string | null;
+  baseUomId:      string;
+  type:           ItemType;
+  allowedUoms:    ItemUomDto[];
   trackInventory: boolean;
-  defaultCost: number | null;
-  defaultPrice: number | null;
-  reorderLevel: number;
-  isActive: boolean;
-};
+  defaultCost:    number | null;
+  defaultPrice:   number | null;
+  reorderLevel:   number;
+  isActive:       boolean;
+}
 
-type Props = {
-  mode: "create" | "edit";
-  initial?: InventoryItemDto | null;
-  onSubmit: (dto: InventoryItemFormDto) => Promise<void>;
-  onCancel: () => void;
+interface Props {
+  mode:      "create" | "edit";
+  initial?:  InventoryItemDto | null;
+  onSubmit:  (dto: InventoryItemFormDto) => Promise<void>;
+  onCancel:  () => void;
+  saving?:    boolean;
   categories: SelectOption[];
-  uoms: SelectOption[];
-};
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const EMPTY_GUID_VALUE = "";
-
-// ─── Pure helpers ─────────────────────────────────────────────────────────────
-
-function isServiceLikeType(type: ItemType): boolean {
-  return type === "Service" || type === "NonStock";
+  uoms:       SelectOption[];
 }
 
-function getNullableText(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed || null;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function nullableText(value: string): string | null {
+  return value.trim() || null;
 }
 
-function parseNullableNumber(value: string, label: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed)) throw new Error(`${label} must be a valid number.`);
-  return parsed;
+function parseOptionalNumber(value: string, label: string): number | null {
+  if (!value.trim()) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new Error(`${label} must be a valid number.`);
+  return n;
 }
 
 function parseReorderLevel(value: string): number {
-  const parsed = value.trim() === "" ? 0 : Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error("Reorder level must be a number ≥ 0.");
-  }
-  return parsed;
+  if (!value.trim()) return 0;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) throw new Error("Reorder level must be ≥ 0.");
+  return n;
 }
 
-function getErrorMessage(error: unknown): string {
-  const e = error as {
-    response?: { data?: { message?: string; title?: string; errors?: unknown } };
-    message?: string;
-  };
-  const data = e?.response?.data;
+function extractApiError(e: unknown): string {
+  const err = e as any;
+  const data = err?.response?.data;
   if (data?.message) return data.message;
   if (data?.title && data?.errors) return `${data.title}: ${JSON.stringify(data.errors)}`;
   if (data?.title) return data.title;
-  return e?.message ?? "Failed to save item.";
+  return err?.message ?? "Failed to save item.";
 }
 
 function getInitialType(initial?: InventoryItemDto | null): ItemType {
-  const item = initial as InventoryItemDto & { type?: ItemType; itemType?: ItemType };
+  const item = initial as any;
   return item?.type ?? item?.itemType ?? "RawMaterial";
 }
 
-// ─── UOM helpers ──────────────────────────────────────────────────────────────
+// ── UOM helpers ───────────────────────────────────────────────────────────────
 
-function createBaseUomRow(baseUomId: string, uoms: SelectOption[]): ItemUomDto {
+function buildBaseRow(baseUomId: string, uoms: SelectOption[]): ItemUomDto {
   const uom = uoms.find((x) => x.id === baseUomId);
-  return {
-    uomId: baseUomId,
-    code: uom?.code ?? "",
-    name: uom?.name ?? "",
-    toBaseFactor: 1,
-    isBase: true,
-    isIssue: false,
-    isActive: true,
-  };
+  return { uomId: baseUomId, code: uom?.code ?? "", name: uom?.name ?? "", toBaseFactor: 1, isBase: true, isIssue: false, isActive: true };
 }
 
-function ensureBaseUomRow(rows: ItemUomDto[], baseUomId: string, uoms: SelectOption[]): ItemUomDto[] {
+function ensureBaseRow(rows: ItemUomDto[], baseUomId: string, uoms: SelectOption[]): ItemUomDto[] {
   if (!baseUomId) return rows;
-
   const existing = rows.find((r) => r.isBase && r.uomId === baseUomId);
-  const baseRow = existing
-    ? { ...existing, toBaseFactor: 1, isBase: true, isActive: true }
-    : createBaseUomRow(baseUomId, uoms);
-
-  const otherRows = rows
-    .filter((r) => r.uomId !== baseUomId)
-    .map((r) => ({ ...r, isBase: false }));
-
-  return [baseRow, ...otherRows];
+  const baseRow  = existing ? { ...existing, toBaseFactor: 1, isBase: true, isActive: true } : buildBaseRow(baseUomId, uoms);
+  return [baseRow, ...rows.filter((r) => r.uomId !== baseUomId).map((r) => ({ ...r, isBase: false }))];
 }
 
-function applyStoreUom(rows: ItemUomDto[], baseUomId: string, storeUomId: string): ItemUomDto[] {
+function applyIssueUom(rows: ItemUomDto[], baseUomId: string, storeUomId: string): ItemUomDto[] {
   return rows.map((r) => ({
     ...r,
-    isIssue:
-      Boolean(storeUomId) &&
-      (r.uomId === storeUomId || (storeUomId === baseUomId && r.isBase)),
+    isIssue: !!storeUomId && (r.uomId === storeUomId || (storeUomId === baseUomId && r.isBase)),
   }));
 }
 
-function normalizeAllowedUoms(
-  rows: ItemUomDto[],
-  baseUomId: string,
-  storeUomId: string,
-  uoms: SelectOption[]
-): ItemUomDto[] {
-  return applyStoreUom(ensureBaseUomRow(rows, baseUomId, uoms), baseUomId, storeUomId);
+function normalizeRows(rows: ItemUomDto[], baseUomId: string, storeUomId: string, uoms: SelectOption[]): ItemUomDto[] {
+  return applyIssueUom(ensureBaseRow(rows, baseUomId, uoms), baseUomId, storeUomId);
 }
 
-function validateAllowedUoms(rows: ItemUomDto[]): string | null {
+function validateUoms(rows: ItemUomDto[]): string | null {
   const ids = rows.map((r) => r.uomId).filter(Boolean);
-  if (rows.some((r) => !r.uomId)) return "Each allowed UOM must have a unit selected.";
-  if (new Set(ids).size !== ids.length) return "Allowed UOMs must be unique.";
-  if (rows.some((r) => !r.toBaseFactor || r.toBaseFactor <= 0)) return "To-base factor must be > 0.";
-  if (rows.filter((r) => r.isBase).length !== 1) return "Exactly one FUOM / base row is required.";
-  if (rows.filter((r) => r.isIssue).length > 1) return "Only one store UOM can be selected.";
+  if (rows.some((r) => !r.uomId))                         return "Each UOM line must have a unit selected.";
+  if (new Set(ids).size !== ids.length)                   return "Duplicate UOMs are not allowed.";
+  if (rows.some((r) => !r.toBaseFactor || r.toBaseFactor <= 0)) return "All to-base factors must be > 0.";
+  if (rows.filter((r) => r.isBase).length !== 1)          return "Exactly one base UOM row is required.";
+  if (rows.filter((r) => r.isIssue).length > 1)           return "Only one Issue UOM can be selected.";
   return null;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ── Sub-components ────────────────────────────────────────────────────────────
 
-type StatusChipTone = "draft" | "success" | "danger";
-
-function StatusChip({ label, tone }: { label: string; tone: StatusChipTone }) {
-  return (
-    <span className={`inv-status-chip inv-status-chip--${tone}`}>{label}</span>
-  );
-}
-
-function CheckboxField({
-  checked,
-  disabled,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  label: string;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <label className={`inv-checkbox-row${disabled ? " inv-checkbox-row--disabled" : ""}`}>
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span>{label}</span>
-    </label>
-  );
-}
-
-function ReadOnlyField({ text }: { text: string }) {
-  return <div className="inv-readonly-field">{text}</div>;
-}
-
-function Field({
-  label,
-  colSpan,
-  children,
-}: {
-  label: string;
-  colSpan: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={`inv-field inv-field--span-${colSpan}`}>
-      <label className="inv-field__label">{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function FormGrid({ children }: { children: React.ReactNode }) {
-  return <div className="inv-form-grid">{children}</div>;
-}
-
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div className="inv-section">
       <div className="inv-section__head">
@@ -228,176 +124,104 @@ function Section({
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+function Field({ label, span, required, hint, error, children }: {
+  label:     string;
+  span:      number;
+  required?: boolean;
+  hint?:     string;
+  error?:    string;
+  children:  React.ReactNode;
+}) {
+  return (
+    <div className={`inv-field inv-field--span-${span}`}>
+      <label className="inv-field__label">
+        {label}{required && <span style={{ color: "var(--danger)", marginLeft: 2 }}>*</span>}
+      </label>
+      {children}
+      {hint  && <span className="inv-field__hint">{hint}</span>}
+      {error && <span className="inv-field__error">{error}</span>}
+    </div>
+  );
+}
 
-export default function InventoryItemForm({
-  mode,
-  initial,
-  onSubmit,
-  onCancel,
-  categories,
-  uoms,
-}: Props) {
-  const { companyId } = useAppScope();
-  const factorCacheRef = useRef<Map<string, number>>(new Map());
+// ── Main component ────────────────────────────────────────────────────────────
 
-  // Form state
-  const [name, setName] = useState("");
-  const [sku, setSku] = useState("");
-  const [localName, setLocalName] = useState("");
-  const [barcode, setBarcode] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [type, setType] = useState<ItemType>("RawMaterial");
-  const [baseUomId, setBaseUomId] = useState("");
-  const [storeUomId, setStoreUomId] = useState("");
+export default function InventoryItemForm({ mode, initial, onSubmit, onCancel, categories, uoms }: Props) {
+  const { companyId }       = useAppScope();
+  const factorCacheRef      = useRef<Map<string, number>>(new Map());
+
+  const [name,           setName]           = useState("");
+  const [sku,            setSku]            = useState("");
+  const [localName,      setLocalName]      = useState("");
+  const [barcode,        setBarcode]        = useState("");
+  const [categoryId,     setCategoryId]     = useState("");
+  const [type,           setType]           = useState<ItemType>("RawMaterial");
+  const [baseUomId,      setBaseUomId]      = useState("");
+  const [storeUomId,     setStoreUomId]     = useState("");
   const [trackInventory, setTrackInventory] = useState(true);
-  const [isActive, setIsActive] = useState(true);
-  const [defaultCost, setDefaultCost] = useState("");
-  const [defaultPrice, setDefaultPrice] = useState("");
-  const [reorderLevel, setReorderLevel] = useState("");
-  const [allowedUoms, setAllowedUoms] = useState<ItemUomDto[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isActive,       setIsActive]       = useState(true);
+  const [defaultCost,    setDefaultCost]    = useState("");
+  const [defaultPrice,   setDefaultPrice]   = useState("");
+  const [reorderLevel,   setReorderLevel]   = useState("");
+  const [allowedUoms,    setAllowedUoms]    = useState<ItemUomDto[]>([]);
+  const [saving,         setSaving]         = useState(false);
+  const [error,          setError]          = useState<string | null>(null);
 
   const isServiceLike = isServiceLikeType(type);
 
-  // ─── Derived ────────────────────────────────────────────────────────────────
+  const uomMetaById = useMemo(() => new Map(uoms.map((u) => [u.id, u])), [uoms]);
 
-  const uomMetaById = useMemo(
-    () => new Map(uoms.map((u) => [u.id, u])),
-    [uoms]
-  );
+  // ── Factor hydration ────────────────────────────────────────────────────────
 
-  // ─── API ────────────────────────────────────────────────────────────────────
+  const fetchFactor = useCallback(async (baseId: string, uomId: string): Promise<number | null> => {
+    if (!companyId || !baseId || !uomId) return null;
+    const key = `${baseId}:${uomId}`;
+    const cached = factorCacheRef.current.get(key);
+    if (cached !== undefined) return cached;
+    const res = await inventoryItemsApi.getUomConversionFactor(companyId, baseId, uomId);
+    const factor = res?.toBaseFactor ?? null;
+    if (typeof factor === "number") factorCacheRef.current.set(key, factor);
+    return factor;
+  }, [companyId]);
 
-  const fetchToBaseFactor = useCallback(
-    async (baseId: string, uomId: string): Promise<number | null> => {
-      if (!companyId || !baseId || !uomId) return null;
-
-      const cacheKey = `${baseId}:${uomId}`;
-      const cached = factorCacheRef.current.get(cacheKey);
-      if (cached !== undefined) return cached;
-
-      const api = inventoryItemsApi as unknown as {
-        getUomConversionFactor: (
-          companyId: string,
-          baseUomId: string,
-          uomId: string
-        ) => Promise<ConversionFactorResponse | null>;
-      };
-
-      const response = await api.getUomConversionFactor(companyId, baseId, uomId);
-      const factor = response?.toBaseFactor ?? null;
-
-      if (typeof factor === "number") {
-        factorCacheRef.current.set(cacheKey, factor);
-        return factor;
-      }
-
-      return null;
-    },
-    [companyId]
-  );
-
-  const ensureNonBaseRow = useCallback(
-    async (uomId: string) => {
-      if (!baseUomId || !uomId || uomId === baseUomId) return;
-
-      const meta = uomMetaById.get(uomId);
-
-      setAllowedUoms((current) => {
-        if (current.some((r) => r.uomId === uomId)) return current;
-        return [
-          ...current,
-          {
-            uomId,
-            code: meta?.code ?? "",
-            name: meta?.name ?? "",
-            toBaseFactor: 0,
-            isBase: false,
-            isIssue: false,
-            isActive: true,
-          },
-        ];
-      });
-
-      const factor = await fetchToBaseFactor(baseUomId, uomId);
+  const hydrateMissing = useCallback(async (rows: ItemUomDto[]) => {
+    if (!baseUomId) return;
+    const targets = [...new Set(rows.filter((r) => !r.isBase && r.uomId && (!r.toBaseFactor || r.toBaseFactor <= 0)).map((r) => r.uomId))];
+    await Promise.all(targets.map(async (id) => {
+      const factor = await fetchFactor(baseUomId, id);
       if (factor === null) return;
+      setAllowedUoms((cur) => cur.map((r) => r.uomId === id && !r.isBase ? { ...r, toBaseFactor: factor } : r));
+    }));
+  }, [baseUomId, fetchFactor]);
 
-      setAllowedUoms((current) =>
-        current.map((r) =>
-          r.uomId === uomId && !r.isBase ? { ...r, toBaseFactor: factor } : r
-        )
-      );
-    },
-    [baseUomId, fetchToBaseFactor, uomMetaById]
-  );
+  const ensureNonBaseRow = useCallback(async (uomId: string) => {
+    if (!baseUomId || !uomId || uomId === baseUomId) return;
+    const meta = uomMetaById.get(uomId);
+    setAllowedUoms((cur) => {
+      if (cur.some((r) => r.uomId === uomId)) return cur;
+      return [...cur, { uomId, code: meta?.code ?? "", name: meta?.name ?? "", toBaseFactor: 0, isBase: false, isIssue: false, isActive: true }];
+    });
+    const factor = await fetchFactor(baseUomId, uomId);
+    if (factor === null) return;
+    setAllowedUoms((cur) => cur.map((r) => r.uomId === uomId && !r.isBase ? { ...r, toBaseFactor: factor } : r));
+  }, [baseUomId, fetchFactor, uomMetaById]);
 
-  const hydrateMissingFactors = useCallback(
-    async (rows: ItemUomDto[]) => {
-      if (!baseUomId) return;
-
-      const targets = Array.from(
-        new Set(
-          rows
-            .filter((r) => !r.isBase && r.uomId && (!r.toBaseFactor || r.toBaseFactor <= 0))
-            .map((r) => r.uomId)
-        )
-      );
-
-      await Promise.all(
-        targets.map(async (uomId) => {
-          const factor = await fetchToBaseFactor(baseUomId, uomId);
-          if (factor === null) return;
-          setAllowedUoms((current) =>
-            current.map((r) =>
-              r.uomId === uomId && !r.isBase ? { ...r, toBaseFactor: factor } : r
-            )
-          );
-        })
-      );
-    },
-    [baseUomId, fetchToBaseFactor]
-  );
-
-  // ─── Effects ────────────────────────────────────────────────────────────────
+  // ── Effects ─────────────────────────────────────────────────────────────────
 
   // Reset on create mode
   useEffect(() => {
     if (mode !== "create") return;
-    setName("");
-    setSku("");
-    setBarcode("");
-    setLocalName("");
-    setCategoryId("");
-    setType("RawMaterial");
-    setTrackInventory(true);
-    setIsActive(true);
-    setDefaultCost("");
-    setDefaultPrice("");
-    setReorderLevel("");
-    setBaseUomId("");
-    setStoreUomId("");
-    setAllowedUoms([]);
-    setError(null);
+    setName(""); setSku(""); setBarcode(""); setLocalName(""); setCategoryId("");
+    setType("RawMaterial"); setTrackInventory(true); setIsActive(true);
+    setDefaultCost(""); setDefaultPrice(""); setReorderLevel("");
+    setBaseUomId(""); setStoreUomId(""); setAllowedUoms([]); setError(null);
   }, [mode]);
 
-  // Populate from initial data on edit
+  // Populate from initial on edit
   useEffect(() => {
     if (!initial) return;
-
-    const item = initial as InventoryItemDto & {
-      barcode?: string | null;
-      localName?: string | null;
-      defaultCost?: number | null;
-      defaultPrice?: number | null;
-      reorderLevel?: number | null;
-      allowedUoms?: ItemUomDto[];
-      issueUomId?: string | null;
-    };
-
-    const initialAllowedUoms = Array.isArray(item.allowedUoms) ? item.allowedUoms : [];
-
+    const item = initial as any;
+    const initialAllowedUoms: ItemUomDto[] = Array.isArray(item.allowedUoms) ? item.allowedUoms : [];
     setName(initial.name ?? "");
     setSku(initial.sku ?? "");
     setBarcode(item.barcode ?? "");
@@ -411,9 +235,7 @@ export default function InventoryItemForm({
     setDefaultPrice(item.defaultPrice == null ? "" : String(item.defaultPrice));
     setReorderLevel(item.reorderLevel == null ? "" : String(item.reorderLevel));
     setAllowedUoms(initialAllowedUoms);
-    setStoreUomId(
-      initialAllowedUoms.find((r) => r.isIssue)?.uomId ?? item.issueUomId ?? ""
-    );
+    setStoreUomId(initialAllowedUoms.find((r) => r.isIssue)?.uomId ?? item.issueUomId ?? "");
     setError(null);
   }, [initial]);
 
@@ -423,82 +245,77 @@ export default function InventoryItemForm({
     setBaseUomId(uoms[0].id);
   }, [baseUomId, isServiceLike, mode, uoms]);
 
-  // Clear UOM state when switching to service-like type
+  // Clear UOM state when switching to service-like
   useEffect(() => {
     if (!isServiceLike) return;
-    setTrackInventory(false);
-    setBaseUomId("");
-    setStoreUomId("");
-    setAllowedUoms([]);
+    setTrackInventory(false); setBaseUomId(""); setStoreUomId(""); setAllowedUoms([]);
   }, [isServiceLike]);
 
-  // Keep base UOM row in sync
+  // Keep base row in sync
   useEffect(() => {
     if (isServiceLike || !baseUomId) return;
-    setAllowedUoms((current) => ensureBaseUomRow(current, baseUomId, uoms));
+    setAllowedUoms((cur) => ensureBaseRow(cur, baseUomId, uoms));
   }, [baseUomId, isServiceLike, uoms]);
 
-  // Keep store UOM row in sync
+  // Keep store UOM in sync
   useEffect(() => {
     if (isServiceLike || !baseUomId) return;
     if (storeUomId && storeUomId !== baseUomId) void ensureNonBaseRow(storeUomId);
-    setAllowedUoms((current) => applyStoreUom(current, baseUomId, storeUomId));
+    setAllowedUoms((cur) => applyIssueUom(cur, baseUomId, storeUomId));
   }, [baseUomId, ensureNonBaseRow, isServiceLike, storeUomId]);
 
-  // ─── Submit ──────────────────────────────────────────────────────────────────
+  // ── Submit ──────────────────────────────────────────────────────────────────
 
   const submit = async () => {
     setError(null);
-
     try {
       if (!name.trim()) throw new Error("Item name is required.");
-      if (!isServiceLike && !baseUomId) throw new Error("FUOM is required.");
+      if (!isServiceLike && !baseUomId) throw new Error("FUOM / Base UOM is required.");
 
-      const normalizedAllowedUoms =
-        !isServiceLike && baseUomId
-          ? normalizeAllowedUoms(allowedUoms, baseUomId, storeUomId, uoms)
-          : [];
+      const normalizedUoms = !isServiceLike && baseUomId
+        ? normalizeRows(allowedUoms, baseUomId, storeUomId, uoms)
+        : [];
 
       if (!isServiceLike) {
-        const uomError = validateAllowedUoms(normalizedAllowedUoms);
+        const uomError = validateUoms(normalizedUoms);
         if (uomError) throw new Error(uomError);
       }
 
       const dto: InventoryItemFormDto = {
-        name: name.trim(),
-        sku: getNullableText(sku),
-        localName: getNullableText(localName),
-        barcode: getNullableText(barcode),
-        categoryId: categoryId || null,
-        baseUomId: isServiceLike ? EMPTY_GUID_VALUE : baseUomId,
+        name:           name.trim(),
+        sku:            nullableText(sku),
+        localName:      nullableText(localName),
+        barcode:        nullableText(barcode),
+        categoryId:     categoryId || null,
+        baseUomId:      isServiceLike ? "" : baseUomId,
         type,
-        allowedUoms: isServiceLike ? [] : normalizedAllowedUoms,
+        allowedUoms:    isServiceLike ? [] : normalizedUoms,
         trackInventory: isServiceLike ? false : trackInventory,
-        defaultCost: parseNullableNumber(defaultCost, "Default cost"),
-        defaultPrice: parseNullableNumber(defaultPrice, "Default price"),
-        reorderLevel: parseReorderLevel(reorderLevel),
-        isActive: mode === "create" ? true : isActive,
+        defaultCost:    parseOptionalNumber(defaultCost, "Default cost"),
+        defaultPrice:   parseOptionalNumber(defaultPrice, "Default price"),
+        reorderLevel:   parseReorderLevel(reorderLevel),
+        isActive:       mode === "create" ? true : isActive,
       };
 
       setSaving(true);
       await onSubmit(dto);
     } catch (err) {
-      setError(getErrorMessage(err));
+      setError(extractApiError(err));
     } finally {
       setSaving(false);
     }
   };
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  // ── Chip label ───────────────────────────────────────────────────────────────
 
-  const chipTone: StatusChipTone =
-    mode === "create" ? "draft" : isActive ? "success" : "danger";
-  const chipLabel =
-    mode === "create" ? "Draft" : isActive ? "Active" : "Inactive";
+  const chipTone  = mode === "create" ? "draft" : isActive ? "success" : "danger";
+  const chipLabel = mode === "create" ? "Draft" : isActive ? "Active" : "Inactive";
 
-  const uomSubtitle = isServiceLike
+  const uomSectionSubtitle = isServiceLike
     ? "Service / non-stock items do not require UOM conversions"
-    : "FUOM is the base unit. Store UOM maps to issue UOM";
+    : "FUOM is the base unit — Store UOM maps to the issue UOM";
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="iif-shell">
@@ -510,192 +327,170 @@ export default function InventoryItemForm({
             {mode === "create" ? "New inventory item" : "Edit inventory item"}
           </div>
           <div className="iif-header__subtitle">
-            {isServiceLike
-              ? "Service / non-stock item"
-              : "Stock item with FUOM, store UOM, and conversion rules"}
+            {isServiceLike ? "Service / non-stock item" : "Stock item with FUOM, store UOM, and conversion rules"}
           </div>
         </div>
-
         <div className="iif-header__actions">
-          <StatusChip label={chipLabel} tone={chipTone} />
-          <button className="inv-btn inv-btn--ghost" onClick={onCancel} disabled={saving}>
-            Cancel
-          </button>
-          <button className="inv-btn inv-btn--solid" onClick={submit} disabled={saving}>
+          <span className={`inv-status-chip inv-status-chip--${chipTone}`}>{chipLabel}</span>
+          <button className="inv-btn inv-btn--ghost" onClick={onCancel} disabled={saving}>Cancel</button>
+          <button className="inv-btn inv-btn--solid" onClick={submit}   disabled={saving}>
             {saving ? "Saving…" : "Save item"}
           </button>
         </div>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="iif-alert">
-          {error}
-        </div>
-      )}
+      {error && <div className="iif-alert">{error}</div>}
 
-      {/* Body */}
       <div className="iif-body">
-
         {/* Item information */}
-        <Section
-          title="Item information"
-          subtitle="Basic identity and classification"
-        >
-          <FormGrid>
-            <Field label="Item name *" colSpan={4}>
+        <Section title="Item information" subtitle="Basic identity and classification">
+          <div className="inv-form-grid">
+            <Field label="Item name" span={4} required>
               <input
+                className="inv-input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Tomato, Beef, Room Service"
-                className="inv-input"
+                disabled={saving}
               />
             </Field>
 
-            <Field label="SKU" colSpan={2}>
+            <Field label="SKU" span={2}>
               <input
+                className="inv-input"
                 value={sku}
                 onChange={(e) => setSku(e.target.value)}
                 placeholder="SKU-001"
-                className="inv-input"
+                disabled={saving}
               />
             </Field>
 
-            <Field label="Barcode" colSpan={3}>
+            <Field label="Barcode" span={3}>
               <input
+                className="inv-input"
                 value={barcode}
                 onChange={(e) => setBarcode(e.target.value)}
                 placeholder="0000000000000"
-                className="inv-input"
+                disabled={saving}
               />
             </Field>
 
-            <Field label="Local name" colSpan={3}>
+            <Field label="Local name" span={3}>
               <input
+                className="inv-input"
                 value={localName}
                 onChange={(e) => setLocalName(e.target.value)}
                 placeholder="Optional"
-                className="inv-input"
+                disabled={saving}
+                dir="auto"
               />
             </Field>
 
-            <Field label="Category" colSpan={3}>
+            <Field label="Category" span={3}>
               <select
+                className="inv-input"
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                className="inv-input"
+                disabled={saving}
               >
                 <option value="">None</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </Field>
 
-            <Field label="Item type *" colSpan={3}>
+            <Field label="Item type" span={3} required>
               <select
+                className="inv-input"
                 value={type}
                 onChange={(e) => setType(e.target.value as ItemType)}
-                className="inv-input"
+                disabled={saving}
               >
-                {ITEM_TYPES.map((t) => (
-                  <option key={String(t.value)} value={t.value}>{t.label}</option>
-                ))}
+                {ITEM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </Field>
 
-            <Field label="Track inventory" colSpan={3}>
-              <CheckboxField
-                checked={trackInventory}
-                disabled={isServiceLike}
-                label="Yes"
-                onChange={setTrackInventory}
-              />
+            <Field label="Track inventory" span={3} hint={isServiceLike ? "Not applicable for service items" : undefined}>
+              <label className={`inv-checkbox-row${isServiceLike ? " inv-checkbox-row--disabled" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={trackInventory}
+                  disabled={isServiceLike || saving}
+                  onChange={(e) => setTrackInventory(e.target.checked)}
+                />
+                <span>Yes — track stock movements</span>
+              </label>
             </Field>
 
             {mode === "edit" && (
-              <Field label="Active status" colSpan={3}>
-                <CheckboxField
-                  checked={isActive}
-                  label={isActive ? "Active" : "Inactive"}
-                  onChange={setIsActive}
-                />
+              <Field label="Active status" span={3}>
+                <label className="inv-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={isActive}
+                    disabled={saving}
+                    onChange={(e) => setIsActive(e.target.checked)}
+                  />
+                  <span>{isActive ? "Active" : "Inactive"}</span>
+                </label>
               </Field>
             )}
-          </FormGrid>
+          </div>
         </Section>
 
         {/* Unit of measurement */}
-        <Section title="Unit of measurement" subtitle={uomSubtitle}>
-          <FormGrid>
-            <Field label={`FUOM / base UOM${!isServiceLike ? " *" : ""}`} colSpan={4}>
+        <Section title="Unit of measurement" subtitle={uomSectionSubtitle}>
+          <div className="inv-form-grid">
+            <Field label="FUOM / base UOM" span={4} required={!isServiceLike} hint="Fundamental unit — all conversions are relative to this">
               <select
+                className="inv-input"
                 value={baseUomId}
                 onChange={(e) => setBaseUomId(e.target.value)}
-                disabled={isServiceLike}
-                className="inv-input"
+                disabled={isServiceLike || saving}
               >
                 <option value="">—</option>
                 {uoms.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code ? `${u.name} (${u.code})` : u.name}
-                  </option>
+                  <option key={u.id} value={u.id}>{u.code ? `${u.name} (${u.code})` : u.name}</option>
                 ))}
               </select>
             </Field>
 
-            <Field label="Store UOM / issue UOM" colSpan={4}>
+            <Field label="Store UOM / issue UOM" span={4} hint="Controls the unit used during store requests and stock movements">
               <select
+                className="inv-input"
                 value={storeUomId}
                 onChange={(e) => setStoreUomId(e.target.value)}
-                disabled={isServiceLike || !baseUomId}
-                className="inv-input"
+                disabled={isServiceLike || !baseUomId || saving}
               >
                 <option value="">—</option>
                 {uoms.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code ? `${u.name} (${u.code})` : u.name}
-                  </option>
+                  <option key={u.id} value={u.id}>{u.code ? `${u.name} (${u.code})` : u.name}</option>
                 ))}
               </select>
             </Field>
 
-            <Field label="Conversion source" colSpan={4}>
-              <ReadOnlyField text="Loaded from UOM conversion database" />
+            <Field label="Conversion source" span={4}>
+              <div className="inv-readonly-field">Loaded from UOM conversion database</div>
             </Field>
-          </FormGrid>
+          </div>
 
           {!isServiceLike && (
             <div className="iif-conv-section">
-              <div className="iif-conv-section__label">
-                Allowed units &amp; conversion lines
-              </div>
+              <div className="iif-conv-section__label">Allowed units &amp; conversion lines</div>
               <div className="iif-conv-section__body">
                 {!baseUomId ? (
-                  <p className="iif-conv-section__empty">
-                    Select a <strong>FUOM</strong> to enable conversion lines.
-                  </p>
+                  <p className="iif-conv-section__empty">Select a <strong>FUOM</strong> to enable conversion lines.</p>
                 ) : (
                   <UomConversionGrid
                     baseUomId={baseUomId}
-                    uoms={uoms.map((u) => ({
-                      id: u.id,
-                      code: u.code ?? "",
-                      name: u.name,
-                    }))}
+                    uoms={uoms.map((u) => ({ id: u.id, code: u.code ?? "", name: u.name }))}
                     rows={allowedUoms.filter((r) => !r.isBase)}
                     onChange={(rows) => {
-                      setAllowedUoms((current) => {
-                        const baseRow = current.find(
-                          (r) => r.isBase && r.uomId === baseUomId
-                        );
-                        const merged = [
-                          ...(baseRow ? [baseRow] : []),
-                          ...rows.map((r) => ({ ...r, isBase: false })),
-                        ];
-                        const normalized = normalizeAllowedUoms(merged, baseUomId, storeUomId, uoms);
-                        void hydrateMissingFactors(normalized);
-                        return normalized;
+                      setAllowedUoms((cur) => {
+                        const baseRow = cur.find((r) => r.isBase && r.uomId === baseUomId);
+                        const merged  = [...(baseRow ? [baseRow] : []), ...rows.map((r) => ({ ...r, isBase: false }))];
+                        const norm    = normalizeRows(merged, baseUomId, storeUomId, uoms);
+                        void hydrateMissing(norm);
+                        return norm;
                       });
                     }}
                   />
@@ -706,47 +501,46 @@ export default function InventoryItemForm({
         </Section>
 
         {/* Costing & control */}
-        <Section
-          title="Costing & control"
-          subtitle="Default values used by inventory and recipe costing"
-        >
-          <FormGrid>
-            <Field label="Default cost" colSpan={3}>
+        <Section title="Costing & control" subtitle="Default values used by inventory and recipe costing">
+          <div className="inv-form-grid">
+            <Field label="Default cost" span={3} hint="Used as fallback unit cost">
               <input
                 type="number"
                 inputMode="decimal"
+                className="inv-input"
                 value={defaultCost}
                 onChange={(e) => setDefaultCost(e.target.value)}
                 placeholder="0.00"
-                className="inv-input"
+                disabled={saving}
               />
             </Field>
 
-            <Field label="Default price" colSpan={3}>
+            <Field label="Default price" span={3} hint="Used as fallback selling price">
               <input
                 type="number"
                 inputMode="decimal"
+                className="inv-input"
                 value={defaultPrice}
                 onChange={(e) => setDefaultPrice(e.target.value)}
                 placeholder="0.00"
-                className="inv-input"
+                disabled={saving}
               />
             </Field>
 
-            <Field label="Reorder level" colSpan={3}>
+            <Field label="Reorder level" span={3} hint="Triggers low-stock alerts when stock falls below this">
               <input
                 type="number"
                 min={0}
                 inputMode="numeric"
+                className="inv-input"
                 value={reorderLevel}
                 onChange={(e) => setReorderLevel(e.target.value)}
-                placeholder="Optional"
-                className="inv-input"
+                placeholder="0"
+                disabled={saving}
               />
             </Field>
-          </FormGrid>
+          </div>
         </Section>
-
       </div>
     </div>
   );

@@ -1,0 +1,255 @@
+.erp-profile-page {
+  display: grid;
+  gap: 18px;
+}
+
+.erp-loading,
+.erp-empty {
+  padding: 56px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.erp-profile-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.erp-profile-hero__main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.erp-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.erp-profile-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.03em;
+}
+
+.erp-profile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.erp-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.erp-profile-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.erp-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.erp-kpi {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+}
+
+.erp-kpi__label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.erp-kpi__value {
+  margin-top: 8px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.erp-kpi__hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.erp-profile-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+}
+
+.erp-profile-main {
+  display: grid;
+  gap: 16px;
+}
+
+.erp-section {
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: var(--surface);
+  padding: 18px;
+}
+
+.erp-section__header {
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.erp-section__title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.erp-section__subtitle {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.erp-section__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px 22px;
+}
+
+.erp-profile-field__label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.erp-profile-field__value {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.erp-profile-side {
+  display: grid;
+  gap: 16px;
+}
+
+.erp-side-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: var(--surface);
+  padding: 16px;
+}
+
+.erp-side-card__title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.erp-snapshot-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+
+.erp-snapshot-row:last-child {
+  border-bottom: 0;
+}
+
+.erp-snapshot-row span {
+  color: var(--text-muted);
+}
+
+.erp-snapshot-row strong {
+  color: var(--text);
+  text-align: right;
+}
+
+.erp-side-action {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.erp-danger-action {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+@media (max-width: 1100px) {
+  .erp-profile-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-profile-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .erp-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .erp-profile-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .erp-profile-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .erp-profile-side,
+  .erp-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-profile-title {
+    font-size: 22px;
+  }
+}

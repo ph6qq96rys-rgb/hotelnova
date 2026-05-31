@@ -1,881 +1,1081 @@
-import * as React from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useAppScope } from "../../../../app/useAppScope";
-import { sivApi } from "../api/sivApi";
+// src/features/inventory/siv/pages/SivDetailsPage.tsx
+//
+// Full SIV detail view with:
+//   • Workflow progress bar
+//   • Command bar (role-gated action buttons)
+//   • Line items table (Requested / Approved / Issued / Cost columns)
+//   • Audit trail tab
+//   • FIFO preview tab (lazy-loaded per line)
+//   • Properties panel
+//   • All workflow action modals wired to real API
+
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate, useParams }            from "react-router-dom";
+import { useAppScope }                       from "../../../../app/useAppScope";
+import { sivApi }                            from "../api/sivApi";
+import type { ApproveSivLineRequest, IssueSivLineRequest, SivLineFifoPreviewDto } from "../api/sivApi";
+import SivWorkflowBar                        from "../components/SivWorkflowBar";
+import {
+  normalizeStatus, STATUS_BADGE, resolvePermissions,
+  mapToVm, fmtDate, fmtDateTime, fmtQty, fmt$, getApiError,
+  type SivVm, type SivLineVm,
+}                                            from "../types/sivTypes";
 import "./siv-draft.css";
 
-function safeString(value: unknown): string {
-  return value == null ? "" : String(value);
-}
+// ── Approve modal — per-line quantity overrides ───────────────────────────────
 
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value.trim()
-  );
-}
-
-function asNumber(value: unknown, fallback = 0): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function formatDate(value?: string | null): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
-}
-
-function formatDateTime(value?: string | null): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
-}
-
-function formatQty(value?: number | null): string {
-  if (value == null) return "—";
-  return new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 2,
-  }).format(Number(value));
-}
-
-type WorkflowStatus =
-  | "Draft"
-  | "Submitted"
-  | "Approved"
-  | "Issued"
-  | "Posted"
-  | "RequestedChanges"
-  | "Rejected"
-  | "Reversed"
-  | "Cancelled"
-  | "Unknown";
-
-function normalizeStatus(value?: string | number | null): WorkflowStatus {
-  if (value == null || value === "") return "Unknown";
-
-  const s = String(value).trim().toLowerCase().replace(/\s+/g, "");
-
-  switch (s) {
-    case "0":
-    case "10":
-    case "draft":
-      return "Draft";
-    case "1":
-    case "20":
-    case "submitted":
-      return "Submitted";
-    case "2":
-    case "30":
-    case "approved":
-      return "Approved";
-    case "25":
-    case "requestedchanges":
-    case "requested_changes":
-    case "requestedchange":
-      return "RequestedChanges";
-    case "4":
-    case "40":
-    case "rejected":
-      return "Rejected";
-    case "5":
-    case "8":
-    case "50":
-    case "issued":
-      return "Issued";
-    case "3":
-    case "6":
-    case "60":
-    case "posted":
-      return "Posted";
-    case "7":
-    case "70":
-    case "reversed":
-      return "Reversed";
-    case "80":
-    case "cancelled":
-    case "canceled":
-      return "Cancelled";
-    default:
-      return "Unknown";
-  }
-}
-
-function statusTone(status?: string | number | null): "neutral" | "good" | "warn" {
-  const s = normalizeStatus(status);
-
-  if (s === "Approved" || s === "Issued" || s === "Posted") return "good";
-  if (s === "Submitted" || s === "RequestedChanges") return "warn";
-
-  return "neutral";
-}
-
-type Notice = {
-  kind: "success" | "info" | "error";
-  message: string;
-} | null;
-
-type SivLineVm = {
-  id: string;
-  itemId: string;
-  itemName: string;
-  uomId: string;
-  uomName: string;
-  uomCode: string;
-  qty: number;
-  remarks: string;
-  batchNo: string;
-  expiryDate: string;
-  availableQty?: number;
-  availableBaseQty?: number;
-};
-
-type SivVm = {
-  id: string;
-  number: string;
-  companyId: string;
-  branchId: string;
-  departmentId: string;
-  departmentName: string;
-  fromLocationId: string;
-  fromLocationName: string;
-  toLocationId: string;
-  toLocationName: string;
-  issueDate: string;
-  remarks: string;
-  notes: string;
-  docStatus: WorkflowStatus;
-  rowVersion?: string | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-  lines: SivLineVm[];
-};
-
-function unwrapApi(input: any): any {
-  return input?.data?.data ?? input?.data ?? input ?? {};
-}
-
-function pickLines(input: any): any[] {
-  const raw = unwrapApi(input);
-
-  const lines =
-    raw?.lines ??
-    raw?.sivLines ??
-    raw?.issueLines ??
-    raw?.stockIssueVoucherLines ??
-    raw?.stockIssueLines ??
-    raw?.lineItems ??
-    raw?.items ??
-    raw?.details ??
-    raw?.documentLines ??
-    [];
-
-  return Array.isArray(lines) ? lines : [];
-}
-
-function mapDetailsToVm(input: any): SivVm {
-  const raw = unwrapApi(input);
-  const linesRaw = pickLines(raw);
-
-  return {
-    id: safeString(raw?.id),
-    number: safeString(raw?.number ?? raw?.documentNumber ?? raw?.voucherNo ?? raw?.id),
-    companyId: safeString(raw?.companyId),
-    branchId: safeString(raw?.branchId),
-    departmentId: safeString(raw?.departmentId),
-    departmentName: safeString(raw?.departmentName ?? raw?.department?.name),
-    fromLocationId: safeString(raw?.fromLocationId ?? raw?.locationId),
-    fromLocationName: safeString(
-      raw?.fromLocationName ?? raw?.fromLocation?.name ?? raw?.locationName
-    ),
-    toLocationId: safeString(raw?.toLocationId),
-    toLocationName: safeString(raw?.toLocationName ?? raw?.toLocation?.name),
-    issueDate: safeString(raw?.issueDate ?? raw?.documentDate),
-    remarks: safeString(raw?.remarks),
-    notes: safeString(raw?.notes),
-    docStatus: normalizeStatus(raw?.status ?? raw?.docStatus),
-    rowVersion: raw?.rowVersion ?? null,
-    createdAt: raw?.createdAt ?? raw?.createdOn ?? null,
-    updatedAt: raw?.updatedAt ?? raw?.modifiedAt ?? raw?.lastModifiedAt ?? null,
-    lines: linesRaw.map((line: any) => ({
-      id: safeString(line?.id),
-      itemId: safeString(
-        line?.itemId ?? line?.inventoryItemId ?? line?.productId ?? line?.stockItemId
-      ),
-      itemName: safeString(
-        line?.itemName ??
-          line?.inventoryItemName ??
-          line?.productName ??
-          line?.stockItemName ??
-          line?.item?.name ??
-          line?.inventoryItem?.name
-      ),
-      uomId: safeString(line?.uomId ?? line?.unitOfMeasureId ?? line?.baseUomId),
-      uomName: safeString(line?.uomName ?? line?.unitOfMeasureName ?? line?.uom?.name),
-      uomCode: safeString(
-        line?.uomCode ??
-          line?.unitOfMeasureCode ??
-          line?.baseUomCode ??
-          line?.uom ??
-          line?.item?.baseUom
-      ),
-      qty: asNumber(line?.qty ?? line?.quantity ?? line?.issuedQty ?? line?.issueQty, 0),
-      remarks: safeString(line?.remarks ?? line?.notes),
-      batchNo: safeString(line?.batchNo ?? line?.batchNumber),
-      expiryDate: safeString(line?.expiryDate ?? line?.expirationDate),
-      availableQty:
-        line?.availableQty == null && line?.availableQuantity == null
-          ? undefined
-          : asNumber(line?.availableQty ?? line?.availableQuantity),
-      availableBaseQty:
-        line?.availableBaseQty == null && line?.availableQty == null
-          ? undefined
-          : asNumber(line?.availableBaseQty ?? line?.availableQty),
-    })),
-  };
-}
-
-function buildWorkflowRequest(doc: SivVm, overrideRemarks?: string) {
-  return {
-    companyId: doc.companyId,
-    rowVersion: doc.rowVersion ?? null,
-    remarks:
-      typeof overrideRemarks === "string"
-        ? overrideRemarks.trim() || null
-        : doc.remarks?.trim() || null,
-  };
-}
-
-function requireRemarks(
-  action: "requestChanges" | "reject" | "reverse"
-): string | null {
-  const label =
-    action === "requestChanges"
-      ? "remarks for requesting changes"
-      : action === "reject"
-        ? "remarks for rejection"
-        : "reason for reversal";
-
-  const text = window.prompt(`Enter ${label}:`, "");
-  if (text == null) return null;
-
-  const trimmed = text.trim();
-
-  if (!trimmed) {
-    window.alert(`Please enter ${label}.`);
-    return null;
-  }
-
-  return trimmed;
-}
-
-function Chip({
-  tone = "neutral",
-  children,
+function ApproveModal({
+  lines,  busy,
+  onConfirm, onCancel,
 }: {
-  tone?: "neutral" | "good" | "warn";
-  children: React.ReactNode;
+  lines:      SivLineVm[];
+  rowVersion: string | null;
+  busy:       boolean;
+  onConfirm:  (lines: ApproveSivLineRequest[], remarks: string) => void;
+  onCancel:   () => void;
 }) {
-  return <span className={`lux-chip ${tone}`}>{children}</span>;
-}
+  const [qtys,    setQtys]    = useState<Record<string, string>>({});
+  const [remarks, setRemarks] = useState("");
+  const [errors,  setErrors]  = useState<Record<string, string>>({});
 
-function AlertBar({
-  kind,
-  message,
-  onClose,
-}: {
-  kind: "error" | "success" | "info";
-  message: string;
-  onClose: () => void;
-}) {
+  const validate = () => {
+    const e: Record<string, string> = {};
+    lines.forEach((l) => {
+      const v = qtys[l.id] !== undefined ? parseFloat(qtys[l.id]) : l.qty;
+      if (isNaN(v) || v < 0) e[l.id] = "Cannot be negative";
+      else if (v > l.qty) e[l.id] = `Max: ${fmtQty(l.qty)}`;
+    });
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleConfirm = () => {
+    if (!validate()) return;
+    const lineReqs: ApproveSivLineRequest[] = lines.map((l) => ({
+      lineId:      l.id,
+      approvedQty: qtys[l.id] !== undefined ? parseFloat(qtys[l.id]) : l.qty,
+    }));
+    onConfirm(lineReqs, remarks);
+  };
+
+  const partials = lines.filter(
+    (l) => qtys[l.id] !== undefined && parseFloat(qtys[l.id]) < l.qty
+  ).length;
+
   return (
-    <div className={`lux-alert ${kind}`}>
-      <div className="lux-alert__msg">{message}</div>
-      <button className="lux-btn ghost" onClick={onClose} type="button">
-        ✕
-      </button>
+    <div
+      style={{
+        position:"fixed",inset:0,background:"rgba(0,0,0,.45)",
+        display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,
+      }}
+    >
+      <div
+        style={{
+          background:"var(--surface)",borderRadius:"var(--r-lg)",
+          padding:24,width:580,maxHeight:"90vh",overflowY:"auto",
+          border:"1px solid var(--border)",boxShadow:"var(--shadow-lg)",
+        }}
+      >
+        <div style={{fontWeight:600,fontSize:15,marginBottom:4}}>Approve SIV</div>
+        <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:16}}>
+          Review quantities. Leave unchanged to approve at the full requested amount.
+        </div>
+
+        {partials > 0 && (
+          <div className="alert alert-warn" style={{marginBottom:14}}>
+            ⚠ {partials} line{partials > 1 ? "s" : ""} will be partially approved.
+          </div>
+        )}
+
+        <table className="table" style={{marginBottom:14}}>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>UOM</th>
+              <th style={{textAlign:"right"}}>Requested</th>
+              <th style={{textAlign:"right",width:130}}>Approved Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l) => {
+              const cur     = qtys[l.id] !== undefined ? qtys[l.id] : String(l.qty);
+              const partial = parseFloat(cur) < l.qty;
+              return (
+                <tr key={l.id} style={{background:partial?"var(--warn-bg-light)":"transparent"}}>
+                  <td>
+                    <div style={{fontWeight:500}}>{l.itemName || "—"}</div>
+                    <div style={{fontSize:10,color:"var(--text-muted)",fontFamily:"var(--mono)"}}>{l.itemCode}</div>
+                  </td>
+                  <td style={{fontFamily:"var(--mono)",fontSize:12}}>{l.uomCode}</td>
+                  <td style={{textAlign:"right",fontFamily:"var(--mono)",fontWeight:500}}>
+                    {fmtQty(l.qty)}
+                  </td>
+                  <td style={{padding:"6px 12px"}}>
+                    <input
+                      type="number" min={0} max={l.qty} step="0.001"
+                      className="input"
+                      value={cur}
+                      onChange={(e) => setQtys((p) => ({ ...p, [l.id]: e.target.value }))}
+                      style={{
+                        height:32,fontSize:12,
+                        borderColor:errors[l.id]?"var(--danger)":partial?"var(--warn)":undefined,
+                      }}
+                    />
+                    {errors[l.id] && (
+                      <div style={{fontSize:10,color:"var(--danger)",marginTop:2}}>
+                        {errors[l.id]}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div className="field" style={{marginBottom:16}}>
+          <label className="field-label">Approval notes (optional)</label>
+          <textarea
+            className="input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Notes for the warehouse…"
+            style={{minHeight:64}}
+          />
+        </div>
+
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className="btn btn-success" onClick={handleConfirm} disabled={busy}>
+            {busy ? "Approving…" : "Approve SIV"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
-function resolvePermissions(status: WorkflowStatus, hasDoc: boolean) {
-  const isDraft = status === "Draft";
-  const isRequestedChanges = status === "RequestedChanges";
-  const isSubmitted = status === "Submitted";
-  const isApproved = status === "Approved";
-  const isIssued = status === "Issued";
-  const isPosted = status === "Posted";
+// ── Issue modal — per-line issued quantities ───────────────────────────────────
 
-  const canEdit = hasDoc && (isDraft || isRequestedChanges);
+function IssueModal({
+  lines, rowVersion, busy,
+  onConfirm, onCancel,
+}: {
+  lines:      SivLineVm[];
+  rowVersion: string | null;
+  busy:       boolean;
+  onConfirm:  (lines: IssueSivLineRequest[], remarks: string) => void;
+  onCancel:   () => void;
+}) {
+  const [qtys,    setQtys]    = useState<Record<string, string>>({});
+  const [batches, setBatches] = useState<Record<string, string>>({});
+  const [remarks, setRemarks] = useState("");
+  const [errors,  setErrors]  = useState<Record<string, string>>({});
 
-  return {
-    canEdit,
-    canSubmit: canEdit,
-    canApprove: hasDoc && isSubmitted,
-    canRequestChanges: hasDoc && isSubmitted,
-    canReject: hasDoc && isSubmitted,
-    canIssue: hasDoc && isApproved,
-    canPost: hasDoc && isIssued,
-    canReverse: hasDoc && isPosted,
-    isApprovalState: hasDoc && isSubmitted,
+  const validate = () => {
+    const e: Record<string, string> = {};
+    lines.forEach((l) => {
+      const max = l.approvedQty ?? l.qty;
+      const v   = qtys[l.id] !== undefined ? parseFloat(qtys[l.id]) : max;
+      if (isNaN(v) || v < 0) e[l.id] = "Cannot be negative";
+      else if (v > max) e[l.id] = `Max: ${fmtQty(max)}`;
+    });
+    const allZero = lines.every((l) => {
+      const max = l.approvedQty ?? l.qty;
+      const v   = qtys[l.id] !== undefined ? parseFloat(qtys[l.id]) : max;
+      return v === 0;
+    });
+    if (allZero) e._all = "At least one line must have a non-zero issued quantity.";
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
+
+  const handleConfirm = () => {
+    if (!validate()) return;
+    const lineReqs: IssueSivLineRequest[] = lines.map((l) => {
+      const max = l.approvedQty ?? l.qty;
+      return {
+        lineId:    l.id,
+        issuedQty: qtys[l.id] !== undefined ? parseFloat(qtys[l.id]) : max,
+        batchNo:   batches[l.id] || l.batchNo || null,
+      };
+    });
+    onConfirm(lineReqs, remarks);
+  };
+
+  return (
+    <div
+      style={{
+        position:"fixed",inset:0,background:"rgba(0,0,0,.45)",
+        display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,
+      }}
+    >
+      <div
+        style={{
+          background:"var(--surface)",borderRadius:"var(--r-lg)",
+          padding:24,width:640,maxHeight:"90vh",overflowY:"auto",
+          border:"1px solid var(--border)",boxShadow:"var(--shadow-lg)",
+        }}
+      >
+        <div style={{fontWeight:600,fontSize:15,marginBottom:4}}>Issue SIV</div>
+        <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:16}}>
+          Confirm quantities physically picked from the warehouse.
+          IssuedQty ≤ ApprovedQty.
+        </div>
+
+        {errors._all && (
+          <div className="alert alert-danger" style={{marginBottom:12}}>{errors._all}</div>
+        )}
+
+        <table className="table" style={{marginBottom:14}}>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th style={{textAlign:"right"}}>Approved</th>
+              <th style={{textAlign:"right",width:130}}>Issued Qty</th>
+              <th style={{width:140}}>Batch / Lot No.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l) => {
+              const max = l.approvedQty ?? l.qty;
+              const cur = qtys[l.id] !== undefined ? qtys[l.id] : String(max);
+              return (
+                <tr key={l.id}>
+                  <td>
+                    <div style={{fontWeight:500}}>{l.itemName || "—"}</div>
+                    <div style={{fontSize:10,color:"var(--text-muted)",fontFamily:"var(--mono)"}}>
+                      {l.itemCode} · {l.uomCode}
+                    </div>
+                  </td>
+                  <td style={{textAlign:"right",fontFamily:"var(--mono)",fontWeight:500}}>
+                    {fmtQty(max)}
+                  </td>
+                  <td style={{padding:"6px 12px"}}>
+                    <input
+                      type="number" min={0} max={max} step="0.001"
+                      className="input"
+                      value={cur}
+                      onChange={(e) => {
+                        if (parseFloat(e.target.value) > max) return;
+                        setQtys((p) => ({ ...p, [l.id]: e.target.value }));
+                      }}
+                      style={{height:32,fontSize:12,borderColor:errors[l.id]?"var(--danger)":undefined}}
+                    />
+                    {errors[l.id] && (
+                      <div style={{fontSize:10,color:"var(--danger)",marginTop:2}}>{errors[l.id]}</div>
+                    )}
+                  </td>
+                  <td style={{padding:"6px 12px"}}>
+                    <input
+                      type="text" className="input"
+                      value={batches[l.id] ?? ""}
+                      onChange={(e) => setBatches((p) => ({ ...p, [l.id]: e.target.value }))}
+                      placeholder="Batch / Lot No."
+                      style={{height:32,fontSize:12}}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div className="field" style={{marginBottom:16}}>
+          <label className="field-label">Issue notes (optional)</label>
+          <textarea
+            className="input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Warehouse notes…"
+            style={{minHeight:56}}
+          />
+        </div>
+
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleConfirm} disabled={busy}>
+            {busy ? "Issuing…" : "Confirm Issue"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-export default function SivDetailsPage() {
-  const navigate = useNavigate();
+// ── Remarks modal (Reject / Request Changes / Reverse) ────────────────────────
 
-  const params = useParams<{
-    companyId?: string;
-    sivId?: string;
-    id?: string;
-    draftId?: string;
-  }>();
+function RemarksModal({
+  title, subtitle, fieldLabel, confirmLabel, confirmClass,
+  required, busy,
+  onConfirm, onCancel,
+}: {
+  title:        string;
+  subtitle?:    string;
+  fieldLabel:   string;
+  confirmLabel: string;
+  confirmClass: string;
+  required:     boolean;
+  busy:         boolean;
+  onConfirm:    (remarks: string) => void;
+  onCancel:     () => void;
+}) {
+  const [text,  setText]  = useState("");
+  const [err,   setErr]   = useState("");
+  const valid = !required || text.trim().length > 0;
 
-  const scope = useAppScope() as any;
+  return (
+    <div
+      style={{
+        position:"fixed",inset:0,background:"rgba(0,0,0,.4)",
+        display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,
+      }}
+    >
+      <div
+        style={{
+          background:"var(--surface)",borderRadius:"var(--r-lg)",
+          padding:24,width:440,
+          border:"1px solid var(--border)",boxShadow:"var(--shadow-lg)",
+        }}
+      >
+        <div style={{fontWeight:600,fontSize:15,marginBottom:subtitle?4:12}}>{title}</div>
+        {subtitle && (
+          <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:14}}>{subtitle}</div>
+        )}
+        <div className="field" style={{marginBottom:16}}>
+          <label className="field-label">
+            {fieldLabel}{required && <span style={{color:"var(--danger)",marginLeft:3}}>*</span>}
+          </label>
+          <textarea
+            className="input"
+            value={text}
+            onChange={(e) => { setText(e.target.value); if (e.target.value) setErr(""); }}
+            placeholder={required ? "Required" : "Optional"}
+            style={{minHeight:88}}
+            autoFocus
+          />
+          {err && <div style={{fontSize:11,color:"var(--danger)",marginTop:3}}>{err}</div>}
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button
+            className={`btn ${confirmClass}`}
+            onClick={() => {
+              if (required && !text.trim()) { setErr("This field is required."); return; }
+              onConfirm(text.trim());
+            }}
+            disabled={busy || !valid}
+          >
+            {busy ? "Processing…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  const scopedCompanyId = safeString(scope?.companyId);
-  const scopedBranchId = safeString(scope?.branchId);
+// ── Post confirmation modal ───────────────────────────────────────────────────
 
-  const companyId = safeString(params.companyId || scopedCompanyId);
-  const sivId = safeString(params.sivId || params.id || params.draftId);
+function PostModal({
+  doc, busy,
+  onConfirm, onCancel,
+}: {
+  doc:       SivVm;
+  busy:      boolean;
+  onConfirm: () => void;
+  onCancel:  () => void;
+}) {
+  const issued = doc.lines.filter((l) => l.issuedQty > 0);
+  const total  = issued.reduce((s, l) => s + l.issuedQty, 0);
+  return (
+    <div
+      style={{
+        position:"fixed",inset:0,background:"rgba(0,0,0,.4)",
+        display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,
+      }}
+    >
+      <div
+        style={{
+          background:"var(--surface)",borderRadius:"var(--r-lg)",
+          padding:24,width:480,
+          border:"1px solid var(--border)",boxShadow:"var(--shadow-lg)",
+        }}
+      >
+        <div style={{fontWeight:600,fontSize:15,marginBottom:4}}>Post to Inventory Ledger</div>
+        <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:16}}>
+          This will trigger FIFO consumption at {doc.fromLocationName} and create
+          inventory ledger entries. This cannot be undone without a formal reversal.
+        </div>
+        <div className="alert alert-success" style={{marginBottom:14}}>
+          ▲ {issued.length} line{issued.length !== 1 ? "s" : ""} · {fmtQty(total)} units
+          will be posted from {doc.fromLocationName} → {doc.toLocationName || doc.departmentName || "—"}.
+        </div>
+        <div className="alert alert-warn" style={{marginBottom:18}}>
+          ⚠ Posting is permanent. Verify all quantities before proceeding.
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className="btn btn-primary" onClick={onConfirm} disabled={busy}>
+            {busy ? "Posting…" : "Post to Ledger"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  const [busy, setBusy] = React.useState(false);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
-  const [notice, setNotice] = React.useState<Notice>(null);
-  const [doc, setDoc] = React.useState<SivVm | null>(null);
+// ── FIFO Preview panel ────────────────────────────────────────────────────────
 
-  const canLoad = isUuid(companyId) && isUuid(sivId);
+function FifoPreviewPanel({
+  companyId, sivId, lines,
+}: {
+  companyId: string;
+  sivId:     string;
+  lines:     SivLineVm[];
+}) {
+  const [selectedLine, setSelectedLine] = useState<string>(lines[0]?.id ?? "");
+  const [preview,      setPreview]      = useState<SivLineFifoPreviewDto | null>(null);
+  const [loading,      setLoading]      = useState(false);
+  const [err,          setErr]          = useState("");
 
-  const load = React.useCallback(async () => {
-    if (!canLoad) return;
-
-    setLoading(true);
-    setError("");
-
+  const loadPreview = async (lineId: string) => {
+    setLoading(true); setErr(""); setPreview(null);
     try {
-      const api = sivApi as any;
-      const getFn = api.getById ?? api.getDetails ?? api.getDraft ?? api.get;
-
-      if (!getFn) {
-        throw new Error("Missing SIV details API method.");
-      }
-
-      const raw = await getFn(companyId, sivId);
-      const mapped = mapDetailsToVm(raw);
-
-      setDoc(mapped);
-    } catch (e: any) {
-      setError(e?.response?.data?.title || e?.message || "Failed to load SIV.");
-      setDoc(null);
+      const data = await sivApi.getFifoPreview(companyId, sivId, lineId);
+      setPreview(data.data);
+    } catch (e) {
+      setErr(getApiError(e, "Failed to load FIFO preview."));
     } finally {
       setLoading(false);
     }
-  }, [canLoad, companyId, sivId]);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
-  const runWorkflow = React.useCallback(
-    async (
-      action:
-        | "submit"
-        | "approve"
-        | "requestChanges"
-        | "reject"
-        | "issue"
-        | "post"
-        | "reverse"
-    ) => {
-      if (!doc || !sivId) return;
-
-      setBusy(true);
-      setError("");
-      setNotice(null);
-
-      try {
-        let remarksOverride: string | undefined;
-
-        if (
-          action === "requestChanges" ||
-          action === "reject" ||
-          action === "reverse"
-        ) {
-          const input = requireRemarks(action);
-
-          if (input === null) {
-            setBusy(false);
-            return;
-          }
-
-          remarksOverride = input;
-        }
-
-        const api = sivApi as any;
-
-        const fn =
-          action === "submit"
-            ? api.submit ?? api.submitForApproval
-            : action === "approve"
-              ? api.approve
-              : action === "requestChanges"
-                ? api.requestChanges
-                : action === "reject"
-                  ? api.reject
-                  : action === "issue"
-                    ? api.issue
-                    : action === "post"
-                      ? api.post
-                      : api.reverse;
-
-        if (!fn) {
-          throw new Error(`Missing SIV API workflow method for ${action}.`);
-        }
-
-        await fn(companyId, sivId, buildWorkflowRequest(doc, remarksOverride));
-
-        const messageByAction: Record<typeof action, string> = {
-          submit: "SIV submitted for approval successfully.",
-          approve: "SIV approved successfully.",
-          requestChanges: "Change request sent successfully.",
-          reject: "SIV rejected successfully.",
-          issue: "SIV issued successfully.",
-          post: "SIV posted successfully.",
-          reverse: "SIV reversed successfully.",
-        };
-
-        setNotice({
-          kind: "success",
-          message: messageByAction[action],
-        });
-
-        await load();
-      } catch (e: any) {
-        setError(
-          e?.response?.data?.title ||
-            e?.response?.data?.message ||
-            e?.message ||
-            `Failed to ${action} SIV.`
-        );
-      } finally {
-        setBusy(false);
-      }
-    },
-    [doc, companyId, sivId, load]
-  );
-
-  const status = normalizeStatus(doc?.docStatus);
-  const permissions = resolvePermissions(status, !!doc);
-
-  const totalQty = React.useMemo(
-    () => doc?.lines.reduce((sum, line) => sum + Number(line.qty || 0), 0) ?? 0,
-    [doc]
-  );
-
-  if (!companyId || !isUuid(companyId)) {
-    return (
-      <div className="lux-page">
-        <div className="lux-container">
-          <div className="lux-card">
-            <div className="lux-card__title">Invalid Company Scope</div>
-            <div className="lux-card__desc">No valid companyId was found.</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!sivId || !isUuid(sivId)) {
-    return (
-      <div className="lux-page">
-        <div className="lux-container">
-          <div className="lux-card">
-            <div className="lux-card__title">Invalid SIV Id</div>
-            <div className="lux-card__desc">The requested SIV id is missing or invalid.</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  };
 
   return (
-    <div className="lux-page">
-      <div className="lux-sticky">
-        <div className="lux-sticky__inner">
-          <div className="lux-sticky__left">
-            <div className="lux-title">Stock Issue Voucher</div>
-            <div className="lux-subtitle">
-              Workflow: Draft → Submitted → Approved → Issued → Posted
-              <span className="lux-dot">•</span>
-              <span className="lux-muted">{companyId}</span>
+    <div>
+      <div style={{marginBottom:14}}>
+        <label className="field-label">Select line to preview</label>
+        <select
+          className="select"
+          style={{maxWidth:320}}
+          value={selectedLine}
+          onChange={(e) => {
+            setSelectedLine(e.target.value);
+            void loadPreview(e.target.value);
+          }}
+        >
+          <option value="">— choose a line —</option>
+          {lines.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.itemName || l.itemCode} ({fmtQty(l.qty)} {l.uomCode})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {loading && (
+        <div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>
+          Loading FIFO preview…
+        </div>
+      )}
+
+      {err && <div className="alert alert-danger">{err}</div>}
+
+      {preview && !loading && (
+        <div>
+          <div style={{marginBottom:12,fontSize:13}}>
+            <strong>{preview.itemName}</strong>
+            {" · "} Need:{" "}
+            <span style={{fontFamily:"var(--mono)",fontWeight:500}}>
+              {fmtQty(preview.requestedQty)} {preview.uomCode}
+            </span>
+          </div>
+
+          {preview.allocations.length === 0 ? (
+            <div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>
+              No FIFO lots available for this item at the selected warehouse.
             </div>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Lot</th>
+                  <th>Received</th>
+                  <th>Batch</th>
+                  <th>Expiry</th>
+                  <th style={{textAlign:"right"}}>Available</th>
+                  <th style={{textAlign:"right"}}>Proposed take</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.allocations.map((alloc) => (
+                  <tr key={alloc.fifoLayerId}>
+                    <td style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--accent)"}}>
+                      {alloc.sourceNumber || alloc.fifoLayerId.slice(0, 8)}
+                    </td>
+                    <td style={{fontSize:12}}>{fmtDate(alloc.receivedDate)}</td>
+                    <td style={{fontSize:12}}>{alloc.batchNo || "—"}</td>
+                    <td
+                      style={{
+                        fontSize: 12,
+                        color:
+                          alloc.expiryDate && new Date(alloc.expiryDate) < new Date()
+                            ? "var(--danger)" : "var(--text)",
+                      }}
+                    >
+                      {alloc.expiryDate ? fmtDate(alloc.expiryDate) : "—"}
+                    </td>
+                    <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:12}}>
+                      {fmtQty(alloc.availableBaseQty)}
+                    </td>
+                    <td
+                      style={{
+                        textAlign:  "right",
+                        fontFamily: "var(--mono)",
+                        fontSize:   12,
+                        fontWeight: 500,
+                        color:      "var(--accent)",
+                      }}
+                    >
+                      {fmtQty(alloc.proposedIssueBaseQty)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {!selectedLine && !loading && (
+        <div style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>
+          Select a line above to see the FIFO lot allocation preview.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+type ModalType = "none"|"approve"|"reject"|"requestChanges"|"issue"|"post"|"reverse"|"submit";
+
+export default function SivDetailsPage() {
+  const nav = useNavigate();
+  const { companyId: routeCompanyId, sivId = "" } = useParams<{
+    companyId?: string; sivId?: string;
+  }>();
+  const { companyId: scopeCompanyId } = useAppScope();
+  const companyId = routeCompanyId || scopeCompanyId || "";
+
+  const [doc,     setDoc]     = useState<SivVm | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy,    setBusy]    = useState(false);
+  const [err,     setErr]     = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [modal,   setModal]   = useState<ModalType>("none");
+  const [tab,     setTab]     = useState<"lines"|"audit"|"fifo">("lines");
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+
+  const load = useCallback(async () => {
+    if (!companyId || !sivId) return;
+    setLoading(true); setErr(null);
+    try {
+      const raw = await sivApi.getById(companyId, sivId);
+      setDoc(mapToVm(raw.data));
+    } catch (e) {
+      setErr(getApiError(e, "Failed to load SIV."));
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, sivId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // ── Generic action runner ─────────────────────────────────────────────────
+
+  async function run(label: string, fn: () => Promise<void>) {
+    setBusy(true); setErr(null); setSuccess(null);
+    try {
+      await fn();
+      setSuccess(`${label} successful.`);
+      setModal("none");
+      await load();
+    } catch (e) {
+      setErr(getApiError(e, `${label} failed.`));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ── Guards ────────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="page">
+        <div style={{padding:48,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>
+          Loading SIV…
+        </div>
+      </div>
+    );
+  }
+
+  if (!doc) {
+    return (
+      <div className="page">
+        {err && <div className="alert alert-danger">{err}</div>}
+        <div style={{fontSize:13,color:"var(--text-soft)"}}>SIV not found.</div>
+      </div>
+    );
+  }
+
+  const status = normalizeStatus(doc.docStatus);
+  const p      = resolvePermissions(status);
+  const totalReq = doc.lines.reduce((s, l) => s + l.qty, 0);
+  const totalApp = doc.lines.reduce((s, l) => s + (l.approvedQty ?? 0), 0);
+  const totalIss = doc.lines.reduce((s, l) => s + l.issuedQty, 0);
+
+  const statusBanners: Record<string, React.ReactNode> = {
+    ChangesRequested: (
+      <div className="alert alert-warn" style={{marginBottom:14}}>
+        ↩ <strong>Changes Requested</strong> — This SIV has been returned for
+        amendment. Review the remarks below, update lines, and resubmit.
+      </div>
+    ),
+    Rejected: (
+      <div className="alert alert-danger" style={{marginBottom:14}}>
+        ✕ <strong>Rejected</strong> — This SIV has been rejected and is closed.
+        Create a new SIV if required.
+      </div>
+    ),
+    Reversed: (
+      <div className="alert" style={{marginBottom:14}}>
+        ↺ <strong>Reversed</strong> — FIFO consumption has been undone and stock
+        balances have been restored.
+      </div>
+    ),
+  };
+
+  return (
+    <div className="page">
+
+      {/* Workflow progress bar */}
+      <SivWorkflowBar status={status}/>
+
+      {/* Page header */}
+      <div className="page-header" style={{marginTop:16}}>
+        <div>
+          <div className="page-kicker">Inventory · SIV</div>
+          <div className="page-title" style={{fontFamily:"var(--mono)",fontSize:20}}>
+            {doc.number || doc.id}
           </div>
+          <div className="page-sub">
+            {fmtDate(doc.issueDate)}
+            {doc.fromLocationName && ` · ${doc.fromLocationName}`}
+            {doc.toLocationName   && ` → ${doc.toLocationName}`}
+            {doc.departmentName   && ` · ${doc.departmentName}`}
+          </div>
+        </div>
 
-          <div className="lux-sticky__right">
-            {doc ? <Chip tone={statusTone(doc.docStatus)}>{status}</Chip> : null}
+        {/* Command bar */}
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <span className={STATUS_BADGE[status]}>{status}</span>
 
-            <button
-              className="lux-btn ghost"
-              onClick={() => void load()}
-              type="button"
-              disabled={busy || loading}
-            >
-              Refresh
+          {p.canEdit && (
+            <button className="btn"
+              onClick={() => nav(`/companies/${companyId}/siv/drafts/${doc.id}/edit`)}>
+              ✎ Edit
             </button>
-          </div>
+          )}
+          {p.canSubmit && (
+            <button className="btn btn-primary" disabled={busy}
+              onClick={() => setModal("submit")}>
+              ↗ Submit for Approval
+            </button>
+          )}
+          {p.canApprove && (
+            <button className="btn btn-success" disabled={busy}
+              onClick={() => setModal("approve")}>
+              ✓ Approve
+            </button>
+          )}
+          {p.canRequestChanges && (
+            <button className="btn" disabled={busy}
+              onClick={() => setModal("requestChanges")}>
+              ↩ Request Changes
+            </button>
+          )}
+          {p.canReject && (
+            <button className="btn btn-danger" disabled={busy}
+              onClick={() => setModal("reject")}>
+              ✕ Reject
+            </button>
+          )}
+          {p.canIssue && (
+            <button className="btn btn-primary" disabled={busy}
+              onClick={() => setModal("issue")}>
+              ◉ Issue
+            </button>
+          )}
+          {p.canPost && (
+            <button className="btn btn-primary" disabled={busy}
+              onClick={() => setModal("post")}>
+              ▲ Post to Ledger
+            </button>
+          )}
+          {p.canReverse && (
+            <button className="btn btn-danger" disabled={busy}
+              onClick={() => setModal("reverse")}>
+              ↺ Reverse
+            </button>
+          )}
+          {p.canPrint && (
+            <button className="btn"
+              onClick={() => nav(`/companies/${companyId}/siv/${doc.id}/print`)}>
+              ⎙ Print
+            </button>
+          )}
+          <button className="btn" onClick={() => nav(-1)}>← Back</button>
         </div>
       </div>
 
-      <div className="lux-container">
-        <div className="lux-hero">
-          <div className="lux-hero__bg" />
-          <div className="lux-hero__content">
-            <div className="lux-hero__kicker">Inventory • SIV</div>
-            <div className="lux-hero__headline">{doc?.number || "SIV Details"}</div>
-            <div className="lux-hero__meta">
-              <Chip>Branch: {doc?.branchId || scopedBranchId || "—"}</Chip>
-              <Chip>Issue Date: {formatDate(doc?.issueDate)}</Chip>
-              <Chip>Lines: {doc?.lines.length ?? 0}</Chip>
-              <Chip>Total Qty: {formatQty(totalQty)}</Chip>
-              <Chip tone={statusTone(doc?.docStatus)}>{status}</Chip>
-            </div>
+      {/* Status banners */}
+      {statusBanners[status]}
+
+      {/* Alerts */}
+      {err     && <div className="alert alert-danger">{err}</div>}
+      {success && <div className="alert alert-success">{success}</div>}
+
+      {/* Main content: tabs + properties panel */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:16,alignItems:"start"}}>
+
+        {/* Left: card with tabs */}
+        <div className="card" style={{padding:0}}>
+          {/* Tab bar */}
+          <div
+            style={{
+              display:    "flex",
+              borderBottom:"1px solid var(--border-soft)",
+              padding:    "0 16px",
+              background: "var(--surface-2)",
+            }}
+          >
+            {([
+              { id:"lines", label:`Line Items (${doc.lines.length})` },
+              { id:"audit", label:"Audit Trail" },
+              { id:"fifo",  label:"FIFO Preview" },
+            ] as const).map((t) => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                style={{
+                  padding:      "9px 14px",
+                  fontSize:     12,
+                  fontWeight:   500,
+                  cursor:       "pointer",
+                  background:   "none",
+                  border:       "none",
+                  borderBottom: `2px solid ${tab===t.id?"var(--accent)":"transparent"}`,
+                  color:        tab===t.id?"var(--accent)":"var(--text-muted)",
+                  marginBottom: -1,
+                  transition:   "color 0.1s",
+                }}>
+                {t.label}
+              </button>
+            ))}
           </div>
-        </div>
 
-        {error ? (
-          <AlertBar kind="error" message={error} onClose={() => setError("")} />
-        ) : null}
-
-        {notice ? (
-          <AlertBar
-            kind={notice.kind}
-            message={notice.message}
-            onClose={() => setNotice(null)}
-          />
-        ) : null}
-
-        {loading ? (
-          <div className="lux-card">
-            <div className="lux-empty">
-              <div className="lux-empty__title">Loading SIV</div>
-              <div className="lux-empty__desc">
-                Please wait while the document is being loaded.
-              </div>
-            </div>
-          </div>
-        ) : !doc ? (
-          <div className="lux-card">
-            <div className="lux-empty">
-              <div className="lux-empty__title">Document not found</div>
-              <div className="lux-empty__desc">The SIV could not be loaded.</div>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="lux-card">
-              <div className="lux-card__head">
-                <div>
-                  <div className="lux-card__title">Workflow Status</div>
-                  <div className="lux-card__desc">
-                    Current status and next available action.
-                  </div>
-                </div>
-                <Chip tone={statusTone(doc.docStatus)}>{status}</Chip>
-              </div>
-
-              <div className="lux-grid">
-                <div className="lux-field">
-                  <label>Draft</label>
-                  <input className="lux-input" value="Create or edit issue lines" readOnly />
-                </div>
-
-                <div className="lux-field">
-                  <label>Submitted</label>
-                  <input className="lux-input" value="Waiting for approval" readOnly />
-                </div>
-
-                <div className="lux-field">
-                  <label>Approved</label>
-                  <input className="lux-input" value="Ready to issue stock" readOnly />
-                </div>
-
-                <div className="lux-field">
-                  <label>Issued</label>
-                  <input className="lux-input" value="Ready to post ledger" readOnly />
-                </div>
-
-                <div className="lux-field span-2">
-                  <label>Current Allowed Action</label>
-                  <input
-                    className="lux-input"
-                    value={
-                      permissions.canSubmit
-                        ? "Submit for Approval"
-                        : permissions.isApprovalState
-                          ? "Approve / Request Changes / Reject"
-                          : permissions.canIssue
-                            ? "Issue"
-                            : permissions.canPost
-                              ? "Post"
-                              : permissions.canReverse
-                                ? "Reverse"
-                                : "No action available"
-                    }
-                    readOnly
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="lux-card">
-              <div className="lux-card__head">
-                <div>
-                  <div className="lux-card__title">Header</div>
-                  <div className="lux-card__desc">Document summary.</div>
-                </div>
-              </div>
-
-              <div className="lux-grid">
-                <div className="lux-field span-2">
-                  <label>Document No</label>
-                  <input className="lux-input" value={doc.number || doc.id} readOnly />
-                </div>
-
-                <div className="lux-field">
-                  <label>Status</label>
-                  <input className="lux-input" value={status} readOnly />
-                </div>
-
-                <div className="lux-field">
-                  <label>Company</label>
-                  <input className="lux-input" value={doc.companyId || companyId} readOnly />
-                </div>
-
-                <div className="lux-field">
-                  <label>Branch</label>
-                  <input className="lux-input" value={doc.branchId || scopedBranchId} readOnly />
-                </div>
-
-                <div className="lux-field">
-                  <label>Department</label>
-                  <input
-                    className="lux-input"
-                    value={doc.departmentName || doc.departmentId || "—"}
-                    readOnly
-                  />
-                </div>
-
-                <div className="lux-field">
-                  <label>From Location</label>
-                  <input
-                    className="lux-input"
-                    value={doc.fromLocationName || doc.fromLocationId || "—"}
-                    readOnly
-                  />
-                </div>
-
-                <div className="lux-field">
-                  <label>To Location</label>
-                  <input
-                    className="lux-input"
-                    value={doc.toLocationName || doc.toLocationId || "—"}
-                    readOnly
-                  />
-                </div>
-
-                <div className="lux-field">
-                  <label>Issue Date</label>
-                  <input className="lux-input" value={formatDate(doc.issueDate)} readOnly />
-                </div>
-
-                <div className="lux-field">
-                  <label>Created</label>
-                  <input className="lux-input" value={formatDateTime(doc.createdAt)} readOnly />
-                </div>
-
-                <div className="lux-field">
-                  <label>Last Updated</label>
-                  <input className="lux-input" value={formatDateTime(doc.updatedAt)} readOnly />
-                </div>
-
-                <div className="lux-field span-2">
-                  <label>Remarks</label>
-                  <textarea
-                    className="lux-input"
-                    rows={3}
-                    value={doc.remarks || doc.notes || ""}
-                    readOnly
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="lux-card">
-              <div className="lux-card__head">
-                <div>
-                  <div className="lux-card__title">Line Items</div>
-                  <div className="lux-card__desc">Items included in this voucher.</div>
-                </div>
-                <div className="lux-card__headRight">
-                  <Chip>{doc.lines.length} line(s)</Chip>
-                  <Chip>Total Qty: {formatQty(totalQty)}</Chip>
-                </div>
-              </div>
-
-              {!doc.lines.length ? (
-                <div className="lux-empty">
-                  <div className="lux-empty__title">No lines</div>
-                  <div className="lux-empty__desc">
-                    This SIV does not contain any lines.
-                  </div>
-                </div>
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table className="lux-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 70 }}>#</th>
-                        <th>Item</th>
-                        <th style={{ width: 120 }}>UOM</th>
-                        <th style={{ width: 120 }}>Qty</th>
-                        <th style={{ width: 140 }}>Batch</th>
-                        <th style={{ width: 140 }}>Expiry</th>
-                        <th style={{ width: 140 }}>Available</th>
-                        <th>Remarks</th>
+          {/* Lines tab */}
+          {tab==="lines" && (
+            <>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{width:42}}>#</th>
+                    <th>Item</th>
+                    <th>UOM</th>
+                    <th style={{textAlign:"right"}}>Requested</th>
+                    <th style={{textAlign:"right"}}>Approved</th>
+                    <th style={{textAlign:"right"}}>Issued</th>
+                    <th style={{textAlign:"right"}}>Unit Cost</th>
+                    <th style={{textAlign:"right"}}>Line Cost</th>
+                    <th>Batch</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {doc.lines.length === 0 ? (
+                    <tr><td colSpan={9} style={{padding:40,textAlign:"center",color:"var(--text-soft)",fontSize:13}}>
+                      No lines on this voucher.
+                    </td></tr>
+                  ) : doc.lines.map((line, i) => {
+                    const partial = line.approvedQty !== null && line.approvedQty < line.qty;
+                    const expired = line.expiryDate && new Date(line.expiryDate) < new Date();
+                    return (
+                      <tr key={line.id || i}>
+                        <td style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--text-muted)"}}>{String(line.lineNo).padStart(2,"0")}</td>
+                        <td>
+                          <div style={{fontWeight:500,fontSize:13}}>{line.itemName||"—"}</div>
+                          <div style={{fontSize:10,color:"var(--text-muted)",fontFamily:"var(--mono)",marginTop:1}}>{line.itemCode}</div>
+                          {line.remarks && <div style={{fontSize:10,color:"var(--text-muted)",marginTop:1,fontStyle:"italic"}}>{line.remarks}</div>}
+                        </td>
+                        <td style={{fontSize:12,fontFamily:"var(--mono)",color:"var(--text-muted)"}}>{line.uomCode||line.uomName||"—"}</td>
+                        <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:13,fontWeight:500}}>{fmtQty(line.qty)}</td>
+                        <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:13}}>
+                          {line.approvedQty !== null
+                            ? <span style={{color:partial?"var(--warn)":"inherit",fontWeight:partial?600:400}}>
+                                {partial && "▼ "}{fmtQty(line.approvedQty)}
+                              </span>
+                            : <span style={{color:"var(--text-soft)"}}>—</span>}
+                        </td>
+                        <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:13}}>
+                          {line.issuedQty
+                            ? <span style={{color:"var(--accent)",fontWeight:500}}>{fmtQty(line.issuedQty)}</span>
+                            : <span style={{color:"var(--text-soft)"}}>—</span>}
+                        </td>
+                        <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:12,color:"var(--text-muted)"}}>—</td>
+                        <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:12,color:"var(--text-muted)"}}>—</td>
+                        <td style={{fontSize:12,color:expired?"var(--danger)":"var(--text-muted)"}}>
+                          {line.batchNo || "—"}
+                          {line.expiryDate && (
+                            <div style={{fontSize:10,marginTop:1}}>
+                              Exp: {fmtDate(line.expiryDate)}
+                            </div>
+                          )}
+                        </td>
                       </tr>
-                    </thead>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{background:"var(--surface-2)",fontWeight:600}}>
+                    <td colSpan={3} style={{padding:"8px 14px",fontSize:11,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text-muted)"}}>Totals</td>
+                    <td style={{textAlign:"right",fontFamily:"var(--mono)",padding:"8px 14px"}}>{fmtQty(totalReq)}</td>
+                    <td style={{textAlign:"right",fontFamily:"var(--mono)",padding:"8px 14px",color:totalApp<totalReq?"var(--warn)":"inherit"}}>
+                      {doc.lines.some((l)=>l.approvedQty!==null)?fmtQty(totalApp):"—"}
+                    </td>
+                    <td style={{textAlign:"right",fontFamily:"var(--mono)",padding:"8px 14px",color:"var(--accent)"}}>
+                      {doc.lines.some((l)=>l.issuedQty>0)?fmtQty(totalIss):"—"}
+                    </td>
+                    <td colSpan={3}/>
+                  </tr>
+                </tfoot>
+              </table>
+            </>
+          )}
 
-                    <tbody>
-                      {doc.lines.map((line, index) => (
-                        <tr key={line.id || `${line.itemId}_${index}`}>
-                          <td>{index + 1}</td>
-                          <td>{line.itemName || line.itemId || "—"}</td>
-                          <td>{line.uomCode || line.uomName || line.uomId || "—"}</td>
-                          <td>{formatQty(line.qty)}</td>
-                          <td>{line.batchNo || "—"}</td>
-                          <td>{line.expiryDate ? formatDate(line.expiryDate) : "—"}</td>
-                          <td>
-                            {line.availableBaseQty != null
-                              ? formatQty(line.availableBaseQty)
-                              : line.availableQty != null
-                                ? formatQty(line.availableQty)
-                                : "—"}
-                          </td>
-                          <td>{line.remarks || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+          {/* Audit trail tab */}
+          {tab==="audit" && (
+            <div style={{padding:20}}>
+              {([
+                {l:"Created",   at:doc.createdAt,          by:null },
+                {l:"Submitted", at:doc.audit.submittedAtUtc,by:null },
+                {l:"Approved",  at:doc.audit.approvedAtUtc, by:null },
+                {l:"Issued",    at:doc.audit.issuedAtUtc,   by:null },
+                {l:"Posted",    at:doc.audit.postedAtUtc,   by:null },
+                {l:"Reversed",  at:doc.audit.reversedAtUtc, by:null },
+              ] as { l:string; at:string|null; by:string|null }[]).filter((x)=>x.at).map((ev,i)=>(
+                <div key={ev.l} style={{display:"flex",gap:14,marginBottom:18,alignItems:"flex-start"}}>
+                  <div style={{
+                    width:20,height:20,borderRadius:"50%",
+                    background:"var(--surface-2)",border:"2px solid var(--border)",
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    fontSize:9,fontWeight:700,color:"var(--accent)",flexShrink:0,marginTop:2,
+                  }}>
+                    {i+1}
+                  </div>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:600,color:"var(--text)",marginBottom:2}}>{ev.l}</div>
+                    <div style={{fontSize:11,color:"var(--text-muted)",fontFamily:"var(--mono)"}}>{fmtDateTime(ev.at)}</div>
+                  </div>
                 </div>
+              ))}
+              {!doc.audit.submittedAtUtc && (
+                <div style={{fontSize:12,color:"var(--text-soft)"}}>Only draft creation recorded.</div>
               )}
             </div>
+          )}
 
-            <div className="lux-bottom-actions">
-              <button
-                className="lux-btn ghost"
-                onClick={() => navigate(-1)}
-                type="button"
-                disabled={busy}
-              >
-                Back
-              </button>
-
-              {permissions.canEdit ? (
-                <button
-                  className="lux-btn"
-                  onClick={() =>
-                    navigate(
-                      `/companies/${encodeURIComponent(
-                        companyId
-                      )}/siv/drafts/${encodeURIComponent(doc.id || sivId)}/edit`
-                    )
-                  }
-                  type="button"
-                  disabled={busy}
-                >
-                  Edit Draft
-                </button>
-              ) : null}
-
-              {permissions.canSubmit ? (
-                <button
-                  className="lux-btn primary"
-                  onClick={() => void runWorkflow("submit")}
-                  type="button"
-                  disabled={busy || loading}
-                >
-                  Submit for Approval
-                </button>
-              ) : null}
-
-              {permissions.isApprovalState ? (
-                <button
-                  className="lux-btn"
-                  onClick={() =>
-                    navigate(
-                      `/companies/${encodeURIComponent(
-                        companyId
-                      )}/siv/approval/${encodeURIComponent(doc.id || sivId)}`
-                    )
-                  }
-                  type="button"
-                  disabled={busy}
-                >
-                  Open Approval
-                </button>
-              ) : null}
-
-              {permissions.canIssue ? (
-                <button
-                  className="lux-btn primary"
-                  onClick={() => void runWorkflow("issue")}
-                  type="button"
-                  disabled={busy || loading}
-                >
-                  Issue
-                </button>
-              ) : null}
-
-              {permissions.canPost ? (
-                <button
-                  className="lux-btn primary"
-                  onClick={() => void runWorkflow("post")}
-                  type="button"
-                  disabled={busy || loading}
-                >
-                  Post
-                </button>
-              ) : null}
-
-              {permissions.canReverse ? (
-                <button
-                  className="lux-btn danger"
-                  onClick={() => void runWorkflow("reverse")}
-                  type="button"
-                  disabled={busy || loading}
-                >
-                  Reverse
-                </button>
-              ) : null}
-
-              <button
-                className="lux-btn ghost"
-                onClick={() =>
-                  navigate(
-                    `/companies/${encodeURIComponent(companyId)}/siv/${encodeURIComponent(
-                      doc.id || sivId
-                    )}/print`
-                  )
-                }
-                type="button"
-                disabled={busy || loading}
-              >
-                Print
-              </button>
+          {/* FIFO preview tab */}
+          {tab==="fifo" && (
+            <div style={{padding:20}}>
+              <FifoPreviewPanel
+                companyId={companyId}
+                sivId={sivId}
+                lines={doc.lines}
+              />
             </div>
-          </>
-        )}
+          )}
+        </div>
+
+        {/* Right: document properties panel */}
+        <div>
+          {/* Document details card */}
+          <div className="card" style={{marginBottom:14}}>
+            <div className="card-header">
+              <div className="card-title">Document Details</div>
+            </div>
+            <div className="card-body">
+              {[
+                {label:"Document No.",   value:doc.number||doc.id,     mono:true},
+                {label:"Status",         value:status},
+                {label:"Issue Date",     value:fmtDate(doc.issueDate)},
+                {label:"From Location",  value:doc.fromLocationName||"—"},
+                {label:"To Location",    value:doc.toLocationName||"—"},
+                {label:"Department",     value:doc.departmentName||"—"},
+                {label:"Remarks",        value:doc.remarks||doc.notes||"—"},
+              ].map(({label,value,mono})=>(
+                <div key={label} style={{marginBottom:10}}>
+                  <div style={{
+                    fontSize:10,fontWeight:600,textTransform:"uppercase",
+                    letterSpacing:"0.08em",color:"var(--text-muted)",
+                    fontFamily:"var(--mono)",marginBottom:3,
+                  }}>
+                    {label}
+                  </div>
+                  <div style={{
+                    fontSize:13,color:"var(--text)",
+                    fontFamily:mono?"var(--mono)":undefined,
+                    wordBreak:"break-all",
+                  }}>
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Quantity summary card */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">Quantity Summary</div>
+            </div>
+            <div className="card-body">
+              {[
+                {label:"Lines",     value:String(doc.lines.length)},
+                {label:"Requested", value:fmtQty(totalReq)},
+                ...(doc.lines.some(l=>l.approvedQty!==null)
+                  ? [{label:"Approved", value:fmtQty(totalApp)}] : []),
+                ...(doc.lines.some(l=>l.issuedQty>0)
+                  ? [{label:"Issued", value:fmtQty(totalIss)}] : []),
+              ].map(({label,value})=>(
+                <div key={label} style={{
+                  display:"flex",justifyContent:"space-between",
+                  fontSize:12,marginBottom:8,
+                }}>
+                  <span style={{color:"var(--text-muted)"}}>{label}</span>
+                  <span style={{fontFamily:"var(--mono)",fontWeight:500}}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* ── Modals ── */}
+
+      {modal==="submit" && (
+        <RemarksModal
+          title="Submit for Approval"
+          subtitle="The F&B Controller will be notified to review this SIV."
+          fieldLabel="Submission notes"
+          confirmLabel="Submit"
+          confirmClass="btn-primary"
+          required={false}
+          busy={busy}
+          onConfirm={(remarks) => run("Submit", () =>
+            sivApi.submit(companyId, sivId, { rowVersion:doc.rowVersion, remarks })
+              .then(()=>undefined)
+          )}
+          onCancel={() => setModal("none")}
+        />
+      )}
+
+      {modal==="approve" && (
+        <ApproveModal
+          lines={doc.lines}
+          rowVersion={doc.rowVersion}
+          busy={busy}
+          onConfirm={(lines, remarks) => run("Approve", () =>
+            sivApi.approve(companyId, sivId, { rowVersion:doc.rowVersion, remarks, lines })
+              .then(()=>undefined)
+          )}
+          onCancel={() => setModal("none")}
+        />
+      )}
+
+      {modal==="reject" && (
+        <RemarksModal
+          title="Reject SIV"
+          subtitle="Provide a reason — this will be visible to the submitter."
+          fieldLabel="Rejection reason"
+          confirmLabel="Confirm Reject"
+          confirmClass="btn-danger"
+          required={true}
+          busy={busy}
+          onConfirm={(remarks) => run("Reject", () =>
+            sivApi.reject(companyId, sivId, { rowVersion:doc.rowVersion, remarks })
+              .then(()=>undefined)
+          )}
+          onCancel={() => setModal("none")}
+        />
+      )}
+
+      {modal==="requestChanges" && (
+        <RemarksModal
+          title="Request Changes"
+          subtitle="The SIV is returned to the requester for amendment and resubmission."
+          fieldLabel="Feedback for requester"
+          confirmLabel="Send Back"
+          confirmClass="btn-primary"
+          required={true}
+          busy={busy}
+          onConfirm={(remarks) => run("Request Changes", () =>
+            sivApi.requestChanges(companyId, sivId, { rowVersion:doc.rowVersion, remarks })
+              .then(()=>undefined)
+          )}
+          onCancel={() => setModal("none")}
+        />
+      )}
+
+      {modal==="issue" && (
+        <IssueModal
+          lines={doc.lines}
+          rowVersion={doc.rowVersion}
+          busy={busy}
+          onConfirm={(lines, remarks) => run("Issue", () =>
+            sivApi.issue(companyId, sivId, { rowVersion:doc.rowVersion, remarks, lines })
+              .then(()=>undefined)
+          )}
+          onCancel={() => setModal("none")}
+        />
+      )}
+
+      {modal==="post" && (
+        <PostModal
+          doc={doc}
+          busy={busy}
+          onConfirm={() => run("Post", () =>
+            sivApi.post(companyId, sivId)
+              .then((r) => { if (r?.data?.error) throw new Error(r.data.error); })
+          )}
+          onCancel={() => setModal("none")}
+        />
+      )}
+
+      {modal==="reverse" && (
+        <RemarksModal
+          title="Reverse SIV"
+          subtitle="Reverses FIFO consumption and restores stock balances. Only valid if no downstream transactions exist on these lots."
+          fieldLabel="Reversal reason"
+          confirmLabel="Confirm Reversal"
+          confirmClass="btn-danger"
+          required={true}
+          busy={busy}
+          onConfirm={(reason) => run("Reverse", () =>
+            sivApi.reverse(companyId, sivId, { rowVersion:doc.rowVersion, reason })
+              .then(()=>undefined)
+          )}
+          onCancel={() => setModal("none")}
+        />
+      )}
     </div>
   );
 }

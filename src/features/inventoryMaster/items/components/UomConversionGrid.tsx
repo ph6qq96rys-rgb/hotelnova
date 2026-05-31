@@ -1,568 +1,320 @@
+// src/features/inventory/items/components/UomConversionGrid.tsx
+//
+// Controlled grid for managing per-item UOM conversion lines.
+// All styling via inventory-items.css (.uom-* classes) —
+// zero inline style objects.
+
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
 import type { ItemUomDto } from "../types";
 
-import {
-  inputStyle,
-  tableStyle,
-  thStyle,
-  tdStyle,
-  primaryBtn,
-  secondaryBtn,
-} from "../../../../shared/inventoryStyles";
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-type UomOption = {
-  id: string;
+interface UomOption {
+  id:   string;
   code: string;
   name: string;
-};
+}
 
-type Props = {
+interface Props {
   baseUomId?: string;
-  uoms: UomOption[];
-  rows: ItemUomDto[];
-  onChange: (rows: ItemUomDto[]) => void;
-};
-
-type RowVm = ItemUomDto & {
-  key: string;
-};
-
-const makeRowKey = () =>
-  globalThis.crypto?.randomUUID?.() ??
-  `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-function stripKey(row: RowVm): ItemUomDto {
-  const { key: _key, ...dto } = row;
-  return dto;
+  uoms:       UomOption[];
+  rows:       ItemUomDto[];
+  onChange:   (rows: ItemUomDto[]) => void;
 }
 
-function toRowVm(row: ItemUomDto, key?: string): RowVm {
-  return {
-    ...row,
-    key: key ?? makeRowKey(),
-  };
-}
+type RowVm = ItemUomDto & { _key: string };
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const makeKey = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const toVm   = (row: ItemUomDto, key?: string): RowVm => ({ ...row, _key: key ?? makeKey() });
+const fromVm = ({ _key: _k, ...dto }: RowVm): ItemUomDto => dto;
 
 function isValidFactor(value: string): boolean {
-  const numberValue = Number(value);
-  return value.trim() !== "" && Number.isFinite(numberValue) && numberValue > 0;
+  const n = Number(value);
+  return value.trim() !== "" && Number.isFinite(n) && n > 0;
 }
 
-function getFactorDisplayValue(row: ItemUomDto, factorText: string): number {
-  const typed = Number(factorText);
-
-  if (isValidFactor(factorText)) return typed;
-
-  if (typeof row.toBaseFactor === "number" && Number.isFinite(row.toBaseFactor)) {
-    return row.toBaseFactor;
-  }
-
-  return 1;
+function resolvedFactor(row: ItemUomDto, factorText: string): number {
+  if (isValidFactor(factorText)) return Number(factorText);
+  return typeof row.toBaseFactor === "number" && Number.isFinite(row.toBaseFactor)
+    ? row.toBaseFactor
+    : 1;
 }
 
-function getUomLabel(uom: UomOption): string {
+function uomLabel(uom: UomOption): string {
   return uom.code ? `${uom.code} — ${uom.name}` : uom.name;
 }
 
-export default function UomConversionGrid({
-  baseUomId,
-  uoms,
-  rows,
-  onChange,
-}: Props) {
-  const [uiRows, setUiRows] = useState<RowVm[]>(() =>
-    rows.map((row) => toRowVm(row))
-  );
+// ── Component ─────────────────────────────────────────────────────────────────
 
-  const [factorTextByKey, setFactorTextByKey] = useState<Record<string, string>>(
-    {}
-  );
+export default function UomConversionGrid({ baseUomId, uoms, rows, onChange }: Props) {
+  const [vmRows,       setVmRows]       = useState<RowVm[]>(() => rows.map((r) => toVm(r)));
+  const [factorText,   setFactorText]   = useState<Record<string, string>>({});
 
-  const uomById = useMemo(() => {
-    return new Map(uoms.map((uom) => [uom.id, uom]));
-  }, [uoms]);
+  const uomById  = useMemo(() => new Map(uoms.map((u) => [u.id, u])), [uoms]);
+  const baseUom  = useMemo(() => (baseUomId ? uomById.get(baseUomId) : undefined), [baseUomId, uomById]);
+  const usedIds  = useMemo(() => new Set(vmRows.map((r) => r.uomId).filter(Boolean)), [vmRows]);
+  const canAdd   = useMemo(() => !!baseUomId && uoms.some((u) => u.id !== baseUomId && !usedIds.has(u.id)), [baseUomId, uoms, usedIds]);
 
-  const baseUom = useMemo(() => {
-    return baseUomId ? uomById.get(baseUomId) : undefined;
-  }, [baseUomId, uomById]);
-
+  // Sync vmRows when parent rows change (factor hydration from parent).
   useEffect(() => {
-    setUiRows((current) => {
-      const usedKeys = new Set<string>();
-
+    setVmRows((current) => {
+      const seen = new Set<string>();
       return rows.map((row) => {
         const match =
-          current.find(
-            (existing) =>
-              !usedKeys.has(existing.key) &&
-              existing.uomId === row.uomId &&
-              existing.code === row.code &&
-              existing.name === row.name
-          ) ??
-          current.find(
-            (existing) =>
-              !usedKeys.has(existing.key) && existing.uomId === row.uomId
-          );
-
-        if (!match) return toRowVm(row);
-
-        usedKeys.add(match.key);
-        return toRowVm(row, match.key);
+          current.find((vm) => !seen.has(vm._key) && vm.uomId === row.uomId && vm.code === row.code) ??
+          current.find((vm) => !seen.has(vm._key) && vm.uomId === row.uomId);
+        if (!match) return toVm(row);
+        seen.add(match._key);
+        return toVm(row, match._key);
       });
     });
   }, [rows]);
 
+  // Keep factorText map in sync with vmRows (add missing, prune stale).
   useEffect(() => {
-    setFactorTextByKey((current) => {
-      const next = { ...current };
-      const activeKeys = new Set(uiRows.map((row) => row.key));
-
-      uiRows.forEach((row) => {
-        if (next[row.key] !== undefined) return;
-
-        next[row.key] =
-          typeof row.toBaseFactor === "number" &&
-          Number.isFinite(row.toBaseFactor)
-            ? String(row.toBaseFactor)
-            : "";
+    setFactorText((prev) => {
+      const next = { ...prev };
+      const activeKeys = new Set(vmRows.map((r) => r._key));
+      vmRows.forEach((row) => {
+        if (next[row._key] !== undefined) return;
+        next[row._key] = typeof row.toBaseFactor === "number" && Number.isFinite(row.toBaseFactor)
+          ? String(row.toBaseFactor)
+          : "";
       });
-
-      Object.keys(next).forEach((key) => {
-        if (!activeKeys.has(key)) delete next[key];
-      });
-
+      Object.keys(next).forEach((k) => { if (!activeKeys.has(k)) delete next[k]; });
       return next;
     });
-  }, [uiRows]);
+  }, [vmRows]);
 
-  const commit = useCallback(
-    (nextRows: RowVm[]) => {
-      setUiRows(nextRows);
-      onChange(nextRows.map(stripKey));
-    },
-    [onChange]
-  );
+  // ── Internal commit ────────────────────────────────────────────────────────
 
-  const usedUomIds = useMemo(() => {
-    return new Set(uiRows.map((row) => row.uomId).filter(Boolean));
-  }, [uiRows]);
+  const commit = useCallback((next: RowVm[]) => {
+    setVmRows(next);
+    onChange(next.map(fromVm));
+  }, [onChange]);
 
-  const canAdd = useMemo(() => {
-    if (!baseUomId) return false;
+  // ── Row choices ────────────────────────────────────────────────────────────
 
-    return uoms.some((uom) => uom.id !== baseUomId && !usedUomIds.has(uom.id));
-  }, [baseUomId, uoms, usedUomIds]);
+  const choicesFor = useCallback((key: string): UomOption[] => {
+    const row = vmRows.find((r) => r._key === key);
+    if (!row) return [];
+    const takenByOthers = new Set(vmRows.filter((r) => r._key !== key).map((r) => r.uomId).filter(Boolean));
+    return uoms.filter((u) => u.id !== baseUomId && (u.id === row.uomId || !takenByOthers.has(u.id)));
+  }, [baseUomId, uoms, vmRows]);
 
-  const getChoicesForRow = useCallback(
-    (rowKey: string): UomOption[] => {
-      const row = uiRows.find((item) => item.key === rowKey);
-      if (!row) return [];
+  // ── Mutations ──────────────────────────────────────────────────────────────
 
-      const usedByOtherRows = new Set(
-        uiRows
-          .filter((item) => item.key !== rowKey)
-          .map((item) => item.uomId)
-          .filter(Boolean)
-      );
+  const updateRow = useCallback((key: string, patch: Partial<ItemUomDto>) => {
+    const idx = vmRows.findIndex((r) => r._key === key);
+    if (idx < 0) return;
+    if (patch.uomId === baseUomId) return; // can't assign base UOM to a conversion row
 
-      return uoms.filter((uom) => {
-        if (uom.id === baseUomId) return false;
-        if (uom.id === row.uomId) return true;
-        return !usedByOtherRows.has(uom.id);
-      });
-    },
-    [baseUomId, uiRows, uoms]
-  );
+    const next = [...vmRows];
+    const cur  = next[idx];
 
-  const updateRow = useCallback(
-    (rowKey: string, patch: Partial<ItemUomDto>) => {
-      const rowIndex = uiRows.findIndex((row) => row.key === rowKey);
-      if (rowIndex < 0) return;
+    // Enforce single issue UOM
+    if (patch.isIssue === true) {
+      next.forEach((r, i) => { if (i !== idx && r.isIssue) next[i] = { ...r, isIssue: false }; });
+    }
 
-      if (patch.uomId && patch.uomId === baseUomId) return;
+    const updated: RowVm = { ...cur, ...patch, _key: cur._key };
 
-      const nextRows = [...uiRows];
-      const currentRow = nextRows[rowIndex];
+    if (patch.uomId) {
+      if (next.some((r, i) => i !== idx && r.uomId === patch.uomId)) return; // duplicate
+      const meta = uomById.get(patch.uomId);
+      if (meta) { updated.code = meta.code; updated.name = meta.name; }
+    }
 
-      const patchedRow: RowVm = {
-        ...currentRow,
-        ...patch,
-        key: currentRow.key,
-      };
-
-      if (patch.uomId) {
-        const duplicate = nextRows.some(
-          (row, index) => index !== rowIndex && row.uomId === patch.uomId
-        );
-
-        if (duplicate) return;
-
-        const selectedUom = uomById.get(patch.uomId);
-
-        if (selectedUom) {
-          patchedRow.code = selectedUom.code;
-          patchedRow.name = selectedUom.name;
-        }
-      }
-
-      if (patch.isIssue === true) {
-        nextRows.forEach((row, index) => {
-          if (index !== rowIndex && row.isIssue) {
-            nextRows[index] = { ...row, isIssue: false };
-          }
-        });
-      }
-
-      nextRows[rowIndex] = patchedRow;
-      commit(nextRows);
-    },
-    [baseUomId, commit, uiRows, uomById]
-  );
+    next[idx] = updated;
+    commit(next);
+  }, [baseUomId, commit, uomById, vmRows]);
 
   const addRow = useCallback(() => {
-    if (!baseUomId) return;
+    const nextUom = uoms.find((u) => u.id !== baseUomId && !usedIds.has(u.id));
+    if (!nextUom) return;
+    const row: RowVm = { _key: makeKey(), uomId: nextUom.id, code: nextUom.code, name: nextUom.name, toBaseFactor: 0, isBase: false, isIssue: false, isActive: true };
+    commit([...vmRows, row]);
+    setFactorText((prev) => ({ ...prev, [row._key]: "" }));
+  }, [baseUomId, commit, uoms, usedIds, vmRows]);
 
-    const selectedUom = uoms.find(
-      (uom) => uom.id !== baseUomId && !usedUomIds.has(uom.id)
-    );
+  const removeRow = useCallback((key: string) => {
+    commit(vmRows.filter((r) => r._key !== key));
+    setFactorText((prev) => { const next = { ...prev }; delete next[key]; return next; });
+  }, [commit, vmRows]);
 
-    if (!selectedUom) return;
+  // ── Factor input handlers ──────────────────────────────────────────────────
 
-    const nextRow: RowVm = {
-      key: makeRowKey(),
-      uomId: selectedUom.id,
-      code: selectedUom.code,
-      name: selectedUom.name,
-      toBaseFactor: 0,
-      isBase: false,
-      isIssue: false,
-      isActive: true,
-    };
+  const onFactorChange = useCallback((key: string, value: string) => {
+    setFactorText((prev) => ({ ...prev, [key]: value }));
+    if (isValidFactor(value)) updateRow(key, { toBaseFactor: Number(value) });
+  }, [updateRow]);
 
-    commit([...uiRows, nextRow]);
+  const onFactorBlur = useCallback((key: string) => {
+    const row = vmRows.find((r) => r._key === key);
+    if (!row) return;
+    const text = factorText[key] ?? "";
+    if (!isValidFactor(text)) {
+      const fallback = typeof row.toBaseFactor === "number" && row.toBaseFactor > 0 ? String(row.toBaseFactor) : "";
+      setFactorText((prev) => ({ ...prev, [key]: fallback }));
+    } else {
+      const normalized = String(Number(text));
+      setFactorText((prev) => ({ ...prev, [key]: normalized }));
+      updateRow(key, { toBaseFactor: Number(normalized) });
+    }
+  }, [factorText, updateRow, vmRows]);
 
-    setFactorTextByKey((current) => ({
-      ...current,
-      [nextRow.key]: "",
-    }));
-  }, [baseUomId, commit, uiRows, uoms, usedUomIds]);
-
-  const removeRow = useCallback(
-    (rowKey: string) => {
-      commit(uiRows.filter((row) => row.key !== rowKey));
-
-      setFactorTextByKey((current) => {
-        const next = { ...current };
-        delete next[rowKey];
-        return next;
-      });
-    },
-    [commit, uiRows]
-  );
-
-  const handleFactorChange = useCallback(
-    (rowKey: string, value: string) => {
-      setFactorTextByKey((current) => ({
-        ...current,
-        [rowKey]: value,
-      }));
-
-      if (!isValidFactor(value)) return;
-
-      updateRow(rowKey, {
-        toBaseFactor: Number(value),
-      });
-    },
-    [updateRow]
-  );
-
-  const handleFactorBlur = useCallback(
-    (rowKey: string) => {
-      const row = uiRows.find((item) => item.key === rowKey);
-      if (!row) return;
-
-      const value = factorTextByKey[rowKey] ?? "";
-
-      if (!isValidFactor(value)) {
-        const fallback =
-          typeof row.toBaseFactor === "number" &&
-          Number.isFinite(row.toBaseFactor) &&
-          row.toBaseFactor > 0
-            ? row.toBaseFactor
-            : "";
-
-        setFactorTextByKey((current) => ({
-          ...current,
-          [rowKey]: fallback === "" ? "" : String(fallback),
-        }));
-
-        return;
-      }
-
-      const normalized = String(Number(value));
-
-      setFactorTextByKey((current) => ({
-        ...current,
-        [rowKey]: normalized,
-      }));
-
-      updateRow(rowKey, {
-        toBaseFactor: Number(normalized),
-      });
-    },
-    [factorTextByKey, uiRows, updateRow]
-  );
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div>
-      <div style={headerRowStyle}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 900, color: "#0f172a" }}>
-            Allowed Units & Conversions
-          </div>
-
-          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 3 }}>
-            Add additional units and define how each unit converts to the base
-            unit.
-          </div>
+    <div className="uom-grid">
+      {/* Header */}
+      <div className="uom-grid__header">
+        <div className="uom-grid__meta">
+          <div className="uom-grid__title">Allowed Units &amp; Conversions</div>
+          <div className="uom-grid__subtitle">Define how each additional unit converts to the base unit.</div>
 
           {baseUom ? (
-            <div style={baseChipStyle}>
-              <span style={{ opacity: 0.7 }}>Base unit</span>
-              <b>{baseUom.code || baseUom.name}</b>
-              <span style={{ opacity: 0.45 }}>—</span>
+            <div className="uom-chip">
+              <span className="uom-chip__label">Base unit</span>
+              <strong>{baseUom.code || baseUom.name}</strong>
+              <span style={{ opacity: 0.4 }}>—</span>
               <span>{baseUom.name}</span>
             </div>
           ) : (
-            <div style={warningChipStyle}>Select a base UOM first.</div>
+            <div className="uom-chip uom-chip--warn">Select a base UOM first.</div>
           )}
         </div>
 
         <button
           type="button"
-          style={canAdd ? primaryBtn : disabledBtnStyle}
+          className="inv-btn inv-btn--outline inv-btn--sm"
           disabled={!canAdd}
           onClick={addRow}
-          title={
-            !baseUomId
-              ? "Select a base UOM first"
-              : !canAdd
-                ? "No more units available"
-                : "Add unit"
-          }
+          title={!baseUomId ? "Select a base UOM first" : !canAdd ? "No more units available" : "Add unit"}
         >
           + Add Unit
         </button>
       </div>
 
-      <div style={tableWrapStyle}>
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={{ ...thStyle, width: 340 }}>Unit</th>
-              <th style={{ ...thStyle, width: 260 }}>To Base Factor</th>
-              <th style={thStyle}>Example</th>
-              <th style={{ ...thStyle, textAlign: "right", width: 110 }}>
-                Actions
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {uiRows.length === 0 ? (
+      {/* Table */}
+      <div className="uom-table-wrap">
+        <div style={{ overflowX: "auto" }}>
+          <table className="uom-table">
+            <thead>
               <tr>
-                <td colSpan={4} style={{ ...tdStyle, opacity: 0.7 }}>
-                  No additional units. If this item uses only the base unit, you
-                  can leave this section empty.
-                </td>
+                <th style={{ minWidth: 260 }}>Unit</th>
+                <th style={{ width: 220 }}>To Base Factor</th>
+                <th>Example</th>
+                <th className="right" style={{ width: 100 }}>Actions</th>
               </tr>
-            ) : (
-              uiRows.map((row) => {
+            </thead>
+
+            <tbody>
+              {vmRows.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="uom-table__empty">
+                    No additional units. Items using only the base unit can leave this empty.
+                  </td>
+                </tr>
+              ) : vmRows.map((row) => {
                 const selectedUom = uomById.get(row.uomId);
-                const factorText = factorTextByKey[row.key] ?? "";
-                const factorInvalid =
-                  factorText.trim() !== "" && !isValidFactor(factorText);
+                const text        = factorText[row._key] ?? "";
+                const invalid     = text.trim() !== "" && !isValidFactor(text);
 
                 return (
-                  <tr key={row.key}>
-                    <td style={tdStyle}>
+                  <tr key={row._key}>
+                    {/* Unit select + toggles */}
+                    <td>
                       <select
+                        className={`inv-input${!baseUomId ? " inv-input--invalid" : ""}`}
                         value={row.uomId}
                         disabled={!baseUomId}
-                        onChange={(event) =>
-                          updateRow(row.key, { uomId: event.target.value })
-                        }
-                        style={inputStyle(false)}
+                        onChange={(e) => updateRow(row._key, { uomId: e.target.value })}
                       >
-                        {getChoicesForRow(row.key).map((uom) => (
-                          <option key={uom.id} value={uom.id}>
-                            {getUomLabel(uom)}
-                          </option>
+                        {choicesFor(row._key).map((uom) => (
+                          <option key={uom.id} value={uom.id}>{uomLabel(uom)}</option>
                         ))}
                       </select>
 
-                      <div style={optionRowStyle}>
-                        <label style={checkLabelStyle}>
+                      <div className="uom-cell-toggles">
+                        <label className="uom-toggle-label">
                           <input
                             type="checkbox"
                             checked={Boolean(row.isIssue)}
                             disabled={!baseUomId}
-                            onChange={(event) =>
-                              updateRow(row.key, {
-                                isIssue: event.target.checked,
-                              })
-                            }
+                            onChange={(e) => updateRow(row._key, { isIssue: e.target.checked })}
                           />
                           Issue UOM
                         </label>
-
-                        <label style={checkLabelStyle}>
+                        <label className="uom-toggle-label">
                           <input
                             type="checkbox"
                             checked={row.isActive !== false}
                             disabled={!baseUomId}
-                            onChange={(event) =>
-                              updateRow(row.key, {
-                                isActive: event.target.checked,
-                              })
-                            }
+                            onChange={(e) => updateRow(row._key, { isActive: e.target.checked })}
                           />
                           Active
                         </label>
                       </div>
                     </td>
 
-                    <td style={tdStyle}>
+                    {/* Factor */}
+                    <td>
                       <input
                         type="number"
+                        className={`inv-input${invalid ? " inv-input--invalid" : ""}`}
                         min={0.0000001}
                         step="0.0001"
                         inputMode="decimal"
-                        value={factorText}
+                        value={text}
                         disabled={!baseUomId}
-                        onChange={(event) =>
-                          handleFactorChange(row.key, event.target.value)
-                        }
-                        onBlur={() => handleFactorBlur(row.key)}
-                        style={inputStyle(factorInvalid)}
+                        onChange={(e) => onFactorChange(row._key, e.target.value)}
+                        onBlur={() => onFactorBlur(row._key)}
                       />
-
-                      <div
-                        style={{
-                          fontSize: 11,
-                          marginTop: 5,
-                          color: factorInvalid ? "#b91c1c" : "#64748b",
-                        }}
-                      >
-                        Must be greater than 0. Example: KG to G = 1000.
+                      <div className={`uom-factor-hint${invalid ? " uom-factor-hint--error" : ""}`}>
+                        Must be &gt; 0. Example: KG → G = 1000
                       </div>
                     </td>
 
-                    <td style={tdStyle}>
+                    {/* Example */}
+                    <td>
                       {baseUom && selectedUom ? (
-                        <span style={{ fontSize: 12, color: "#334155" }}>
-                          1 <b>{selectedUom.code || selectedUom.name}</b> ={" "}
-                          <b>{getFactorDisplayValue(row, factorText)}</b>{" "}
+                        <span className="uom-example">
+                          1 <b>{selectedUom.code || selectedUom.name}</b>
+                          {" = "}
+                          <b>{resolvedFactor(row, text)}</b>
+                          {" "}
                           <b>{baseUom.code || baseUom.name}</b>
                         </span>
-                      ) : (
-                        "—"
-                      )}
+                      ) : "—"}
                     </td>
 
-                    <td style={{ ...tdStyle, textAlign: "right" }}>
+                    {/* Remove */}
+                    <td style={{ textAlign: "right" }}>
                       <button
                         type="button"
-                        style={secondaryBtn}
+                        className="inv-btn inv-btn--outline inv-btn--sm"
                         disabled={!baseUomId}
-                        onClick={() => removeRow(row.key)}
+                        onClick={() => removeRow(row._key)}
                       >
                         Remove
                       </button>
                     </td>
                   </tr>
                 );
-              })
-            )}
-          </tbody>
-        </table>
+              })}
+            </tbody>
+          </table>
+        </div>
 
-        <div style={footerHintStyle}>
-          Tip: Mark exactly one <b>Issue UOM</b> to control the unit used during
-          issuing, store requests, and stock movement.
+        <div className="uom-table-footer">
+          Tip: mark exactly one row as <strong>Issue UOM</strong> to control the unit used during store requests and stock movements.
         </div>
       </div>
     </div>
   );
 }
-
-const headerRowStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  gap: 12,
-  marginBottom: 12,
-};
-
-const tableWrapStyle: CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 12,
-  overflow: "hidden",
-  background: "#fff",
-};
-
-const baseChipStyle: CSSProperties = {
-  marginTop: 8,
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  padding: "6px 10px",
-  borderRadius: 10,
-  border: "1px solid #e5e7eb",
-  background: "#f8fafc",
-  fontSize: 12,
-  color: "#334155",
-};
-
-const warningChipStyle: CSSProperties = {
-  marginTop: 8,
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "6px 10px",
-  borderRadius: 10,
-  border: "1px solid #fde68a",
-  background: "#fffbeb",
-  fontSize: 12,
-  color: "#92400e",
-  fontWeight: 700,
-};
-
-const optionRowStyle: CSSProperties = {
-  marginTop: 8,
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 14,
-  fontSize: 12,
-  color: "#475569",
-};
-
-const checkLabelStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-};
-
-const footerHintStyle: CSSProperties = {
-  borderTop: "1px solid #e5e7eb",
-  background: "#f8fafc",
-  padding: "8px 12px",
-  fontSize: 11,
-  color: "#64748b",
-};
-
-const disabledBtnStyle: CSSProperties = {
-  ...primaryBtn,
-  opacity: 0.55,
-  cursor: "not-allowed",
-};

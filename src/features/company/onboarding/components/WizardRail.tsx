@@ -1,0 +1,8 @@
+
+import { CheckCircle2, CircleAlert } from "lucide-react";
+import { cx } from "../utils/onboarding.utils";
+import type { OnboardingReadiness, StepDefinition, WizardStepKey } from "../state/onboarding.types";
+
+export function WizardRail({ steps, active, readiness, onSelect }: { steps: StepDefinition[]; active: WizardStepKey; readiness: OnboardingReadiness; onSelect: (step: WizardStepKey) => void }) {
+  return <aside className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-slate-200"><div className="px-3 py-3"><div className="text-sm font-bold text-slate-950">Setup sequence</div><div className="mt-1 text-xs text-slate-500">Complete required steps to activate the branch.</div></div><div className="space-y-2">{steps.map((s, index) => { const Icon = s.icon; const state = readiness[s.key]; const isActive = active === s.key; return <button key={s.key} onClick={() => onSelect(s.key)} disabled={state.locked} className={cx("flex w-full items-center gap-3 rounded-2xl p-3 text-left transition", isActive ? "bg-slate-950 text-white" : "hover:bg-slate-50", state.locked && "cursor-not-allowed opacity-45")}><div className={cx("grid h-10 w-10 place-items-center rounded-xl", isActive ? "bg-white/15" : "bg-slate-100")}><Icon className="h-5 w-5" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="text-xs font-bold opacity-60">{String(index + 1).padStart(2, "0")}</span><span className="truncate text-sm font-bold">{s.title}</span></div><div className={cx("mt-0.5 truncate text-xs", isActive ? "text-white/70" : "text-slate-500")}>{s.subtitle}</div></div>{state.done ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : s.required ? <CircleAlert className="h-5 w-5 text-amber-500" /> : null}</button>; })}</div></aside>;
+}

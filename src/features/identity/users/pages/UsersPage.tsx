@@ -7,18 +7,29 @@ import UserForm from "../components/UserForm";
 import "../../../../styles/modules.identity.css";
 import { useAppScope } from "../../../../app/useAppScope";
 
+type EmployeeOption = {
+  id: string;
+  employeeCode?: string | null;
+  fullName: string;
+  branchName?: string | null;
+  departmentName?: string | null;
+};
+
 type Modal =
   | { kind: "none" }
   | { kind: "create" }
   | { kind: "edit"; user: UserDto }
-  | { kind: "resetPassword"; user: UserDto };
+  | { kind: "resetPassword"; user: UserDto }
+  | { kind: "linkEmployee"; user: UserDto };
 
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debounced, setDebounced] = useState(value);
+
   useEffect(() => {
     const t = setTimeout(() => setDebounced(value), delayMs);
     return () => clearTimeout(t);
   }, [value, delayMs]);
+
   return debounced;
 }
 
@@ -26,8 +37,17 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+function hasSystemAdminRole(user: UserDto): boolean {
+  const roles = ((user as any).roles ?? (user as any).roleNames ?? []) as string[];
+  return roles.some((r) => String(r).toLowerCase() === "systemadmin");
+}
+
+function displayUser(user: UserDto) {
+  return user.email ?? user.userName ?? user.id;
+}
+
 export default function UsersPage() {
-  const { companyId,branchId } = useAppScope();
+  const { companyId, branchId } = useAppScope();
 
   const { filter, setFilter, data, loading, error, refresh, canPrev, canNext } =
     useUsers(companyId, { page: 1, pageSize: 10 });
@@ -35,48 +55,113 @@ export default function UsersPage() {
   const [modal, setModal] = useState<Modal>({ kind: "none" });
   const [busy, setBusy] = useState(false);
 
-  // Local search input (debounced -> updates filter.q)
   const [searchText, setSearchText] = useState(filter.q ?? "");
   const debouncedSearch = useDebouncedValue(searchText, 350);
 
+  const [newPassword, setNewPassword] = useState("");
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const debouncedEmployeeSearch = useDebouncedValue(employeeSearch, 300);
+
   useEffect(() => {
     setFilter((f) => ({ ...f, q: debouncedSearch || undefined, page: 1 }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch]);
+  }, [debouncedSearch, setFilter]);
 
-  // Keep input in sync if filter.q changes elsewhere
   useEffect(() => {
     setSearchText(filter.q ?? "");
   }, [filter.q]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && modal.kind !== "none" && !busy) {
+        setModal({ kind: "none" });
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        document.getElementById("users-search")?.focus();
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modal.kind, busy]);
+
+  useEffect(() => {
+    if (modal.kind === "resetPassword") {
+      setNewPassword("");
+      setTimeout(() => passwordInputRef.current?.focus(), 0);
+    }
+  }, [modal.kind]);
+
+  useEffect(() => {
+    if (modal.kind !== "linkEmployee") return;
+
+    setEmployeeSearch("");
+    setSelectedEmployeeId((modal.user as any).employeeId ?? "");
+  }, [modal]);
+
+  useEffect(() => {
+    if (modal.kind !== "linkEmployee" || !companyId) return;
+
+    let active = true;
+
+    async function loadEmployees() {
+      try {
+        setEmployeesLoading(true);
+
+        const res = await usersApi.searchEmployees(companyId, {
+          branchId: branchId || undefined,
+          q: debouncedEmployeeSearch || undefined,
+          unlinkedOnly: true,
+          page: 1,
+          pageSize: 30,
+        });
+
+        const data = (res as any)?.data ?? res;
+        const rows = Array.isArray(data)
+          ? data
+          : data?.items ?? data?.data ?? data?.results ?? [];
+
+        if (active) setEmployeeOptions(rows);
+      } finally {
+        if (active) setEmployeesLoading(false);
+      }
+    }
+
+    void loadEmployees();
+
+    return () => {
+      active = false;
+    };
+  }, [modal.kind, companyId, branchId, debouncedEmployeeSearch]);
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const total = data?.total ?? 0;
   const page = data?.page ?? filter.page ?? 1;
   const pageSize = data?.pageSize ?? filter.pageSize ?? 10;
   const pageCount = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
+  const pageSafe = clamp(page, 1, pageCount);
+
+  const shownCountText = loading
+    ? "Loading…"
+    : `${items.length} shown • ${total} total`;
+
+  const showEmpty = !loading && !error && items.length === 0;
 
   const closeModal = () => setModal({ kind: "none" });
-
-  // ESC to close modal (when not busy)
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && modal.kind !== "none" && !busy) closeModal();
-      // Cmd/Ctrl+K focuses search (nice admin UX)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        const el = document.getElementById("users-search");
-        (el as HTMLInputElement | null)?.focus?.();
-        e.preventDefault();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [modal.kind, busy]);
 
   const onCreate = async (dto: CreateUserDto) => {
     try {
       setBusy(true);
-      dto.branchId = branchId ? branchId : null;
-      await usersApi.create(companyId, dto);
+      await usersApi.create(companyId, {
+        ...dto,
+        branchId: branchId || null,
+      });
       closeModal();
       await refresh();
     } finally {
@@ -86,6 +171,7 @@ export default function UsersPage() {
 
   const onEditSubmit = async (dto: any) => {
     if (modal.kind !== "edit") return;
+
     try {
       setBusy(true);
       await usersApi.update(companyId, modal.user.id, dto);
@@ -97,6 +183,8 @@ export default function UsersPage() {
   };
 
   const onToggleActive = async (u: UserDto) => {
+    if (hasSystemAdminRole(u)) return;
+
     try {
       setBusy(true);
       await usersApi.setActive(companyId, u.id, !u.isActive);
@@ -106,45 +194,41 @@ export default function UsersPage() {
     }
   };
 
-  // Password reset modal state
-  const [newPassword, setNewPassword] = useState("");
-  const passwordInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (modal.kind === "resetPassword") {
-      setNewPassword("");
-      setTimeout(() => passwordInputRef.current?.focus(), 0);
-    }
-  }, [modal.kind]);
-
-  const onResetPassword = async (u: UserDto) => {
-    setModal({ kind: "resetPassword", user: u });
-  };
-
   const submitResetPassword = async () => {
     if (modal.kind !== "resetPassword") return;
+
     const pw = newPassword.trim();
     if (pw.length < 6) return;
+
     try {
       setBusy(true);
       await usersApi.resetPassword(companyId, modal.user.id, pw);
       closeModal();
-      // Keep your alert if you don't have toasts yet
-      // eslint-disable-next-line no-alert
       alert("Password updated.");
     } finally {
       setBusy(false);
     }
   };
 
-  const showEmpty = !loading && !error && items.length === 0;
+  const submitEmployeeLink = async () => {
+    if (modal.kind !== "linkEmployee") return;
+    if (!selectedEmployeeId) return;
+    if (hasSystemAdminRole(modal.user)) return;
 
-  const shownCountText = loading ? "Loading…" : `${items.length} shown • ${total} total`;
-  const pageSafe = clamp(page, 1, pageCount);
+    try {
+      setBusy(true);
+      await usersApi.linkEmployee(companyId, modal.user.id, {
+        employeeId: selectedEmployeeId,
+      });
+      closeModal();
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="lux-page">
-      {/* HERO */}
       <div className="lux-hero">
         <div className="lux-hero__bg" />
         <div className="lux-hero__content">
@@ -152,10 +236,9 @@ export default function UsersPage() {
             <div className="lux-kicker">Identity</div>
             <h1 className="lux-title">User Management</h1>
             <p className="lux-subtitle">
-              Create users, manage access, and maintain operational hygiene.
+              Create users, manage access, and link operational users to employees.
             </p>
 
-            {/* Stats ribbon (feels premium, improves scanning) */}
             <div className="lux-ribbon" role="status" aria-live="polite">
               <span className="lux-chip">
                 <span className="lux-dot" aria-hidden="true" />
@@ -167,19 +250,12 @@ export default function UsersPage() {
               <span className="lux-chip">
                 Page size <strong>{pageSize}</strong>
               </span>
-              {(filter.q ?? "").trim() ? (
-                <span className="lux-chip lux-chip--soft">
-                  Filter: <strong>{filter.q}</strong>
-                </span>
-              ) : null}
             </div>
           </div>
 
           <div className="lux-hero__actions">
             <div className="lux-search" role="search" aria-label="Search users">
-              <span className="lux-search__icon" aria-hidden="true">
-                ⌕
-              </span>
+              <span className="lux-search__icon" aria-hidden="true">⌕</span>
               <input
                 id="users-search"
                 className="lux-input lux-input--search"
@@ -188,21 +264,18 @@ export default function UsersPage() {
                 onChange={(e) => setSearchText(e.target.value)}
                 disabled={busy}
               />
-              <span className="lux-kbd" aria-hidden="true">
-                ⌘K
-              </span>
-              {searchText ? (
+              <span className="lux-kbd" aria-hidden="true">⌘K</span>
+              {searchText && (
                 <button
                   className="lux-iconBtn"
                   type="button"
                   onClick={() => setSearchText("")}
                   disabled={busy}
                   aria-label="Clear search"
-                  title="Clear"
                 >
                   ×
                 </button>
-              ) : null}
+              )}
             </div>
 
             <button
@@ -217,14 +290,12 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* ERROR */}
-      {error ? (
+      {error && (
         <div className="lux-alert lux-alert--danger" role="alert">
           <div className="lux-alert__row">
             <div>
-              <strong>Error:</strong>{" "}
-              {error?.message ?? "Request failed"} (HTTP{" "}
-              {(error as any)?.status ?? "?"})
+              <strong>Error:</strong> {error?.message ?? "Request failed"}{" "}
+              (HTTP {(error as any)?.status ?? "?"})
             </div>
             <button
               className="lux-btn lux-btn--soft"
@@ -236,9 +307,8 @@ export default function UsersPage() {
             </button>
           </div>
         </div>
-      ) : null}
+      )}
 
-      {/* TABLE CARD */}
       <div className="lux-card">
         <div className="lux-card__header">
           <div>
@@ -246,21 +316,17 @@ export default function UsersPage() {
             <div className="lux-card__hint">{shownCountText}</div>
           </div>
 
-          <div className="lux-card__tools">
-            <button
-              className="lux-btn lux-btn--soft"
-              disabled={busy}
-              onClick={() => refresh()}
-              type="button"
-              title="Refresh data"
-            >
-              Refresh
-            </button>
-          </div>
+          <button
+            className="lux-btn lux-btn--soft"
+            disabled={busy}
+            onClick={() => refresh()}
+            type="button"
+          >
+            Refresh
+          </button>
         </div>
 
         <div className="lux-tableWrap">
-          {/* Premium “veil” loading state (less jarring than swapping whole UI) */}
           <div className="lux-tableSurface" aria-busy={loading ? "true" : "false"}>
             {showEmpty ? (
               <div className="lux-empty">
@@ -295,22 +361,26 @@ export default function UsersPage() {
                 items={items}
                 onEdit={(u) => setModal({ kind: "edit", user: u })}
                 onToggleActive={onToggleActive}
-                onResetPassword={onResetPassword}
+                onResetPassword={(u) => setModal({ kind: "resetPassword", user: u })}
+                onLinkEmployee={(u: UserDto) => {
+                  if (!hasSystemAdminRole(u)) {
+                    setModal({ kind: "linkEmployee", user: u });
+                  }
+                }}
                 busy={busy}
               />
             )}
 
-            {loading ? (
+            {loading && (
               <div className="lux-veil" aria-hidden="true">
                 <div className="lux-spinner" />
                 <div className="lux-muted">Loading users…</div>
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </div>
 
-      {/* PAGER */}
       <div className="lux-pager" aria-label="Pagination">
         <button
           className="lux-btn"
@@ -335,33 +405,33 @@ export default function UsersPage() {
         </button>
       </div>
 
-      {/* MODAL */}
-      {modal.kind !== "none" ? (
+      {modal.kind !== "none" && (
         <div
           className="lux-modalOverlay"
           onClick={() => !busy && closeModal()}
           role="dialog"
           aria-modal="true"
-          aria-label={
-            modal.kind === "create"
-              ? "Create user"
-              : modal.kind === "edit"
-              ? "Edit user"
-              : "Reset password"
-          }
         >
-          <div className="lux-modal" onClick={(e) => e.stopPropagation()}>
-            {/* Subtle busy bar for luxury feel */}
-            {busy ? <div className="lux-modalBusy" aria-hidden="true" /> : null}
+          <div
+            className={
+              modal.kind === "create" || modal.kind === "edit"
+                ? "lux-modal lux-modal--xl"
+                : "lux-modal lux-modal--md"
+            }
+            onClick={(e) => e.stopPropagation()}
+          >
+            {busy && <div className="lux-modalBusy" aria-hidden="true" />}
 
-            {modal.kind === "create" ? (
+            {modal.kind === "create" && (
               <UserForm
                 mode="create"
                 onSubmit={onCreate}
                 onCancel={closeModal}
                 busy={busy}
               />
-            ) : modal.kind === "edit" ? (
+            )}
+
+            {modal.kind === "edit" && (
               <UserForm
                 mode="edit"
                 initial={modal.user}
@@ -369,14 +439,13 @@ export default function UsersPage() {
                 onCancel={closeModal}
                 busy={busy}
               />
-            ) : (
+            )}
+
+            {modal.kind === "resetPassword" && (
               <div className="lux-resetPw">
                 <div className="lux-resetPw__title">Reset password</div>
                 <div className="lux-resetPw__subtitle">
-                  For{" "}
-                  <strong>
-                    {modal.user.email ?? modal.user.userName ?? modal.user.id}
-                  </strong>
+                  For <strong>{displayUser(modal.user)}</strong>
                 </div>
 
                 <label className="lux-label">
@@ -396,33 +465,82 @@ export default function UsersPage() {
                 </label>
 
                 <div className="lux-row">
-                  <button
-                    className="lux-btn"
-                    onClick={closeModal}
-                    disabled={busy}
-                    type="button"
-                  >
+                  <button className="lux-btn" onClick={closeModal} disabled={busy}>
                     Cancel
                   </button>
                   <button
                     className="lux-btn lux-btn--primary"
                     onClick={submitResetPassword}
                     disabled={busy || newPassword.trim().length < 6}
-                    type="button"
                   >
                     Update password
                   </button>
                 </div>
+              </div>
+            )}
+
+            {modal.kind === "linkEmployee" && (
+              <div className="lux-resetPw">
+                <div className="lux-resetPw__title">Link user to employee</div>
+                <div className="lux-resetPw__subtitle">
+                  User: <strong>{displayUser(modal.user)}</strong>
+                </div>
+
+                <label className="lux-label">
+                  Search employee
+                  <input
+                    className="lux-input"
+                    value={employeeSearch}
+                    onChange={(e) => setEmployeeSearch(e.target.value)}
+                    placeholder="Search by employee name or code…"
+                    disabled={busy}
+                  />
+                </label>
+
+                <label className="lux-label">
+                  Employee
+                  <select
+                    className="lux-input"
+                    value={selectedEmployeeId}
+                    onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                    disabled={busy || employeesLoading}
+                  >
+                    <option value="">
+                      {employeesLoading ? "Loading employees…" : "— Select employee —"}
+                    </option>
+
+                    {employeeOptions.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.employeeCode ? `${e.employeeCode} · ` : ""}
+                        {e.fullName}
+                        {e.departmentName ? ` · ${e.departmentName}` : ""}
+                        {e.branchName ? ` · ${e.branchName}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="lux-row">
+                  <button className="lux-btn" onClick={closeModal} disabled={busy}>
+                    Cancel
+                  </button>
+                  <button
+                    className="lux-btn lux-btn--primary"
+                    onClick={submitEmployeeLink}
+                    disabled={busy || !selectedEmployeeId}
+                  >
+                    Link employee
+                  </button>
+                </div>
 
                 <div className="lux-hint">
-                  Tip: Use at least 6 characters (your server policy still
-                  applies).
+                  SystemAdmin users cannot be linked to employees from this screen.
                 </div>
               </div>
             )}
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

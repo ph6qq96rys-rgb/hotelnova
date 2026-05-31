@@ -1,10 +1,11 @@
 ﻿import type { UserDto } from "../types";
 
-type Props = {
+type UsersTableProps = {
   items: UserDto[];
-  onEdit: (u: UserDto) => void;
-  onToggleActive: (u: UserDto) => Promise<void>;
-  onResetPassword: (u: UserDto) => Promise<void>;
+  onEdit: (user: UserDto) => void;
+  onToggleActive: (user: UserDto) => void;
+  onResetPassword: (user: UserDto) => void;
+  onLinkEmployee?: (user: UserDto) => void;
   busy?: boolean;
 };
 
@@ -15,10 +16,35 @@ function safe(v?: string | null) {
 function initials(nameOrEmail?: string | null) {
   const s = (nameOrEmail ?? "").trim();
   if (!s) return "U";
+
   const parts = s.split(/[\s.@_-]+/).filter(Boolean);
   const a = parts[0]?.[0] ?? "U";
   const b = parts[1]?.[0] ?? "";
+
   return (a + b).toUpperCase();
+}
+
+function hasSystemAdminRole(user: UserDto): boolean {
+  const roles = ((user as any).roles ?? (user as any).roleNames ?? []) as string[];
+
+  return roles.some(
+    (role) => String(role).toLowerCase() === "systemadmin"
+  );
+}
+
+function employeeLabel(user: UserDto): string {
+  const employeeName =
+    (user as any).employeeName ??
+    (user as any).employeeFullName ??
+    null;
+
+  const employeeCode = (user as any).employeeCode ?? null;
+
+  if (employeeName && employeeCode) return `${employeeCode} · ${employeeName}`;
+  if (employeeName) return employeeName;
+  if (employeeCode) return employeeCode;
+
+  return "Not linked";
 }
 
 export default function UsersTable({
@@ -26,8 +52,9 @@ export default function UsersTable({
   onEdit,
   onToggleActive,
   onResetPassword,
+  onLinkEmployee,
   busy = false,
-}: Props) {
+}: UsersTableProps) {
   if (!items || items.length === 0) {
     return (
       <div className="lux-emptyInline">
@@ -43,11 +70,12 @@ export default function UsersTable({
         <table className="lux-table__el">
           <thead>
             <tr>
-              <th style={{ width: 320 }}>User</th>
+              <th style={{ width: 300 }}>User</th>
               <th>Email</th>
               <th style={{ width: 220 }}>Username</th>
+              <th style={{ width: 220 }}>Employee</th>
               <th style={{ width: 140 }}>Status</th>
-              <th style={{ width: 320, textAlign: "right" }}>Actions</th>
+              <th style={{ width: 380, textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
 
@@ -56,15 +84,16 @@ export default function UsersTable({
               const title = safe(u.userName ?? u.email);
               const subtitle = safe(u.email);
               const uname = safe(u.userName);
+              const isSystemAdmin = hasSystemAdminRole(u);
 
               return (
                 <tr key={u.id} className={busy ? "is-busy" : undefined}>
-                  {/* User */}
                   <td>
                     <div className="lux-userCell">
                       <div className="lux-avatar" aria-hidden="true">
                         {initials(u.userName ?? u.email)}
                       </div>
+
                       <div className="lux-userCell__meta">
                         <div className="lux-userCell__title">{title}</div>
                         <div className="lux-userCell__sub">{subtitle}</div>
@@ -72,13 +101,25 @@ export default function UsersTable({
                     </div>
                   </td>
 
-                  {/* Email */}
                   <td className="lux-mono">{safe(u.email)}</td>
 
-                  {/* Username */}
                   <td className="lux-mono">{uname}</td>
 
-                  {/* Status */}
+                  <td>
+                    <span
+                      className={[
+                        "lux-status",
+                        employeeLabel(u) === "Not linked"
+                          ? "lux-status--muted"
+                          : "lux-status--ok",
+                      ].join(" ")}
+                      title={employeeLabel(u)}
+                    >
+                      <span className="lux-status__dot" aria-hidden="true" />
+                      {employeeLabel(u)}
+                    </span>
+                  </td>
+
                   <td>
                     <span
                       className={[
@@ -91,7 +132,6 @@ export default function UsersTable({
                     </span>
                   </td>
 
-                  {/* Actions */}
                   <td style={{ textAlign: "right" }}>
                     <div className="lux-actions">
                       <button
@@ -107,17 +147,39 @@ export default function UsersTable({
                       <button
                         className="lux-btn lux-btn--sm"
                         type="button"
-                        onClick={() => void onToggleActive(u)}
-                        disabled={busy}
-                        title={u.isActive ? "Disable user" : "Enable user"}
+                        onClick={() => onToggleActive(u)}
+                        disabled={busy || isSystemAdmin}
+                        title={
+                          isSystemAdmin
+                            ? "SystemAdmin cannot be disabled here"
+                            : u.isActive
+                            ? "Disable user"
+                            : "Enable user"
+                        }
                       >
                         {u.isActive ? "Disable" : "Enable"}
                       </button>
 
+                      {onLinkEmployee && (
+                        <button
+                          className="lux-btn lux-btn--soft lux-btn--sm"
+                          type="button"
+                          onClick={() => onLinkEmployee(u)}
+                          disabled={busy || isSystemAdmin}
+                          title={
+                            isSystemAdmin
+                              ? "SystemAdmin cannot be linked to employee"
+                              : "Link employee"
+                          }
+                        >
+                          Employee
+                        </button>
+                      )}
+
                       <button
                         className="lux-btn lux-btn--danger lux-btn--sm"
                         type="button"
-                        onClick={() => void onResetPassword(u)}
+                        onClick={() => onResetPassword(u)}
                         disabled={busy}
                         title="Reset password"
                       >
@@ -132,11 +194,11 @@ export default function UsersTable({
         </table>
       </div>
 
-      {busy ? (
+      {busy && (
         <div className="lux-table__foot" aria-live="polite">
           Working…
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

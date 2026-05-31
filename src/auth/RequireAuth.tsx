@@ -1,71 +1,57 @@
-import React, { useEffect, useMemo, useRef } from "react";
+// src/auth/RequireAuth.tsx
+//
+// Wrapper component that protects subtrees from unauthenticated access.
+// Prefer <ProtectedRoute> for route-level guards in React Router v6.
+// Use RequireAuth for non-route cases (e.g. conditionally rendering a modal).
+//
+// ── What was wrong in the original ─────────────────────────────────────────
+// 1. Used a `redirected` ref to prevent double navigation in StrictMode, but
+//    the ref was never reset when the user navigated away and back. On the
+//    second visit to a protected page after logout, the ref was true and the
+//    redirect never fired — leaving the user on a blank page. Fixed: removed
+//    the ref; React Router's `replace` navigation is idempotent.
+//
+// 2. The `returnTo` useMemo included `loc.pathname + loc.search` which
+//    would re-compute on every render. Simplified to compute inline.
+
+import type { ReactNode } from "react";
+import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import { safeReturnUrl } from "./returnUrl";
 
-type Props = {
-  children: React.ReactNode;
+const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
 
-  /** routes that should NOT be redirected to login (public pages) */
-  allow?: (pathname: string) => boolean;
-
-  /** optional: render while auth initializes */
-  fallback?: React.ReactNode;
-};
-
-function buildLoginUrl(returnTo: string) {
-  return `/login?returnUrl=${encodeURIComponent(returnTo)}`;
+interface Props {
+  children:  ReactNode;
+  /** Return true for paths that are public (no redirect needed). */
+  allow?:    (pathname: string) => boolean;
+  /** Shown while auth is hydrating. */
+  fallback?: ReactNode;
 }
 
-/**
- * RequireAuth
- * - Waits for auth initialization (isReady)
- * - If unauthenticated, redirects to /login?returnUrl=...
- * - Prevents /login nesting and StrictMode double nav
- */
-export default function RequireAuth({
-  children,
-  allow,
-  fallback = null,
-}: Props) {
+export default function RequireAuth({ children, allow, fallback = null }: Props) {
   const { isReady, isAuthenticated } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
 
-  // Don’t redirect from auth pages themselves (prevents loops)
-  const isAuthPage =
-    loc.pathname.startsWith("/login") ||
-    loc.pathname.startsWith("/register") ||
-    loc.pathname.startsWith("/forgot-password") ||
-    loc.pathname.startsWith("/reset-password");
-
-  const allowed = allow?.(loc.pathname) ?? false;
-
-  const returnTo = useMemo(() => {
-    const current = loc.pathname + loc.search;
-    return safeReturnUrl(current, "/dashboard");
-  }, [loc.pathname, loc.search]);
-
-  const redirected = useRef(false);
+  const isAuthPage = AUTH_PATHS.some((p) => loc.pathname.startsWith(p));
+  const isAllowed  = allow?.(loc.pathname) ?? false;
+  const needsAuth  = !isAuthPage && !isAllowed;
 
   useEffect(() => {
-    if (!isReady) return;
-    if (redirected.current) return;
+    if (!isReady)         return;
+    if (!needsAuth)       return;
+    if (isAuthenticated)  return;
 
-    // Allow public pages + auth pages
-    if (allowed || isAuthPage) return;
+    const returnTo  = safeReturnUrl(loc.pathname + loc.search, "/dashboard");
+    nav(`/login?returnUrl=${encodeURIComponent(returnTo)}`, { replace: true });
+  }, [isReady, isAuthenticated, needsAuth, nav, loc.pathname, loc.search]);
 
-    if (!isAuthenticated) {
-      redirected.current = true;
-      nav(buildLoginUrl(returnTo), { replace: true });
-    }
-  }, [isReady, isAuthenticated, allowed, isAuthPage, nav, returnTo]);
-
-  // While auth initializes
   if (!isReady) return <>{fallback}</>;
 
-  // If not authenticated, we’re redirecting (avoid UI flash)
-  if (!isAuthenticated && !allowed && !isAuthPage) return null;
+  // Prevent flash while redirect is pending.
+  if (!isAuthenticated && needsAuth) return null;
 
   return <>{children}</>;
 }

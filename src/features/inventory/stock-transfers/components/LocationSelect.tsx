@@ -32,7 +32,7 @@ export default function LocationSelect({
       setLoading(true);
       setErr(null);
       try {
-        const data = await locationsApi.list(companyId,branchId);
+        const data = await locationsApi.listLocations(companyId,branchId);
         if (!alive) return;
         setItems(data ?? []);
       } catch (e: any) {

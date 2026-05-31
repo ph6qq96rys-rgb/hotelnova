@@ -1,0 +1,265 @@
+/* menu-engineering.css */
+
+.me-page {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.me-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+
+.me-kicker {
+  margin: 0 0 6px;
+  font-family: var(--erp-mono);
+  font-size: 11px;
+  color: var(--erp-text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.me-title {
+  margin: 0 0 6px;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--erp-text);
+}
+
+.me-subtitle {
+  margin: 0;
+  max-width: 720px;
+  color: var(--erp-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.me-timestamp {
+  margin: 8px 0 0;
+  color: var(--erp-text-soft);
+  font-size: 12px;
+  font-family: var(--erp-mono);
+}
+
+.me-loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--erp-text-muted);
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-border-soft);
+  border-radius: var(--erp-r-lg);
+}
+
+.me-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.me-kpi {
+  text-align: left;
+  padding: 18px 20px;
+  border-radius: var(--erp-r-lg);
+  border: 1px solid var(--erp-border-soft);
+  background: var(--erp-surface);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.me-kpi:hover,
+.me-kpi.is-active {
+  transform: translateY(-1px);
+  border-color: var(--erp-accent);
+  box-shadow: var(--erp-shadow-sm);
+}
+
+.me-kpi__label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 10px;
+}
+
+.me-kpi__value {
+  font-size: 34px;
+  font-weight: 900;
+  color: var(--erp-text);
+  line-height: 1;
+}
+
+.me-kpi__meta {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+  font-size: 11px;
+}
+
+.me-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.me-summary {
+  padding: 13px 15px;
+  border: 1px solid var(--erp-border-soft);
+  border-radius: var(--erp-r-md);
+  background: var(--erp-surface-2);
+}
+
+.me-summary span,
+.me-summary strong {
+  display: block;
+}
+
+.me-summary span {
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 5px;
+}
+
+.me-summary strong {
+  color: var(--erp-text);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.me-summary .is-danger,
+.me-table .is-danger {
+  color: var(--erp-danger);
+}
+
+.me-table .is-good {
+  color: var(--erp-success);
+}
+
+.me-table-card {
+  overflow: hidden;
+  border: 1px solid var(--erp-border-soft);
+  border-radius: var(--erp-r-lg);
+  background: var(--erp-surface);
+  box-shadow: var(--erp-shadow-sm);
+}
+
+.me-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--erp-border-soft);
+  background: var(--erp-surface-2);
+}
+
+.me-section-title {
+  margin: 0 0 4px;
+  color: var(--erp-text);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.me-section-subtitle {
+  margin: 0;
+  color: var(--erp-text-muted);
+  font-size: 12px;
+}
+
+.me-toolbar__controls {
+  display: flex;
+  gap: 10px;
+  min-width: 420px;
+}
+
+.me-toolbar__controls .erp-input {
+  min-width: 220px;
+}
+
+.me-table th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.me-table th.left,
+.me-table td.left {
+  text-align: left;
+}
+
+.me-table th.right,
+.me-table td.num {
+  text-align: right;
+}
+
+.me-code {
+  display: block;
+  margin-top: 3px;
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+  font-size: 11px;
+}
+
+.me-category-pill {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: var(--erp-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.me-category-pill span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.me-reco {
+  max-width: 260px;
+  color: var(--erp-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 980px) {
+  .me-header,
+  .me-toolbar {
+    flex-direction: column;
+  }
+
+  .me-kpi-grid,
+  .me-summary-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .me-toolbar__controls {
+    width: 100%;
+    min-width: 0;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .me-kpi-grid,
+  .me-summary-bar {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,237 +1,268 @@
+// src/features/inventory/adjustments/pages/AdjustmentListPage.tsx
+
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
-import { adjustmentApi } from "../api/adjustmentApi";
+import { adjustmentApi, getApiError } from "../api/adjustmentApi";
+import { normalizeAdjustmentStatus, STATUS_BADGE } from "../utils/adjustmentWorkflow";
 import type { InventoryAdjustmentDto } from "../types";
-import { normalizeAdjustmentStatus } from "../utils/adjustmentWorkflow";
 
-function formatDate(value?: string | null) {
+// ── Formatters ────────────────────────────────────────────────────────────────
+
+function fmtDate(value?: string | null) {
   if (!value) return "—";
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 }
 
-function formatNumber(value?: number | null) {
-  return Number(value ?? 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+function fmtMoney(v: number) {
+  return "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function getErrorMessage(e: any, fallback: string) {
-  const data = e?.response?.data;
-
-  if (typeof data === "string") return data;
-  if (data?.detail) return data.detail;
-  if (data?.title) return data.title;
-  if (data?.message) return data.message;
-
-  return e?.message || fallback;
+function fmtQty(v: number) {
+  return v.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 }
+
+function rowAmount(row: InventoryAdjustmentDto): number {
+  return (row.lines ?? []).reduce((s, l) => s + (l.lineAmount ?? 0), 0);
+}
+
+const STATUS_OPTIONS = ["Draft", "Submitted", "Approved", "Posted", "Rejected", "Reversed"] as const;
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AdjustmentListPage() {
-  const navigate = useNavigate();
+  const nav = useNavigate();
   const { companyId, branchId } = useAppScope();
 
-  const [items, setItems] = useState<InventoryAdjustmentDto[]>([]);
+  const [items,   setItems]   = useState<InventoryAdjustmentDto[]>([]);
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const totals = useMemo(() => {
-    return items.reduce(
-      (acc, row) => {
-        const lines = row.lines ?? [];
-
-        acc.count += 1;
-        acc.lines += lines.length;
-        acc.amount += lines.reduce(
-          (sum, line) => sum + Number(line.unitCost ?? 0),
-          0
-        );
-
-        return acc;
-      },
-      { count: 0, lines: 0, amount: 0 }
-    );
-  }, [items]);
+  const [status,  setStatus]  = useState("");
+  const [err,     setErr]     = useState<string | null>(null);
 
   async function load() {
-    if (!companyId) return;
-
+    if (!companyId || !branchId) return;
     setLoading(true);
-    setError(null);
-
+    setErr(null);
     try {
-      const data = await adjustmentApi.list(companyId, {
-        branchId,
+      const data = await adjustmentApi.list(companyId, branchId, {
         status: status || undefined,
       });
-
-      setItems(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setError(getErrorMessage(e, "Failed to load adjustments."));
+      setItems(data);
+    } catch (e) {
+      setErr(getApiError(e, "Failed to load adjustments."));
       setItems([]);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, branchId, status]);
+  useEffect(() => { load(); }, [companyId, branchId, status]);
 
-function goToNewAdjustment() {
-  navigate(`/inventory/adjustments/new`);
-}
-
-function openAdjustment(id: string) {
-  navigate(`/inventory/adjustments/${id}`);
-}
+  const kpis = useMemo(() => {
+    const totalAmount     = items.reduce((s, r) => s + rowAmount(r), 0);
+    const totalVariance   = items.reduce((s, r) => s + (r.totalAdjustmentQty ?? 0), 0);
+    const highVariance    = items.filter((r) => r.hasHighVariance).length;
+    const pendingApproval = items.filter(
+      (r) => normalizeAdjustmentStatus(r.docStatus) === "Submitted"
+    ).length;
+    return { totalAmount, totalVariance, highVariance, pendingApproval };
+  }, [items]);
 
   return (
-    <div className="space-y-5 p-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="page">
+
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Inventory Adjustments
-          </h1>
-          <p className="text-sm text-slate-500">
-            Manage stock count, waste, damage, expiry, spoilage, and variance
-            corrections.
-          </p>
+          <div className="page-kicker">Inventory</div>
+          <div className="page-title">Adjustments</div>
+          <div className="page-sub">Stock counts, waste, damage and variance corrections</div>
         </div>
-
         <button
-          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={!companyId}
-          onClick={goToNewAdjustment}
+          className="btn btn-primary"
+          disabled={!companyId || !branchId}
+          onClick={() => nav("/inventory/adjustments/new")}
         >
-          New Adjustment
+          <i className="ti ti-plus" aria-hidden /> New adjustment
         </button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <div className="text-sm text-slate-500">Documents</div>
-          <div className="mt-1 text-2xl font-bold">{totals.count}</div>
+      <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}>
+        <div className="kpi">
+          <div className="kpi-label">Documents</div>
+          <div className="kpi-val">{items.length}</div>
+          <div className="kpi-sub">in current filter</div>
         </div>
-
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <div className="text-sm text-slate-500">Total Lines</div>
-          <div className="mt-1 text-2xl font-bold">{totals.lines}</div>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <div className="text-sm text-slate-500">Total Amount</div>
-          <div className="mt-1 text-2xl font-bold">
-            {formatNumber(totals.amount)}
+        <div className="kpi">
+          <div className="kpi-label">Net variance qty</div>
+          <div className="kpi-val" style={{
+            color: kpis.totalVariance < 0
+              ? "var(--danger)"
+              : kpis.totalVariance > 0
+              ? "var(--success)"
+              : "var(--text)",
+          }}>
+            {kpis.totalVariance >= 0 ? "+" : ""}{fmtQty(kpis.totalVariance)}
           </div>
+          <div className="kpi-sub">base units</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Total value</div>
+          <div className="kpi-val">{fmtMoney(kpis.totalAmount)}</div>
+          <div className="kpi-sub">adjustment impact</div>
+          {kpis.highVariance > 0 && (
+            <div className="kpi-badge badge-warn">{kpis.highVariance} high variance</div>
+          )}
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Pending approval</div>
+          <div className="kpi-val">{kpis.pendingApproval}</div>
+          <div className="kpi-sub">submitted adjustments</div>
+          {kpis.pendingApproval > 0 && (
+            <div className="kpi-badge badge-warn">Action needed</div>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-3 rounded-2xl border bg-white p-4 shadow-sm">
-        <label className="text-sm font-medium text-slate-600">Status</label>
-
-        <select
-          className="rounded-xl border px-3 py-2 text-sm"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-        >
-          <option value="">All</option>
-          <option value="Draft">Draft</option>
-          <option value="Submitted">Submitted</option>
-          <option value="Approved">Approved</option>
-          <option value="Posted">Posted</option>
-          <option value="Reversed">Reversed</option>
-        </select>
-
-        <button
-          className="rounded-xl border px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={loading || !companyId}
-          onClick={load}
-        >
-          {loading ? "Refreshing..." : "Refresh"}
+      <div className="toolbar">
+        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "flex",
+          alignItems: "center", gap: 6 }}>
+          Status
+          <select
+            className="select"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            style={{ width: 150, fontSize: 13, height: 32, padding: "0 8px" }}
+          >
+            <option value="">All statuses</option>
+            {STATUS_OPTIONS.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <button className="btn" disabled={loading || !companyId} onClick={load}>
+          <i className="ti ti-refresh" aria-hidden />
+          {loading ? "Loading…" : "Refresh"}
         </button>
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {err && <div className="alert alert-danger">{err}</div>}
 
-      <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-        <table className="w-full border-collapse text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+      <div className="card" style={{ padding: 0 }}>
+        <table className="table">
+          <thead>
             <tr>
-              <th className="p-3 text-left">Date</th>
-              <th className="p-3 text-left">Adjustment No</th>
-              <th className="p-3 text-left">Type</th>
-              <th className="p-3 text-left">Status</th>
-              <th className="p-3 text-right">Lines</th>
-              <th className="p-3 text-right">Amount</th>
-              <th className="p-3 text-right">Action</th>
+              <th>Date</th>
+              <th>Document</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th style={{ textAlign: "right" }}>System qty</th>
+              <th style={{ textAlign: "right" }}>Counted qty</th>
+              <th style={{ textAlign: "right" }}>Variance</th>
+              <th style={{ textAlign: "right" }}>Value</th>
+              <th />
             </tr>
           </thead>
-
           <tbody>
             {loading ? (
               <tr>
-                <td className="p-5 text-center text-slate-500" colSpan={7}>
-                  Loading adjustments...
+                <td colSpan={9} style={{ padding: 48, textAlign: "center",
+                  color: "var(--text-muted)", fontSize: 13 }}>
+                  Loading…
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td className="p-5 text-center text-slate-500" colSpan={7}>
-                  No adjustments found.
+                <td colSpan={9} style={{ padding: 56, textAlign: "center",
+                  color: "var(--text-soft)", fontSize: 13 }}>
+                  No adjustments found.{" "}
+                  <span style={{ color: "var(--accent)", cursor: "pointer" }}
+                    onClick={() => nav("/inventory/adjustments/new")}>
+                    Create one
+                  </span>
                 </td>
               </tr>
-            ) : (
-              items.map((row) => {
-                const rowStatus = normalizeAdjustmentStatus(row.docStatus);
+            ) : items.map((row) => {
+              const s         = normalizeAdjustmentStatus(row.docStatus);
+              const amount    = rowAmount(row);
+              const varQty    = row.totalAdjustmentQty ?? 0;
 
-                const amount = (row.lines ?? []).reduce(
-                  (sum, line) => sum + Number(line.unitCost ?? 0),
-                  0
-                );
+              return (
+                <tr key={row.id} style={{ cursor: "pointer" }}
+                  onClick={() => nav(`/inventory/adjustments/${row.id}`)}>
 
-                return (
-                  <tr key={row.id} className="border-t hover:bg-slate-50">
-                    <td className="p-3">{formatDate(row.adjustmentDate)}</td>
+                  <td style={{ fontSize: 12, fontFamily: "var(--mono)",
+                    color: "var(--text-muted)" }}>
+                    {fmtDate(row.adjustmentDate)}
+                  </td>
 
-                    <td className="p-3 font-medium">
+                  <td>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>
                       {row.adjustmentNo || "—"}
-                    </td>
+                    </div>
+                    {row.referenceNo && (
+                      <div style={{ fontSize: 11, color: "var(--text-soft)",
+                        fontFamily: "var(--mono)", marginTop: 1 }}>
+                        Ref: {row.referenceNo}
+                      </div>
+                    )}
+                    {row.hasHighVariance && (
+                      <div style={{ fontSize: 10, color: "var(--warn)",
+                        fontWeight: 500, marginTop: 2 }}>
+                        <i className="ti ti-alert-triangle" aria-hidden
+                          style={{ fontSize: 10, marginRight: 3 }} />
+                        High variance {row.highestVariancePercent?.toFixed(1)}%
+                      </div>
+                    )}
+                  </td>
 
-                    <td className="p-3">{row.adjustmentType || "—"}</td>
+                  <td style={{ fontSize: 13 }}>{row.adjustmentType || "—"}</td>
 
-                    <td className="p-3">
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">
-                        {rowStatus}
-                      </span>
-                    </td>
+                  <td>
+                    <span className={STATUS_BADGE[s]}>{s}</span>
+                    {row.rejectionNote && (
+                      <div style={{ fontSize: 11, color: "var(--danger)",
+                        marginTop: 2, maxWidth: 140,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        title={row.rejectionNote}>
+                        {row.rejectionNote}
+                      </div>
+                    )}
+                  </td>
 
-                    <td className="p-3 text-right">
-                      {row.lines?.length ?? 0}
-                    </td>
+                  <td style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 12 }}>
+                    {fmtQty(row.totalSystemQty ?? 0)}
+                  </td>
+                  <td style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 12 }}>
+                    {fmtQty(row.totalCountedQty ?? 0)}
+                  </td>
 
-                    <td className="p-3 text-right">{formatNumber(amount)}</td>
+                  <td style={{
+                    textAlign: "right", fontFamily: "var(--mono)", fontSize: 12,
+                    fontWeight: varQty !== 0 ? 500 : 400,
+                    color: varQty < 0 ? "var(--danger)"
+                      : varQty > 0  ? "var(--success)"
+                      : "var(--text-muted)",
+                  }}>
+                    {varQty >= 0 ? "+" : ""}{fmtQty(varQty)}
+                  </td>
 
-                    <td className="p-3 text-right">
-                      <button
-                        className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-white"
-                        onClick={() => openAdjustment(row.id)}
-                      >
-                        Open
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
+                  <td style={{ textAlign: "right", fontFamily: "var(--mono)",
+                    fontSize: 12, fontWeight: 500 }}>
+                    {fmtMoney(amount)}
+                  </td>
+
+                  <td style={{ textAlign: "right" }}>
+                    <button className="btn btn-sm"
+                      onClick={(e) => { e.stopPropagation();
+                        nav(`/inventory/adjustments/${row.id}`); }}>
+                      Open →
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

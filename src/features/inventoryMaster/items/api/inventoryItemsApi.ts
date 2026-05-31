@@ -1,4 +1,8 @@
 ﻿// src/features/inventory/items/api/inventoryItemsApi.ts
+//
+// Single canonical API client for inventory item master data.
+// Replaces the parallel itemsApi.ts — that file is removed.
+// Base path: /companies/{companyId}/inventory-master
 
 import { http } from "../../../../api/http";
 import type {
@@ -9,60 +13,56 @@ import type {
   ItemUomDto,
 } from "../types";
 
-// ─── Shared types ─────────────────────────────────────────────────────────────
+// ── Request types ─────────────────────────────────────────────────────────────
 
-export type CreateItemBody = {
-  companyId: string;
-  name: string;
-  localName: string | null;
-  sku: string | null;
-  barcode: string | null;
-  categoryId: string | null;
-  baseUomId: string;
-  type: string;
-  allowedUoms: ItemUomDto[];
+export interface CreateItemBody {
+  companyId:      string;
+  name:           string;
+  localName:      string | null;
+  sku:            string | null;
+  barcode:        string | null;
+  categoryId:     string | null;
+  baseUomId:      string;
+  type:           string;
+  allowedUoms:    ItemUomDto[];
   trackInventory: boolean;
-  defaultCost: number | null;
-  defaultPrice: number | null;
-  reorderLevel: number;
-  isActive: true;
-};
+  defaultCost:    number | null;
+  defaultPrice:   number | null;
+  reorderLevel:   number;
+  isActive:       true;
+}
 
-export type UpdateItemBody = Omit<CreateItemBody, "isActive"> & {
-  id: string;
+export interface UpdateItemBody extends Omit<CreateItemBody, "isActive"> {
+  id:       string;
   isActive: boolean;
-};
+}
 
-export type CreateUomBody = {
-  name: string;
+export interface CreateUomBody {
+  name:   string;
   symbol: string | null;
   isBase: boolean;
-};
+}
 
-export type CreateCategoryBody = {
-  name: string;
+export interface CreateCategoryBody {
+  name:         string;
   description?: string | null;
-};
+}
 
-export type UomConversionFactor = {
-  toBaseFactor: number;
-} | null;
-
-// ─── URL factory ──────────────────────────────────────────────────────────────
+// ── URL factory ───────────────────────────────────────────────────────────────
 
 function masterUrl(companyId: string, path = ""): string {
   return `/companies/${companyId}/inventory-master${path}`;
 }
 
-// ─── API ──────────────────────────────────────────────────────────────────────
+// ── API ───────────────────────────────────────────────────────────────────────
 
 export const inventoryItemsApi = {
-  /** Load all catalogs (categories, UOMs, etc.) in one shot. */
+  // ── Catalogs ───────────────────────────────────────────────────────────────
+
+  /** Load all reference data (categories, UOMs, costing methods) in one call. */
   loadCatalogs(companyId: string): Promise<InventoryCatalogs> {
     return http
-      .get<InventoryCatalogs>(masterUrl(companyId, "/catalogs"), {
-        params: { activeOnly: true },
-      })
+      .get<InventoryCatalogs>(masterUrl(companyId, "/catalogs"), { params: { activeOnly: true } })
       .then((r) => r.data);
   },
 
@@ -70,9 +70,7 @@ export const inventoryItemsApi = {
 
   list(companyId: string, q?: string): Promise<InventoryItemDto[]> {
     return http
-      .get<InventoryItemDto[]>(masterUrl(companyId, "/items"), {
-        params: q ? { q } : undefined,
-      })
+      .get<InventoryItemDto[]>(masterUrl(companyId, "/items"), { params: q ? { q } : undefined })
       .then((r) => r.data);
   },
 
@@ -108,10 +106,7 @@ export const inventoryItemsApi = {
       .then((r) => r.data);
   },
 
-  createCategory(
-    companyId: string,
-    body: CreateCategoryBody
-  ): Promise<{ id: string }> {
+  createCategory(companyId: string, body: CreateCategoryBody): Promise<{ id: string }> {
     return http
       .post<{ id: string }>(masterUrl(companyId, "/categories"), body)
       .then((r) => r.data);
@@ -125,12 +120,6 @@ export const inventoryItemsApi = {
       .then((r) => r.data);
   },
 
-  getUom(companyId: string, id: string): Promise<UomDto> {
-    return http
-      .get<UomDto>(masterUrl(companyId, `/uoms/${id}`))
-      .then((r) => r.data);
-  },
-
   createUom(companyId: string, body: CreateUomBody): Promise<{ id: string }> {
     return http
       .post<{ id: string }>(masterUrl(companyId, "/uoms"), body)
@@ -140,10 +129,10 @@ export const inventoryItemsApi = {
   getUomConversionFactor(
     companyId: string,
     baseUomId: string,
-    uomId: string
-  ): Promise<UomConversionFactor> {
+    uomId:     string
+  ): Promise<{ toBaseFactor: number } | null> {
     return http
-      .get<UomConversionFactor>(masterUrl(companyId, "/uom-conversions"), {
+      .get<{ toBaseFactor: number } | null>(masterUrl(companyId, "/uom-conversions"), {
         params: { baseUomId, uomId },
       })
       .then((r) => r.data);

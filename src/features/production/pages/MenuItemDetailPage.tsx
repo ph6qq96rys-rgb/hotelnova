@@ -1,311 +1,285 @@
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams, useParams } from "react-router-dom";
-import { useAppScope } from "../../../app/useAppScope";
-import { recipesApi } from "../../production/api/recipesApi";
-import type {RecipeDto}from "../types"
-import   { fetchInventoryItems, fetchUoms } from "../api/lookups";
-import  type { InventoryItemLite, UomLite } from "../api/lookups";
+// src/features/production/pages/MenuItemDetailPage.tsx
 
-type EditLine = {
-  id?: string | null;
-  itemId: string;
-  uomId: string;
-  qty: string; // keep as string for input
-  wastePct?: string;
-  isActive: boolean;
-  notes?: string;
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useAppScope } from "../../../app/useAppScope";
+import { menuItemsApi } from "../api/menuItemsApi";
+import { productionRecipesApi } from "../api/recipesApi";
+import ProductionWorkflowBar from "../components/ProductionWorkflowBar";
+import "./menu-item-detail.css";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type MenuItemVm = {
+  id: string;
+  name: string;
+  code?: string | null;
+  categoryName?: string | null;
+  categoryId?: string | null;
+  sellingPrice?: number | null;
+  isActive?: boolean;
 };
 
+type RecipeMode = "directSale" | "production";
+
+type RecipeStatus = {
+  id?: string | null;
+  mode?: RecipeMode | null;
+  isActive?: boolean;
+  outputItemId?: string | null;
+  outputUomId?: string | null;
+  lines?: unknown[];
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function extractApiError(e: unknown, fallback: string): string {
+  const err = e as any;
+  const data = err?.response?.data;
+  if (!data) return err?.message ?? fallback;
+  if (typeof data === "string") return data;
+  return data?.message ?? data?.title ?? err?.message ?? fallback;
+}
+
+function formatMoney(value?: number | null): string {
+  if (value == null) return "—";
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const FLOW_NOTES = [
+  { title: "Menu Item",        text: "Commercial product sold to customers." },
+  { title: "Direct Sale",      text: "Consumes ingredients during POS sale; no finished stock is received." },
+  { title: "Production",       text: "Optional mode for stocked outputs, batches, and semi-finished goods." },
+  { title: "Menu Engineering", text: "Analyzes sales, margin, popularity, and food cost." },
+];
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ padding: "12px 14px", borderRadius: "var(--p-r-md)", border: "1px solid var(--p-border)", background: "var(--p-surface-2)" }}>
+      <div style={{ fontFamily: "var(--p-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--p-text-muted)", marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 800, color: "var(--p-text)", wordBreak: "break-word" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function CheckRow({ ok, text }: { ok: boolean; text: string }) {
+  return (
+    <div className={`p-check ${ok ? "p-check--ok" : "p-check--warn"}`}>
+      <span className="p-check__icon">{ok ? "✓" : "!"}</span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function MenuItemDetailPage() {
-  const { companyId } = useAppScope();
-  const { id: menuItemId } = useParams();
-  const [sp] = useSearchParams();
-  const tab = sp.get("tab") ?? "recipe";
+  const nav = useNavigate();
+  const { id: menuItemId } = useParams<{ id?: string }>();
+  const { companyId, branchId } = useAppScope();
 
-  const [recipe, setRecipe] = useState<RecipeDto | null>(null);
-  const [lines, setLines] = useState<EditLine[]>([]);
-  const [items, setItems] = useState<InventoryItemLite[]>([]);
-  const [uoms, setUoms] = useState<UomLite[]>([]);
-  const [qItem, setQItem] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
+  const [menuItem, setMenuItem] = useState<MenuItemVm | null>(null);
+  const [recipe,   setRecipe]   = useState<RecipeStatus | null>(null);
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+
+  const recipeMode = (recipe?.mode ?? "directSale") as RecipeMode;
+  const recipeConfigured = Boolean(recipe?.id);
+  const outputConfigured = recipeMode === "production"
+    ? Boolean(recipe?.outputItemId && recipe?.outputUomId)
+    : true;
+  const ingredientCount = recipe?.lines?.length ?? 0;
+  const operationalReady = recipeConfigured && outputConfigured && ingredientCount > 0 && recipe?.isActive !== false;
+
+  const statusLabel = useMemo(() => {
+    if (!recipeConfigured) return "Recipe Missing";
+    if (ingredientCount === 0) return "Inputs Missing";
+    if (recipe?.isActive === false) return "Recipe Inactive";
+    if (recipeMode === "directSale") return "POS Ready";
+    if (!outputConfigured) return "Output Missing";
+    return "Production Ready";
+  }, [recipeConfigured, ingredientCount, recipe?.isActive, recipeMode, outputConfigured]);
 
   useEffect(() => {
-    if (!companyId || !menuItemId) return;
+    if (!companyId || !branchId || !menuItemId) return;
+    let cancelled = false;
 
-    (async () => {
-      setLoading(true);
-      setErr(null);
+    setLoading(true);
+    setError(null);
+
+    async function load() {
       try {
-        const [r, it, um] = await Promise.all([
-          recipesApi.getByMenuItem(companyId, menuItemId),
-          fetchInventoryItems(companyId, ""),
-          fetchUoms(companyId),
+        const [items, recipeResult] = await Promise.allSettled([
+          menuItemsApi.list(companyId!, branchId!),
+          productionRecipesApi.getByMenuItem(companyId!, menuItemId!),
         ]);
-        setRecipe(r);
-        setLines(
-          (r.lines ?? []).map((x) => ({
-            id: x.id,
-            itemId: x.itemId,
-            uomId: x.uomId,
-            qty: String(x.qty ?? ""),
-            wastePct: x.wastePct == null ? "" : String(x.wastePct),
-            isActive: x.isActive ?? true,
-            notes: x.notes ?? "",
-          }))
-        );
-        setItems(it);
-        setUoms(um);
-      } catch (e: any) {
-        setErr(e?.response?.data ?? e?.message ?? "Failed to load recipe.");
+
+        if (cancelled) return;
+
+        if (items.status === "fulfilled") {
+          const found = items.value.find((x: any) => x.id === menuItemId) ?? null;
+          setMenuItem(found as MenuItemVm | null);
+        }
+
+        if (recipeResult.status === "fulfilled") {
+          setRecipe(recipeResult.value);
+        } else {
+          const status = (recipeResult.reason as any)?.response?.status;
+          if (status !== 404) setError(extractApiError(recipeResult.reason, "Failed to load recipe."));
+          setRecipe(null);
+        }
+      } catch (e) {
+        if (!cancelled) setError(extractApiError(e, "Failed to load menu item."));
       } finally {
-        setLoading(false);
-      }
-    })();
-  }, [companyId, menuItemId]);
-
-  useEffect(() => {
-    if (!companyId) return;
-    const t = setTimeout(async () => {
-      try {
-        const it = await fetchInventoryItems(companyId, qItem);
-        setItems(it);
-      } catch {}
-    }, 250);
-    return () => clearTimeout(t);
-  }, [companyId, qItem]);
-
-  const itemNameById = useMemo(() => new Map(items.map(i => [i.id, i.name])), [items]);
-  const uomNameById = useMemo(() => new Map(uoms.map(u => [u.id, u.name ?? u.code])), [uoms]);
-
-  function addLine() {
-    setLines((p) => [
-      {
-        id: null,
-        itemId: "",
-        uomId: "",
-        qty: "1",
-        wastePct: "",
-        isActive: true,
-        notes: "",
-      },
-      ...p, // NEW on top (your preference)
-    ]);
-  }
-
-  function removeLine(idx: number) {
-    setLines((p) => p.filter((_, i) => i !== idx));
-  }
-
-  function updateLine(idx: number, patch: Partial<EditLine>) {
-    setLines((p) => p.map((x, i) => (i === idx ? { ...x, ...patch } : x)));
-  }
-
-  function validate(): string | null {
-    if (!lines.length) return "Add at least one ingredient line.";
-    for (const [i, l] of lines.entries()) {
-      if (!l.itemId) return `Line ${i + 1}: ingredient is required.`;
-      if (!l.uomId) return `Line ${i + 1}: UOM is required.`;
-      const qty = Number(l.qty);
-      if (!Number.isFinite(qty) || qty <= 0) return `Line ${i + 1}: qty must be > 0.`;
-      if (l.wastePct) {
-        const w = Number(l.wastePct);
-        if (!Number.isFinite(w) || w < 0 || w > 100) return `Line ${i + 1}: waste % must be 0..100.`;
+        if (!cancelled) setLoading(false);
       }
     }
 
-    // prevent duplicates (itemId+uomId)
-    const seen = new Set<string>();
-    for (const [i, l] of lines.entries()) {
-      const key = `${l.itemId}::${l.uomId}`;
-      if (seen.has(key)) return `Line ${i + 1}: duplicate ingredient (same item & UOM).`;
-      seen.add(key);
-    }
+    void load();
+    return () => { cancelled = true; };
+  }, [companyId, branchId, menuItemId]);
 
-    return null;
+  if (!companyId || !branchId || !menuItemId) {
+    return (
+      <div className="p-page">
+        <div className="p-guard"><div className="p-guard__icon">⚙</div>Company, branch, or menu item context is missing.</div>
+      </div>
+    );
   }
-
-  async function save() {
-    if (!companyId || !menuItemId) return;
-    setOk(null);
-    const v = validate();
-    if (v) return setErr(v);
-
-    setSaving(true);
-    setErr(null);
-    try {
-      const dto = await recipesApi.upsertByMenuItem(companyId, menuItemId, {
-        notes: recipe?.notes ?? null,
-        isActive: recipe?.isActive ?? true,
-        lines: lines.map((l) => ({
-          id: l.id ?? null,
-          itemId: l.itemId,
-          uomId: l.uomId,
-          qty: Number(l.qty),
-          wastePct: l.wastePct ? Number(l.wastePct) : null,
-          isActive: l.isActive,
-          notes: l.notes ?? null,
-        })),
-      });
-      setRecipe(dto);
-      setOk("Recipe saved.");
-      // reload lines from server (keeps ids consistent)
-      setLines(dto.lines.map((x) => ({
-        id: x.id,
-        itemId: x.itemId,
-        uomId: x.uomId,
-        qty: String(x.qty ?? ""),
-        wastePct: x.wastePct == null ? "" : String(x.wastePct),
-        isActive: x.isActive ?? true,
-        notes: x.notes ?? "",
-      })));
-    } catch (e: any) {
-      setErr(e?.response?.data ?? e?.message ?? "Failed to save recipe.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (tab !== "recipe") return <div className="page">Other tab…</div>;
 
   return (
-    <div className="page">
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <div className="card-title">Recipe / Ingredients</div>
-            <div className="card-subtitle">Assign ingredients for this menu item. New lines appear at the top.</div>
-          </div>
-          <div className="row gap">
-            <input
-              className="input"
-              placeholder="Search ingredients…"
-              value={qItem}
-              onChange={(e) => setQItem(e.target.value)}
-              style={{ width: 240 }}
-            />
-            <button className="btn" onClick={addLine}>+ Add Line</button>
-            <button className="btn btn-primary" onClick={save} disabled={saving || loading}>
-              {saving ? "Saving…" : "Save Recipe"}
-            </button>
-          </div>
+    <div className="p-page" style={{ maxWidth: 1180 }}>
+      <ProductionWorkflowBar active="menu" menuItemId={menuItemId} />
+
+      {/* Header */}
+      <div className="p-page-header">
+        <div>
+          <p className="p-kicker">Production Workspace</p>
+          <h1 className="p-title">{menuItem?.name ?? "Menu Item Detail"}</h1>
+          <p className="p-subtitle">
+            Commercial menu item detail. Recipe and manufacturing rules are managed in the Recipe Editor.
+          </p>
         </div>
-
-        <div className="card-body">
-          {err && <div className="alert alert-danger">{String(err)}</div>}
-          {ok && <div className="alert alert-success">{ok}</div>}
-
-          {loading ? (
-            <div style={{ padding: 12, opacity: 0.75 }}>Loading recipe…</div>
-          ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width: 280 }}>Ingredient</th>
-                  <th style={{ width: 160 }}>UOM</th>
-                  <th style={{ width: 120, textAlign: "right" }}>Qty</th>
-                  <th style={{ width: 120, textAlign: "right" }}>Waste %</th>
-                  <th style={{ width: 110 }}>Status</th>
-                  <th>Notes</th>
-                  <th style={{ width: 90, textAlign: "right" }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: 14, opacity: 0.75 }}>No ingredients yet. Click “Add Line”.</td></tr>
-                ) : (
-                  lines.map((l, idx) => (
-                    <tr key={l.id ?? `new-${idx}`}>
-                      <td>
-                        <select
-                          className="input"
-                          value={l.itemId}
-                          onChange={(e) => updateLine(idx, { itemId: e.target.value })}
-                        >
-                          <option value="">Select ingredient…</option>
-                          {items.map(it => (
-                            <option key={it.id} value={it.id}>{it.name}</option>
-                          ))}
-                        </select>
-                        {l.itemId && (
-                          <div className="muted" style={{ marginTop: 4 }}>
-                            {itemNameById.get(l.itemId) ?? ""}
-                          </div>
-                        )}
-                      </td>
-
-                      <td>
-                        <select
-                          className="input"
-                          value={l.uomId}
-                          onChange={(e) => updateLine(idx, { uomId: e.target.value })}
-                        >
-                          <option value="">Select UOM…</option>
-                          {uoms.map(u => (
-                            <option key={u.id} value={u.id}>{u.name ?? u.code}</option>
-                          ))}
-                        </select>
-                        {l.uomId && (
-                          <div className="muted" style={{ marginTop: 4 }}>
-                            {uomNameById.get(l.uomId) ?? ""}
-                          </div>
-                        )}
-                      </td>
-
-                      <td style={{ textAlign: "right" }}>
-                        <input
-                          className="input"
-                          value={l.qty}
-                          onChange={(e) => updateLine(idx, { qty: e.target.value })}
-                          inputMode="decimal"
-                          style={{ textAlign: "right" }}
-                        />
-                      </td>
-
-                      <td style={{ textAlign: "right" }}>
-                        <input
-                          className="input"
-                          value={l.wastePct ?? ""}
-                          onChange={(e) => updateLine(idx, { wastePct: e.target.value })}
-                          inputMode="decimal"
-                          placeholder="0"
-                          style={{ textAlign: "right" }}
-                        />
-                      </td>
-
-                      <td>
-                        <label className="chk">
-                          <input
-                            type="checkbox"
-                            checked={l.isActive}
-                            onChange={(e) => updateLine(idx, { isActive: e.target.checked })}
-                          />
-                          Active
-                        </label>
-                      </td>
-
-                      <td>
-                        <input
-                          className="input"
-                          value={l.notes ?? ""}
-                          onChange={(e) => updateLine(idx, { notes: e.target.value })}
-                          placeholder="optional"
-                        />
-                      </td>
-
-                      <td style={{ textAlign: "right" }}>
-                        <button className="btn btn-danger" onClick={() => removeLine(idx)}>Remove</button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          )}
+        <div className="p-btn-row">
+          <button className="p-btn p-btn--outline" onClick={() => nav(-1)}>← Back</button>
+          <button
+            className="p-btn p-btn--accent"
+            onClick={() => nav(`/production/menu/items/${menuItemId}/recipe`)}
+          >
+            Configure Recipe →
+          </button>
         </div>
       </div>
+
+      {error && (
+        <div className="p-alert p-alert--error">
+          <span className="p-alert__body">{error}</span>
+          <button className="p-dismiss" onClick={() => setError(null)}>✕</button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="p-card"><div className="p-card__body" style={{ color: "var(--p-text-muted)" }}>Loading menu item…</div></div>
+      ) : (
+        <>
+          {/* Identity + Setup cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "1.05fr 1fr", gap: 16, marginBottom: 16 }}>
+            {/* Commercial identity */}
+            <div className="p-card">
+              <div className="p-card__head">
+                <div>
+                  <p className="p-card__title">Commercial Identity</p>
+                  <p className="p-card__subtitle">Customer-facing sales configuration.</p>
+                </div>
+                <span className={`p-badge ${menuItem?.isActive === false ? "p-badge--inactive" : "p-badge--active"}`}>
+                  {menuItem?.isActive === false ? "Inactive" : "Active"}
+                </span>
+              </div>
+              <div className="p-card__body">
+                <div className="p-grid-2">
+                  <Metric label="Name"          value={menuItem?.name ?? "—"} />
+                  <Metric label="Code / SKU"    value={menuItem?.code ?? "—"} />
+                  <Metric label="Category"      value={menuItem?.categoryName ?? menuItem?.categoryId ?? "—"} />
+                  <Metric label="Selling Price" value={formatMoney(menuItem?.sellingPrice)} />
+                </div>
+              </div>
+            </div>
+
+            {/* Production setup */}
+            <div className="p-card">
+              <div className="p-card__head">
+                <div>
+                  <p className="p-card__title">Recipe Operating Mode</p>
+                  <p className="p-card__subtitle">Direct-sale items are consumed at POS; production items create stock through batches.</p>
+                </div>
+                <span
+                  className="p-badge"
+                  style={operationalReady
+                    ? { background: "var(--p-success-bg)", color: "var(--p-success)" }
+                    : { background: "var(--p-warning-bg)", color: "var(--p-warning)" }
+                  }
+                >
+                  {statusLabel}
+                </span>
+              </div>
+              <div className="p-card__body">
+                <div className="p-checklist">
+                  <CheckRow ok={recipeConfigured} text="Recipe exists" />
+                  <CheckRow ok={true} text={`Mode: ${recipeMode === "production" ? "Production / Stocked Output" : "Direct Sale / Made-to-Order"}`} />
+                  {recipeMode === "production" && (
+                    <CheckRow ok={outputConfigured} text="Output item and UOM assigned" />
+                  )}
+                  <CheckRow ok={ingredientCount > 0} text={`${ingredientCount} input ingredient line(s)`} />
+                  <CheckRow ok={recipe?.isActive !== false} text="Recipe active" />
+                </div>
+
+                <div className="p-action-panel">
+                  <div>
+                    <div className="p-action-panel__title">Next operational step</div>
+                    <p className="p-action-panel__text">
+                      {recipeMode === "production"
+                        ? "Configure recipe output and inputs before creating production batches."
+                        : "Direct-sale recipe is ready for POS consumption once ingredients are configured."}
+                    </p>
+                  </div>
+                  <button
+                    className="p-btn p-btn--accent"
+                    onClick={() => nav(`/production/menu/items/${menuItemId}/recipe`)}
+                  >
+                    Open Recipe Editor
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Workflow boundary */}
+          <div className="p-card">
+            <div className="p-card__head">
+              <div>
+                <p className="p-card__title">Workflow Boundary</p>
+                <p className="p-card__subtitle">This page intentionally does not edit recipe lines.</p>
+              </div>
+            </div>
+            <div className="p-card__body">
+              <div className="p-flow-notes">
+                {FLOW_NOTES.map((note) => (
+                  <div key={note.title} className="p-flow-note">
+                    <div className="p-flow-note__title">{note.title}</div>
+                    <div className="p-flow-note__text">{note.text}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

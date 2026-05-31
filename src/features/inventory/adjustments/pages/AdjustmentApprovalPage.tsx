@@ -21,7 +21,7 @@ function formatNumber(value?: number | null) {
 export default function AdjustmentApprovalPage() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const { companyId } = useAppScope();
+  const { companyId , branchId} = useAppScope();
 
   const [item, setItem] = useState<InventoryAdjustmentDto | null>(null);
   const [note, setNote] = useState("");
@@ -51,7 +51,7 @@ export default function AdjustmentApprovalPage() {
     setError(null);
 
     try {
-      const data = await adjustmentApi.get(companyId, id);
+      const data = await adjustmentApi.get(companyId, branchId, id);
       setItem(data);
     } catch (e: any) {
       setError(e?.response?.data ?? e?.message ?? "Failed to load adjustment.");
@@ -71,7 +71,7 @@ export default function AdjustmentApprovalPage() {
     setError(null);
 
     try {
-      await adjustmentApi.approve(companyId, id);
+      await adjustmentApi.approve(companyId, branchId, id);
       navigate(`/inventory/adjustments/${id}`);
     } catch (e: any) {
       setError(e?.response?.data ?? e?.message ?? "Approval failed.");

@@ -1,0 +1,484 @@
+/* erp-tokens.css
+   Shared design tokens for the F&B ERP module.
+   Import this before any feature-specific CSS.
+   ─────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Typography */
+  --erp-font:        "Sora", system-ui, sans-serif;
+  --erp-mono:        "JetBrains Mono", "Fira Code", monospace;
+
+  /* Surface */
+  --erp-bg:          #f5f3ef;
+  --erp-surface:     #ffffff;
+  --erp-surface-2:   #faf9f7;
+  --erp-surface-3:   #f0ede8;
+
+  /* Border */
+  --erp-border:      #dedad4;
+  --erp-border-soft: #ece9e4;
+
+  /* Text */
+  --erp-text:        #1c1a17;
+  --erp-text-muted:  #7a7670;
+  --erp-text-soft:   #b0aca5;
+
+  /* Accent — warm amber, not blue */
+  --erp-accent:      #c17f24;
+  --erp-accent-bg:   #fdf3e3;
+  --erp-accent-dark: #9a6318;
+
+  /* Semantic */
+  --erp-success:     #2d6a4f;
+  --erp-success-bg:  #edf7f2;
+  --erp-success-border: #a7f3d0;
+
+  --erp-danger:      #b91c1c;
+  --erp-danger-bg:   #fef2f2;
+  --erp-danger-border: #fecaca;
+
+  --erp-warn:        #92400e;
+  --erp-warn-bg:     #fffbeb;
+  --erp-warn-border: #fde68a;
+
+  --erp-info:        #1d4ed8;
+  --erp-info-bg:     #eff6ff;
+  --erp-info-border: #bfdbfe;
+
+  /* Radius */
+  --erp-r-sm:  4px;
+  --erp-r:     8px;
+  --erp-r-lg:  12px;
+  --erp-r-xl:  16px;
+
+  /* Shadow */
+  --erp-shadow-xs: 0 1px 2px rgba(28,26,23,0.06);
+  --erp-shadow-sm: 0 1px 4px rgba(28,26,23,0.08), 0 1px 2px rgba(28,26,23,0.04);
+  --erp-shadow:    0 4px 16px rgba(28,26,23,0.08), 0 1px 4px rgba(28,26,23,0.04);
+
+  /* Spacing scale */
+  --erp-space-1: 4px;
+  --erp-space-2: 8px;
+  --erp-space-3: 12px;
+  --erp-space-4: 16px;
+  --erp-space-5: 20px;
+  --erp-space-6: 24px;
+  --erp-space-8: 32px;
+}
+
+/* ── Shared primitives ────────────────────────────────────────────────────── */
+
+/* Page shell */
+.erp-page {
+  font-family: var(--erp-font);
+  background: var(--erp-bg);
+  min-height: 100vh;
+  padding: 32px 36px 72px;
+  color: var(--erp-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Card */
+.erp-card {
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-r-lg);
+  box-shadow: var(--erp-shadow-sm);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.erp-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px 16px;
+  border-bottom: 1px solid var(--erp-border-soft);
+  background: var(--erp-surface-2);
+}
+
+.erp-card__title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 2px;
+  color: var(--erp-text);
+}
+
+.erp-card__subtitle {
+  font-size: 12px;
+  color: var(--erp-text-muted);
+  margin: 0;
+}
+
+.erp-card__body {
+  padding: 20px 24px;
+}
+
+/* Alerts */
+.erp-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--erp-r);
+  font-size: 13px;
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+  line-height: 1.5;
+}
+.erp-alert--error   { background: var(--erp-danger-bg);  color: var(--erp-danger);  border-color: var(--erp-danger-border); }
+.erp-alert--success { background: var(--erp-success-bg); color: var(--erp-success); border-color: var(--erp-success-border); }
+.erp-alert--warn    { background: var(--erp-warn-bg);    color: var(--erp-warn);    border-color: var(--erp-warn-border); }
+
+/* Badge */
+.erp-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-family: var(--erp-mono);
+  border: 1px solid transparent;
+}
+.erp-badge--active   { background: var(--erp-success-bg); color: var(--erp-success); border-color: var(--erp-success-border); }
+.erp-badge--inactive { background: var(--erp-surface-3);  color: var(--erp-text-muted); border-color: var(--erp-border); }
+.erp-badge--draft    { background: var(--erp-warn-bg);    color: var(--erp-warn);    border-color: var(--erp-warn-border); }
+.erp-badge--posted   { background: var(--erp-success-bg); color: var(--erp-success); border-color: var(--erp-success-border); }
+.erp-badge--reversed { background: var(--erp-danger-bg);  color: var(--erp-danger);  border-color: var(--erp-danger-border); }
+.erp-badge--approved { background: var(--erp-info-bg);    color: var(--erp-info);    border-color: var(--erp-info-border); }
+.erp-badge--neutral  { background: var(--erp-surface-3);  color: var(--erp-text-muted); border-color: var(--erp-border); }
+
+/* Field */
+.erp-field { display: flex; flex-direction: column; gap: 5px; }
+
+.erp-field__label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+}
+
+.erp-field__required { color: var(--erp-danger); margin-left: 2px; }
+
+.erp-input,
+.erp-select {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-r);
+  font-family: var(--erp-font);
+  font-size: 13px;
+  color: var(--erp-text);
+  background: var(--erp-surface);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.erp-input:focus,
+.erp-select:focus {
+  border-color: var(--erp-accent);
+  box-shadow: 0 0 0 3px rgba(193,127,36,0.12);
+}
+
+.erp-input:disabled,
+.erp-select:disabled {
+  background: var(--erp-surface-3);
+  color: var(--erp-text-muted);
+  cursor: default;
+  border-color: var(--erp-border-soft);
+}
+
+.erp-input--locked {
+  background: var(--erp-surface-3) !important;
+  color: var(--erp-text-muted) !important;
+  font-family: var(--erp-mono);
+  font-size: 12px;
+  cursor: default;
+}
+
+.erp-input--right { text-align: right; }
+
+/* Checkbox */
+.erp-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--erp-text);
+}
+.erp-check input[type="checkbox"] { cursor: pointer; accent-color: var(--erp-accent); }
+
+/* Buttons */
+.erp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--erp-r);
+  font-family: var(--erp-font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s, border-color 0.15s,
+              box-shadow 0.15s, opacity 0.15s;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+.erp-btn:disabled { opacity: 0.42; cursor: not-allowed; }
+
+.erp-btn--primary {
+  background: var(--erp-text);
+  color: #fff;
+  border-color: var(--erp-text);
+}
+.erp-btn--primary:not(:disabled):hover {
+  background: #2e2c28;
+  box-shadow: 0 2px 8px rgba(28,26,23,0.18);
+}
+
+.erp-btn--accent {
+  background: var(--erp-accent);
+  color: #fff;
+  border-color: var(--erp-accent);
+}
+.erp-btn--accent:not(:disabled):hover {
+  background: var(--erp-accent-dark);
+  box-shadow: 0 2px 8px rgba(193,127,36,0.25);
+}
+
+.erp-btn--outline {
+  background: transparent;
+  color: var(--erp-text);
+  border-color: var(--erp-border);
+}
+.erp-btn--outline:not(:disabled):hover {
+  background: var(--erp-surface-3);
+  border-color: var(--erp-text-muted);
+}
+
+.erp-btn--ghost {
+  background: transparent;
+  color: var(--erp-text-muted);
+  border-color: transparent;
+}
+.erp-btn--ghost:not(:disabled):hover {
+  background: var(--erp-surface-3);
+  color: var(--erp-text);
+}
+
+.erp-btn--danger {
+  background: transparent;
+  color: var(--erp-danger);
+  border-color: var(--erp-danger-border);
+}
+.erp-btn--danger:not(:disabled):hover {
+  background: var(--erp-danger-bg);
+}
+
+.erp-btn--success {
+  background: var(--erp-success);
+  color: #fff;
+  border-color: var(--erp-success);
+}
+.erp-btn--success:not(:disabled):hover {
+  background: #1e5c3f;
+}
+
+.erp-btn--sm { padding: 5px 10px; font-size: 12px; }
+.erp-btn--lg { padding: 11px 22px; font-size: 14px; }
+
+/* Button row */
+.erp-btn-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Grid layouts */
+.erp-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.erp-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
+.erp-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 16px; }
+
+/* Metrics strip */
+.erp-metrics { display: flex; border-top: 1px solid var(--erp-border-soft); }
+.erp-metric {
+  flex: 1;
+  padding: 14px 20px;
+  border-right: 1px solid var(--erp-border-soft);
+}
+.erp-metric:last-child { border-right: none; }
+.erp-metric__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+  margin-bottom: 4px;
+}
+.erp-metric__value {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--erp-text);
+  line-height: 1;
+}
+.erp-metric__value--accent { color: var(--erp-accent); }
+.erp-metric__value--muted  { color: var(--erp-text-muted); }
+
+/* Table */
+.erp-table-wrap { overflow-x: auto; }
+
+.erp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.erp-table thead tr {
+  background: var(--erp-surface-2);
+  border-bottom: 1px solid var(--erp-border);
+}
+
+.erp-table th {
+  padding: 9px 14px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+  white-space: nowrap;
+}
+
+.erp-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--erp-border-soft);
+  vertical-align: middle;
+}
+
+.erp-table tbody tr:last-child td { border-bottom: none; }
+.erp-table tbody tr:hover td { background: var(--erp-surface-2); }
+
+.erp-table__empty {
+  padding: 40px 14px !important;
+  text-align: center;
+  color: var(--erp-text-muted);
+  font-size: 13px;
+}
+
+/* Table inputs inherit erp-input styles */
+.erp-table .erp-input,
+.erp-table .erp-select {
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+/* Divider */
+.erp-divider {
+  border: none;
+  border-top: 1px solid var(--erp-border-soft);
+  margin: 0;
+}
+
+/* Guard / empty state */
+.erp-guard {
+  padding: 24px;
+  background: var(--erp-warn-bg);
+  border: 1px solid var(--erp-warn-border);
+  border-radius: var(--erp-r-lg);
+  color: var(--erp-warn);
+  font-size: 13px;
+}
+
+/* Loading */
+.erp-loading {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--erp-text-muted);
+  font-size: 13px;
+  font-family: var(--erp-mono);
+}
+
+/* Line number */
+.erp-line-no {
+  font-family: var(--erp-mono);
+  font-size: 10px;
+  color: var(--erp-text-soft);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+/* Source badge pill */
+.erp-source-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--erp-mono);
+  letter-spacing: 0.02em;
+}
+.erp-source-pill--recipe { background: #dbeafe; color: #1d4ed8; }
+.erp-source-pill--manual { background: var(--erp-surface-3); color: var(--erp-text-muted); }
+
+/* Dismiss button */
+.erp-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.5;
+  padding: 0 2px;
+  color: inherit;
+  flex-shrink: 0;
+}
+.erp-dismiss:hover { opacity: 1; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .erp-page   { padding: 16px 14px 48px; }
+  .erp-grid-2,
+  .erp-grid-3,
+  .erp-grid-4 { grid-template-columns: 1fr; }
+  .erp-metrics { flex-wrap: wrap; }
+  .erp-metric  { min-width: 50%; border-bottom: 1px solid var(--erp-border-soft); }
+}
+
+/* ── Input alignment ──────────────────────────────────────────────────────── */
+.erp-input--right { text-align: right; }
+
+/* ── Table footer ─────────────────────────────────────────────────────────── */
+.erp-tfoot-label {
+  text-align: right;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 10px 14px;
+  color: var(--erp-text-muted);
+  font-family: var(--erp-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.erp-tfoot-value {
+  text-align: right;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 10px 14px;
+  font-family: var(--erp-mono);
+  color: var(--erp-text);
+}

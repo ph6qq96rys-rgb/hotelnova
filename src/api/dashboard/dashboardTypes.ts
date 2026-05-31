@@ -1,13 +1,44 @@
+// src/api/dashboard/dashboardTypes.ts
+
+export type BestSellerDto = {
+  itemName:  string;
+  unitsSold: number;
+  revenue:   number;
+};
+
+export type InventorySummaryDto = {
+  itemName: string;
+  quantity: number;
+  uomCode?: string;
+};
+
 export type DashboardOverviewDto = {
-  totalUsers: number;
-  totalRoles: number;
+  generatedAtUtc:        string;
 
-  lowStockItems: number;
+  // Today
+  todaySales:            number;
+  todayCogs:             number;
+  todayGrossProfit:      number;
+  todayOrders:           number;
+
+  // Trends
+  last7DaysRevenue:      number;
+  last30DaysRevenue:     number;
+  yearToDateRevenue:     number;
+
+  // Operations
+  lowStockItems:         number;
   pendingPurchaseOrders: number;
-  openTransfers: number;
+  openTransfers:         number;
 
-  todaySales: number;
-  todayOrders: number;
+  // Identity
+  totalUsers:            number;
+  totalRoles:            number;
 
-  generatedAtUtc: string; // ISO string
+  // Menu engineering
+  menuEngineeringMap:    Record<string, number>;
+
+  // Detail
+  bestSellers:           BestSellerDto[];
+  inventory:             InventorySummaryDto[];
 };

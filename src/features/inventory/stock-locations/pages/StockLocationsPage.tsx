@@ -22,25 +22,26 @@ type Modal =
 export default function StockLocationsPage() {
   const { companyId, branchId: scopeBranchId } = useAppContext();
 
-  // ✅ Branch is selectable (defaults to scoped branch if present)
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(
     scopeBranchId ?? null
   );
 
-  // Branch list
-  const [branches, setBranches] = useState<BranchDto[]>([]);
+  const [branches,        setBranches]        = useState<BranchDto[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
-  const [branchesError, setBranchesError] = useState<string | null>(null);
+  const [branchesError,   setBranchesError]   = useState<string | null>(null);
 
-  // Filters
-  const [q, setQ] = useState("");
+  // Separate error state for create / update / toggle actions.
+  // Prevents API failures from being silently swallowed.
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const [q,          setQ]          = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
+  const [modal,      setModal]      = useState<Modal>({ kind: "none" });
+
   const debouncedQ = useDebouncedValue(q, 250);
 
-  // Modal
-  const [modal, setModal] = useState<Modal>({ kind: "none" });
+  // ── Branches ───────────────────────────────────────────────────────────────
 
-  // Load branches
   const loadBranches = useCallback(async () => {
     if (!companyId) return;
     setBranchesLoading(true);
@@ -48,67 +49,99 @@ export default function StockLocationsPage() {
     try {
       const data = await branchesApi.list(companyId);
       setBranches(data ?? []);
-    } catch (e: any) {
-      setBranchesError(e?.message ?? "Failed to load branches");
+    } catch (e: unknown) {
+      setBranchesError(
+        e instanceof Error ? e.message : "Failed to load branches."
+      );
     } finally {
       setBranchesLoading(false);
     }
   }, [companyId]);
 
-  useEffect(() => {
-    loadBranches();
-  }, [loadBranches]);
+  useEffect(() => { loadBranches(); }, [loadBranches]);
 
-  // ✅ Load stock locations for selected branch only
-  const {
-    items: rawItems,
-    loading,
-    error,
-    refresh,
-  } = useStockLocations(companyId ?? null, selectedBranchId);
+  // ── Stock locations ────────────────────────────────────────────────────────
 
-  // Client-side filtering for q + activeOnly
+  const { items: rawItems, loading, error, refresh } =
+    useStockLocations(companyId ?? null, selectedBranchId);
+
   const items = useMemo(() => {
     let data = rawItems;
-
-    if (activeOnly) data = data.filter((x) => x.isActive !== false);
-
+    if (activeOnly) data = data.filter(x => x.isActive !== false);
     const term = debouncedQ.trim().toLowerCase();
     if (!term) return data;
-
-    return data.filter((x: any) => {
-      const hay = `${x.name ?? ""} ${x.code ?? ""}`.toLowerCase();
-      return hay.includes(term);
-    });
+    return data.filter(x =>
+      `${x.name ?? ""} ${x.code ?? ""}`.toLowerCase().includes(term)
+    );
   }, [rawItems, activeOnly, debouncedQ]);
 
-  const onChangeBranch = (id: string) => {
-    const next = id || null;
-    setSelectedBranchId(next);
-  };
+  // ── Actions ────────────────────────────────────────────────────────────────
 
-  const onRefresh = async () => {
-    await loadBranches();
-    await refresh();
-  };
+  // FIX: original create/update/toggleActive didn't pass companyId or branchId,
+  // which the refactored stockLocationsApi now requires. All three are updated.
 
   const create = async (dto: CreateStockLocationDto | UpdateStockLocationDto) => {
-  await stockLocationsApi.create(dto as CreateStockLocationDto);
-  setModal({ kind: "none" });
-  await refresh();
-};
+    if (!companyId || !selectedBranchId) return;
+    setActionError(null);
+    try {
+      await stockLocationsApi.create(
+        companyId,
+        selectedBranchId,
+        dto as CreateStockLocationDto
+      );
+      setModal({ kind: "none" });
+      await refresh();
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : "Failed to create location.");
+    }
+  };
 
-const update = async (dto: CreateStockLocationDto | UpdateStockLocationDto) => {
-  if (modal.kind !== "edit") return;
-  await stockLocationsApi.update(modal.item.id, dto as UpdateStockLocationDto);
-  setModal({ kind: "none" });
-  await refresh();
-};
+  const update = async (dto: CreateStockLocationDto | UpdateStockLocationDto) => {
+    if (modal.kind !== "edit" || !companyId || !selectedBranchId) return;
+    setActionError(null);
+    try {
+      await stockLocationsApi.update(
+        companyId,
+        selectedBranchId,
+        modal.item.id,
+        dto as UpdateStockLocationDto
+      );
+      setModal({ kind: "none" });
+      await refresh();
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : "Failed to update location.");
+    }
+  };
 
-const toggleActive = async (x: StockLocationDto) => {
-  await stockLocationsApi.setActive(x.id, !x.isActive);
-  await refresh();
-};
+  const toggleActive = async (x: StockLocationDto) => {
+    if (!companyId || !selectedBranchId) return;
+    setActionError(null);
+    try {
+      // setActive requires the current DTO so it can patch only isActive
+      // without overwriting the other fields.
+      await stockLocationsApi.setActive(
+        companyId,
+        selectedBranchId,
+        x.id,
+        !x.isActive,
+        x as unknown as UpdateStockLocationDto
+      );
+      await refresh();
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : "Failed to toggle active status.");
+    }
+  };
+
+  const onChangeBranch = (id: string) => {
+    setSelectedBranchId(id || null);
+    setActionError(null);
+  };
+
+  // Branches rarely change — only refresh locations on manual refresh.
+  const onRefresh = async () => { await refresh(); };
+
+  // ── Early exit ─────────────────────────────────────────────────────────────
+
   if (!companyId) {
     return (
       <div className="page">
@@ -125,9 +158,10 @@ const toggleActive = async (x: StockLocationDto) => {
     );
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <div className="page">
-      {/* Header */}
       <div className="page-header">
         <div>
           <h1>Stock Locations</h1>
@@ -135,17 +169,19 @@ const toggleActive = async (x: StockLocationDto) => {
             Warehouses, store rooms, kitchens and mini-stores used by GRN, SIV and stock transfers.
           </p>
         </div>
-
         <div className="row gap" style={{ alignItems: "center" }}>
-          <button className="btn" onClick={onRefresh} disabled={loading || branchesLoading}>
-            {loading || branchesLoading ? "Refreshing..." : "Refresh"}
+          <button
+            className="btn"
+            onClick={onRefresh}
+            disabled={loading}
+          >
+            {loading ? "Refreshing…" : "Refresh"}
           </button>
-
           <button
             className="btn primary"
-            onClick={() => setModal({ kind: "create" })}
+            onClick={() => { setActionError(null); setModal({ kind: "create" }); }}
             disabled={!selectedBranchId}
-            title={!selectedBranchId ? "Select a branch first" : ""}
+            title={!selectedBranchId ? "Select a branch first" : undefined}
           >
             + New Location
           </button>
@@ -153,23 +189,25 @@ const toggleActive = async (x: StockLocationDto) => {
       </div>
 
       {/* Errors */}
-      {branchesError ? (
+      {branchesError && (
         <div className="alert danger">
           <strong>Branches:</strong> {branchesError}
         </div>
-      ) : null}
-
-      {error ? (
+      )}
+      {error && (
         <div className="alert danger">
-          <strong>Locations:</strong> {error?.message ?? "Request failed"} (HTTP {error?.status ?? "?"})
+          <strong>Locations:</strong> {error?.message ?? "Request failed"}
+          {error?.status ? ` (HTTP ${error.status})` : ""}
         </div>
-      ) : null}
+      )}
+      {actionError && (
+        <div className="alert danger">{actionError}</div>
+      )}
 
-      {/* Filters Card */}
+      {/* Filters */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="card-body">
           <div className="row gap" style={{ alignItems: "center", flexWrap: "wrap" }}>
-            {/* Branch picker */}
             <div style={{ minWidth: 260 }}>
               <div className="muted" style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
                 Branch
@@ -177,75 +215,61 @@ const toggleActive = async (x: StockLocationDto) => {
               <select
                 className="input"
                 value={selectedBranchId ?? ""}
-                onChange={(e) => onChangeBranch(e.target.value)}
+                onChange={e => onChangeBranch(e.target.value)}
                 disabled={branchesLoading}
               >
                 <option value="">
-                  {branchesLoading ? "Loading branches..." : "Select branch…"}
+                  {branchesLoading ? "Loading branches…" : "Select branch…"}
                 </option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
             </div>
 
-            {/* Search */}
             <div style={{ minWidth: 260 }}>
               <div className="muted" style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
                 Search
               </div>
               <input
                 className="input"
-                placeholder="Search name/code..."
+                placeholder="Search name / code…"
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={e => setQ(e.target.value)}
                 disabled={!selectedBranchId}
               />
             </div>
 
-            {/* Active Only */}
             <label className="row" style={{ gap: 10, marginTop: 18 }}>
               <input
                 type="checkbox"
                 checked={activeOnly}
-                onChange={(e) => setActiveOnly(e.target.checked)}
+                onChange={e => setActiveOnly(e.target.checked)}
               />
               Active only
             </label>
 
-            {/* Scope hint */}
             <div className="muted" style={{ marginTop: 18 }}>
-              {selectedBranchId ? (
-                <>
-                  Showing locations for the selected branch.
-                </>
-              ) : (
-                <>
-                  Select a branch to load locations.
-                </>
-              )}
+              {selectedBranchId
+                ? "Showing locations for the selected branch."
+                : "Select a branch to load locations."}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Loading */}
-      {loading ? <div className="muted">Loading...</div> : null}
+      {loading && <div className="muted">Loading…</div>}
 
-      {/* Table */}
       <StockLocationsTable
         items={items}
-        onEdit={(item) => setModal({ kind: "edit", item })}
+        onEdit={item => { setActionError(null); setModal({ kind: "edit", item }); }}
         onToggleActive={toggleActive}
       />
 
-      {/* Modal */}
-      {modal.kind !== "none" ? (
+      {modal.kind !== "none" && (
         <div className="modal-backdrop" onClick={() => setModal({ kind: "none" })}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            {modal.kind === "create" ? (
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            {modal.kind === "create" && (
               <StockLocationForm
                 mode="create"
                 companyId={companyId}
@@ -253,9 +277,8 @@ const toggleActive = async (x: StockLocationDto) => {
                 onCancel={() => setModal({ kind: "none" })}
                 onSubmit={create}
               />
-            ) : null}
-
-            {modal.kind === "edit" ? (
+            )}
+            {modal.kind === "edit" && (
               <StockLocationForm
                 mode="edit"
                 companyId={companyId}
@@ -264,10 +287,10 @@ const toggleActive = async (x: StockLocationDto) => {
                 onCancel={() => setModal({ kind: "none" })}
                 onSubmit={update}
               />
-            ) : null}
+            )}
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

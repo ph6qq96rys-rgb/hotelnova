@@ -1,0 +1,319 @@
+/* ==========================================================================
+   HotelNova ERP — Onboarding Design System
+   Matches the interactive prototype exactly.
+   ========================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --ob-navy:         #0f172a;
+  --ob-navy-mid:     #1e293b;
+  --ob-slate-50:     #f8fafc;
+  --ob-slate-100:    #f1f5f9;
+  --ob-slate-200:    #e2e8f0;
+  --ob-slate-300:    #cbd5e1;
+  --ob-slate-400:    #94a3b8;
+  --ob-slate-500:    #64748b;
+  --ob-slate-600:    #475569;
+  --ob-slate-700:    #334155;
+  --ob-slate-950:    #020617;
+  --ob-green-bg:     #f0fdf4;
+  --ob-green-border: #bbf7d0;
+  --ob-green-text:   #166534;
+  --ob-blue-bg:      #eff6ff;
+  --ob-blue-border:  #bfdbfe;
+  --ob-blue-text:    #1e40af;
+  --ob-red-bg:       #fef2f2;
+  --ob-red-border:   #fecaca;
+  --ob-red-text:     #991b1b;
+  --ob-warn-bg:      #fffbeb;
+  --ob-warn-border:  #fde68a;
+  --ob-warn-text:    #92400e;
+  --ob-shadow-card:  0 8px 24px -14px rgba(15,23,42,.14);
+  --ob-shadow-btn:   0 8px 20px -10px rgba(2,6,23,.40);
+  --ob-r-sm: 9px; --ob-r-md: 12px; --ob-r-lg: 16px; --ob-r-xl: 20px;
+}
+
+/* ── Page shell ──────────────────────────────────────────────────────────── */
+.ob-page { padding: 28px 32px; background: var(--ob-slate-50); min-height: 100vh; font-family: 'Inter', system-ui, sans-serif; }
+.ob-page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; gap: 16px; }
+.ob-page-title { font-size: 20px; font-weight: 800; color: var(--ob-slate-950); letter-spacing: -0.03em; line-height: 1.2; }
+.ob-page-subtitle { font-size: 13px; color: var(--ob-slate-500); margin-top: 3px; line-height: 1.5; }
+.ob-page-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ── Progress ────────────────────────────────────────────────────────────── */
+.ob-progress { height: 6px; border-radius: 999px; background: var(--ob-slate-200); overflow: hidden; margin-bottom: 18px; }
+.ob-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg,var(--ob-navy),var(--ob-navy-mid)); transition: width .4s ease; }
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.ob-layout { display: grid; grid-template-columns: 252px 1fr; gap: 14px; align-items: start; }
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.ob-card { border-radius: var(--ob-r-xl); background: rgba(255,255,255,.97); border: 1px solid var(--ob-slate-200); box-shadow: var(--ob-shadow-card); overflow: hidden; }
+.ob-card-header { padding: 16px 22px; border-bottom: 1px solid #f1f5f9; }
+.ob-card-title { font-size: 15px; font-weight: 800; color: var(--ob-slate-950); letter-spacing: -0.02em; }
+.ob-card-subtitle { font-size: 12px; color: var(--ob-slate-500); margin-top: 2px; }
+.ob-card-body { padding: 20px 22px; }
+.ob-card-footer { display: flex; align-items: center; justify-content: space-between; padding: 13px 22px; border-top: 1px solid #f1f5f9; background: #fafafa; }
+
+/* ── Inner card ──────────────────────────────────────────────────────────── */
+.ob-inner-card { border-radius: var(--ob-r-md); background: rgba(255,255,255,.97); border: 1px solid var(--ob-slate-200); box-shadow: 0 2px 8px -4px rgba(15,23,42,.08); overflow: hidden; margin-bottom: 14px; }
+.ob-inner-card-header { padding: 12px 16px; border-bottom: 1px solid var(--ob-slate-200); background: #fafafa; }
+.ob-inner-card-title { font-size: 13px; font-weight: 700; color: var(--ob-slate-950); }
+.ob-inner-card-sub { font-size: 12px; color: var(--ob-slate-500); margin-top: 2px; }
+.ob-inner-card-body { padding: 16px; }
+.ob-inner-card-footer { padding: 11px 16px; border-top: 1px solid var(--ob-slate-200); background: #fafafa; display: flex; justify-content: flex-end; }
+
+/* ── Rail ────────────────────────────────────────────────────────────────── */
+.ob-rail { border-radius: var(--ob-r-xl); background: rgba(255,255,255,.97); border: 1px solid var(--ob-slate-200); box-shadow: var(--ob-shadow-card); padding: 13px 11px; }
+.ob-rail-item { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 12px; cursor: pointer; transition: background .18s, opacity .18s; border: none; background: transparent; width: 100%; text-align: left; font-family: inherit; }
+.ob-rail-item:hover:not(.ob-rail-item--active):not(.ob-rail-item--locked) { background: var(--ob-slate-100); }
+.ob-rail-item--active { background: var(--ob-navy); cursor: default; }
+.ob-rail-item--locked { opacity: .35; cursor: not-allowed; }
+.ob-rail-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .18s; }
+.ob-rail-dot--default { background: var(--ob-slate-100); border: 1px solid var(--ob-slate-200); }
+.ob-rail-dot--done    { background: var(--ob-green-bg);  border: 1px solid var(--ob-green-border); }
+.ob-rail-dot--active  { background: rgba(255,255,255,.14); border: none; }
+.ob-rail-label { flex: 1; min-width: 0; }
+.ob-rail-label-title { font-size: 13px; font-weight: 700; line-height: 1.2; color: var(--ob-slate-700); }
+.ob-rail-item--active .ob-rail-label-title { color: #fff; }
+.ob-rail-label-sub { font-size: 10.5px; color: var(--ob-slate-400); margin-top: 2px; }
+.ob-rail-item--active .ob-rail-label-sub { color: rgba(255,255,255,.55); }
+
+/* ── Section heading ─────────────────────────────────────────────────────── */
+.ob-section-title { font-size: 14px; font-weight: 800; color: var(--ob-slate-950); letter-spacing: -0.02em; margin-bottom: 2px; }
+.ob-section-sub { font-size: 12px; color: var(--ob-slate-500); line-height: 1.5; margin-bottom: 16px; }
+
+/* ── Grids ───────────────────────────────────────────────────────────────── */
+.ob-grid-2    { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ob-grid-3    { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 11px; }
+.ob-grid-auto { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 12px; }
+
+/* ── Field ───────────────────────────────────────────────────────────────── */
+.ob-field { display: flex; flex-direction: column; gap: 4px; }
+.ob-label { font-size: 11.5px; font-weight: 600; color: var(--ob-slate-600); letter-spacing: .02em; }
+.ob-label-req { color: #e11d48; margin-left: 2px; }
+.ob-hint { font-size: 11px; color: var(--ob-slate-400); }
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+.ob-input, .ob-select, .ob-textarea { width: 100%; border: 1px solid #dbe3ee; border-radius: var(--ob-r-sm); background: rgba(255,255,255,.95); padding: 0 13px; font-size: 13px; font-family: 'Inter',system-ui,sans-serif; color: var(--ob-navy); outline: none; transition: border-color .16s, box-shadow .16s; box-sizing: border-box; }
+.ob-input, .ob-select { height: 40px; }
+.ob-textarea { height: auto; padding: 10px 13px; resize: vertical; min-height: 72px; }
+.ob-input:focus, .ob-select:focus, .ob-textarea:focus { border-color: var(--ob-navy); box-shadow: 0 0 0 4px rgba(15,23,42,.08); }
+.ob-input::placeholder, .ob-textarea::placeholder { color: var(--ob-slate-400); }
+.ob-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; cursor: pointer; }
+
+/* ── Toggle ──────────────────────────────────────────────────────────────── */
+.ob-toggle { width: 40px; height: 22px; border-radius: 11px; position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; border: none; padding: 0; }
+.ob-toggle--on  { background: var(--ob-navy); }
+.ob-toggle--off { background: var(--ob-slate-300); }
+.ob-toggle-knob { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #fff; top: 3px; transition: left .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); pointer-events: none; }
+.ob-toggle--on  .ob-toggle-knob { left: 21px; }
+.ob-toggle--off .ob-toggle-knob { left: 3px; }
+
+/* ── Checkbox ────────────────────────────────────────────────────────────── */
+.ob-checkbox { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; user-select: none; }
+.ob-checkbox-box { width: 17px; height: 17px; border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; transition: all .15s; border: 2px solid var(--ob-slate-300); background: #fff; }
+.ob-checkbox-box--checked { background: var(--ob-navy); border-color: var(--ob-navy); }
+.ob-checkbox-label { font-size: 13px; font-weight: 600; color: var(--ob-navy); line-height: 1.4; }
+.ob-checkbox-hint  { font-size: 11px; color: var(--ob-slate-400); margin-top: 1px; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.ob-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; border-radius: var(--ob-r-sm); padding: 0 16px; font-size: 13px; font-weight: 700; font-family: 'Inter',system-ui,sans-serif; letter-spacing: -0.01em; cursor: pointer; transition: all .16s; border: 1px solid transparent; white-space: nowrap; flex-shrink: 0; }
+.ob-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ob-btn:active:not(:disabled) { transform: translateY(1px); }
+.ob-btn--primary { background: linear-gradient(180deg,var(--ob-navy),var(--ob-slate-950)); color: #fff; border-color: rgba(15,23,42,.9); box-shadow: var(--ob-shadow-btn); }
+.ob-btn--primary:hover:not(:disabled) { background: linear-gradient(180deg,var(--ob-navy-mid),var(--ob-navy)); }
+.ob-btn--ghost  { background: rgba(255,255,255,.95); color: var(--ob-slate-700); border-color: var(--ob-slate-200); }
+.ob-btn--ghost:hover:not(:disabled)  { background: var(--ob-slate-100); color: var(--ob-navy); }
+.ob-btn--soft   { background: var(--ob-slate-100); color: var(--ob-navy); border-color: var(--ob-slate-200); }
+.ob-btn--soft:hover:not(:disabled)   { background: var(--ob-slate-200); }
+.ob-btn--danger { background: var(--ob-red-bg); color: var(--ob-red-text); border-color: var(--ob-red-border); }
+.ob-btn--danger:hover:not(:disabled) { background: #fee2e2; }
+
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+.ob-alert { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--ob-r-md); margin-bottom: 14px; border: 1px solid; }
+.ob-alert__icon  { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.ob-alert__title { font-size: 13px; font-weight: 700; line-height: 1.3; }
+.ob-alert__msg   { font-size: 12px; margin-top: 2px; line-height: 1.5; }
+.ob-alert--ok     { background: var(--ob-green-bg); border-color: var(--ob-green-border); }
+.ob-alert--ok     .ob-alert__icon, .ob-alert--ok     .ob-alert__title { color: var(--ob-green-text); }
+.ob-alert--ok     .ob-alert__msg { color: #15803d; }
+.ob-alert--danger { background: var(--ob-red-bg);  border-color: var(--ob-red-border); }
+.ob-alert--danger .ob-alert__icon, .ob-alert--danger .ob-alert__title { color: var(--ob-red-text); }
+.ob-alert--danger .ob-alert__msg { color: #b91c1c; }
+.ob-alert--warn   { background: var(--ob-warn-bg); border-color: var(--ob-warn-border); }
+.ob-alert--warn   .ob-alert__icon, .ob-alert--warn   .ob-alert__title { color: var(--ob-warn-text); }
+.ob-alert--warn   .ob-alert__msg { color: #b45309; }
+.ob-alert--info   { background: var(--ob-blue-bg); border-color: var(--ob-blue-border); }
+.ob-alert--info   .ob-alert__icon, .ob-alert--info   .ob-alert__title { color: var(--ob-blue-text); }
+.ob-alert--info   .ob-alert__msg { color: #1d4ed8; }
+
+/* ── Badge ───────────────────────────────────────────────────────────────── */
+.ob-badge { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.ob-badge--default { background: var(--ob-slate-100); color: var(--ob-slate-600); border-color: var(--ob-slate-200); }
+.ob-badge--success { background: var(--ob-green-bg);  color: var(--ob-green-text); border-color: var(--ob-green-border); }
+.ob-badge--info    { background: var(--ob-blue-bg);   color: var(--ob-blue-text);  border-color: var(--ob-blue-border); }
+.ob-badge--warn    { background: var(--ob-warn-bg);   color: var(--ob-warn-text);  border-color: var(--ob-warn-border); }
+.ob-badge--danger  { background: var(--ob-red-bg);    color: var(--ob-red-text);   border-color: var(--ob-red-border); }
+
+/* ── Check item ──────────────────────────────────────────────────────────── */
+.ob-check-item { display: flex; align-items: center; gap: 10px; padding: 10px 13px; border-radius: 10px; border: 1px solid var(--ob-slate-200); margin-bottom: 6px; }
+.ob-check-item--done    { background: var(--ob-green-bg); }
+.ob-check-item--pending { background: #fafafa; }
+.ob-check-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ob-check-dot--done    { background: #16a34a; }
+.ob-check-dot--pending { background: var(--ob-slate-200); }
+.ob-check-label { flex: 1; font-size: 13px; font-weight: 500; }
+.ob-check-label--done    { color: var(--ob-green-text); }
+.ob-check-label--pending { color: var(--ob-slate-500); }
+
+/* ── Info row ────────────────────────────────────────────────────────────── */
+.ob-info-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
+.ob-info-row__label { color: var(--ob-slate-400); font-weight: 500; }
+.ob-info-row__value { color: var(--ob-navy); font-weight: 600; }
+
+/* ── List row ────────────────────────────────────────────────────────────── */
+.ob-list-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--ob-slate-200); background: #fafafa; margin-bottom: 5px; }
+.ob-list-icon { width: 28px; height: 28px; border-radius: 7px; background: var(--ob-slate-100); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+/* ── Avatar ──────────────────────────────────────────────────────────────── */
+.ob-avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.ob-avatar--admin { background: #dcfce7; color: #166534; }
+.ob-avatar--staff { background: var(--ob-slate-100); color: var(--ob-slate-600); }
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.ob-empty { text-align: center; padding: 28px 14px; border: 1px dashed var(--ob-slate-200); border-radius: 10px; background: #fafafa; }
+.ob-empty__title { font-size: 13px; font-weight: 600; color: var(--ob-slate-600); margin-top: 8px; }
+.ob-empty__sub   { font-size: 12px; color: var(--ob-slate-400); margin-top: 3px; }
+
+/* ── Wizard nav ──────────────────────────────────────────────────────────── */
+.ob-wizard-nav { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--ob-slate-200); }
+.ob-wizard-step-lbl { font-size: 11px; font-weight: 700; color: var(--ob-slate-400); text-transform: uppercase; letter-spacing: .07em; }
+
+/* ── Toggle row ──────────────────────────────────────────────────────────── */
+.ob-toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; }
+.ob-toggle-row__title { font-size: 13px; font-weight: 600; color: var(--ob-navy); }
+.ob-toggle-row__sub   { font-size: 12px; color: var(--ob-slate-500); margin-top: 2px; }
+
+/* ── Members header ──────────────────────────────────────────────────────── */
+.ob-members-hdr { font-size: 11px; font-weight: 700; color: var(--ob-slate-400); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+@keyframes ob-spin { to { transform: rotate(360deg); } }
+.ob-spinner { animation: ob-spin .75s linear infinite; }
+/* Add to src/modules/company/onboarding/company-onboarding.css */
+.ob-config-panel {
+  margin-bottom: 18px;
+  border-radius: var(--ob-r-xl);
+  border: 1px solid var(--ob-slate-200);
+  background: rgba(255,255,255,.97);
+  box-shadow: var(--ob-shadow-card);
+  padding: 14px;
+}
+
+.ob-config-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.ob-config-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ob-navy);
+  background: var(--ob-slate-100);
+  border: 1px solid var(--ob-slate-200);
+}
+
+.ob-config-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ob-slate-950);
+  letter-spacing: -.02em;
+}
+
+.ob-config-subtitle {
+  font-size: 12px;
+  color: var(--ob-slate-500);
+  margin-top: 2px;
+}
+
+.ob-config-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.ob-config-tab {
+  border: 1px solid var(--ob-slate-200);
+  background: var(--ob-slate-50);
+  color: var(--ob-slate-600);
+  border-radius: 999px;
+  padding: 7px 13px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ob-config-tab--active {
+  background: var(--ob-navy);
+  border-color: var(--ob-navy);
+  color: #fff;
+}
+
+.ob-config-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ob-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ob-config-field span {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ob-slate-500);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.ob-config-field select {
+  height: 40px;
+  width: 100%;
+  border-radius: 11px;
+  border: 1px solid var(--ob-slate-200);
+  background: #fff;
+  color: var(--ob-slate-950);
+  padding: 0 12px;
+  font-size: 13px;
+  outline: none;
+}
+
+.ob-config-field select:focus {
+  border-color: var(--ob-navy);
+  box-shadow: 0 0 0 4px rgba(15,23,42,.08);
+}
+
+.ob-config-field select:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1100px) {
+  .ob-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .ob-config-grid { grid-template-columns: 1fr; }
+}

@@ -1,84 +1,95 @@
+// ─── Security API ─────────────────────────────────────────────────────────────
+// Role-based access control endpoints.
+
 import { http } from "../../../api/http";
 
-export type RoleDto = {
+// ── DTOs ──────────────────────────────────────────────────────────────────────
+
+export interface RoleDto {
   id: string;
   name: string;
   description?: string | null;
   userCount?: number;
   isSystem?: boolean;
-};
+}
 
-export type PermissionDto = {
+export interface PermissionDto {
   key: string;
   group: string;
   description?: string;
-};
+}
 
-export type UserLiteDto = {
+export interface UserLiteDto {
   id: string;
   fullName?: string | null;
   email: string;
-};
+}
 
-export type RoleDetailDto = {
+export interface RoleDetailDto {
   role: RoleDto;
   permissionKeys: string[];
   users: UserLiteDto[];
-};
+}
 
-// If your axios baseURL already includes "/api", remove "/api" here.
+// ── Request shapes ────────────────────────────────────────────────────────────
+
+export interface CreateRoleRequest {
+  name: string;
+  description?: string | null;
+}
+
+export interface UpdateRoleRequest {
+  name: string;
+  description?: string | null;
+}
+
+export interface SetPermissionsRequest {
+  permissionKeys: string[];
+}
+
+// ── URL helper ────────────────────────────────────────────────────────────────
+
 const base = (companyId: string) => `/companies/${companyId}/security`;
+const d = <T>(res: { data: T }) => res.data;
+
+// ── API ───────────────────────────────────────────────────────────────────────
 
 export const securityApi = {
-  // =========================
-  // Permissions
-  // =========================
-  listPermissions: (companyId: string) =>
-    http.get<PermissionDto[]>(`${base(companyId)}/permissions`).then((r) => r.data),
+  // ── Permissions ────────────────────────────────────────────────────────────
 
-  // =========================
-  // Roles
-  // =========================
-  listRoles: (companyId: string) =>
-    http.get<RoleDto[]>(`${base(companyId)}/roles`).then((r) => r.data),
+  listPermissions: (companyId: string): Promise<PermissionDto[]> =>
+    http.get<PermissionDto[]>(`${base(companyId)}/permissions`).then(d),
 
-  getRole: (companyId: string, roleId: string) =>
-    http.get<RoleDetailDto>(`${base(companyId)}/roles/${roleId}`).then((r) => r.data),
+  // ── Roles ──────────────────────────────────────────────────────────────────
 
-  createRole: (companyId: string, payload: { name: string; description?: string | null }) =>
-    http.post<string>(`${base(companyId)}/roles`, payload).then((r) => r.data), // returns Guid
+  listRoles: (companyId: string): Promise<RoleDto[]> =>
+    http.get<RoleDto[]>(`${base(companyId)}/roles`).then(d),
 
-  updateRole: (companyId: string, roleId: string, payload: { name: string; description?: string | null }) =>
-    http.put<void>(`${base(companyId)}/roles/${roleId}`, payload).then((r) => r.data),
+  getRole: (companyId: string, roleId: string): Promise<RoleDetailDto> =>
+    http.get<RoleDetailDto>(`${base(companyId)}/roles/${roleId}`).then(d),
 
-  deleteRole: (companyId: string, roleId: string) =>
-    http.delete<void>(`${base(companyId)}/roles/${roleId}`).then((r) => r.data),
+  createRole: (companyId: string, payload: CreateRoleRequest): Promise<string> =>
+    http.post<string>(`${base(companyId)}/roles`, payload).then(d),
 
-  // =========================
-  // Role permissions
-  // =========================
-  setRolePermissions: (companyId: string, roleId: string, permissionKeys: string[]) =>
-    http.put<void>(`${base(companyId)}/roles/${roleId}/permissions`, { permissionKeys }).then((r) => r.data),
+  updateRole: (companyId: string, roleId: string, payload: UpdateRoleRequest): Promise<void> =>
+    http.put<void>(`${base(companyId)}/roles/${roleId}`, payload).then(d),
 
-  // =========================
-  // Users search + membership
-  // =========================
-  // Backend: [HttpGet("search")] => GET /security/search?q=...
-  searchUsers: (companyId: string, q: string) =>
-    http.get<UserLiteDto[]>(`${base(companyId)}/search`, { params: { q } }).then((r) => r.data),
+  deleteRole: (companyId: string, roleId: string): Promise<void> =>
+    http.delete<void>(`${base(companyId)}/roles/${roleId}`).then(d),
 
-  addUserToRole: (companyId: string, roleId: string, userId: string) =>
-    http.post<void>(`${base(companyId)}/roles/${roleId}/users`, { userId }).then((r) => r.data),
+  // ── Role permissions ───────────────────────────────────────────────────────
 
-  removeUserFromRole: (companyId: string, roleId: string, userId: string) =>
-    http.delete<void>(`${base(companyId)}/roles/${roleId}/users/${userId}`).then((r) => r.data),
+  setRolePermissions: (companyId: string, roleId: string, permissionKeys: string[]): Promise<void> =>
+    http.put<void>(`${base(companyId)}/roles/${roleId}/permissions`, { permissionKeys }).then(d),
 
-  // =========================
-  // Auth actions under /security
-  // =========================
-  logout: (companyId: string, refreshToken: string) =>
-    http.post<void>(`${base(companyId)}/logout`, { refreshToken }).then((r) => r.data),
+  // ── User membership ────────────────────────────────────────────────────────
 
-  refresh: (companyId: string, payload: { refreshToken: string }) =>
-    http.post<{ accessToken: string; refreshToken: string }>(`${base(companyId)}/refresh`, payload).then((r) => r.data),
+  searchUsers: (companyId: string, q: string): Promise<UserLiteDto[]> =>
+    http.get<UserLiteDto[]>(`${base(companyId)}/search`, { params: { q } }).then(d),
+
+  addUserToRole: (companyId: string, roleId: string, userId: string): Promise<void> =>
+    http.post<void>(`${base(companyId)}/roles/${roleId}/users`, { userId }).then(d),
+
+  removeUserFromRole: (companyId: string, roleId: string, userId: string): Promise<void> =>
+    http.delete<void>(`${base(companyId)}/roles/${roleId}/users/${userId}`).then(d),
 };

@@ -1,53 +1,66 @@
+// src/features/inventory/items/components/OpeningStockModal.tsx
+
 import { useEffect, useMemo, useState } from "react";
 import { openingStockApi } from "../api/openingStockApi";
 import { http } from "../../../../api/http";
 
-type Uom = { id: string; code: string; name: string };
-type LocationLite = { id: string; name: string };
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-export default function OpeningStockModal(props: {
-  open: boolean;
-  onClose: () => void;
-  companyId: string;
-  itemId: string;
-  itemName: string;
-  uoms: Uom[];
-  baseUomId: string;
-}) {
-  const { open, onClose, companyId, itemId, itemName, uoms, baseUomId } = props;
+interface Uom          { id: string; code: string; name: string; }
+interface LocationLite { id: string; name: string; }
 
-  const [locations, setLocations] = useState<LocationLite[]>([]);
-  const [locationId, setLocationId] = useState("");
-  const [qty, setQty] = useState<number>(0);
-  const [uomId, setUomId] = useState<string>(baseUomId);
-  const [unitCost, setUnitCost] = useState<number | "">("");
-  const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+interface Props {
+  open:       boolean;
+  onClose:    () => void;
+  companyId:  string;
+  itemId:     string;
+  itemName:   string;
+  uoms:       Uom[];
+  baseUomId:  string;
+}
 
-  const baseUom = useMemo(() => uoms.find(u => u.id === baseUomId), [uoms, baseUomId]);
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
+function extractError(e: unknown, fallback: string): string {
+  const err  = e as any;
+  const data = err?.response?.data;
+  if (typeof data === "string") return data;
+  return data?.message ?? err?.message ?? fallback;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function OpeningStockModal({ open, onClose, companyId, itemId, itemName, uoms, baseUomId }: Props) {
+  const [locations,   setLocations]   = useState<LocationLite[]>([]);
+  const [locationId,  setLocationId]  = useState("");
+  const [qty,         setQty]         = useState<number>(0);
+  const [uomId,       setUomId]       = useState(baseUomId);
+  const [unitCost,    setUnitCost]    = useState<number | "">("");
+  const [asOfDate,    setAsOfDate]    = useState(() => new Date().toISOString().slice(0, 10));
+  const [note,        setNote]        = useState("");
+  const [saving,      setSaving]      = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+
+  const baseUom = useMemo(() => uoms.find((u) => u.id === baseUomId), [uoms, baseUomId]);
+
+  // Reset UOM when baseUomId changes.
+  useEffect(() => { setUomId(baseUomId); }, [baseUomId]);
+
+  // Load locations when modal opens.
   useEffect(() => {
     if (!open) return;
-
-    // Assuming you already have locations endpoint (name only shown in UI)
-    // Example: GET /api/inventory/locations?companyId=...
+    setError(null);
     http
-      .get<LocationLite[]>("/api/inventory/locations", { params: { companyId, activeOnly: true } })
-      .then(r => setLocations(r.data))
-      .catch(e => setError(e?.message ?? "Failed to load locations"));
+      .get<LocationLite[]>("/inventory/locations", { params: { companyId, activeOnly: true } })
+      .then((r) => setLocations(r.data ?? []))
+      .catch((e) => setError(extractError(e, "Failed to load locations.")));
   }, [open, companyId]);
 
   if (!open) return null;
 
-  const canSave =
-    !!locationId &&
-    qty > 0 &&
-    !!uomId &&
-    !!asOfDate;
+  const canSave = !!locationId && qty > 0 && !!uomId && !!asOfDate;
 
-  const submit = async () => {
+  async function submit() {
     setError(null);
     setSaving(true);
     try {
@@ -62,90 +75,126 @@ export default function OpeningStockModal(props: {
         note: note || null,
       });
       onClose();
-    } catch (e: any) {
-      setError(e?.response?.data ?? e?.message ?? "Failed to post opening stock");
+    } catch (e) {
+      setError(extractError(e, "Failed to post opening stock."));
     } finally {
       setSaving(false);
     }
-  };
+  }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-xl rounded-2xl shadow-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <div className="text-base font-bold text-slate-900">Add Opening Stock</div>
-          <div className="text-xs text-slate-500">
-            Item: <span className="font-semibold">{itemName}</span>
-            {baseUom ? <> • Base UOM: <span className="font-semibold">{baseUom.code}</span></> : null}
+    <div className="inv-modal-overlay">
+      <div className="inv-modal">
+        {/* Header */}
+        <div className="inv-modal__head">
+          <div className="inv-modal__title">Add Opening Stock</div>
+          <div className="inv-modal__subtitle">
+            Item: <strong>{itemName}</strong>
+            {baseUom ? <> &bull; Base UOM: <strong>{baseUom.code}</strong></> : null}
           </div>
         </div>
 
-        <div className="p-5 space-y-4">
+        {/* Body */}
+        <div className="inv-modal__body">
           {error && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {String(error)}
+            <div className="inv-alert inv-alert--error" style={{ marginBottom: 14 }}>
+              {error}
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="inv-modal__grid">
+            {/* Location */}
             <div>
-              <div className="label">Location</div>
-              <select className="input" value={locationId} onChange={e => setLocationId(e.target.value)}>
+              <label className="inv-modal-label">Location *</label>
+              <select
+                className="inv-input"
+                value={locationId}
+                onChange={(e) => setLocationId(e.target.value)}
+                disabled={saving}
+              >
                 <option value="">Select location</option>
-                {locations.map(l => (
+                {locations.map((l) => (
                   <option key={l.id} value={l.id}>{l.name}</option>
                 ))}
               </select>
             </div>
 
+            {/* As of date */}
             <div>
-              <div className="label">As of date</div>
-              <input className="input" type="date" value={asOfDate} onChange={e => setAsOfDate(e.target.value)} />
-            </div>
-
-            <div>
-              <div className="label">Quantity</div>
+              <label className="inv-modal-label">As of date *</label>
               <input
-                className="input"
-                type="number"
-                min={0}
-                step="0.0001"
-                value={String(qty)}
-                onChange={e => setQty(Number(e.target.value))}
+                type="date"
+                className="inv-input"
+                value={asOfDate}
+                onChange={(e) => setAsOfDate(e.target.value)}
+                disabled={saving}
               />
             </div>
 
+            {/* Quantity */}
             <div>
-              <div className="label">Unit</div>
-              <select className="input" value={uomId} onChange={e => setUomId(e.target.value)}>
-                {uoms.map(u => (
+              <label className="inv-modal-label">Quantity *</label>
+              <input
+                type="number"
+                className="inv-input"
+                min={0}
+                step="0.0001"
+                value={qty === 0 ? "" : String(qty)}
+                onChange={(e) => setQty(Number(e.target.value))}
+                disabled={saving}
+              />
+            </div>
+
+            {/* UOM */}
+            <div>
+              <label className="inv-modal-label">Unit *</label>
+              <select
+                className="inv-input"
+                value={uomId}
+                onChange={(e) => setUomId(e.target.value)}
+                disabled={saving}
+              >
+                {uoms.map((u) => (
                   <option key={u.id} value={u.id}>{u.code} — {u.name}</option>
                 ))}
               </select>
             </div>
 
-            <div className="md:col-span-2">
-              <div className="label">Unit Cost (optional)</div>
+            {/* Unit cost */}
+            <div className="full">
+              <label className="inv-modal-label">Unit Cost (optional)</label>
               <input
-                className="input"
                 type="number"
+                className="inv-input"
                 min={0}
                 step="0.0001"
                 value={unitCost === "" ? "" : String(unitCost)}
-                onChange={e => setUnitCost(e.target.value === "" ? "" : Number(e.target.value))}
+                onChange={(e) => setUnitCost(e.target.value === "" ? "" : Number(e.target.value))}
+                disabled={saving}
+                placeholder="0.0000"
               />
             </div>
 
-            <div className="md:col-span-2">
-              <div className="label">Note (optional)</div>
-              <textarea className="input min-h-[90px]" value={note} onChange={e => setNote(e.target.value)} />
+            {/* Note */}
+            <div className="full">
+              <label className="inv-modal-label">Note (optional)</label>
+              <textarea
+                className="inv-input"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                disabled={saving}
+                style={{ height: 80, resize: "vertical", paddingTop: 8, paddingBottom: 8 }}
+              />
             </div>
           </div>
         </div>
 
-        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
-          <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="btn btn-primary" onClick={submit} disabled={!canSave || saving}>
+        {/* Footer */}
+        <div className="inv-modal__foot">
+          <button className="inv-btn inv-btn--outline" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button className="inv-btn inv-btn--primary" onClick={submit} disabled={!canSave || saving}>
             {saving ? "Saving…" : "Post Opening Stock"}
           </button>
         </div>

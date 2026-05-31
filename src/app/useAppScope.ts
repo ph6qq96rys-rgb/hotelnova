@@ -1,9 +1,11 @@
 ﻿import { useMemo } from "react";
-import { loadAuth } from "../auth/auth.storage"; // adjust path if different
+import { loadAuth } from "../auth/auth.storage";
 
 export type AppScope = {
   companyId: string;
+  companyName: string | null;
   branchId: string;
+  branchName: string | null;
   userId?: string | null;
   departmentId?: string | null;
   currentLocationId?: string | null;
@@ -13,12 +15,22 @@ export function useAppScope(): AppScope {
   const auth = loadAuth();
 
   return useMemo(() => {
-    const companyId = auth?.companyId ?? "";
-    const branchId = auth?.branchId ?? "";
-    const userId = auth?.user?.id ?? null;
-    const departmentId = auth?.departmentId ?? null;
+    const companyId       = auth?.companyId       ?? "";
+    const companyName     = auth?.companyName ?? null;
+    const branchId        = auth?.branchId   ?? "";
+    const branchName      = auth?.branchName ?? null;
+    const userId          = auth?.user?.id         ?? null;
+    const departmentId    = auth?.departmentId     ?? null;
     const currentLocationId = auth?.currentLocationId ?? null;
 
-    return { companyId, branchId, userId, departmentId, currentLocationId };
-  }, [auth?.companyId, auth?.branchId, auth?.user?.id, auth?.departmentId, auth?.currentLocationId]);
+    return { companyId, companyName, branchId, branchName, userId, departmentId, currentLocationId };
+  }, [
+    auth?.companyId,
+    auth?.companyName,
+    auth?.branchId,
+    auth?.branchName,
+    auth?.user?.id,
+    auth?.departmentId,
+    auth?.currentLocationId,
+  ]);
 }

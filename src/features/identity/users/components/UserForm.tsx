@@ -1,272 +1,346 @@
-﻿import { useMemo, useState } from "react";
-import type { CreateUserDto, UpdateUserDto, UserDto } from "../types";
-import "../../../../styles/userForm.css";
+﻿import { useEffect, useMemo, useState } from "react";
+import type { CreateUserDto, UserDto } from "../types";
+import { usersApi } from "../api/usersApi";
+import { useAppScope } from "../../../../app/useAppScope";
 
-type BaseProps = {
+type EmployeeOption = {
+  id: string;
+  employeeCode?: string | null;
+  fullName: string;
+  email?: string | null;
+  branchId?: string | null;
+  branchName?: string | null;
+  departmentName?: string | null;
+  positionName?: string | null;
+};
+
+type Props = {
+  mode: "create" | "edit";
+  initial?: UserDto;
+  onSubmit: (dto: any) => void | Promise<void>;
   onCancel: () => void;
   busy?: boolean;
 };
 
-type CreateProps = BaseProps & {
-  mode: "create";
-  onSubmit: (dto: CreateUserDto) => Promise<void>;
-};
+const ROLE_OPTIONS = [
+  "Admin",
+  "Manager",
+  "FNBController",
+  "StoreKeeper",
+  "Chef",
+  "BarMan",
+  "Cashier",
+  "Waiter",
+  "HR",
+  "Finance",
+  "SystemAdmin",
+];
 
-type EditProps = BaseProps & {
-  mode: "edit";
-  initial: UserDto;
-  onSubmit: (dto: UpdateUserDto) => Promise<void>;
-};
-
-type Props = CreateProps | EditProps;
-
-function isValidEmail(v: string) {
-  // Simple UI check (server should enforce real rules)
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+function hasSystemAdmin(roles: string[]) {
+  return roles.some((r) => r.toLowerCase() === "systemadmin");
 }
 
-function splitRoles(input: string) {
-  return input
-    .split(",")
-    .map((r: string) => r.trim())
-    .filter(Boolean);
-}
+export default function UserForm({
+  mode,
+  initial,
+  onSubmit,
+  onCancel,
+  busy = false,
+}: Props) {
+  const { companyId, branchId } = useAppScope();
 
-export default function UserForm(props: Props) {
-  const { mode, onSubmit, onCancel, busy = false } = props;
+  const [employeeId, setEmployeeId] = useState(
+    (initial as any)?.employeeId ?? ""
+  );
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeesLoading, setEmployeesLoading] = useState(false);
 
-  const initialUser: UserDto | null = mode === "edit" ? props.initial : null;
-
-  const [email, setEmail] = useState(initialUser?.email ?? "");
-  const [userName, setUserName] = useState(initialUser?.userName ?? "");
+  const [userName, setUserName] = useState(initial?.userName ?? "");
+  const [email, setEmail] = useState(initial?.email ?? "");
   const [password, setPassword] = useState("");
-  const [branchId] = useState(initialUser?.branchId ?? "");
-  const [roles, setRoles] = useState(
-    (initialUser as any)?.roles?.join?.(", ") ?? ""
+  const [isActive, setIsActive] = useState(initial?.isActive ?? true);
+  const [roles, setRoles] = useState<string[]>(
+    ((initial as any)?.roles ?? (initial as any)?.roleNames ?? []) as string[]
   );
 
-  const roleList = useMemo(() => splitRoles(roles), [roles]);
+  const [error, setError] = useState("");
 
-  const emailTrim = email.trim();
-  const userNameTrim = userName.trim();
-  const passwordTrim = password.trim();
+  const isCreate = mode === "create";
+  const isSystemAdmin = hasSystemAdmin(roles);
 
-  const emailOk = emailTrim.length > 0 && isValidEmail(emailTrim);
-  const userNameOk = userNameTrim.length > 0;
-  const passwordOk = mode === "create" ? passwordTrim.length >= 6 : true;
+  const selectedEmployee = useMemo(
+    () => employees.find((x) => x.id === employeeId),
+    [employees, employeeId]
+  );
 
-  const canSubmit = !busy && emailOk && userNameOk && passwordOk;
+  useEffect(() => {
+    if (!companyId || mode !== "create") return;
 
-  const submit = async () => {
-    if (!canSubmit) return;
+    let active = true;
 
-    if (mode === "create") {
-      const dto: CreateUserDto = {
-        email: emailTrim,
-        userName: userNameTrim,
-        password: passwordTrim,
-        branchId: branchId ? branchId : null,
-        roles: roleList as any, // adjust if DTO differs
-      };
-      await onSubmit(dto);
+    async function loadEmployees() {
+      try {
+        setEmployeesLoading(true);
+
+        const res = await usersApi.getEmployeesAvailableForUser(companyId, {
+          branchId: branchId || undefined,
+          q: employeeSearch || undefined,
+          page: 1,
+          pageSize: 50,
+        });
+
+        const data = (res as any)?.data ?? res;
+        const rows = Array.isArray(data)
+          ? data
+          : data?.items ?? data?.data ?? data?.results ?? [];
+
+        if (active) setEmployees(rows);
+      } finally {
+        if (active) setEmployeesLoading(false);
+      }
+    }
+
+    const t = setTimeout(() => void loadEmployees(), 300);
+
+    return () => {
+      active = false;
+      clearTimeout(t);
+    };
+  }, [companyId, branchId, employeeSearch, mode]);
+
+  useEffect(() => {
+    if (!selectedEmployee || !isCreate) return;
+
+    if (!email && selectedEmployee.email) {
+      setEmail(selectedEmployee.email);
+    }
+
+    if (!userName && selectedEmployee.employeeCode) {
+      setUserName(selectedEmployee.employeeCode.toLowerCase());
+    }
+  }, [selectedEmployee, isCreate, email, userName]);
+
+  function toggleRole(role: string) {
+    setRoles((prev) =>
+      prev.includes(role)
+        ? prev.filter((x) => x !== role)
+        : [...prev, role]
+    );
+  }
+
+  async function submit() {
+    setError("");
+
+    if (isCreate && !isSystemAdmin && !employeeId) {
+      setError("Employee selection is required.");
       return;
     }
 
-    const dto: UpdateUserDto = {
-      email: emailTrim,
-      userName: userNameTrim,
-      roles: roleList as any, // adjust if DTO differs
-    };
-    await onSubmit(dto);
-  };
-
-  const removeRole = (role: string) => {
-    const next = roleList.filter((r) => r.toLowerCase() !== role.toLowerCase());
-    setRoles(next.join(", "));
-  };
-
-  const onKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
-    // Submit on Enter, but allow newline-free inputs normally.
-    if (e.key === "Enter") {
-      // Avoid triggering if a button is focused and user presses Enter on it naturally
-      const t = e.target as HTMLElement | null;
-      const tag = t?.tagName?.toLowerCase();
-      if (tag === "button") return;
-      e.preventDefault();
-      void submit();
+    if (!userName.trim()) {
+      setError("Username is required.");
+      return;
     }
-  };
+
+    if (!email.trim()) {
+      setError("Email is required.");
+      return;
+    }
+
+    if (isCreate && password.trim().length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    if (roles.length === 0) {
+      setError("At least one role is required.");
+      return;
+    }
+
+    const dto: CreateUserDto = {
+      employeeId: isSystemAdmin ? null : employeeId,
+      userName: userName.trim(),
+      email: email.trim(),
+      password: isCreate ? password : undefined,
+      roles,
+      isActive,
+      branchId: selectedEmployee?.branchId ?? branchId ?? null,
+    } as any;
+
+    await onSubmit(dto);
+  }
 
   return (
-    <div className="lux-modalSheet" onKeyDown={onKeyDown}>
-      {/* Header */}
-      <div className="lux-modalHeader">
+    <div className="lux-form lux-userCreate">
+      <div className="lux-form__header">
         <div>
           <div className="lux-kicker">Identity</div>
-          <h2 className="lux-modalTitle">
-            {mode === "create" ? "Create user" : "Edit user"}
+          <h2 className="lux-form__title">
+            {isCreate ? "Create User Account" : "Edit User Account"}
           </h2>
-          <p className="lux-modalSub">
-            {mode === "create"
-              ? "Provision a new user and set initial access."
-              : "Update profile details and access fields."}
+          <p className="lux-form__subtitle">
+            {isCreate
+              ? "Select an employee first, then assign login credentials and roles."
+              : "Update credentials, status, and access roles."}
           </p>
         </div>
-
-        <button
-          className="lux-iconBtn"
-          type="button"
-          onClick={onCancel}
-          disabled={busy}
-          aria-label="Close"
-          title="Close"
-        >
-          ×
-        </button>
       </div>
 
-      <div className="lux-divider" />
+      {error && (
+        <div className="lux-alert lux-alert--danger" role="alert">
+          {error}
+        </div>
+      )}
 
-      {/* Body */}
-      <div className="lux-modalBody">
-        <div className="lux-formGrid">
-          {/* Email */}
-          <label className="lux-field">
-            <div className="lux-labelRow">
-              <span className="lux-label">Email</span>
-              {!emailTrim ? (
-                <span className="lux-pill lux-pill--muted">Required</span>
-              ) : emailOk ? (
-                <span className="lux-pill lux-pill--ok">Valid</span>
-              ) : (
-                <span className="lux-pill lux-pill--warn">Check format</span>
-              )}
-            </div>
+      <div className="lux-grid lux-grid--2">
+        {isCreate && (
+          <section className="lux-panel">
+            <div className="lux-panel__title">Employee Context</div>
 
-            <input
-              className="lux-input"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={busy}
-              placeholder="name@company.com"
-              inputMode="email"
-              autoComplete="email"
-            />
+            <label className="lux-label">
+              Search Employee
+              <input
+                className="lux-input"
+                value={employeeSearch}
+                onChange={(e) => setEmployeeSearch(e.target.value)}
+                placeholder="Search by name, code, email…"
+                disabled={busy || isSystemAdmin}
+              />
+            </label>
 
-            {!emailTrim ? (
-              <div className="lux-hint">We’ll use this for login and notifications.</div>
-            ) : !emailOk ? (
-              <div className="lux-hint lux-hint--warn">Enter a valid email address.</div>
+            <label className="lux-label">
+              Employee {!isSystemAdmin && <span className="lux-required">*</span>}
+              <select
+                className="lux-input"
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                disabled={busy || employeesLoading || isSystemAdmin}
+              >
+                <option value="">
+                  {employeesLoading ? "Loading employees…" : "— Select employee —"}
+                </option>
+
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.employeeCode ? `${e.employeeCode} · ` : ""}
+                    {e.fullName}
+                    {e.departmentName ? ` · ${e.departmentName}` : ""}
+                    {e.branchName ? ` · ${e.branchName}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedEmployee ? (
+              <div className="lux-employeeCard">
+                <div className="lux-employeeCard__name">
+                  {selectedEmployee.fullName}
+                </div>
+                <div className="lux-employeeCard__meta">
+                  {selectedEmployee.employeeCode ?? "—"} ·{" "}
+                  {selectedEmployee.branchName ?? "No branch"} ·{" "}
+                  {selectedEmployee.departmentName ?? "No department"}
+                </div>
+                <div className="lux-employeeCard__meta">
+                  Position: {selectedEmployee.positionName ?? "—"}
+                </div>
+              </div>
             ) : (
-              <div className="lux-hint">Looks good.</div>
+              <div className="lux-hint">
+                Only active employees without user accounts are listed.
+              </div>
             )}
-          </label>
+          </section>
+        )}
 
-          {/* Username */}
-          <label className="lux-field">
-            <div className="lux-labelRow">
-              <span className="lux-label">Username</span>
-              {!userNameTrim ? (
-                <span className="lux-pill lux-pill--muted">Required</span>
-              ) : (
-                <span className="lux-pill lux-pill--ok">Set</span>
-              )}
-            </div>
+        <section className="lux-panel">
+          <div className="lux-panel__title">Login Credentials</div>
 
+          <label className="lux-label">
+            Username <span className="lux-required">*</span>
             <input
               className="lux-input"
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
+              placeholder="e.g. emp001"
               disabled={busy}
-              placeholder="e.g. j.smith"
-              autoComplete="username"
             />
-
-            <div className="lux-hint">Used internally and in audit logs.</div>
           </label>
 
-          {/* Password (create only) */}
-          {mode === "create" ? (
-            <label className="lux-field lux-field--span2">
-              <div className="lux-labelRow">
-                <span className="lux-label">Temporary password</span>
-                <span className="lux-pill lux-pill--muted">Min 6 chars</span>
-              </div>
+          <label className="lux-label">
+            Email <span className="lux-required">*</span>
+            <input
+              className="lux-input"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="user@company.com"
+              disabled={busy}
+            />
+          </label>
 
+          {isCreate && (
+            <label className="lux-label">
+              Temporary Password <span className="lux-required">*</span>
               <input
                 className="lux-input"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="Minimum 6 characters"
                 disabled={busy}
-                placeholder="Create a temporary password…"
-                autoComplete="new-password"
               />
-
-              <div className={passwordTrim.length > 0 && !passwordOk ? "lux-hint lux-hint--warn" : "lux-hint"}>
-                {passwordTrim.length > 0 && !passwordOk
-                  ? "Password is too short."
-                  : "User can change this after first login (server policy still applies)."}
-              </div>
             </label>
-          ) : null}
+          )}
 
-          {/* Roles */}
-          <label className="lux-field lux-field--span2">
-            <div className="lux-labelRow">
-              <span className="lux-label">Roles</span>
-              <span className="lux-pill lux-pill--muted">Comma separated</span>
-            </div>
-
+          <label className="lux-check">
             <input
-              className="lux-input"
-              value={roles}
-              onChange={(e) => setRoles(e.target.value)}
+              type="checkbox"
+              checked={isActive}
+              onChange={(e) => setIsActive(e.target.checked)}
               disabled={busy}
-              placeholder="Admin, Manager"
-              autoComplete="off"
             />
-
-            {roleList.length > 0 ? (
-              <div className="lux-chipRow" aria-label="Selected roles">
-                {roleList.map((r) => (
-                  <span key={r} className="lux-chip">
-                    {r}
-                    <button
-                      type="button"
-                      className="lux-chipX"
-                      onClick={() => removeRole(r)}
-                      disabled={busy}
-                      aria-label={`Remove role ${r}`}
-                      title="Remove"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <div className="lux-hint">Add roles to grant initial access.</div>
-            )}
+            Active account
           </label>
-        </div>
+        </section>
       </div>
 
-      <div className="lux-divider" />
+      <section className="lux-panel" style={{ marginTop: 16 }}>
+        <div className="lux-panel__title">Roles & Access</div>
 
-      {/* Footer */}
-      <div className="lux-modalFooter">
-        <button className="lux-btn" onClick={onCancel} disabled={busy} type="button">
+        <div className="lux-roleGrid">
+          {ROLE_OPTIONS.map((role) => (
+            <label key={role} className="lux-rolePill">
+              <input
+                type="checkbox"
+                checked={roles.includes(role)}
+                onChange={() => toggleRole(role)}
+                disabled={busy}
+              />
+              <span>{role}</span>
+            </label>
+          ))}
+        </div>
+
+        {isSystemAdmin && (
+          <div className="lux-hint" style={{ marginTop: 10 }}>
+            SystemAdmin is treated as a technical account and does not require an employee.
+          </div>
+        )}
+      </section>
+
+      <div className="lux-form__actions">
+        <button className="lux-btn" type="button" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
 
         <button
           className="lux-btn lux-btn--primary"
-          onClick={() => void submit()}
-          disabled={!canSubmit}
           type="button"
+          onClick={submit}
+          disabled={busy}
         >
-          {busy ? "Saving…" : mode === "create" ? "Create user" : "Save changes"}
+          {busy ? "Saving…" : isCreate ? "Create User" : "Save Changes"}
         </button>
       </div>
     </div>

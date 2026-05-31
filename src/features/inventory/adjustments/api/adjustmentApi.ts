@@ -1,109 +1,173 @@
 // src/features/inventory/adjustments/api/adjustmentApi.ts
 
 import { http } from "../../../../api/http";
-
 import type {
   InventoryAdjustmentDto,
-  CreateAdjustmentFromSivDto,
-  UpdateAdjustmentCountDto,
-  AdjustmentActionDto,
-  InventoryItemOption,
-  ManualAdjustmentCreateDto,
+  AdjustmentCandidateDto,
+  AdjustmentFifoItemDto,
+  CreateAdjustmentDraftCommand as CreateAdjustmentCommand,
+  UpdateAdjustmentDraftCommand as UpdateAdjustmentCommand,
 } from "../types";
 
-export type ListAdjustmentsParams = {
-  branchId?: string;
-  locationId?: string;
-  status?: string;
-};
+// ── URL builder ───────────────────────────────────────────────────────────────
 
-const baseUrl = (companyId: string) =>
-  `/companies/${companyId}/inventory-adjustments`;
+const base = (companyId: string, branchId: string) =>
+  `/companies/${companyId}/branches/${branchId}/inventory-adjustments`;
 
-const lookupBaseUrl = (companyId: string) =>
-  `${baseUrl(companyId)}/lookups`;
+// ── Error extraction ──────────────────────────────────────────────────────────
 
-function clean(params?: ListAdjustmentsParams) {
-  return {
-    ...(params?.branchId ? { branchId: params.branchId } : {}),
-    ...(params?.locationId ? { locationId: params.locationId } : {}),
-    ...(params?.status ? { status: params.status } : {}),
-  };
+/**
+ * Extracts a human-readable message from any API error.
+ * Handles:
+ *  - 422 { error: "message" }   (our business-rule failures)
+ *  - 400 { title, errors }       (ASP.NET validation)
+ *  - plain string bodies
+ *  - network/axios errors
+ */
+export function getApiError(e: unknown, fallback: string): string {
+  const err = e as any;
+  const data = err?.response?.data;
+  if (typeof data === "string" && data.trim()) return data.trim();
+  if (data?.error)   return String(data.error);
+  if (data?.message) return String(data.message);
+  if (data?.title)   return String(data.title);
+  return err?.message ?? fallback;
 }
 
+// ── API client ────────────────────────────────────────────────────────────────
+
 export const adjustmentApi = {
-  list: async (
+
+  // ── Lookups ──────────────────────────────────────────────────────────────────
+
+  /** FIFO-aware item list for the typeahead search at a location. */
+  fifoItems: (
+    companyId:  string,
+    branchId:   string,
+    locationId: string,
+    q?:         string
+  ): Promise<AdjustmentFifoItemDto[]> =>
+    http
+      .get<AdjustmentFifoItemDto[]>(
+        `${base(companyId, branchId)}/lookups/fifo-items`,
+        { params: { locationId, ...(q ? { q } : {}) } }
+      )
+      .then((r) => (Array.isArray(r.data) ? r.data : [])),
+
+  /** Open FIFO lots at a location for the adjustment line picker. */
+  candidates: (
+    companyId:  string,
+    branchId:   string,
+    locationId: string,
+    params?: { itemId?: string; search?: string }
+  ): Promise<AdjustmentCandidateDto[]> =>
+    http
+      .get<AdjustmentCandidateDto[]>(
+        `${base(companyId, branchId)}/lookups/candidates`,
+        { params: { locationId, ...params } }
+      )
+      .then((r) => (Array.isArray(r.data) ? r.data : [])),
+
+  // ── Queries ──────────────────────────────────────────────────────────────────
+
+  list: (
     companyId: string,
-    params?: ListAdjustmentsParams
+    branchId:  string,
+    params?: { locationId?: string | null; status?: string | null }
   ): Promise<InventoryAdjustmentDto[]> => {
-    const { data } = await http.get(baseUrl(companyId), {
-      params: clean(params),
-    });
-    return Array.isArray(data) ? data : [];
+    const query: Record<string, string> = {};
+    if (params?.locationId) query.locationId = params.locationId;
+    if (params?.status)     query.status     = params.status;
+    return http
+      .get<InventoryAdjustmentDto[]>(base(companyId, branchId), { params: query })
+      .then((r) => (Array.isArray(r.data) ? r.data : []));
   },
- fifoItems: async (
+
+  get: (
+    companyId:    string,
+    branchId:     string,
+    adjustmentId: string
+  ): Promise<InventoryAdjustmentDto> =>
+    http
+      .get<InventoryAdjustmentDto>(`${base(companyId, branchId)}/${adjustmentId}`)
+      .then((r) => r.data),
+
+  // ── Draft lifecycle ───────────────────────────────────────────────────────────
+
+  /**
+   * Creates a new Draft adjustment.
+   * CompanyId and BranchId are injected from route scope; do not include in cmd.
+   */
+  createDraft: (
     companyId: string,
-    params: { branchId: string; locationId: string; q?: string }
-  ): Promise<InventoryItemOption[]> => {
-    const { data } = await http.get(
-      `${lookupBaseUrl(companyId)}/fifo-items`,
-      { params }
-    );
-    return Array.isArray(data) ? data : [];
-  },
-  get: async (
-    companyId: string,
-    id: string
-  ): Promise<InventoryAdjustmentDto> => {
-    const { data } = await http.get(`${baseUrl(companyId)}/${id}`);
-    return data;
-  },
+    branchId:  string,
+    cmd:       Omit<CreateAdjustmentCommand, "companyId" | "branchId">
+  ): Promise<{ id: string }> =>
+    http
+      .post<{ id: string }>(base(companyId, branchId), cmd)
+      .then((r) => r.data),
 
-  createFromSiv: async (
-    companyId: string,
-    sivId: string,
-    payload: CreateAdjustmentFromSivDto
-  ): Promise<InventoryAdjustmentDto> => {
-    const { data } = await http.post(
-      `${baseUrl(companyId)}/from-siv/${sivId}`,
-      payload
-    );
-    return data;
-  },
+  /**
+   * Replaces lines and header fields of a Draft adjustment.
+   * CompanyId, BranchId, and Id are route params; do not include in cmd.
+   */
+  updateDraft: (
+    companyId:    string,
+    branchId:     string,
+    adjustmentId: string,
+    cmd:          Omit<UpdateAdjustmentCommand, "companyId" | "branchId" | "id">
+  ): Promise<void> =>
+    http
+      .put(`${base(companyId, branchId)}/${adjustmentId}`, cmd)
+      .then(() => undefined),
 
-  createManual: async (
-    companyId: string,
-    payload: ManualAdjustmentCreateDto
-  ): Promise<InventoryAdjustmentDto> => {
-    const { data } = await http.post(`${baseUrl(companyId)}/manual`, payload);
-    return data;
-  },
+  // ── Workflow transitions ──────────────────────────────────────────────────────
 
-  updateDraftCount: async (
-    companyId: string,
-    id: string,
-    payload: UpdateAdjustmentCountDto
-  ): Promise<void> => {
-    await http.put(`${baseUrl(companyId)}/${id}/draft-count`, payload);
-  },
+  submit: (
+    companyId:    string,
+    branchId:     string,
+    adjustmentId: string
+  ): Promise<void> =>
+    http
+      .post(`${base(companyId, branchId)}/${adjustmentId}/submit`)
+      .then(() => undefined),
 
-  submit: async (companyId: string, id: string): Promise<void> => {
-    await http.post(`${baseUrl(companyId)}/${id}/submit`);
-  },
+  approve: (
+    companyId:    string,
+    branchId:     string,
+    adjustmentId: string,
+    note?:        string
+  ): Promise<void> =>
+    http
+      .post(`${base(companyId, branchId)}/${adjustmentId}/approve`, { note: note ?? null })
+      .then(() => undefined),
 
-  approve: async (companyId: string, id: string): Promise<void> => {
-    await http.post(`${baseUrl(companyId)}/${id}/approve`);
-  },
+  reject: (
+    companyId:    string,
+    branchId:     string,
+    adjustmentId: string,
+    note:         string
+  ): Promise<void> =>
+    http
+      .post(`${base(companyId, branchId)}/${adjustmentId}/reject`, { note })
+      .then(() => undefined),
 
-  post: async (companyId: string, id: string): Promise<void> => {
-    await http.post(`${baseUrl(companyId)}/${id}/post`);
-  },
+  post: (
+    companyId:    string,
+    branchId:     string,
+    adjustmentId: string
+  ): Promise<void> =>
+    http
+      .post(`${base(companyId, branchId)}/${adjustmentId}/post`)
+      .then(() => undefined),
 
-  reverse: async (
-    companyId: string,
-    id: string,
-    payload: AdjustmentActionDto
-  ): Promise<void> => {
-    await http.post(`${baseUrl(companyId)}/${id}/reverse`, payload);
-  },
+  reverse: (
+    companyId:    string,
+    branchId:     string,
+    adjustmentId: string,
+    reason:       string
+  ): Promise<void> =>
+    http
+      .post(`${base(companyId, branchId)}/${adjustmentId}/reverse`, { reason })
+      .then(() => undefined),
 };

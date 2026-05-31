@@ -1,4 +1,3 @@
-
 export const STOCK_TRANSFER_STATUS = {
   Draft: "Draft",
   Submitted: "Submitted",
@@ -7,20 +6,22 @@ export const STOCK_TRANSFER_STATUS = {
   Posted: "Posted",
   Reversed: "Reversed",
   Cancelled: "Cancelled",
+  Failed: "Failed",
+  Issued: "Issued",
+  ChangesRequested: "ChangesRequested"
 } as const;
 
 export type StockTransferStatus =
-  typeof STOCK_TRANSFER_STATUS[keyof typeof STOCK_TRANSFER_STATUS];
-
+  (typeof STOCK_TRANSFER_STATUS)[keyof typeof STOCK_TRANSFER_STATUS];
 
 export type StockLocationDto = {
   id: string;
   companyId: string;
-  branchId?: string | null;
+  branchId: string;
 
-  name: string;
   code?: string | null;
-  type: string|null;
+  name: string;
+  type?: string | null;
 
   address?: string | null;
   phone?: string | null;
@@ -28,14 +29,49 @@ export type StockLocationDto = {
   isActive: boolean;
 };
 
+export type BranchOptionDto = {
+  id: string;
+  code?: string | null;
+  name: string;
+  label?: string | null;
+};
+
+export type UomOptionDto = {
+  id: string;
+  code: string;
+  name?: string | null;
+};
+
+export type ItemOptionDto = {
+  id: string;
+  itemId: string;
+
+  code: string;
+  name: string;
+  label: string;
+
+  defaultUomId?: string | null;
+
+  baseUom: {
+    id: string;
+    code: string;
+    name?: string | null;
+  };
+};
+
 export type StockTransferListDto = {
-  id: string; // internal, not shown in UI
+  id: string;
   transferNumber: string;
   transferDateUtc: string;
   status: StockTransferStatus;
-  reference?: string | null;
 
+  reference?: string | null;
+  notes?: string | null;
+
+  fromLocationId?: string | null;
   fromLocationName: string;
+
+  toLocationId?: string | null;
   toLocationName: string;
 
   totalQuantity: number;
@@ -43,33 +79,42 @@ export type StockTransferListDto = {
 };
 
 export type StockTransferLineDto = {
-  id: string; // internal, not shown
-  itemCode: string; // SKU/Code
+  id: string;
+
+  itemId?: string | null;
+  itemCode: string;
   itemName: string;
+
+  uomId?: string | null;
   uom: string;
+
   quantity: number;
 
   avgUnitCost?: number | null;
   lineValue?: number | null;
+
+  notes?: string | null;
 };
 
 export type StockTransferDetailDto = {
-  id: string; // internal, not shown
+  id: string;
 
   transferNumber: string;
   transferDateUtc: string;
   status: StockTransferStatus;
-  reference?: string | null;
 
+  reference?: string | null;
+  notes?: string | null;
+
+  fromLocationId: string;
   fromLocationName: string;
+
+  toLocationId: string;
   toLocationName: string;
-  fromLocationId:string,
-  toLocationId:string,
 
   totalQuantity: number;
   totalValue?: number | null;
 
-  // audit
   submittedBy?: string | null;
   submittedAtUtc?: string | null;
 
@@ -86,53 +131,47 @@ export type StockTransferDetailDto = {
   items: StockTransferLineDto[];
 };
 
-export type BranchOptionDto = {
-  code: string;
-  name: string;
-};
-
-export type ItemOptionDto = {
-  code: string;
-  name: string;
-  baseUom: string;
+export type CreateStockTransferLineRequest = {
+  itemId: string;
+  unitId: string;
+  quantity: number;
+  notes?: string | null;
 };
 
 export type CreateStockTransferRequest = {
-  companyId: string;
-  fromLocationCode?: string; // default "HQ"
-  toLocationCode: string;
-  reference?: string | null;
-  transferDateUtc?: string | null;
-  items: { itemCode: string; quantity: number }[];
-};
-export type UpdateStockTransferRequest = {
-  companyId: string;
-  fromLocationCode?: string; // default "HQ"
-  toLocationCode: string;
-  reference?: string | null;
-  transferDate?: string | null;
-  items: { 
-    inventoryItemId: string;
-    quantity: number;
-    unitId: string;
-    notes?: string | null; }[];
-};
-export type StockLocationFilter = {
-  companyId: string;
-  branchId: string;          // required for "only selected branch"
-  q?: string | null;         // optional search
-  activeOnly?: boolean;      // default true
-};
-export type CreateStockTransferRequestDto = {
-  companyId: string;
   fromLocationId: string;
   toLocationId: string;
-  requestedAtUtc?: string | null; // string, not Date
+  requestedAtUtc?: string | null;
   notes?: string | null;
-  lines: Array<{
-    inventoryItemId: string;
-    quantity: number;
-    unitId: string;
-    notes?: string | null;
-  }>;
+  lines: CreateStockTransferLineRequest[];
+};
+
+export type UpdateStockTransferLineRequest = {
+  itemId: string;
+  unitId: string;
+  quantity: number;
+  notes?: string | null;
+};
+
+export type UpdateStockTransferRequest = {
+  fromLocationId: string;
+  toLocationId: string;
+  requestedAtUtc?: string | null;
+  notes?: string | null;
+  lines: UpdateStockTransferLineRequest[];
+};
+
+export type RejectStockTransferRequest = {
+  reason: string;
+};
+
+export type CancelStockTransferRequest = {
+  reason?: string | null;
+};
+
+export type StockLocationFilter = {
+  companyId: string;
+  branchId: string;
+  q?: string | null;
+  activeOnly?: boolean;
 };

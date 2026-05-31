@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import "./roles-permissions.css";
+import { useAppScope } from "../../../app/useAppScope";
+import { useAuth } from "../../../auth/AuthProvider";
+import { usePageMeta } from "../../../hooks/usePageMeta";
+
 import {
   securityApi,
   type PermissionDto,
@@ -7,284 +10,298 @@ import {
   type RoleDetailDto,
   type UserLiteDto,
 } from "../api/securityApi";
-//import { hasPermission } from "../../../auth/auth.storage";
-import { usePageMeta } from "../../../hooks/usePageMeta";
-import { useAppScope } from "../../../app/useAppScope";
+
+import {
+  groupPermissions,
+  isPermissionsDirty,
+  extractSecurityError,
+  userDisplayName,
+  userInitials,
+} from "../utils/security.utils";
+
+import {
+  T, Btn, Input, Alert, Badge, Avatar, StatCard,
+  PermDot, SkeletonRows, EmptyState, SectionHead,
+  Drawer, Field, Spinner,
+} from "../components/security.ui";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type TabKey = "permissions" | "users";
 
-const cx = (...xs: Array<string | false | undefined | null>) =>
-  xs.filter(Boolean).join(" ");
-
-function groupPermissions(perms: PermissionDto[]) {
-  const map = new Map<string, PermissionDto[]>();
-  for (const p of perms) {
-    const g = p.group || "Other";
-    if (!map.has(g)) map.set(g, []);
-    map.get(g)!.push(p);
-  }
-
-  return [...map.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([group, items]) => ({
-      group,
-      items: items.sort((a, b) => a.key.localeCompare(b.key)),
-    }));
-}
-
-function getErrorMessage(e: unknown, fallback: string) {
-  return e instanceof Error ? e.message : fallback;
-}
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function RolesPermissionsPage() {
-  usePageMeta({
-    title: "Roles & Permissions",
-    subtitle: "Secure access control across modules",
-  });
+  usePageMeta({ title: "Roles & Permissions", subtitle: "Role-based access control" });
 
-  // Permissions
-  const canView = true;// hasPermission("roles.view") || hasPermission("users.view");
-  const canManageRoles = true;// hasPermission("roles.manage");
   const { companyId } = useAppScope();
+  const { hasPermission } = useAuth();
 
-  // Core state
-  const [roles, setRoles] = useState<RoleDto[]>([]);
-  const [permissions, setPermissions] = useState<PermissionDto[]>([]);
+  const canView        = hasPermission("roles.view") || hasPermission("users.view");
+  const canManageRoles = hasPermission("roles.manage");
+
+  // ── Core state ─────────────────────────────────────────────────────────────
+
+  const [roles,          setRoles]          = useState<RoleDto[]>([]);
+  const [permissions,    setPermissions]    = useState<PermissionDto[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [roleDetail,     setRoleDetail]     = useState<RoleDetailDto | null>(null);
 
-  const [roleDetail, setRoleDetail] = useState<RoleDetailDto | null>(null);
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailError,   setDetailError]   = useState<string | null>(null);
+  const [saveError,     setSaveError]     = useState<string | null>(null);
+  const [saveOk,        setSaveOk]        = useState(false);
 
   const [tab, setTab] = useState<TabKey>("permissions");
 
-  // Search
+  // ── Search ─────────────────────────────────────────────────────────────────
+
   const [roleSearch, setRoleSearch] = useState("");
   const [permSearch, setPermSearch] = useState("");
 
-  // Permissions staging (editable set)
-  const [stagedPermissions, setStagedPermissions] = useState<string[]>([]);
-  const stagedSet = useMemo(() => new Set(stagedPermissions), [stagedPermissions]);
+  // ── Permissions staging ────────────────────────────────────────────────────
 
-  const isDirty = useMemo(() => {
-    const base = new Set(roleDetail?.permissionKeys ?? []);
-    if (base.size !== stagedSet.size) return true;
-    for (const k of stagedSet) if (!base.has(k)) return true;
-    return false;
-  }, [roleDetail, stagedSet]);
+  const [staged, setStaged] = useState<string[]>([]);
+  const stagedSet = useMemo(() => new Set(staged), [staged]);
+  const isDirty   = useMemo(() => isPermissionsDirty(roleDetail?.permissionKeys ?? [], staged), [roleDetail, staged]);
 
-  const permissionGroups = useMemo(
-    () => groupPermissions(permissions),
-    [permissions]
-  );
+  const permGroups = useMemo(() => groupPermissions(permissions), [permissions]);
 
-  // Users tab state
-  const [userSearch, setUserSearch] = useState("");
-  const [userResults, setUserResults] = useState<UserLiteDto[]>([]);
+  // ── Users tab ──────────────────────────────────────────────────────────────
+
+  const [userSearch,        setUserSearch]        = useState("");
+  const [userResults,       setUserResults]       = useState<UserLiteDto[]>([]);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
-  const [userSearchError, setUserSearchError] = useState<string | null>(null);
+  const [userSearchError,   setUserSearchError]   = useState<string | null>(null);
   const userSearchTimer = useRef<number | null>(null);
 
-  // Avoid setting state after unmount
-  const aliveRef = useRef(true);
+  // ── Drawers ────────────────────────────────────────────────────────────────
+
+  const [showRoleDrawer,  setShowRoleDrawer]  = useState(false);
+  const [editingRole,     setEditingRole]     = useState<RoleDto | null>(null);
+  const [roleName,        setRoleName]        = useState("");
+  const [roleDesc,        setRoleDesc]        = useState("");
+  const [roleSaving,      setRoleSaving]      = useState(false);
+  const [roleDrawerError, setRoleDrawerError] = useState<string | null>(null);
+
+  // ── Unmount guard ──────────────────────────────────────────────────────────
+
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+
+  // ── Load roles + permissions ───────────────────────────────────────────────
+
   useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
-
-  // Load roles + permissions
-  useEffect(() => {
-    if (!canView) return;
-
-    setLoading(true);
-    setError(null);
-
+    if (!canView || !companyId) return;
+    setLoading(true); setError(null);
     Promise.all([securityApi.listRoles(companyId), securityApi.listPermissions(companyId)])
       .then(([r, p]) => {
-        if (!aliveRef.current) return;
-        setRoles(r ?? []);
-        setPermissions(p ?? []);
+        if (!alive.current) return;
+        setRoles(r ?? []); setPermissions(p ?? []);
       })
-      .catch((e: unknown) => {
-        if (!aliveRef.current) return;
-        setError(getErrorMessage(e, "Failed to load security data"));
-      })
-      .finally(() => {
-        if (!aliveRef.current) return;
-        setLoading(false);
-      });
-  }, [canView]);
+      .catch((e) => { if (alive.current) setError(extractSecurityError(e, "Failed to load security data")); })
+      .finally(() => { if (alive.current) setLoading(false); });
+  }, [canView, companyId]);
 
-  // Load role detail
+  // ── Load role detail ───────────────────────────────────────────────────────
+
   useEffect(() => {
-    if (!selectedRoleId) {
-      setRoleDetail(null);
-      setStagedPermissions([]);
-      setDetailError(null);
-      return;
+    if (!selectedRoleId || !companyId) {
+      setRoleDetail(null); setStaged([]); setDetailError(null); return;
     }
-
-    setDetailLoading(true);
-    setDetailError(null);
-
-    securityApi
-      .getRole(companyId, selectedRoleId)
+    setDetailLoading(true); setDetailError(null); setSaveError(null); setSaveOk(false);
+    securityApi.getRole(companyId, selectedRoleId)
       .then((r) => {
-        if (!aliveRef.current) return;
-        setRoleDetail(r);
-        setStagedPermissions(r.permissionKeys ?? []);
+        if (!alive.current) return;
+        setRoleDetail(r); setStaged(r.permissionKeys ?? []);
       })
-      .catch((e: unknown) => {
-        if (!aliveRef.current) return;
-        setDetailError(getErrorMessage(e, "Failed to load role details"));
-      })
-      .finally(() => {
-        if (!aliveRef.current) return;
-        setDetailLoading(false);
-      });
-  }, [selectedRoleId]);
+      .catch((e) => { if (alive.current) setDetailError(extractSecurityError(e, "Failed to load role")); })
+      .finally(() => { if (alive.current) setDetailLoading(false); });
+  }, [selectedRoleId, companyId]);
 
-  // Derived: filtered roles
+  // ── Filtered roles ─────────────────────────────────────────────────────────
+
   const filteredRoles = useMemo(() => {
     const q = roleSearch.trim().toLowerCase();
     if (!q) return roles;
     return roles.filter((r) =>
-      `${r.name ?? ""} ${r.description ?? ""}`.toLowerCase().includes(q)
+      `${r.name} ${r.description ?? ""}`.toLowerCase().includes(q)
     );
   }, [roles, roleSearch]);
 
-  // Actions: permissions
-  function togglePermission(key: string) {
-    setStagedPermissions((prev) => {
+  // ── Permission actions ─────────────────────────────────────────────────────
+
+  const togglePermission = (key: string) => {
+    setStaged((prev) => {
       const s = new Set(prev);
       s.has(key) ? s.delete(key) : s.add(key);
       return [...s].sort();
     });
-  }
+  };
 
-  function bulkToggle(group: string, on: boolean) {
-    const items = permissionGroups.find((g) => g.group === group)?.items ?? [];
-    setStagedPermissions((prev) => {
+  const bulkToggle = (group: string, on: boolean) => {
+    const items = permGroups.find((g) => g.group === group)?.items ?? [];
+    setStaged((prev) => {
       const s = new Set(prev);
       for (const p of items) on ? s.add(p.key) : s.delete(p.key);
       return [...s].sort();
     });
-  }
+  };
 
   async function savePermissions() {
-    if (!canManageRoles || !roleDetail) return;
-
+    if (!canManageRoles || !roleDetail || !companyId) return;
+    setSaveError(null); setSaveOk(false);
     try {
-      await securityApi.setRolePermissions(companyId, roleDetail.role.id, stagedPermissions);
+      await securityApi.setRolePermissions(companyId, roleDetail.role.id, staged);
       const d = await securityApi.getRole(companyId, roleDetail.role.id);
-      if (!aliveRef.current) return;
-      setRoleDetail(d);
-      setStagedPermissions(d.permissionKeys ?? []);
-    } catch (e: unknown) {
-      alert(getErrorMessage(e, "Failed to save permissions"));
+      if (!alive.current) return;
+      setRoleDetail(d); setStaged(d.permissionKeys ?? []);
+      setSaveOk(true);
+      setTimeout(() => { if (alive.current) setSaveOk(false); }, 3000);
+    } catch (e) {
+      setSaveError(extractSecurityError(e, "Failed to save permissions"));
     }
   }
 
-  function resetPermissions() {
-    setStagedPermissions(roleDetail?.permissionKeys ?? []);
-  }
+  // ── User search (debounced) ────────────────────────────────────────────────
 
-  // Debounced user search (Users tab)
   useEffect(() => {
-    if (tab !== "users") return;
-    if (!selectedRoleId) return;
-
-    const q = userSearch.trim();
+    if (tab !== "users" || !selectedRoleId || !companyId) return;
     if (userSearchTimer.current) window.clearTimeout(userSearchTimer.current);
-
-    if (!q) {
-      setUserResults([]);
-      setUserSearchLoading(false);
-      setUserSearchError(null);
-      return;
-    }
-
+    const q = userSearch.trim();
+    if (!q) { setUserResults([]); return; }
     userSearchTimer.current = window.setTimeout(async () => {
+      setUserSearchLoading(true); setUserSearchError(null);
       try {
-        setUserSearchLoading(true);
-        setUserSearchError(null);
         const r = await securityApi.searchUsers(companyId, q);
-        if (!aliveRef.current) return;
-        setUserResults(r ?? []);
-      } catch (e: unknown) {
-        if (!aliveRef.current) return;
-        setUserSearchError(getErrorMessage(e, "User search failed"));
+        if (alive.current) setUserResults(r ?? []);
+      } catch (e) {
+        if (alive.current) setUserSearchError(extractSecurityError(e, "User search failed"));
       } finally {
-        if (!aliveRef.current) return;
-        setUserSearchLoading(false);
+        if (alive.current) setUserSearchLoading(false);
       }
     }, 350);
-
-    return () => {
-      if (userSearchTimer.current) window.clearTimeout(userSearchTimer.current);
-    };
-  }, [userSearch, tab, selectedRoleId]);
+    return () => { if (userSearchTimer.current) window.clearTimeout(userSearchTimer.current); };
+  }, [userSearch, tab, selectedRoleId, companyId]);
 
   async function addUser(userId: string) {
-    if (!canManageRoles || !roleDetail) return;
+    if (!canManageRoles || !roleDetail || !companyId) return;
     try {
       await securityApi.addUserToRole(companyId, roleDetail.role.id, userId);
       const d = await securityApi.getRole(companyId, roleDetail.role.id);
-      if (!aliveRef.current) return;
-      setRoleDetail(d);
-      setUserSearch("");
-      setUserResults([]);
-    } catch (e: unknown) {
-      alert(getErrorMessage(e, "Failed to add user to role"));
+      if (!alive.current) return;
+      setRoleDetail(d); setUserSearch(""); setUserResults([]);
+    } catch (e) {
+      setUserSearchError(extractSecurityError(e, "Failed to add user"));
     }
   }
 
-  // Guard: no view permission
+  async function removeUser(userId: string) {
+    if (!canManageRoles || !roleDetail || !companyId) return;
+    try {
+      await securityApi.removeUserFromRole(companyId, roleDetail.role.id, userId);
+      const d = await securityApi.getRole(companyId, roleDetail.role.id);
+      if (alive.current) setRoleDetail(d);
+    } catch (e) {
+      setUserSearchError(extractSecurityError(e, "Failed to remove user"));
+    }
+  }
+
+  // ── Role drawer ────────────────────────────────────────────────────────────
+
+  function openCreateDrawer() {
+    setEditingRole(null); setRoleName(""); setRoleDesc(""); setRoleDrawerError(null); setShowRoleDrawer(true);
+  }
+
+  function openEditDrawer(role: RoleDto) {
+    setEditingRole(role); setRoleName(role.name); setRoleDesc(role.description ?? ""); setRoleDrawerError(null); setShowRoleDrawer(true);
+  }
+
+  async function saveRole() {
+    if (!companyId) return;
+    const name = roleName.trim();
+    if (!name) { setRoleDrawerError("Name is required."); return; }
+    setRoleSaving(true); setRoleDrawerError(null);
+    try {
+      if (editingRole) {
+        await securityApi.updateRole(companyId, editingRole.id, { name, description: roleDesc.trim() || null });
+      } else {
+        const newId = await securityApi.createRole(companyId, { name, description: roleDesc.trim() || null });
+        if (newId) setSelectedRoleId(newId);
+      }
+      const refreshed = await securityApi.listRoles(companyId);
+      if (alive.current) { setRoles(refreshed ?? []); setShowRoleDrawer(false); }
+    } catch (e) {
+      if (alive.current) setRoleDrawerError(extractSecurityError(e, "Failed to save role"));
+    } finally {
+      if (alive.current) setRoleSaving(false);
+    }
+  }
+
+  async function deleteRole(role: RoleDto) {
+    if (!canManageRoles || !companyId) return;
+    if (!window.confirm(`Delete role "${role.name}"? This cannot be undone.`)) return;
+    try {
+      await securityApi.deleteRole(companyId, role.id);
+      const refreshed = await securityApi.listRoles(companyId);
+      if (!alive.current) return;
+      setRoles(refreshed ?? []);
+      if (selectedRoleId === role.id) setSelectedRoleId(null);
+    } catch (e) {
+      setError(extractSecurityError(e, "Failed to delete role"));
+    }
+  }
+
+  function switchRole(id: string) {
+    if (isDirty && !window.confirm("Discard unsaved permission changes?")) return;
+    setSelectedRoleId(id); setTab("permissions"); setUserSearch(""); setUserResults([]);
+  }
+
+  // ── Guards ─────────────────────────────────────────────────────────────────
+
   if (!canView) {
     return (
-      <div className="rp-shell">
-        <div className="rp-empty">
-          <div className="rp-emptyIcon">🔒</div>
-          <div className="rp-emptyTitle">Access denied</div>
-          <div className="rp-emptySub">You don’t have permission to view this page.</div>
-        </div>
+      <div style={shell}>
+        <EmptyState icon="🔒" title="Access denied" sub="You don't have permission to view this page." />
       </div>
     );
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div className="rp-shell">
-      {/* Top Bar */}
-      <div className="rp-topbar">
-        <div className="rp-topbarLeft">
-          <div className="rp-pageTitle">Roles & Permissions</div>
-          <div className="rp-pageSubtitle">Role-based access control</div>
+    <div style={shell}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 20 }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 600, color: T.text, margin: 0, fontFamily: T.font }}>
+            Roles & Permissions
+          </h1>
+          <p style={{ fontSize: 13, color: T.muted, margin: "4px 0 0", fontFamily: T.font }}>
+            Role-based access control across all modules
+          </p>
         </div>
+        {canManageRoles && (
+          <Btn variant="primary" onClick={openCreateDrawer}>+ New role</Btn>
+        )}
       </div>
 
-      {error && (
-        <div className="rp-alert rp-alertError" style={{ marginBottom: 12 }}>
-          <div className="rp-alertTitle">Couldn’t load</div>
-          <div className="rp-alertBody">{error}</div>
-        </div>
-      )}
+      {error && <Alert type="error" title="Failed to load" body={error} />}
 
-      <div className="rp-grid">
-        {/* LEFT: Roles */}
-        <aside className="rp-panel">
-          <div className="rp-panelHeader">
-            <div className="rp-panelTitle">Roles</div>
-            <div className="rp-pill">{roles.length}</div>
+      {/* Two-column layout */}
+      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 14, alignItems: "start" }}>
+
+        {/* ── Left: Role list ── */}
+        <aside style={{ ...card, overflow: "hidden" }}>
+          <div style={panelHead}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Roles</span>
+            <Badge label={String(roles.length)} />
           </div>
 
-          <div className="rp-search">
-            <input
+          <div style={{ padding: "10px 12px", borderBottom: `1px solid ${T.border}` }}>
+            <Input
               value={roleSearch}
               onChange={(e) => setRoleSearch(e.target.value)}
               placeholder="Search roles…"
@@ -292,39 +309,51 @@ export default function RolesPermissionsPage() {
           </div>
 
           {loading ? (
-            <div className="rp-muted">Loading…</div>
+            <SkeletonRows count={5} />
           ) : filteredRoles.length === 0 ? (
-            <div className="rp-muted">No roles found.</div>
+            <EmptyState icon="🎭" title="No roles" sub={roleSearch ? "No matches." : "Create your first role."} />
           ) : (
-            <div className="rp-roleList">
+            <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
               {filteredRoles.map((r) => {
                 const active = r.id === selectedRoleId;
                 return (
                   <button
                     key={r.id}
-                    className={cx("rp-roleRow", active && "is-active")}
-                    onClick={() => {
-                      // Warn if switching role while unsaved changes exist
-                      if (isDirty) {
-                        const ok = confirm("You have unsaved permission changes. Discard them?");
-                        if (!ok) return;
-                      }
-                      setSelectedRoleId(r.id);
-                      setTab("permissions");
-                      setUserSearch("");
-                      setUserResults([]);
+                    onClick={() => switchRole(r.id)}
+                    style={{
+                      width: "100%", display: "flex", gap: 10, alignItems: "center",
+                      justifyContent: "space-between", padding: "10px 12px",
+                      borderRadius: T.radiusLg, cursor: "pointer", textAlign: "left",
+                      fontFamily: T.font,
+                      background: active ? T.accent : T.bgSec,
+                      border: `1px solid ${active ? T.accent : T.border}`,
+                      color: active ? "#fff" : T.text,
+                      transition: "all 0.1s",
                     }}
                   >
-                    <div className="rp-roleRowMain">
-                      <div className="rp-roleName">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                         {r.name}
-                        {r.isSystem ? <span className="rp-tag">System</span> : null}
+                        {r.isSystem && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 999,
+                            background: active ? "rgba(255,255,255,0.2)" : T.bgTer,
+                            color: active ? "#fff" : T.hint,
+                            border: `1px solid ${active ? "rgba(255,255,255,0.3)" : T.border}`,
+                          }}>
+                            System
+                          </span>
+                        )}
                       </div>
-                      <div className="rp-roleDesc">{r.description || "—"}</div>
+                      {r.description && (
+                        <div style={{ fontSize: 11, marginTop: 2, opacity: 0.7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {r.description}
+                        </div>
+                      )}
                     </div>
-                    <div className="rp-roleMeta">
-                      <div className="rp-micro">Users</div>
-                      <div className="rp-count">{r.userCount ?? "—"}</div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontSize: 10, opacity: 0.65 }}>Users</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{r.userCount ?? "—"}</div>
                     </div>
                   </button>
                 );
@@ -333,165 +362,140 @@ export default function RolesPermissionsPage() {
           )}
         </aside>
 
-        {/* RIGHT: Detail */}
-        <main className="rp-panel rp-panelMain">
+        {/* ── Right: Role detail ── */}
+        <main style={{ ...card, minHeight: "70vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {!selectedRoleId ? (
-            <div className="rp-empty">
-              <div className="rp-emptyIcon">🧩</div>
-              <div className="rp-emptyTitle">Select a role</div>
-              <div className="rp-emptySub">Choose a role on the left to manage permissions and users.</div>
-            </div>
+            <EmptyState icon="🧩" title="Select a role" sub="Choose a role from the list to manage its permissions and members." />
           ) : detailLoading ? (
-            <div className="rp-loading">
-              <div className="rp-spinner" /> Loading role…
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 20, color: T.muted, fontSize: 13 }}>
+              <Spinner /> Loading role…
             </div>
           ) : detailError ? (
-            <div className="rp-alert rp-alertError">
-              <div className="rp-alertTitle">Couldn’t load role</div>
-              <div className="rp-alertBody">{detailError}</div>
-            </div>
-          ) : !roleDetail ? (
-            <div className="rp-muted">Role not found.</div>
-          ) : (
+            <div style={{ padding: 16 }}><Alert type="error" title="Couldn't load role" body={detailError} /></div>
+          ) : !roleDetail ? null : (
             <>
-              {/* Header */}
-              <div className="rp-roleHeader">
-                <div className="rp-roleHeaderLeft">
-                  <div className="rp-roleHeaderTitle">
-                    {roleDetail.role.name}
-                    {roleDetail.role.isSystem ? <span className="rp-tag">System</span> : null}
+              {/* Role header */}
+              <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: T.text, display: "flex", alignItems: "center", gap: 8, fontFamily: T.font }}>
+                      {roleDetail.role.name}
+                      {roleDetail.role.isSystem && <Badge label="System" variant="system" />}
+                    </div>
+                    <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
+                      {roleDetail.role.description || "No description"}
+                    </div>
                   </div>
-                  <div className="rp-roleHeaderSub">{roleDetail.role.description || "No description"}</div>
+                  {canManageRoles && !roleDetail.role.isSystem && (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn variant="ghost" onClick={() => openEditDrawer(roleDetail.role)}>Edit</Btn>
+                      <Btn variant="danger" onClick={() => deleteRole(roleDetail.role)}>Delete</Btn>
+                    </div>
+                  )}
+                </div>
 
-                  <div className="rp-stats">
-                    <div className="rp-stat">
-                      <div className="rp-statLabel">Permissions</div>
-                      <div className="rp-statValue">{stagedPermissions.length}</div>
-                    </div>
-                    <div className="rp-stat">
-                      <div className="rp-statLabel">Users</div>
-                      <div className="rp-statValue">{roleDetail.users?.length ?? 0}</div>
-                    </div>
-                  </div>
+                <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+                  <StatCard label="Permissions" value={staged.length} />
+                  <StatCard label="Users" value={roleDetail.users?.length ?? 0} />
                 </div>
               </div>
 
               {/* Tabs */}
-              <div className="rp-tabs">
-                <button
-                  className={cx("rp-tab", tab === "permissions" && "is-active")}
-                  onClick={() => {
-                    if (tab === "users" && isDirty) {
-                      const ok = confirm("You have unsaved permission changes. Keep them and continue?");
-                      if (!ok) return;
-                    }
-                    setTab("permissions");
-                  }}
-                >
-                  Permissions
-                </button>
-                <button
-                  className={cx("rp-tab", tab === "users" && "is-active")}
-                  onClick={() => setTab("users")}
-                >
-                  Users
-                </button>
+              <div style={{ display: "flex", gap: 6, padding: "10px 20px", borderBottom: `1px solid ${T.border}` }}>
+                {(["permissions", "users"] as TabKey[]).map((t) => (
+                  <Btn
+                    key={t}
+                    variant={tab === t ? "primary" : "ghost"}
+                    onClick={() => setTab(t)}
+                    style={{ padding: "7px 14px", fontSize: 13 }}
+                  >
+                    {t === "permissions" ? "Permissions" : "Users"}
+                  </Btn>
+                ))}
               </div>
 
-              {/* Permissions Tab */}
-              {tab === "permissions" ? (
-                <section className="rp-tabBody">
-                  <div className="rp-permToolbar">
-                    <div className="rp-search rp-searchWide">
-                      <input
-                        value={permSearch}
-                        onChange={(e) => setPermSearch(e.target.value)}
-                        placeholder="Search permissions…"
-                      />
-                    </div>
+              {/* ── Permissions tab ── */}
+              {tab === "permissions" && (
+                <div style={{ padding: "16px 20px", flex: 1, overflowY: "auto" }}>
+                  {saveError && <Alert type="error" title="Save failed" body={saveError} />}
+                  {saveOk    && <Alert type="success" title="Permissions saved" />}
 
-                    <div className="rp-actions">
-                      <button
-                        className="rp-btn rp-btnGhost"
-                        disabled={!canManageRoles || !isDirty}
-                        onClick={resetPermissions}
-                      >
-                        Reset changes
-                      </button>
-                      <button
-                        className="rp-btn rp-btnPrimary"
-                        disabled={!canManageRoles || !isDirty}
-                        onClick={savePermissions}
-                        title={!canManageRoles ? "Missing roles.manage permission" : ""}
-                      >
-                        Save
-                      </button>
+                  {/* Toolbar */}
+                  <div style={{ display: "flex", gap: 12, justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                    <Input
+                      value={permSearch}
+                      onChange={(e) => setPermSearch(e.target.value)}
+                      placeholder="Search permissions…"
+                      style={{ maxWidth: 280 }}
+                    />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn variant="ghost" disabled={!isDirty} onClick={() => setStaged(roleDetail.permissionKeys ?? [])}>
+                        Reset
+                      </Btn>
+                      <Btn variant="primary" disabled={!canManageRoles || !isDirty} onClick={savePermissions}>
+                        {isDirty ? "Save changes" : "Saved"}
+                      </Btn>
                     </div>
                   </div>
 
-                  <div className="rp-permGrid">
-                    {permissionGroups.map((g) => {
+                  {/* Permission groups grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                    {permGroups.map((g) => {
                       const q = permSearch.trim().toLowerCase();
-                      const visible = g.items.filter((p) => {
-                        if (!q) return true;
-                        return (
-                          p.key.toLowerCase().includes(q) ||
-                          (p.description ?? "").toLowerCase().includes(q) ||
-                          (p.group ?? "").toLowerCase().includes(q)
-                        );
-                      });
-                      if (visible.length === 0) return null;
+                      const visible = q
+                        ? g.items.filter((p) =>
+                            p.key.toLowerCase().includes(q) ||
+                            (p.description ?? "").toLowerCase().includes(q)
+                          )
+                        : g.items;
+                      if (!visible.length) return null;
 
-                      const groupAllOn = visible.every((p) => stagedSet.has(p.key));
-                      const groupSomeOn = visible.some((p) => stagedSet.has(p.key));
+                      const allOn  = visible.every((p) => stagedSet.has(p.key));
+                      const someOn = visible.some((p) => stagedSet.has(p.key));
 
                       return (
-                        <div key={g.group} className="rp-permGroup">
-                          <div className="rp-permGroupHeader">
-                            <div className="rp-permGroupTitle">
-                              {g.group}
-                              <span className="rp-permGroupCount">{visible.length}</span>
+                        <div key={g.group} style={{ ...card, overflow: "hidden", margin: 0, border: `1px solid ${T.border}` }}>
+                          {/* Group header */}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: `1px solid ${T.border}` }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{g.group}</span>
+                              <span style={{ fontSize: 11, color: T.hint, background: T.bgSec, padding: "1px 7px", borderRadius: 999, border: `1px solid ${T.border}` }}>
+                                {visible.length}
+                              </span>
                             </div>
-
-                            <div className="rp-permGroupActions">
-                              <button
-                                className="rp-miniBtn"
-                                disabled={!canManageRoles}
-                                onClick={() => bulkToggle(g.group, true)}
-                              >
-                                Select all
-                              </button>
-                              <button
-                                className="rp-miniBtn"
-                                disabled={!canManageRoles}
-                                onClick={() => bulkToggle(g.group, false)}
-                              >
-                                Clear
-                              </button>
-
-                              <span
-                                className={cx(
-                                  "rp-dot",
-                                  groupAllOn ? "is-on" : groupSomeOn ? "is-some" : "is-off"
-                                )}
-                              />
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <Btn variant="mini" disabled={!canManageRoles} onClick={() => bulkToggle(g.group, true)}>All</Btn>
+                              <Btn variant="mini" disabled={!canManageRoles} onClick={() => bulkToggle(g.group, false)}>None</Btn>
+                              <PermDot state={allOn ? "all" : someOn ? "some" : "none"} />
                             </div>
                           </div>
 
-                          <div className="rp-permList">
+                          {/* Permission rows */}
+                          <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
                             {visible.map((p) => {
                               const on = stagedSet.has(p.key);
                               return (
-                                <label key={p.key} className={cx("rp-permRow", on && "is-on")}>
+                                <label
+                                  key={p.key}
+                                  style={{
+                                    display: "flex", gap: 10, alignItems: "flex-start",
+                                    padding: "9px 10px", borderRadius: T.radius,
+                                    border: `1px solid ${on ? T.borderSec : T.border}`,
+                                    background: on ? T.accentBg : T.bgSec,
+                                    cursor: canManageRoles ? "pointer" : "default",
+                                    transition: "all 0.1s",
+                                  }}
+                                >
                                   <input
                                     type="checkbox"
                                     checked={on}
                                     disabled={!canManageRoles}
                                     onChange={() => togglePermission(p.key)}
+                                    style={{ marginTop: 2, accentColor: T.accent }}
                                   />
-                                  <div className="rp-permRowMain">
-                                    <div className="rp-permKey">{p.key}</div>
-                                    <div className="rp-permDesc">{p.description || "—"}</div>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: T.text, fontFamily: T.mono }}>{p.key}</div>
+                                    <div style={{ fontSize: 11, color: T.muted, marginTop: 3, lineHeight: 1.3 }}>{p.description || "—"}</div>
                                   </div>
                                 </label>
                               );
@@ -502,98 +506,158 @@ export default function RolesPermissionsPage() {
                     })}
                   </div>
 
-                  {!canManageRoles ? (
-                    <div className="rp-hint">
-                      You can view permissions, but cannot edit. Required: <code>roles.manage</code>
+                  {!canManageRoles && (
+                    <div style={{ marginTop: 16, padding: "10px 14px", borderRadius: T.radius, border: `1px dashed ${T.border}`, fontSize: 12, color: T.muted }}>
+                      View only — editing requires the <code>roles.manage</code> permission.
                     </div>
-                  ) : null}
-                </section>
-              ) : (
-                // Users Tab
-                <section className="rp-tabBody">
-                  <div className="rp-userToolbar">
-                    <div className="rp-userToolbarLeft">
-                      <div className="rp-panelTitleSm">Assigned users</div>
-                      <div className="rp-mutedSm">
-                        Add users to <b>{roleDetail.role.name}</b>
-                      </div>
-                    </div>
+                  )}
+                </div>
+              )}
 
-                    <div className="rp-userToolbarRight">
-                      <div className="rp-search rp-searchWide">
-                        <input
-                          value={userSearch}
-                          onChange={(e) => setUserSearch(e.target.value)}
-                          placeholder="Search users by name or email…"
-                          disabled={!canManageRoles}
-                        />
-                      </div>
-                    </div>
-                  </div>
+              {/* ── Users tab ── */}
+              {tab === "users" && (
+                <div style={{ padding: "16px 20px", flex: 1, overflowY: "auto" }}>
+                  <SectionHead
+                    title="Members"
+                    sub={`Users assigned to ${roleDetail.role.name}`}
+                  />
 
-                  {userSearchLoading ? (
-                    <div className="rp-loading rp-loadingSm">
-                      <div className="rp-spinner" /> Searching…
-                    </div>
-                  ) : userSearchError ? (
-                    <div className="rp-alert rp-alertError">
-                      <div className="rp-alertTitle">User search failed</div>
-                      <div className="rp-alertBody">{userSearchError}</div>
-                    </div>
-                  ) : userResults.length ? (
-                    <div className="rp-card">
-                      <div className="rp-cardTitle">Search results</div>
-                      <div className="rp-userResults">
-                        {userResults.map((u) => (
-                          <div className="rp-userRow" key={u.id}>
-                            <div className="rp-userMain">
-                              <div className="rp-userName">{u.fullName || u.email}</div>
-                              <div className="rp-userEmail">{u.email}</div>
-                            </div>
-                            <button
-                              className="rp-btn rp-btnPrimary rp-btnSm"
-                              disabled={!canManageRoles}
-                              onClick={() => addUser(u.id)}
-                            >
-                              Add
-                            </button>
+                  {canManageRoles && (
+                    <div style={{ marginTop: 14 }}>
+                      <Input
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        placeholder="Search users by name or email to add…"
+                      />
+
+                      {userSearchLoading && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: T.muted }}>
+                          <Spinner size={14} /> Searching…
+                        </div>
+                      )}
+                      {userSearchError && <Alert type="error" title="Search failed" body={userSearchError} />}
+
+                      {!userSearchLoading && userResults.length > 0 && (
+                        <div style={{ ...card, margin: "10px 0 0", padding: 0, overflow: "hidden" }}>
+                          <div style={{ padding: "8px 14px", borderBottom: `1px solid ${T.border}`, fontSize: 12, fontWeight: 600, color: T.muted }}>
+                            Search results
                           </div>
-                        ))}
-                      </div>
+                          {userResults.map((u) => (
+                            <div key={u.id} style={userRow}>
+                              <Avatar initials={userInitials(u)} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{userDisplayName(u)}</div>
+                                <div style={{ fontSize: 11, color: T.muted }}>{u.email}</div>
+                              </div>
+                              <Btn variant="primary" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => addUser(u.id)}>
+                                Add
+                              </Btn>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  ) : null}
+                  )}
 
-                  <div className="rp-card">
-                    <div className="rp-cardTitle">Users in this role</div>
+                  {/* Current members */}
+                  <div style={{ marginTop: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: T.muted, marginBottom: 10, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                      Current members ({roleDetail.users?.length ?? 0})
+                    </div>
 
                     {roleDetail.users?.length ? (
-                      <div className="rp-userTable">
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         {roleDetail.users.map((u) => (
-                          <div className="rp-userRow" key={u.id}>
-                            <div className="rp-userMain">
-                              <div className="rp-userName">{u.fullName || u.email}</div>
-                              <div className="rp-userEmail">{u.email}</div>
+                          <div key={u.id} style={userRow}>
+                            <Avatar initials={userInitials(u)} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{userDisplayName(u)}</div>
+                              <div style={{ fontSize: 11, color: T.muted }}>{u.email}</div>
                             </div>
-                            {/* removeUser can be added if you expose the API method */}
+                            {canManageRoles && !roleDetail.role.isSystem && (
+                              <Btn variant="ghost" style={{ padding: "5px 10px", fontSize: 12, color: T.danger }} onClick={() => removeUser(u.id)}>
+                                Remove
+                              </Btn>
+                            )}
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="rp-muted">No users assigned yet.</div>
+                      <EmptyState icon="👥" title="No members" sub="Search above to add users to this role." />
                     )}
-
-                    {!canManageRoles ? (
-                      <div className="rp-hint">
-                        You can view users, but cannot edit membership. Required: <code>roles.manage</code>
-                      </div>
-                    ) : null}
                   </div>
-                </section>
+                </div>
               )}
             </>
           )}
         </main>
       </div>
+
+      {/* ── Role create/edit drawer ── */}
+      <Drawer
+        open={showRoleDrawer}
+        title={editingRole ? "Edit role" : "Create role"}
+        onClose={() => setShowRoleDrawer(false)}
+        footer={
+          <>
+            <Btn variant="ghost" onClick={() => setShowRoleDrawer(false)}>Cancel</Btn>
+            <Btn variant="primary" onClick={saveRole} disabled={roleSaving || !roleName.trim()}>
+              {roleSaving ? "Saving…" : editingRole ? "Save changes" : "Create role"}
+            </Btn>
+          </>
+        }
+      >
+        {roleDrawerError && <Alert type="error" title="Error" body={roleDrawerError} />}
+        <Field label="Role name *" hint="Must be unique across the company.">
+          <Input
+            value={roleName}
+            onChange={(e) => setRoleName(e.target.value)}
+            placeholder="e.g. Inventory Manager"
+            autoFocus
+          />
+        </Field>
+        <Field label="Description" hint="Optional — helps users understand what this role allows.">
+          <textarea
+            value={roleDesc}
+            onChange={(e) => setRoleDesc(e.target.value)}
+            placeholder="Describe the responsibilities of this role…"
+            rows={3}
+            style={{
+              width: "100%", boxSizing: "border-box", padding: "8px 12px",
+              borderRadius: T.radius, fontSize: 13, border: `1px solid ${T.border}`,
+              background: T.bg, color: T.text, outline: "none",
+              fontFamily: T.font, resize: "vertical",
+            }}
+          />
+        </Field>
+      </Drawer>
     </div>
   );
 }
+
+// ── Layout constants ──────────────────────────────────────────────────────────
+
+const shell: React.CSSProperties = {
+  padding: "24px 28px",
+  maxWidth: 1400,
+  margin: "0 auto",
+  fontFamily: T.font,
+};
+
+const card: React.CSSProperties = {
+  background: T.bg,
+  border: `1px solid ${T.border}`,
+  borderRadius: T.radiusLg,
+  marginTop: 0,
+};
+
+const panelHead: React.CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "space-between",
+  padding: "12px 14px 10px",
+  borderBottom: `1px solid ${T.border}`,
+};
+
+const userRow: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+  borderBottom: `1px solid ${T.border}`,
+};

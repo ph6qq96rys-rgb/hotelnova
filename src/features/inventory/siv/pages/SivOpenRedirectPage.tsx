@@ -1,113 +1,81 @@
-import * as React from "react";
+// src/features/inventory/siv/pages/SivOpenRedirectPage.tsx
+
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { sivApi } from "../api/sivApi";
-import {
-  buildSivDetailsRoute,
-  buildSivWorkflowRoute,
-} from "../../../../routes/sivWorkflowRoutes";
+import { normalizeStatus } from "../types/sivTypes";
 
-function safeString(value: unknown): string {
-  return value == null ? "" : String(value);
-}
-
-function isUuid(value: string): boolean {
-  if (!value) return false;
-
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value.trim()
-  );
-}
-
-function normalizeStatus(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
-}
-
-function getStatusFromResponse(input: any): string | number | null {
-  const raw = input?.data ?? input ?? {};
-
-  return (
-    raw?.docStatus ??
-    raw?.status ??
-    raw?.header?.docStatus ??
-    raw?.header?.status ??
-    null
-  );
+function isUuid(v: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test((v ?? "").trim());
 }
 
 export default function SivOpenRedirectPage() {
-  const navigate = useNavigate();
+  const nav = useNavigate();
   const params = useParams();
 
-  const companyId = safeString(params.companyId);
-  const sivId = safeString(params.id || params.sivId || params.draftId);
+  const companyId = String(params.companyId ?? "");
+  const sivId     = String(params.id ?? params.sivId ?? params.draftId ?? "");
 
-  const [error, setError] = React.useState("");
-  const [loading, setLoading] = React.useState(true);
+  const [err,     setErr]     = useState("");
+  const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
 
     async function redirect() {
       if (!isUuid(companyId) || !isUuid(sivId)) {
-        setError("Invalid companyId or SIV id.");
+        setErr("Invalid SIV ID.");
         setLoading(false);
         return;
       }
 
       try {
-        const result = await sivApi.getById(companyId, sivId);
+        const data   = await sivApi.getById(companyId, sivId);
+        const raw    = data ??  {};
+        const status = normalizeStatus(raw.status ?? raw.status ?? "Draft");
 
-        if (!result) {
-          throw new Error("SIV not found.");
-        }
-
-        const status = getStatusFromResponse(result);
-        const normalized = normalizeStatus(status);
+        if (cancelled) return;
 
         let target: string;
-
-        if (
-          normalized === "draft" ||
-          normalized === "0" ||
-          normalized === "10"
-        ) {
+        if (status === "Draft" || status === "ChangesRequested") {
           target = `/companies/${companyId}/siv/drafts/${sivId}/edit`;
+        } else if (status === "Submitted") {
+          target = `/companies/${companyId}/siv/approval/${sivId}`;
         } else {
-          target = buildSivWorkflowRoute(companyId, sivId, status);
+          target = `/companies/${companyId}/siv/${sivId}`;
         }
 
-        if (cancelled) return;
-
-        navigate(target, { replace: true });
+        nav(target, { replace: true });
       } catch (e: any) {
         if (cancelled) return;
-
-        setError(
-          e?.response?.data?.title ||
-            e?.response?.data?.message ||
-            e?.message ||
-            "Failed to resolve the SIV workflow route."
-        );
-
+        setErr(e?.response?.data?.message ?? e?.message ?? "Failed to open SIV.");
         setLoading(false);
-
-        navigate(buildSivDetailsRoute(companyId, sivId), { replace: true });
+        nav(`/companies/${companyId}/siv/${sivId}`, { replace: true });
       }
     }
 
     void redirect();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [companyId, sivId, navigate]);
+    return () => { cancelled = true; };
+  }, [companyId, sivId, nav]);
 
   if (loading) {
-    return <div style={{ padding: 24 }}>Opening SIV...</div>;
+    return (
+      <div className="page">
+        <div style={{ padding: 48, textAlign: "center",
+          color: "var(--text-muted)", fontSize: 13 }}>
+          Opening SIV…
+        </div>
+      </div>
+    );
   }
 
-  if (error) {
-    return <div style={{ padding: 24 }}>{error}</div>;
+  if (err) {
+    return (
+      <div className="page">
+        <div className="alert alert-danger">{err}</div>
+      </div>
+    );
   }
 
   return null;

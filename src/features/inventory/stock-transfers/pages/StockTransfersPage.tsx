@@ -90,7 +90,7 @@ function Kpi({ label, value }: { label: string; value: number | string }) {
 
 export default function StockTransfersPage() {
   const nav = useNavigate();
-  const { companyId } = useAppScope();
+  const { companyId, branchId } = useAppScope();
 
   const [rows, setRows] = useState<StockTransferListDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -106,7 +106,7 @@ export default function StockTransfersPage() {
     setError(null);
 
     try {
-      const data = await stockTransfersApi.list(companyId, status || undefined);
+      const data = await stockTransfersApi.list(companyId, branchId, status || undefined);
       setRows(data ?? []);
     } catch (e: any) {
       setError(getApiError(e));

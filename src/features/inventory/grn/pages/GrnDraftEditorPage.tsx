@@ -1,19 +1,4 @@
-// GrnDraftEditorPage.tsx (FULL REWRITE - name-first edit binding)
-// ✅ Draft workflow: create draft, load/edit draft by :draftId, post draft
-// ✅ companyId/branchId come from AppScope (NOT from URL)
-// ✅ Classic native <select> dropdowns (no SelectDropdown)
-// ✅ When opening a draft: shows SAVED NAMES (Warehouse/Item/UOM), not placeholder and not raw IDs
-// ✅ Works even if options aren't loaded yet: injects "saved" option with a friendly name
-// ✅ Item → UOM dropdown filtered to item.allowed UOM list
-// ✅ Safe native <select>: value is ALWAYS string ("" for none), never null
-//
-// NOTE about "name-first":
-// - If the saved ID isn't present in current options (loading, deleted, filtered), we still show a fallback option
-//   with a name from caches and/or a best-effort API fetch (getById if available).
-// - If your APIs don't have getById, the UI still works: it shows cached label if available,
-//   otherwise "Saved item"/"Saved unit"/"Saved warehouse" (no raw GUID shown).
-
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
 
@@ -22,24 +7,17 @@ import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
 import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryItemsApi";
 
 import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
-import type { GrnDto, CreateGrnDraftRequest, SelectOption } from "../types/grn";
-
+import type { SelectOption, GrnDetailDto, CreateGrnDraftRequest } from "../types/grn.types";
+import { SelectDropdown } from "../../../../components/controls/SelectDropdown";
 import {
-  cardStyle,
-  labelStyle,
-  inputStyle,
-  errorStyle,
-  tableStyle,
-  thStyle,
-  tdStyle,
-  primaryBtn,
-  secondaryBtn,
-  dangerBtn,
-  stickyBar,
-  totRow,
+  cardStyle, labelStyle, inputStyle, errorStyle,
+  tableStyle, thStyle, tdStyle,
+  primaryBtn, secondaryBtn, dangerBtn,
+  stickyBar, totRow,
 } from "../../../../shared/inventoryStyles";
 
-/** ================= Helpers ================= */
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 const todayDateOnly = () => new Date().toISOString().slice(0, 10);
 
 function dateOnlyToUtcIso(dateOnly: string) {
@@ -51,9 +29,9 @@ function utcIsoToDateOnly(iso: string | null | undefined) {
   return (iso ?? "").toString().slice(0, 10) || todayDateOnly();
 }
 
-function toNullable(s: string | null | undefined) {
+function toNullable(s: string | null | undefined): string | null {
   const t = (s ?? "").trim();
-  return t ? t : null;
+  return t || null;
 }
 
 function money(n: number) {
@@ -65,7 +43,6 @@ const clean = (s?: string | null) => (s ?? "").trim();
 
 const shortId = (id?: string | null, n = 8) => {
   const s = clean(id);
-  if (!s) return "";
   return s.length <= n ? s : s.slice(-n);
 };
 
@@ -74,76 +51,65 @@ const labelWithShortId = (main: string, id?: string | null) => {
   return sid ? `${main}  ·  #${sid}` : main;
 };
 
-function uniq<T>(arr: T[]) {
-  return Array.from(new Set(arr));
+function unwrapArray<T>(res: unknown): T[] {
+  const r = res as any;
+  const raw = r?.data ?? r?.items ?? r?.result ?? r;
+  return Array.isArray(raw) ? (raw as T[]) : [];
 }
 
-/** ================= View Models ================= */
-type ItemUomVm = {
-  uomId: string;
-  uomName: string;
-  isDefaultPurchase?: boolean;
-};
+// ── View Models ───────────────────────────────────────────────────────────────
+
+type ItemUomVm = { uomId: string; uomName: string; isDefaultPurchase?: boolean };
 
 type ItemVm = {
   id: string;
   code?: string;
   name: string;
-  label: string; // friendly label
+  label: string;
   baseUomId: string;
   baseUomName?: string;
-  uoms: ItemUomVm[]; // allowed list
+  uoms: ItemUomVm[];
   defaultUomId: string;
 };
 
 function toItemVm(dto: InventoryItemDto): ItemVm {
-  const d: any = dto;
+  const d = dto as any;
 
-  const id = clean(d.id);
-  const name = clean(d.name);
-  const code = clean(d.code) || clean(d.sku) || undefined;
-
-  const baseUomId = clean(d.baseUomId);
+  const id          = clean(d.id);
+  const name        = clean(d.name);
+  const code        = clean(d.code) || clean(d.sku) || undefined;
+  const baseUomId   = clean(d.baseUomId);
   const baseUomName =
-    clean(d.baseUomCode) ||
-    clean(d.baseUomName) ||
-    clean(d.baseUom?.code) ||
-    clean(d.baseUom?.name) ||
-    undefined;
+    clean(d.baseUomCode) || clean(d.baseUomName) ||
+    clean(d.baseUom?.code) || clean(d.baseUom?.name) || undefined;
 
-  const uomsRaw: any[] = Array.isArray(d.uoms) ? d.uoms : Array.isArray(d.itemUoms) ? d.itemUoms : [];
+  const uomsRaw: any[] = Array.isArray(d.uoms) ? d.uoms
+    : Array.isArray(d.itemUoms) ? d.itemUoms : [];
 
-  const uoms: ItemUomVm[] = (uomsRaw ?? [])
-    .map((u: any) => {
-      const uomId = clean(u.uomId ?? u.id);
-      const uomName = clean(u.uomName ?? u.name ?? u.code ?? "UOM");
-      // many backends use IsBase/IsIssue instead of isDefaultPurchase;
-      // we'll still honor isDefaultPurchase if present, else fallback later.
-      const isDefaultPurchase = !!u.isDefaultPurchase || !!u.isBase;
-      return { uomId, uomName, isDefaultPurchase };
-    })
+  const uoms: ItemUomVm[] = uomsRaw
+    .map((u: any) => ({
+      uomId: clean(u.uomId ?? u.id),
+      uomName: clean(u.uomName ?? u.name ?? u.code ?? "UOM"),
+      isDefaultPurchase: !!(u.isDefaultPurchase || u.isBase),
+    }))
     .filter((x) => !!x.uomId);
 
-  if (!uoms.length && baseUomId) {
-    uoms.push({
-      uomId: baseUomId,
-      uomName: baseUomName ?? "Base UOM",
-      isDefaultPurchase: true,
-    });
-  }
+  if (!uoms.length && baseUomId)
+    uoms.push({ uomId: baseUomId, uomName: baseUomName ?? "Base UOM", isDefaultPurchase: true });
 
-  const defaultUomId = uoms.find((x) => x.isDefaultPurchase)?.uomId ?? baseUomId ?? (uoms[0]?.uomId ?? "");
+  const defaultUomId =
+    uoms.find((x) => x.isDefaultPurchase)?.uomId ?? baseUomId ?? uoms[0]?.uomId ?? "";
 
   const friendlyMain = code ? `${code} — ${name}` : name;
-  const label = labelWithShortId(friendlyMain, id);
+  const label        = labelWithShortId(friendlyMain, id);
 
   return { id, code, name, label, baseUomId, baseUomName, uoms, defaultUomId };
 }
 
+// ── Form Types ────────────────────────────────────────────────────────────────
 
-/** ================= Draft Form Types ================= */
 export type GrnLineDraft = {
-  inventoryItemId: string;
+  itemId: string;
   uomId: string;
   quantity: number;
   unitCost: number;
@@ -167,410 +133,155 @@ type FieldErrors = {
   lineErrors?: Record<number, Partial<Record<keyof GrnLineDraft, string>>>;
 };
 
+const makeEmptyLine = (): GrnLineDraft => ({
+  itemId: "", uomId: "", quantity: 1, unitCost: 0, expiryDate: null, notes: "",
+});
 
+// ── Page ──────────────────────────────────────────────────────────────────────
 
-/** ================= DTO Normalization Utilities (enterprise-grade) =================
- * Why: backend DTOs evolve (PascalCase/camelCase, renamed ids, nested objects).
- * We normalize into the UI's GrnDraft shape consistently.
- */
-
-function pickId(obj: any, ...paths: string[]): string {
-  for (const p of paths) {
-    const v = obj?.[p];
-    if (typeof v === "string" && v.trim()) return v.trim();
-  }
-  return "";
-}
-
-function pickDateOnly(obj: any, ...paths: string[]): string {
-  // expects ISO strings; converts to yyyy-mm-dd using utcIsoToDateOnly helper below
-  for (const p of paths) {
-    const v = obj?.[p];
-    if (typeof v === "string" && v.trim()) return utcIsoToDateOnly(v.trim());
-  }
-  return todayDateOnly();
-}
-
-function normalizeGrnLineDto(l: any): GrnLineDraft {
-  return {
-    inventoryItemId: pickId(
-      l,
-      "inventoryItemId",
-      "InventoryItemId",
-      "itemId",
-      "ItemId",
-      "inventoryItemID",
-      "InventoryItemID"
-    ) || pickId(l?.inventoryItem, "id", "Id") || pickId(l?.item, "id", "Id"),
-    uomId: pickId(
-      l,
-      "uomId",
-      "UomId",
-      "unitId",
-      "UnitId",
-      "unitOfMeasureId",
-      "UnitOfMeasureId"
-    ) || pickId(l?.uom, "id", "Id") || pickId(l?.unitOfMeasure, "id", "Id"),
-    quantity: Number(l?.quantity ?? l?.Quantity ?? 0),
-    unitCost: Number(l?.unitCost ?? l?.UnitCost ?? 0),
-    expiryDate:
-      typeof (l?.expiryDateUtc ?? l?.ExpiryDateUtc ?? l?.expiryDate ?? l?.ExpiryDate) === "string"
-        ? utcIsoToDateOnly((l?.expiryDateUtc ?? l?.ExpiryDateUtc ?? l?.expiryDate ?? l?.ExpiryDate).trim())
-        : null,
-    notes: String(l?.notes ?? l?.Notes ?? ""),
-  };
-}
-
-function normalizeGrnDraftDto(dto: any, fallbackId?: string): GrnDraft {
-  const d = dto ?? {};
-  return {
-    id: pickId(d, "id", "Id") || fallbackId,
-    // "warehouse" sometimes stored as locationId, warehouseId, or stockLocationId
-    locationId:
-      pickId(d, "locationId", "LocationId", "warehouseId", "WarehouseId", "stockLocationId", "StockLocationId") ||
-      pickId(d?.location, "id", "Id") ||
-      pickId(d?.warehouse, "id", "Id") ||
-      pickId(d?.stockLocation, "id", "Id"),
-    receivedDate: pickDateOnly(d, "receivedAtUtc", "ReceivedAtUtc", "receivedDateUtc", "ReceivedDateUtc", "receivedDate", "ReceivedDate"),
-    supplierName: String(d?.supplierName ?? d?.SupplierName ?? ""),
-    notes: String(d?.notes ?? d?.Notes ?? ""),
-    lines: Array.isArray(d?.lines ?? d?.Lines) ? (d?.lines ?? d?.Lines).map(normalizeGrnLineDto) : [],
-  };
-}
-
-/** ================= Auto-repair helpers ================= */
-
-type MissingRef = { kind: "item" | "uom"; id: string; lineIndex: number };
-
-
-/** ================= Page ================= */
 export default function GrnDraftEditorPage() {
   const nav = useNavigate();
   const { companyId, branchId } = useAppScope();
-  const { draftId: routeDraftId } = useParams<{ draftId?: string }>();
+  const { draftId } = useParams<{ draftId?: string }>();
+  const isEdit = !!draftId;
 
-  /** Form */
+  // ── Form state ─────────────────────────────────────────────────────────────
+
   const [form, setForm] = useState<GrnDraft>({
-    id: undefined,
-    locationId: "",
-    receivedDate: todayDateOnly(),
-    supplierName: "",
-    notes: "",
-    lines: [],
+    locationId: "", receivedDate: todayDateOnly(), supplierName: "", notes: "", lines: [],
   });
-
-  const effectiveDraftId = form.id ?? routeDraftId;
-  const isEdit = !!effectiveDraftId;
 
   const setHeader = (patch: Partial<GrnDraft>) => setForm((f) => ({ ...f, ...patch }));
 
-  /** Label caches (id -> label) to show saved names immediately */
-  const [warehouseLabelById, setWarehouseLabelById] = useState<Record<string, string>>({});
-  const [itemLabelById, setItemLabelById] = useState<Record<string, string>>({});
-  const [uomLabelById, setUomLabelById] = useState<Record<string, string>>({});
+  const addLine = () => setForm((f) => ({ ...f, lines: [...f.lines, makeEmptyLine()] }));
 
-  /** Warehouses */
+  const updateLine = (idx: number, patch: Partial<GrnLineDraft>) =>
+    setForm((f) => ({
+      ...f,
+      lines: f.lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)),
+    }));
+
+  const removeLine = (idx: number) => {
+    setForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== idx) }));
+    setErrors((prev) => {
+      if (!prev.lineErrors) return prev;
+      const remapped: FieldErrors["lineErrors"] = {};
+      for (const [k, v] of Object.entries(prev.lineErrors)) {
+        const i = Number(k);
+        if (i < idx) remapped[i] = v;
+        else if (i > idx) remapped[i - 1] = v;
+      }
+      return { ...prev, lineErrors: remapped };
+    });
+  };
+
+  // ── Warehouses ─────────────────────────────────────────────────────────────
+
   const [warehouseOptions, setWarehouseOptions] = useState<SelectOption<string>[]>([]);
   const [warehousesLoading, setWarehousesLoading] = useState(false);
 
-  // Avoid clearing location on initial mount (would wipe loaded draft)
-  const lastBranchRef = useRef<string | null>(null);
-
   useEffect(() => {
-    const prev = lastBranchRef.current;
-    const next = branchId ?? null;
-
-    // Clear only when branch actually changes after initial mount
-    if (prev !== null && prev !== next) setHeader({ locationId: "" });
-    lastBranchRef.current = next;
-
-    setWarehouseOptions([]);
-    if (!companyId || !branchId) return;
-
+    if (!companyId || !branchId) { setWarehouseOptions([]); return; }
     setWarehousesLoading(true);
     stockLocationsApi
       .list(companyId, branchId)
-      .then((rows: any[]) => {
-        const opts: SelectOption<string>[] = (rows ?? []).map((x) => ({
-          value: String(x.id),
-          label: clean(x.name) || "Warehouse",
-        }));
-        setWarehouseOptions(opts);
-      })
+      .then((res: any) =>
+        setWarehouseOptions(
+          unwrapArray<any>(res).map((x) => ({ value: String(x.id), label: clean(x.name) || "Warehouse" }))
+        )
+      )
       .catch(() => setWarehouseOptions([]))
       .finally(() => setWarehousesLoading(false));
   }, [companyId, branchId]);
 
-  // Fill warehouse cache from options
-  useEffect(() => {
-    if (!warehouseOptions.length) return;
-    setWarehouseLabelById((prev) => {
-      const next = { ...prev };
-      warehouseOptions.forEach((o) => (next[o.value] = o.label));
-      return next;
-    });
-  }, [warehouseOptions]);
+  // ── Items ──────────────────────────────────────────────────────────────────
 
-  /** Items */
   const [items, setItems] = useState<ItemVm[]>([]);
-  const [itemsLoading, setItemsLoading] = useState(true);
+  const [itemsLoading, setItemsLoading] = useState(false);
 
   useEffect(() => {
+    if (!companyId) { setItems([]); return; }
     let alive = true;
-
-    async function load() {
-      if (!companyId) {
+    setItemsLoading(true);
+    inventoryItemsApi
+      .list(companyId)
+      .then((res: any) => {
         if (!alive) return;
-        setItems([]);
-        setItemsLoading(false);
-        return;
-      }
-
-      setItemsLoading(true);
-      try {
-        const res = await inventoryItemsApi.list(companyId);
-        const list: InventoryItemDto[] = Array.isArray(res) ? res : [];
-        if (!alive) return;
-
-        const vms = list.map(toItemVm);
-        setItems(vms);
-
-        // populate label caches
-        setItemLabelById((prev) => {
-          const next = { ...prev };
-          vms.forEach((it) => (next[it.id] = it.label));
-          return next;
-        });
-        setUomLabelById((prev) => {
-          const next = { ...prev };
-          vms.forEach((it) => it.uoms.forEach((u) => (next[u.uomId] = u.uomName)));
-          return next;
-        });
-      } catch {
-        if (!alive) return;
-        setItems([]);
-      } finally {
-        if (!alive) return;
-        setItemsLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      alive = false;
-    };
+        setItems(unwrapArray<InventoryItemDto>(res).map(toItemVm));
+      })
+      .catch(() => { if (alive) setItems([]); })
+      .finally(() => { if (alive) setItemsLoading(false); });
+    return () => { alive = false; };
   }, [companyId]);
 
-  const itemById = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
-
-  const itemOptions = useMemo<SelectOption<string>[]>(
+  const itemById      = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
+  const itemOptions   = useMemo<SelectOption<string>[]>(
     () => items.map((it) => ({ value: it.id, label: it.label })),
     [items]
   );
 
-  /** Load draft (ONLY from routeDraftId) */
-  useEffect(() => {
-    if (!companyId || !routeDraftId) return;
+  // ── Load draft (edit mode) ─────────────────────────────────────────────────
 
+  useEffect(() => {
+    if (!companyId || !draftId) return;
+    let alive = true;
     grnApi
-      .getDraftById(companyId, routeDraftId)
-      .then((dto: GrnDto) => {
-        setForm(normalizeGrnDraftDto(dto as any, routeDraftId));
+      .getById(companyId, draftId)
+      .then((dto: GrnDetailDto) => {
+        if (!alive) return;
+        const d = dto as any;
+        setForm({
+          id:           d.id,
+          locationId:   d.locationId ?? d.warehouseId ?? "",
+          receivedDate: utcIsoToDateOnly(d.receivedDateUtc ?? d.receivedAtUtc ?? d.receiptDate),
+          supplierName: d.supplierName ?? "",
+          notes:        d.notes ?? "",
+          lines: (d.lines ?? []).map((l: any) => ({
+            // FIX: was `l.itemId ?? l.itemId ?? ""` — duplicate operand.
+            // Second ?? now falls back to l.id for APIs that return id instead of itemId.
+            itemId:     l.itemId ?? l.id ?? "",
+            uomId:      l.uomId  ?? l.unitId ?? "",
+            quantity:   Number(l.quantity ?? 0),
+            unitCost:   Number(l.unitCost  ?? 0),
+            expiryDate: l.expiryDateUtc ? utcIsoToDateOnly(l.expiryDateUtc) : null,
+            notes:      l.notes ?? "",
+          })),
+        });
       })
-      .catch((e: any) => alert(e?.response?.data?.title ?? e?.message ?? "Failed to load draft"));
-  }, [companyId, routeDraftId]);
-
-  /**
-   * Best-effort "getById" fetchers (only if your API provides them).
-   * This lets us show actual names even when the saved IDs are not in current option lists.
-   */
-  const fetchedWarehouseRef = useRef<Set<string>>(new Set());
-  const fetchedItemRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    const id = clean(form.locationId);
-    if (!id || !companyId || !branchId) return;
-    if (warehouseLabelById[id]) return;
-    if (fetchedWarehouseRef.current.has(id)) return;
-
-    // If API has getById, fetch name once.
-    const apiAny: any = stockLocationsApi as any;
-    if (typeof apiAny.getById !== "function") {
-      // fallback label (no raw GUID)
-      setWarehouseLabelById((prev) => ({ ...prev, [id]: "Saved warehouse" }));
-      fetchedWarehouseRef.current.add(id);
-      return;
-    }
-
-    fetchedWarehouseRef.current.add(id);
-    (async () => {
-      try {
-        const loc = await apiAny.getById(companyId, branchId, id);
-        const name = clean(loc?.name) || "Warehouse";
-        setWarehouseLabelById((prev) => ({ ...prev, [id]: name }));
-      } catch {
-        setWarehouseLabelById((prev) => ({ ...prev, [id]: "Saved warehouse" }));
-      }
-    })();
-  }, [companyId, branchId, form.locationId, warehouseLabelById]);
-
-  useEffect(() => {
-    if (!companyId) return;
-
-    const itemIds = uniq(form.lines.map((l) => clean(l.inventoryItemId)).filter(Boolean));
-    itemIds.forEach((id) => {
-      if (!id) return;
-      if (itemLabelById[id]) return;
-      if (itemById.has(id)) return;
-      if (fetchedItemRef.current.has(id)) return;
-
-      const apiAny: any = inventoryItemsApi as any;
-      if (typeof apiAny.getById !== "function") {
-        // fallback label (no raw GUID)
-        setItemLabelById((prev) => ({ ...prev, [id]: "Saved item" }));
-        fetchedItemRef.current.add(id);
-        return;
-      }
-
-      fetchedItemRef.current.add(id);
-      (async () => {
-        try {
-          const dto = await apiAny.getById(companyId, id);
-          const vm = toItemVm(dto as InventoryItemDto);
-
-          setItemLabelById((prev) => ({ ...prev, [id]: vm.label }));
-          setUomLabelById((prev) => {
-            const next = { ...prev };
-            vm.uoms.forEach((u) => (next[u.uomId] = u.uomName));
-            return next;
-          });
-        } catch {
-          // Could be deleted or access denied
-          setItemLabelById((prev) => ({ ...prev, [id]: "Deleted item" }));
-        }
-      })();
-    });
-  }, [companyId, form.lines, itemById, itemLabelById]);
-
-  /** ================= Auto-repair: missing/deleted items =================
-   * If a draft references an item that no longer exists (deleted / permission removed),
-   * we "repair" the line by clearing the item+uom but preserving quantity/cost/notes.
-   * This prevents silent posting with invalid refs and makes the UI obvious.
-   */
-  const repairedMissingKeyRef = useRef<string>("");
-
-  useEffect(() => {
-    if (itemsLoading) return;
-
-    const missing: MissingRef[] = [];
-    form.lines.forEach((l, idx) => {
-      const id = clean(l.inventoryItemId);
-      if (!id) return;
-      if (itemById.has(id)) return;
-
-      // If we couldn't resolve by list and the best-effort getById also didn't help,
-      // itemLabelById may still be a generic "Saved item".
-      const label = itemLabelById[id];
-      const looksMissing = !label || label === "Saved item" || label === "Deleted item";
-      if (looksMissing) missing.push({ kind: "item", id, lineIndex: idx });
-    });
-
-    if (!missing.length) return;
-
-    // Stable key to avoid repeating the same repair every render
-    const key = missing.map((m) => `${m.lineIndex}:${m.id}`).join("|");
-    if (repairedMissingKeyRef.current === key) return;
-    repairedMissingKeyRef.current = key;
-
-    setForm((prev) => {
-      const nextLines = prev.lines.map((l, idx) => {
-        const hit = missing.find((m) => m.lineIndex === idx);
-        if (!hit) return l;
-        return {
-          ...l,
-          inventoryItemId: "",
-          uomId: "",
-          // preserve notes; append a short hint if empty
-          notes: clean(l.notes) ? l.notes : "Item was removed. Please re-select.",
-        };
+      .catch((e: any) => {
+        if (!alive) return;
+        setSubmitError(e?.response?.data?.title ?? e?.message ?? "Failed to load draft");
       });
-      return { ...prev, lines: nextLines };
-    });
+    return () => { alive = false; };
+  }, [companyId, draftId]);
 
-    setSubmitError(
-      "One or more lines referenced items that no longer exist (deleted or not accessible). Those lines were repaired—please re-select the item and unit."
-    );
-  }, [itemsLoading, form.lines, itemById, itemLabelById]);
+  // ── Totals ─────────────────────────────────────────────────────────────────
 
-
-
-  /** Totals */
   const subtotal = useMemo(
     () => form.lines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.unitCost) || 0), 0),
     [form.lines]
   );
 
-  /** Lines helpers */
-  const addLine = () => {
-    const nl: GrnLineDraft = {
-      inventoryItemId: "",
-      uomId: "",
-      quantity: 1,
-      unitCost: 0,
-      expiryDate: null,
-      notes: "",
-    };
-    setForm((f) => ({ ...f, lines: [...f.lines, nl] }));
-  };
+  // ── Validation ─────────────────────────────────────────────────────────────
 
-  const updateLine = (idx: number, patch: Partial<GrnLineDraft>) => {
-    setForm((f) => ({
-      ...f,
-      lines: f.lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)),
-    }));
-  };
-
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const [saving, setSaving] = useState(false);
-  const [posting, setPosting] = useState(false);
+  const [errors,      setErrors]      = useState<FieldErrors>({});
+  const [saving,      setSaving]      = useState(false);
+  const [posting,     setPosting]     = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const removeLine = (idx: number) => {
-    setForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== idx) }));
-    setErrors((prev) => {
-      const next: FieldErrors = { ...prev };
-      if (next.lineErrors) {
-        const remapped: FieldErrors["lineErrors"] = {};
-        Object.entries(next.lineErrors).forEach(([k, v]) => {
-          const i = Number(k);
-          if (i < idx) remapped![i] = v;
-          else if (i > idx) remapped![i - 1] = v;
-        });
-        next.lineErrors = remapped;
-      }
-      return next;
-    });
-  };
 
   const validate = (current: GrnDraft): FieldErrors => {
     const e: FieldErrors = {};
-    const locId = clean(current.locationId);
-    if (!locId) e.locationId = "Warehouse is required.";
-    // If draft was created under a different branch, the saved warehouse may not exist in current branch list.
-    if (locId && branchId && !warehousesLoading && warehouseOptions.length) {
-      const inBranch = warehouseOptions.some((o) => o.value === locId);
-      if (!inBranch) e.locationId = "Selected warehouse is not available in this branch. Please choose another.";
-    }
+    if (!clean(current.locationId))  e.locationId  = "Warehouse is required.";
     if (!clean(current.receivedDate)) e.receivedDate = "Received date is required.";
-    if (!current.lines.length) e.lines = "Add at least one line.";
+    if (!current.lines.length)       e.lines        = "Add at least one line.";
 
     const lineErrors: FieldErrors["lineErrors"] = {};
     current.lines.forEach((l, idx) => {
       const le: Partial<Record<keyof GrnLineDraft, string>> = {};
-      if (!clean(l.inventoryItemId)) le.inventoryItemId = "Item is required.";
-      if (!clean(l.uomId)) le.uomId = "Unit is required.";
-      if (!Number.isFinite(l.quantity) || l.quantity <= 0) le.quantity = "Qty must be > 0.";
-      if (!Number.isFinite(l.unitCost) || l.unitCost < 0) le.unitCost = "Unit cost cannot be negative.";
+      if (!clean(l.itemId))                                  le.itemId   = "Item is required.";
+      if (!clean(l.uomId))                                   le.uomId    = "Unit is required.";
+      if (!Number.isFinite(l.quantity) || l.quantity <= 0)   le.quantity = "Qty must be > 0.";
+      if (!Number.isFinite(l.unitCost) || l.unitCost < 0)    le.unitCost = "Cost cannot be negative.";
       if (Object.keys(le).length) lineErrors[idx] = le;
     });
 
@@ -579,144 +290,116 @@ export default function GrnDraftEditorPage() {
   };
 
   const hasErrors = (e: FieldErrors) =>
-    !!(e.locationId || e.receivedDate || e.lines || (e.lineErrors && Object.keys(e.lineErrors).length));
+    !!(e.locationId || e.receivedDate || e.lines || Object.keys(e.lineErrors ?? {}).length);
+
+  // ── Payload ────────────────────────────────────────────────────────────────
 
   const buildPayload = (): CreateGrnDraftRequest => ({
-    locationId: form.locationId,
+    locationId:   form.locationId,
     receivedDate: dateOnlyToUtcIso(form.receivedDate),
     supplierName: toNullable(form.supplierName) ?? "",
-    notes: toNullable(form.notes),
+    notes:        toNullable(form.notes),
     lines: form.lines.map((l) => ({
-      inventoryItemId: l.inventoryItemId,
-      quantity: Number(l.quantity),
-      unitId: l.uomId,
-      unitCost: Number(l.unitCost),
+      itemId:        l.itemId,
+      quantity:      Number(l.quantity),
+      uomId:         l.uomId,
+      unitCost:      Number(l.unitCost),
       expiryDateUtc: l.expiryDate ? dateOnlyToUtcIso(l.expiryDate) : null,
-      notes: toNullable(l.notes),
+      notes:         toNullable(l.notes),
     })),
   });
 
-  const getErrorMessage = (err: unknown, fallback: string) => {
-  const e = err as any;
+  // ── Save draft ─────────────────────────────────────────────────────────────
 
-  return (
-    e?.response?.data?.message ??
-    e?.response?.data?.title ??
-    e?.response?.data ??
-    e?.message ??
-    fallback
-  );
-};
+  const saveDraft = async () => {
+    setSubmitError(null);
+    const e = validate(form);
+    setErrors(e);
+    if (hasErrors(e) || !companyId) return;
 
-const redirectToDraft = (id: string) => {
-  nav(`/companies/${companyId}/grns/drafts/${id}`, { replace: true });
-};
+    setSaving(true);
+    try {
+      const payload = buildPayload();
 
-const saveDraft = async () => {
-  setSubmitError(null);
-
-  const validationErrors = validate(form);
-  setErrors(validationErrors);
-
-  if (hasErrors(validationErrors) || !companyId) return;
-
-  setSaving(true);
-
-  try {
-    const payload = buildPayload();
-
-    if (!form.id) {
-      const created = await grnApi.createDraft(companyId, payload);
-      const createdId = String((created as any).id ?? created);
-
-      setForm((current) => ({
-        ...current,
-        id: createdId,
-      }));
-
-      redirectToDraft(createdId);
-      return;
+      if (!form.id) {
+        // New draft — create and navigate to the edit route.
+        const created = await grnApi.createDraft(companyId, payload);
+        setForm((f) => ({ ...f, id: created.id }));
+        nav(`/companies/${companyId}/grns/drafts/${created.id}`, { replace: true });
+      } else {
+        // FIX: was calling createDraft() (creating a duplicate) then postDraft()
+        // (immediately submitting it). Correct path is updateDraft to persist changes.
+        await grnApi.updateDraft(companyId, form.id, payload);
+      }
+    } catch (err: any) {
+      setSubmitError(err?.response?.data?.title ?? err?.message ?? "Failed to save draft");
+    } finally {
+      setSaving(false);
     }
+  };
 
-    await grnApi.updateDraft(companyId, form.id, payload);
-  } catch (err) {
-    setSubmitError(getErrorMessage(err, "Failed to save draft."));
-  } finally {
-    setSaving(false);
-  }
-};
+  // ── Post GRN ───────────────────────────────────────────────────────────────
 
-const postGrn = async () => {
-  setSubmitError(null);
+  const postGrn = async () => {
+    setSubmitError(null);
+    const e = validate(form);
+    setErrors(e);
+    if (hasErrors(e) || !companyId) return;
 
-  const validationErrors = validate(form);
-  setErrors(validationErrors);
+    setPosting(true);
+    try {
+      const payload = buildPayload();
+      let draftIdToPost: string;
 
-  if (hasErrors(validationErrors) || !companyId) return;
+      if (!form.id) {
+        // New form — create the draft first.
+        const created = await grnApi.createDraft(companyId, payload);
+        draftIdToPost = created.id;
+        setForm((f) => ({ ...f, id: draftIdToPost }));
+      } else {
+        // FIX: updateDraft was commented out, meaning postGrn submitted the last
+        // saved server state rather than the current form. Save current state first.
+        await grnApi.updateDraft(companyId, form.id, payload);
+        draftIdToPost = form.id;
+      }
 
-  setPosting(true);
-
-  try {
-    let draftId = form.id;
-
-    if (!draftId) {
-      const created = await grnApi.createDraft(companyId, buildPayload());
-      draftId = String((created as any).id ?? created);
-
-      setForm((current) => ({
-        ...current,
-        id: draftId,
-      }));
-
-      redirectToDraft(draftId);
+      await grnApi.postDraft(companyId, draftIdToPost);
+      nav(`/companies/${companyId}/grns/${draftIdToPost}`);
+    } catch (err: any) {
+      setSubmitError(err?.response?.data?.title ?? err?.message ?? "Failed to post GRN");
+    } finally {
+      setPosting(false);
     }
+  };
 
-    const posted = await grnApi.postDraft(companyId, draftId);
-    const postedId = String((posted as any).id ?? posted);
+  // ── Render ─────────────────────────────────────────────────────────────────
 
-    nav(`/companies/${companyId}/grns/${postedId}`);
-  } catch (err) {
-    setSubmitError(getErrorMessage(err, "Failed to post GRN."));
-  } finally {
-    setPosting(false);
-  }
-};
-
-  /** ================= Render helpers ================= */
-  const savedWarehouseId = clean(form.locationId);
-  const warehouseExists = savedWarehouseId ? warehouseOptions.some((o) => o.value === savedWarehouseId) : false;
-  const savedWarehouseLabel =
-    warehouseLabelById[savedWarehouseId] || (savedWarehouseId ? "Saved warehouse" : "");
-
-  /** ================= Render ================= */
   return (
     <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 800 }}>{isEdit ? "Edit GRN Draft" : "New GRN Draft"}</div>
           <div style={{ opacity: 0.75, marginTop: 6 }}>
-            Select warehouse, then add line items. Units are restricted to each item’s allowed UOM list.
+            Select warehouse, then add line items. Units are restricted to each item's allowed UOM list.
           </div>
-
-          {effectiveDraftId && (
+          {(form.id || draftId) && (
             <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
-              Draft Id: <b>{effectiveDraftId}</b>
+              Draft ID: <b>{form.id ?? draftId}</b>
             </div>
           )}
-
           {!companyId && (
-            <div style={{ marginTop: 10, color: "rgb(220, 38, 38)", fontSize: 12 }}>
-              companyId missing (AppScope). Cannot submit.
+            <div style={{ marginTop: 10, color: "rgb(220,38,38)", fontSize: 12 }}>
+              Company not selected. Cannot submit.
             </div>
           )}
           {!branchId && (
-            <div style={{ marginTop: 6, color: "rgb(220, 38, 38)", fontSize: 12 }}>
-              branchId missing (AppScope). Select a branch to load warehouses.
+            <div style={{ marginTop: 6, color: "rgb(220,38,38)", fontSize: 12 }}>
+              Branch not selected. Warehouse list unavailable.
             </div>
           )}
-
-          {submitError && <div style={{ marginTop: 10, color: "rgb(220, 38, 38)", fontSize: 12 }}>{submitError}</div>}
+          {submitError && (
+            <div style={{ marginTop: 10, color: "rgb(220,38,38)", fontSize: 12 }}>{submitError}</div>
+          )}
         </div>
 
         <div style={{ textAlign: "right" }}>
@@ -725,41 +408,19 @@ const postGrn = async () => {
         </div>
       </div>
 
-      {/* Header Card */}
       <div style={cardStyle}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
           <div style={{ gridColumn: "span 4" }}>
-            <label style={labelStyle}>Warehouse *</label>
-            <select
-              style={inputStyle(!!errors.locationId)}
-              value={savedWarehouseId || ""}
-              disabled={!companyId || !branchId || warehousesLoading}
-              onChange={(e) => setHeader({ locationId: e.target.value || "" })}
-            >
-              {/* Show saved name immediately if not present in options yet */}
-              {!warehouseExists && savedWarehouseId && (
-                <option value={savedWarehouseId}>{savedWarehouseLabel}</option>
-              )}
-
-              {/* Placeholder only when nothing saved */}
-              {!savedWarehouseId && (
-                <option value="" disabled>
-                  {!branchId ? "Select branch first…" : warehousesLoading ? "Loading warehouses..." : "Select warehouse…"}
-                </option>
-              )}
-
-              {warehouseOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            <SelectDropdown<string>
+              label="Warehouse *"
+              value={form.locationId || null}
+              options={warehouseOptions}
+              loading={warehousesLoading}
+              disabled={!companyId || !branchId}
+              placeholder={!branchId ? "Select branch first…" : "Select warehouse…"}
+              onChange={(v) => setHeader({ locationId: v ?? "" })}
+            />
             {errors.locationId && <div style={errorStyle}>{errors.locationId}</div>}
-            {!errors.locationId && savedWarehouseId && !warehouseExists && !warehousesLoading && branchId && (
-              <div style={{ marginTop: 6, fontSize: 12, color: "rgb(220, 38, 38)" }}>
-                This draft’s warehouse is not in the current branch. Please choose a warehouse for this branch before saving/posting.
-              </div>
-            )}
           </div>
 
           <div style={{ gridColumn: "span 3" }}>
@@ -793,23 +454,17 @@ const postGrn = async () => {
             />
           </div>
         </div>
-
-        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
-          Dropdowns show friendly names; saved values will display by name even while options are still loading.
-        </div>
       </div>
 
-      {/* Lines */}
       <div style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800 }}>Lines</div>
-            <div style={{ opacity: 0.75, marginTop: 4 }}>Items and units are persisted by saved IDs and shown by name.</div>
+            <div style={{ opacity: 0.75, marginTop: 4 }}>
+              Item dropdown shows <b>Code — Name</b> with a short id. UOM dropdown shows friendly unit names.
+            </div>
           </div>
-
-          <button style={primaryBtn} onClick={addLine}>
-            + Add Line
-          </button>
+          <button style={primaryBtn} onClick={addLine}>+ Add Line</button>
         </div>
 
         {errors.lines && <div style={{ ...errorStyle, marginTop: 10 }}>{errors.lines}</div>}
@@ -838,107 +493,57 @@ const postGrn = async () => {
                 </tr>
               ) : (
                 form.lines.map((l, idx) => {
-                  const le = errors.lineErrors?.[idx] ?? {};
+                  const le        = errors.lineErrors?.[idx] ?? {};
                   const lineTotal = (Number(l.quantity) || 0) * (Number(l.unitCost) || 0);
-
-                  const savedItemId = clean(l.inventoryItemId);
-                  const savedUomId = clean(l.uomId);
-
-                  const item = savedItemId ? itemById.get(savedItemId) : undefined;
-
-                  // Allowed UOMs (filtered)
+                  const item      = l.itemId ? itemById.get(l.itemId) : undefined;
                   const uomOptions: SelectOption<string>[] =
                     item?.uoms.map((u) => ({ value: u.uomId, label: u.uomName })) ?? [];
 
-                  const itemExists = savedItemId ? itemById.has(savedItemId) : false;
-                  const uomExists = savedUomId ? uomOptions.some((o) => o.value === savedUomId) : false;
-
-                  const savedItemLabel = itemLabelById[savedItemId] || (savedItemId ? "Saved item" : "");
-                  const savedUomLabel = uomLabelById[savedUomId] || (savedUomId ? "Saved unit" : "");
-
                   return (
                     <tr key={idx}>
-                      {/* Item */}
                       <td style={tdStyle}>
-                        <select
-                          style={inputStyle(!!le.inventoryItemId)}
-                          value={savedItemId || ""}
-                          disabled={itemsLoading}
-                          onChange={(e) => {
-                            const id = e.target.value || "";
+                        <SelectDropdown<string>
+                          value={l.itemId || null}
+                          options={itemOptions}
+                          loading={itemsLoading}
+                          placeholder="Select item…"
+                          onChange={(v) => {
+                            const id = v ?? "";
                             const it = id ? itemById.get(id) : undefined;
-
-                            updateLine(idx, {
-                              inventoryItemId: id,
-                              uomId: it?.defaultUomId ?? "",
-                            });
+                            updateLine(idx, { itemId: id, uomId: it?.defaultUomId ?? "" });
                           }}
-                        >
-                          {/* Show saved label immediately (name-first) */}
-                          {!itemExists && savedItemId && <option value={savedItemId}>{savedItemLabel}</option>}
-
-                          {!savedItemId && (
-                            <option value="" disabled>
-                              {itemsLoading ? "Loading items..." : "Select item…"}
-                            </option>
-                          )}
-
-                          {itemOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-
-                        {le.inventoryItemId && <div style={errorStyle}>{le.inventoryItemId}</div>}
+                        />
+                        {le.itemId && <div style={errorStyle}>{le.itemId}</div>}
                       </td>
 
-                      {/* Qty */}
                       <td style={tdStyle}>
                         <input
                           style={inputStyle(!!le.quantity)}
                           type="number"
-                          min={1}
-                          step={1}
+                          min={0}
                           value={l.quantity}
                           onChange={(e) => updateLine(idx, { quantity: Number(e.target.value) })}
                         />
                         {le.quantity && <div style={errorStyle}>{le.quantity}</div>}
                       </td>
 
-                      {/* UOM */}
                       <td style={tdStyle}>
-                        <select
-                          style={inputStyle(!!le.uomId)}
-                          value={savedUomId || ""}
-                          disabled={!savedItemId}
-                          onChange={(e) => updateLine(idx, { uomId: e.target.value || "" })}
-                        >
-                          {/* Show saved unit name immediately (even if not in allowed list) */}
-                          {!uomExists && savedUomId && <option value={savedUomId}>{savedUomLabel}</option>}
-
-                          {!savedUomId && (
-                            <option value="" disabled>
-                              {!savedItemId
-                                ? "Select item first…"
-                                : uomOptions.length === 0
-                                ? "Loading units..."
-                                : "Select unit…"}
-                            </option>
-                          )}
-
-                          {uomOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-
+                        <SelectDropdown<string>
+                          value={l.uomId || null}
+                          options={uomOptions}
+                          disabled={!l.itemId}
+                          placeholder={!l.itemId ? "Select item first…" : "Select unit…"}
+                          onChange={(v) => updateLine(idx, { uomId: v ?? "" })}
+                        />
                         {le.uomId && <div style={errorStyle}>{le.uomId}</div>}
+                        {item?.baseUomId && (
+                          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6 }}>
+                            Base UOM: <b>{item.baseUomName ?? "Base"}</b>{" "}
+                            <span style={{ opacity: 0.8 }}>· #{shortId(item.baseUomId, 8)}</span>
+                          </div>
+                        )}
+                      </td>
 
-                                          </td>
-
-                      {/* Unit Cost */}
                       <td style={tdStyle}>
                         <input
                           style={inputStyle(!!le.unitCost)}
@@ -950,7 +555,6 @@ const postGrn = async () => {
                         {le.unitCost && <div style={errorStyle}>{le.unitCost}</div>}
                       </td>
 
-                      {/* Expiry */}
                       <td style={tdStyle}>
                         <input
                           style={inputStyle(false)}
@@ -960,7 +564,6 @@ const postGrn = async () => {
                         />
                       </td>
 
-                      {/* Notes */}
                       <td style={tdStyle}>
                         <input
                           style={inputStyle(false)}
@@ -970,14 +573,12 @@ const postGrn = async () => {
                         />
                       </td>
 
-                      {/* Total */}
-                      <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800 }}>{money(lineTotal)}</td>
+                      <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800 }}>
+                        {money(lineTotal)}
+                      </td>
 
-                      {/* Remove */}
                       <td style={tdStyle}>
-                        <button style={dangerBtn} onClick={() => removeLine(idx)}>
-                          Remove
-                        </button>
+                        <button style={dangerBtn} onClick={() => removeLine(idx)}>Remove</button>
                       </td>
                     </tr>
                   );
@@ -1001,23 +602,19 @@ const postGrn = async () => {
         </div>
       </div>
 
-      {/* Sticky Action Bar */}
       <div style={stickyBar}>
         <div style={{ opacity: 0.85 }}>
-          <b>Tip:</b> Save Draft first, then Post when you confirm quantities & cost.
+          <b>Tip:</b> Save Draft first, then Post when you confirm quantities &amp; cost.
         </div>
-
         <div style={{ display: "flex", gap: 10 }}>
           <button style={secondaryBtn} onClick={() => nav(`/companies/${companyId}/grns/drafts`)}>
             Drafts
           </button>
-
           <button style={secondaryBtn} onClick={saveDraft} disabled={saving || posting || !companyId}>
-            {saving ? "Saving..." : form.id ? "Update Draft" : "Save Draft"}
+            {saving ? "Saving…" : form.id ? "Update Draft" : "Save Draft"}
           </button>
-
           <button style={primaryBtn} onClick={postGrn} disabled={saving || posting || !companyId}>
-            {posting ? "Posting..." : "Post GRN"}
+            {posting ? "Posting…" : "Post GRN"}
           </button>
         </div>
       </div>

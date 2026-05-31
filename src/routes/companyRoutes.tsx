@@ -1,40 +1,78 @@
-﻿import CompaniesPage from "../features/company/pages/CompaniesPage";
-import CompanyDetailPage from "../features/company/pages/CompanyDetailPage";
-import CompanyOnboardingWizardPage from "../features/company/pages/CompanyOnboardingWizardPage";
+﻿import RequirePermission from "../auth/RequirePermission";
+
+
 import OrgLocationsPage from "../features/org/pages/OrgLocationsPage";
-import RequirePermission from "../auth/RequirePermission";
-import BranchSetupWizardPage from "../features/company/pages/BranchSetupWizardPage";
+
+import CompanyOnboardingModule from "../features/company/onboarding/CompanyOnboardingModule";
+import CompanySettingsPage from "../features/company/onboarding/CompanySettingsPage";
 
 export const companyRoutes = [
-  {
-    path: "companies",
-    element: (
-      // <RequirePermission permission="companies.view">
-      <CompaniesPage />
-      // </RequirePermission>
-    ),
-  },
+  // =========================================================
+  // Companies
+  // =========================================================
+
+  
+
+  // =========================================================
+  // ERP Onboarding
+  // =========================================================
+
   {
     path: "companies/new",
     element: (
       // <RequirePermission permission="companies.create">
-      <CompanyOnboardingWizardPage />
+      <CompanyOnboardingModule />
       // </RequirePermission>
     ),
   },
+
   {
-    path: "companies/:companyId",
+    path: "companies/onboarding",
+    label: "Company Onboarding",
+    nav: true,
     element: (
-      // <RequirePermission permission="companies.view">
-      <CompanyDetailPage />
+      // <RequirePermission permission="companies.create">
+      <CompanyOnboardingModule />
+      // </RequirePermission>
+    ),
+
+  },
+
+  {
+    path: "companies/:companyId/onboarding",
+    element: (
+      // <RequirePermission permission="companies.update">
+      <CompanyOnboardingModule />
       // </RequirePermission>
     ),
   },
+
   {
-    // ✅ make consistent with the rest (relative path)
-    path: "companies/:companyId/branches/:branchId/setup",
-    element: <BranchSetupWizardPage />,
+    path: "companies/:companyId/branches/:branchId/onboarding",
+    element: (
+      // <RequirePermission permission="branches.update">
+      <CompanyOnboardingModule />
+      // </RequirePermission>
+    ),
   },
+
+  // =========================================================
+  // Company Settings
+  // =========================================================
+
+  {
+    path: "companies/:companyId/settings",
+    element: (
+      // <RequirePermission permission="companies.update">
+      <CompanySettingsPage />
+      // </RequirePermission>
+    ),
+  },
+
+  // =========================================================
+  // Organization
+  // =========================================================
+
   {
     path: "organizations",
     element: (
@@ -42,13 +80,5 @@ export const companyRoutes = [
         <OrgLocationsPage />
       </RequirePermission>
     ),
-  },
-];
-
-export const BranchRoutes = [
-  {
-    // ✅ make consistent with the rest (relative path)
-    path: "companies/:companyId/branches/:branchId/setup",
-    element: <BranchSetupWizardPage />,
   },
 ];

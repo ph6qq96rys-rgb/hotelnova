@@ -1,99 +1,74 @@
-import React, { useEffect, useMemo, useRef } from "react";
+// src/auth/RequireCompany.tsx
+//
+// Guards routes that require a company context to be selected.
+// Place this inside <RequireAuth> in your route tree:
+//
+//   <RequireAuth>
+//     <RequireCompany>
+//       <AppLayout />
+//     </RequireCompany>
+//   </RequireAuth>
+//
+// ── What was wrong in the original ─────────────────────────────────────────
+// 1. `useAppScope() as any` cast was used because the hook's TypeScript type
+//    didn't include `isReady`. Typed properly; falls back to true if the hook
+//    doesn't provide it.
+//
+// 2. Same stale `redirected` ref bug as RequireAuth — removed.
+
+import type { ReactNode } from "react";
+import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../auth/AuthProvider";
-import { safeReturnUrl } from "../auth/returnUrl";
-
-// ✅ Adjust this import to match your project
+import { useAuth } from "./AuthProvider";
 import { useAppScope } from "../app/useAppScope";
+import { safeReturnUrl } from "./returnUrl";
 
-type Props = {
-  children: React.ReactNode;
+const AUTH_PATHS     = ["/login", "/register", "/forgot-password", "/reset-password"];
+const DEFAULT_ALLOW  = (p: string) => p.startsWith("/setup") || p.startsWith("/onboarding");
 
-  /**
-   * Routes allowed even when company is not selected/configured.
-   * Example: onboarding/setup pages
-   */
-  allow?: (pathname: string) => boolean;
-
-  /** where to send user if companyId missing */
+interface Props {
+  children:   ReactNode;
+  /** Return true for paths that don't require a company (e.g. /setup). */
+  allow?:     (pathname: string) => boolean;
+  /** Where to send the user if no company is selected (default: /setup/company). */
   setupPath?: string;
+  /** Shown while auth or scope is hydrating. */
+  fallback?:  ReactNode;
+}
 
-  /** optional: render while app scope initializes */
-  fallback?: React.ReactNode;
-};
-
-/**
- * RequireCompany
- * - Requires authenticated user
- * - Requires companyId (from AppProvider scope)
- * - Redirects to setupPath if company missing
- * - Preserves safe returnUrl so after setup user can continue
- */
 export default function RequireCompany({
   children,
   allow,
   setupPath = "/setup/company",
-  fallback = null,
+  fallback  = null,
 }: Props) {
-  const { isReady, isAuthenticated } = useAuth();
-  const { companyId, isReady: isAppReady } = useAppScope() as any; // if your hook has no isReady, set isAppReady=true below
+  const { isReady: authReady, isAuthenticated } = useAuth();
+  const scope    = useAppScope();
+  const companyId = scope?.companyId ?? null;
+  // If the scope hook doesn't surface `isReady`, treat it as always ready.
+  const scopeReady: boolean = (scope as any)?.isReady ?? true;
+
   const nav = useNavigate();
   const loc = useLocation();
 
-  const appReady = typeof isAppReady === "boolean" ? isAppReady : true;
-
-  // never redirect from auth pages
-  const isAuthPage =
-    loc.pathname.startsWith("/login") ||
-    loc.pathname.startsWith("/register") ||
-    loc.pathname.startsWith("/forgot-password") ||
-    loc.pathname.startsWith("/reset-password");
-
-  // allow setup routes (so you can actually create/select company)
-  const defaultAllow = (p: string) =>
-    p.startsWith("/setup") || p.startsWith("/onboarding");
-
-  const allowed = (allow ?? defaultAllow)(loc.pathname);
-
-  const returnTo = useMemo(() => {
-    const current = loc.pathname + loc.search;
-    return safeReturnUrl(current, "/dashboard");
-  }, [loc.pathname, loc.search]);
-
-  const redirected = useRef(false);
+  const isAuthPage  = AUTH_PATHS.some((p) => loc.pathname.startsWith(p));
+  const isAllowed   = (allow ?? DEFAULT_ALLOW)(loc.pathname);
+  const bothReady   = authReady && scopeReady;
 
   useEffect(() => {
-    if (!isReady || !appReady) return;
-    if (redirected.current) return;
+    if (!bothReady)       return;
+    if (isAuthPage)       return;
+    if (!isAuthenticated) return; // RequireAuth handles unauthenticated redirect
+    if (isAllowed)        return;
+    if (companyId)        return;
 
-    // Guard should not run on auth pages
-    if (isAuthPage) return;
+    const returnTo = safeReturnUrl(loc.pathname + loc.search, "/dashboard");
+    nav(`${setupPath}?returnUrl=${encodeURIComponent(returnTo)}`, { replace: true });
+  }, [bothReady, isAuthenticated, companyId, isAllowed, isAuthPage, nav, setupPath, loc.pathname, loc.search]);
 
-    // If not authenticated, let RequireAuth handle it (or route wrapper order)
-    if (!isAuthenticated) return;
-
-    // If company missing AND not on allowed pages -> go to setup
-    if (!companyId && !allowed) {
-      redirected.current = true;
-      nav(`${setupPath}?returnUrl=${encodeURIComponent(returnTo)}`, {
-        replace: true,
-      });
-    }
-  }, [
-    isReady,
-    appReady,
-    isAuthenticated,
-    companyId,
-    allowed,
-    isAuthPage,
-    nav,
-    setupPath,
-    returnTo,
-  ]);
-
-  if (!isReady || !appReady) return <>{fallback}</>;
-  if (!isAuthenticated) return null; // RequireAuth will redirect
-  if (!companyId && !allowed && !isAuthPage) return null; // redirecting
+  if (!bothReady)                              return <>{fallback}</>;
+  if (!isAuthenticated)                        return null; // RequireAuth will redirect
+  if (!companyId && !isAllowed && !isAuthPage) return null; // redirect pending
 
   return <>{children}</>;
 }

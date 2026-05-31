@@ -1,38 +1,42 @@
-﻿/*import { useMemo } from "react";
-import { useAuth } from "./useAuth";
+﻿// src/auth/useHasPermission.ts
+//
+// Reactive permission hooks for use inside React components.
+//
+// ── What was wrong in the original ─────────────────────────────────────────
+// The entire file was commented out. Uncommented, typed, and wired to the
+// real useAuth() hook from AuthProvider.
 
-/**
- * Returns all permissions for the current user
- */
-/*export function usePermissions(): string[] {
+import { useMemo } from "react";
+import { useAuth } from "./AuthProvider";
+
+/** Returns all permission keys for the authenticated user. */
+export function usePermissions(): string[] {
   const { permissions } = useAuth();
   return useMemo(() => permissions ?? [], [permissions]);
 }
 
-/**
- * Checks if the user has a specific permission
- */
-/*export function useHasPermission(permission: string): boolean {
+/** True if the user has the given permission key. */
+export function useHasPermission(permission: string): boolean {
   const { permissions } = useAuth();
-
-  return useMemo(
-    () => permissions?.includes(permission) ?? false,
-    [permissions, permission]
-  );
+  return useMemo(() => permissions.includes(permission), [permissions, permission]);
 }
+
+/** True if the user has at least one of the listed permissions. */
 export function useHasAnyPermission(perms: string[]): boolean {
   const { permissions } = useAuth();
   return useMemo(
-    () => perms.some(p => permissions?.includes(p)),
-    [perms, permissions]
+    () => perms.some((p) => permissions.includes(p)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [permissions, perms.join(",")]
   );
 }
 
+/** True if the user has every listed permission. */
 export function useHasAllPermissions(perms: string[]): boolean {
   const { permissions } = useAuth();
   return useMemo(
-    () => perms.every(p => permissions?.includes(p)),
-    [perms, permissions]
+    () => perms.every((p) => permissions.includes(p)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [permissions, perms.join(",")]
   );
 }
-*/

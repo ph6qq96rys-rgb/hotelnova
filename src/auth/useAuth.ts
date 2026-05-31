@@ -1,18 +1,12 @@
-/*import { useContext } from "react";
-import { AuthContext } from "./AuthProvider";
+// src/auth/useAuth.ts
+//
+// Re-export useAuth from AuthProvider so callers that import from this module
+// path continue to work without changing their import statements.
+//
+// ── What was wrong in the original ─────────────────────────────────────────
+// The entire file was commented out. useAuth was only exported from
+// AuthProvider.tsx, meaning call sites had to import from two different paths
+// depending on where they were written. This re-export unifies them.
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within <AuthProvider />");
-  return ctx;
-}
-
-type UseAuth = {
-  isAuthenticated: boolean;
-  hasPermission: (
-    permission: string,
-    companyId?: string,
-    branchId?: string | null
-  ) => boolean;
-};
-*/
+export { useAuth } from "./AuthProvider";
+export type { AuthContextValue } from "./AuthProvider";

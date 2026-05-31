@@ -1,131 +1,56 @@
+// src/modules/security/api/securityApi.ts
+// Company-scoped security endpoints. Base: /companies/{companyId}/security
+// All methods return AxiosResponse<T> — callers use .data.
+
 import { http } from "../../../api/http";
-export type RoleDto = {
-  id: string;
-  name: string;
-  description?: string | null;
-  userCount: number;
-  isSystem: boolean;
-};
+import type {
+  RoleDto, RoleDetailDto, PermissionCatalogItem, UserLiteDto,
+  CreateRoleRequest, UpdateRoleRequest,
+} from "../types/security.types";
 
-export type UserLiteDto = {
-  id: string;
-  email: string;
-  fullName?: string | null;
-};
-
-export type RoleDetailDto = {
-  role: RoleDto;
-  permissionKeys: string[];
-  users: UserLiteDto[];
-};
-
-export type PermissionCatalogItem = {
-  key: string;
-  group: string;
-  description: string;
-};
-
-/** Use this shape if your backend returns a structured error body. */
-type ApiErrorBody =
-  | { message?: string; error?: string; errors?: Record<string, string[]> }
-  | unknown;
+export type { RoleDto, RoleDetailDto, PermissionCatalogItem, UserLiteDto };
 
 export class ApiError extends Error {
-  status: number;
-  body: ApiErrorBody;
-
-  constructor(message: string, status: number, body: ApiErrorBody) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-    this.body = body;
+  readonly status: number;
+  readonly body: unknown;
+  constructor(message: string, status: number, body: unknown) {
+    super(message); this.name = "ApiError"; this.status = status; this.body = body;
   }
 }
 
-function buildQuery(params: Record<string, string | number | boolean | undefined | null>) {
-  const sp = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null || v === "") continue;
-    sp.set(k, String(v));
-  }
-  const s = sp.toString();
-  return s ? `?${s}` : "";
-}
-
-
-
-const base = (companyId: string) => `/companies/${companyId}/security`;
+const base = (cid: string) => `/companies/${cid}/security`;
 
 export const securityApi = {
-  // Roles
-  listRoles: (companyId: string, signal?: AbortSignal) =>
-    http.get<RoleDto[]>(
-      `${base(companyId)}/roles`,
-      { signal }
-    ),
 
-  getRole: (companyId: string, roleId: string, signal?: AbortSignal) =>
-    http.get<RoleDetailDto>(`${base(companyId)}/roles/${roleId}`, { signal }),
+  listRoles: (cid: string, signal?: AbortSignal) =>
+    http.get<RoleDto[]>(`${base(cid)}/roles`, { signal }),
 
-  createRole: (
-    companyId: string,
-    payload: { name: string; description?: string | null },
-    signal?: AbortSignal  
-  ) =>
-    http.post<string>(`${base(companyId)}/roles`, {
-      method: "POST",
-      body: JSON.stringify({ ...payload, companyId }),
-      signal,
-    }),
+  getRole: (cid: string, roleId: string, signal?: AbortSignal) =>
+    http.get<RoleDetailDto>(`${base(cid)}/roles/${encodeURIComponent(roleId)}`, { signal }),
 
-  updateRole: (
-    companyId: string,
-    roleId: string,
-    payload: { name: string; description?: string | null },
-    signal?: AbortSignal
-  ) =>
-    http.put<void>(`${base(companyId)}/roles/${encodeURIComponent(roleId)}`, {
-      method: "PUT",
-      body: JSON.stringify({ ...payload, companyId }),
-      signal,
-    }),
+  createRole: (cid: string, payload: CreateRoleRequest, signal?: AbortSignal) =>
+    http.post<string>(`${base(cid)}/roles`, { ...payload, companyId: cid }, { signal }),
 
-  deleteRole: (companyId: string, roleId: string, signal?: AbortSignal) =>
-    http.delete<void>(
-      `${base(companyId)}/roles/${encodeURIComponent(roleId)}${buildQuery({ companyId })}`,
-      { signal }
-    ),
+  updateRole: (cid: string, roleId: string, payload: UpdateRoleRequest, signal?: AbortSignal) =>
+    http.put<void>(`${base(cid)}/roles/${encodeURIComponent(roleId)}`, { ...payload, companyId: cid }, { signal }),
 
-  // Permissions catalog
-  listPermissions: (companyId: string, signal?: AbortSignal) =>
-    http.get<PermissionCatalogItem[]>(`${base(companyId)}/permissions`, { signal }),
+  deleteRole: (cid: string, roleId: string, signal?: AbortSignal) =>
+    http.delete<void>(`${base(cid)}/roles/${encodeURIComponent(roleId)}`, { signal }),
 
-  // Role permissions assignment
-  setRolePermissions: (companyId: string, roleId: string, permissionKeys: string[], signal?: AbortSignal) =>
-    http.put<void>(`${base(companyId)}/roles/${encodeURIComponent(roleId)}/permissions`, {
-      method: "PUT",
-      body: JSON.stringify({ permissionKeys }),
-      signal,
-    }),
+  listPermissions: (cid: string, signal?: AbortSignal) =>
+    http.get<PermissionCatalogItem[]>(`${base(cid)}/permissions`, { signal }),
 
-  // Users search
-  searchUsers: (companyId: string, q: string, signal?: AbortSignal) =>
-    http.get<UserLiteDto[]>(
-      `${base(companyId)}/users/search${buildQuery({ q })}`,
-      { signal }
-    ),
+  setRolePermissions: (cid: string, roleId: string, permissionKeys: string[], signal?: AbortSignal) =>
+    http.put<void>(`${base(cid)}/roles/${encodeURIComponent(roleId)}/permissions`, { permissionKeys }, { signal }),
 
-  // Role membership
-  addUserToRole: (companyId: string, roleId: string, userId: string, signal?: AbortSignal) =>
-    http.post<void>(`${base(companyId)}/roles/${encodeURIComponent(roleId)}/users`, {
-      method: "POST",
-      body: JSON.stringify({ userId }),
-      signal,
-    }),
+  searchUsers: (cid: string, q: string, signal?: AbortSignal) => {
+    const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+    return http.get<UserLiteDto[]>(`${base(cid)}/users/search${qs}`, { signal });
+  },
 
-  removeUserFromRole: (companyId: string, roleId: string, userId: string, signal?: AbortSignal) =>
-    http.delete<void>(
-      `${base(companyId)}/roles/${encodeURIComponent(roleId)}/users/${encodeURIComponent(userId)}`,
-      { signal }
-    ),
+  addUserToRole: (cid: string, roleId: string, userId: string, signal?: AbortSignal) =>
+    http.post<void>(`${base(cid)}/roles/${encodeURIComponent(roleId)}/users`, { userId }, { signal }),
+
+  removeUserFromRole: (cid: string, roleId: string, userId: string, signal?: AbortSignal) =>
+    http.delete<void>(`${base(cid)}/roles/${encodeURIComponent(roleId)}/users/${encodeURIComponent(userId)}`, { signal }),
 };

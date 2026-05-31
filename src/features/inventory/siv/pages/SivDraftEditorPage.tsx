@@ -1,65 +1,60 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-
 import { useAppScope } from "../../../../app/useAppScope";
 import SivDraftEditorScreen from "../components/SivDraftEditorScreen";
-import { sivApi } from "../api/sivApi";
+import { sivApi, type SivDetailsDto } from "../api/sivApi";
+import { normalizeStatus } from "../types/sivTypes";
 
-export type SivDraftEditorPageProps = {
-  mode?: "create" | "edit";
-};
-
-function isDraftStatus(value: unknown): boolean {
-  if (value === null || value === undefined || value === "") return true;
-
-  const status = String(value).trim().toLowerCase();
-
-  return status === "draft" || status === "10" || status === "0";
+function isDraft(value: unknown): boolean {
+  const s = normalizeStatus(value as string);
+  return s === "Draft" ||  s === "ChangesRequested";
 }
 
-export default function SivDraftEditorPage({
-  mode = "create",
-}: SivDraftEditorPageProps) {
-  const navigate = useNavigate();
+export type SivDraftEditorPageProps = { mode?: "create" | "edit" };
 
-  const params = useParams<{
+export default function SivDraftEditorPage({ mode = "create" }: SivDraftEditorPageProps) {
+  const nav = useNavigate();
+  const { companyId: routeCompanyId, draftId, sivId } = useParams<{
     companyId?: string;
     draftId?: string;
     sivId?: string;
   }>();
 
   const {
-    companyId: scopeCompanyId,
-    branchId: scopeBranchId,
-    departmentId: scopeDepartmentId,
+    companyId:        scopeCompanyId,
+    branchId:         scopeBranchId,
+    departmentId:     scopeDepartmentId,
     currentLocationId,
   } = useAppScope();
 
-  const companyId = params.companyId || scopeCompanyId || "";
-  const draftId = params.draftId || params.sivId || "";
+  // Derive stable scalars once — keeps the effect dep array readable.
+  const companyId      = routeCompanyId || scopeCompanyId || "";
+  const resolvedDraftId = draftId || sivId || "";
 
+  // FIX: was `any` — typed correctly so property accesses are checked.
+  const [draft,   setDraft]   = useState<SivDetailsDto | null>(null);
   const [loading, setLoading] = useState(mode === "edit");
-  const [error, setError] = useState("");
-  const [draft, setDraft] = useState<any | null>(null);
+  const [error,   setError]   = useState("");
 
   useEffect(() => {
+    // FIX: original had a double-nested if that merged three unrelated early
+    // exits. Separated into clear, sequential guards.
     if (mode !== "edit") return;
-
-    if (!companyId || !draftId) {
-      setError("Missing draft route parameters.");
+    if (!companyId || !resolvedDraftId) {
+      setError("Missing route parameters.");
       setLoading(false);
       return;
     }
 
     let active = true;
 
-    async function loadDraft() {
+    async function load() {
+      // Batch the loading/error reset into a single render.
+      setLoading(true);
+      setError("");
+
       try {
-        setLoading(true);
-        setError("");
-
-        const data = await sivApi.getById(companyId, draftId);
-
+        const data = await sivApi.getById(companyId, resolvedDraftId);
         if (!active) return;
 
         if (!data) {
@@ -67,53 +62,74 @@ export default function SivDraftEditorPage({
           return;
         }
 
-        if (!isDraftStatus(data.docStatus)) {
-          navigate(`/companies/${companyId}/siv/open/${data.id}`, {
-            replace: true,
-          });
+        if (!isDraft(data.status)) {
+          // Not a draft — redirect to read-only view.
+          nav(`/companies/${companyId}/siv/${data.data.id}`, { replace: true });
           return;
         }
 
-        setDraft(data);
-      } catch (err: any) {
+        setDraft(data.data);
+      } catch (e: unknown) {
         if (!active) return;
-        setError(err?.message || "Failed to load SIV draft.");
+        const msg = e instanceof Error ? e.message : "Failed to load SIV draft.";
+        setError(msg);
       } finally {
         if (active) setLoading(false);
       }
     }
 
-    void loadDraft();
+    void load();
+    return () => { active = false; };
+  }, [companyId, resolvedDraftId, mode, nav]);
 
-    return () => {
-      active = false;
-    };
-  }, [companyId, draftId, mode, navigate]);
+  // ── Guards (render path) ───────────────────────────────────────────────────
 
   if (loading) {
-    return <div style={{ padding: 24 }}>Loading SIV draft...</div>;
+    return (
+      <div className="page">
+        <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+          Loading draft…
+        </div>
+      </div>
+    );
   }
 
   if (error) {
-    return <div style={{ padding: 24 }}>{error}</div>;
+    return (
+      <div className="page">
+        <div className="alert alert-danger">{error}</div>
+      </div>
+    );
   }
 
   if (!companyId) {
-    return <div style={{ padding: 24 }}>Missing company scope.</div>;
+    return (
+      <div className="page">
+        <div className="alert alert-warn">Missing company scope.</div>
+      </div>
+    );
   }
 
-  if (mode === "create" && !scopeBranchId) {
-    return <div style={{ padding: 24 }}>Missing branch scope.</div>;
+  // FIX: branchId guard was create-only. In edit mode, if the draft has no
+  // branchId and the scope also has none, SivDraftEditorScreen can't load
+  // stock locations. Guard both modes.
+  const resolvedBranchId = draft?.branchId || scopeBranchId || "";
+  if (!resolvedBranchId) {
+    return (
+      <div className="page">
+        <div className="alert alert-warn">Missing branch scope.</div>
+      </div>
+    );
   }
 
   return (
     <SivDraftEditorScreen
-      companyId={draft?.companyId || companyId}
-      branchId={draft?.branchId || scopeBranchId}
-      departmentId={draft?.departmentId ?? scopeDepartmentId ?? null}
+      companyId={draft?.companyId      || companyId}
+      branchId={resolvedBranchId}
+      departmentId={draft?.departmentId  ?? scopeDepartmentId  ?? null}
       currentLocationId={draft?.fromLocationId ?? currentLocationId ?? null}
       mode={mode}
-      draftId={draft?.id || draftId || null}
+      draftId={draft?.id || resolvedDraftId || null}
     />
   );
 }

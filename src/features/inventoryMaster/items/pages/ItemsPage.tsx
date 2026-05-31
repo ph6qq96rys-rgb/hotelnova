@@ -176,6 +176,118 @@ const badge = (active: boolean): React.CSSProperties => ({
 
 const subtleText: React.CSSProperties = { fontSize: 12, opacity: 0.7 };
 
+// ── Error banner styles ──────────────────────────────────────────────────────
+
+const errorBannerStyle: React.CSSProperties = {
+  marginTop: 4,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid rgba(220,38,38,0.25)",
+  background: "rgba(220,38,38,0.06)",
+  color: "rgb(185,28,28)",
+  fontSize: 12.5,
+};
+
+const errorBannerTitle: React.CSSProperties = {
+  fontWeight: 700,
+  marginBottom: 2,
+};
+
+const errorBannerDetail: React.CSSProperties = {
+  opacity: 0.8,
+  marginTop: 4,
+  fontFamily: "monospace",
+  fontSize: 11.5,
+  wordBreak: "break-word",
+};
+
+// ── Structured error type ─────────────────────────────────────────────────────
+
+type ApiError = {
+  /** Short human-readable summary shown as the banner title. */
+  summary: string;
+  /**
+   * Optional detail line — comes from the backend `error` field or the
+   * inner exception message. Shown in a smaller monospace line so it doesn't
+   * overwhelm the UI but is still copy-pasteable for bug reports.
+   */
+  detail?: string;
+};
+
+/**
+ * Extracts a structured error from any thrown value.
+ *
+ * Priority order for the summary:
+ *   1. Status-code-aware message (401 / 403 / 404 / 429 / 5xx)
+ *   2. Backend `error` field  (our Program.cs exception handler shape)
+ *   3. Backend `message` or `title` fields (ASP.NET ProblemDetails shape)
+ *   4. Network / connectivity error (no HTTP response at all)
+ *   5. Generic Axios message as a last resort
+ *
+ * The `detail` field surfaces the raw backend message so developers can
+ * see the actual exception text without opening DevTools.
+ */
+function extractApiError(e: any): ApiError {
+  const status: number | undefined = e?.response?.status;
+  const data = e?.response?.data;
+
+  // ── Network / no response ──────────────────────────────────────────────────
+  if (!e?.response) {
+    const isNetwork =
+      e?.code === "ERR_NETWORK" ||
+      e?.code === "ECONNREFUSED" ||
+      e?.message?.toLowerCase().includes("network");
+
+    return {
+      summary: isNetwork
+        ? "Cannot reach the server — check your connection or whether the API is running."
+        : e?.message ?? "An unexpected error occurred.",
+    };
+  }
+
+  // ── Known status codes ─────────────────────────────────────────────────────
+  const statusSummary = ((): string | null => {
+    if (status === 400) return "Bad request — the server rejected the query parameters.";
+    if (status === 401) return "Unauthorized — your session may have expired. Please sign in again.";
+    if (status === 403) return "Access denied — you don't have permission to view items.";
+    if (status === 404) return "Items endpoint not found — the API route may have changed.";
+    if (status === 429) return "Too many requests — please wait a moment and try again.";
+    if (status != null && status >= 500) return `Server error (${status}) — check the API logs for details.`;
+    return null;
+  })();
+
+  // ── Backend message fields ─────────────────────────────────────────────────
+  // Our Program.cs exception handler emits: { error, inner, detail }
+  // ASP.NET ProblemDetails emits:           { title, detail, errors }
+  const backendMessage: string | undefined =
+    data?.error ??      // our handler
+    data?.message ??    // generic convention
+    data?.title ??      // ProblemDetails
+    undefined;
+
+  const backendDetail: string | undefined =
+    data?.inner ??      // our handler (dev only)
+    data?.detail ??     // our handler (dev only) / ProblemDetails
+    undefined;
+
+  if (statusSummary) {
+    return {
+      summary: statusSummary,
+      // If the backend also sent a message, surface it as detail so devs
+      // can see the specific exception without opening the network tab.
+      detail: backendMessage ?? backendDetail,
+    };
+  }
+
+  // ── Fallback: use whatever the backend sent ────────────────────────────────
+  return {
+    summary: backendMessage ?? e?.message ?? "Failed to load items.",
+    detail: backendDetail,
+  };
+}
+
+// ── Row types ─────────────────────────────────────────────────────────────────
+
 type ItemRow = {
   id: string;
   name?: string;
@@ -212,7 +324,7 @@ export default function ItemsPage() {
   const [activeOnly, setActiveOnly] = useState(true);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
 
   // Debounce search input (GRN-style UX)
@@ -230,7 +342,7 @@ export default function ItemsPage() {
       setItems(Array.isArray(data) ? (data as any) : []);
       setLastLoadedAt(new Date());
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.message ?? "Failed to load items.");
+      setError(extractApiError(e));
       setItems([]);
     } finally {
       setLoading(false);
@@ -278,7 +390,13 @@ export default function ItemsPage() {
   }
 
   const rightStatus =
-    loading ? "Loading…" : error ? "Load failed" : lastLoadedAt ? `Updated ${lastLoadedAt.toLocaleTimeString()}` : "—";
+    loading
+      ? "Loading…"
+      : error
+      ? `Failed · ${new Date().toLocaleTimeString()}`
+      : lastLoadedAt
+      ? `Updated ${lastLoadedAt.toLocaleTimeString()}`
+      : "—";
 
   return (
     <div style={pageWrap}>
@@ -320,7 +438,9 @@ export default function ItemsPage() {
             </div>
           </div>
 
-          <div style={{ fontSize: 12, opacity: 0.7 }}>{rightStatus}</div>
+          <div style={{ fontSize: 12, opacity: error ? 1 : 0.7, color: error ? "rgb(185,28,28)" : "inherit" }}>
+            {rightStatus}
+          </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
@@ -371,7 +491,32 @@ export default function ItemsPage() {
               </button>
             </div>
 
-            {error && <div style={errorStyle}>{error}</div>}
+            {/* ── Error banner ──────────────────────────────────────────────── */}
+            {error && (
+              <div style={errorBannerStyle}>
+                <div style={errorBannerTitle}>{error.summary}</div>
+                {error.detail && (
+                  <div style={errorBannerDetail}>{error.detail}</div>
+                )}
+                <button
+                  type="button"
+                  style={{
+                    marginTop: 8,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    background: "none",
+                    border: "none",
+                    color: "rgb(185,28,28)",
+                    padding: 0,
+                    textDecoration: "underline",
+                  }}
+                  onClick={() => companyId && load(companyId, qDebounced)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -382,7 +527,7 @@ export default function ItemsPage() {
           <div>
             <div style={{ fontSize: 13, fontWeight: 800 }}>Item Register</div>
             <div style={{ marginTop: 4, ...subtleText }}>
-              Click a row to open details. Use “New Item” to register a new catalog entry.
+              Click a row to open details. Use "New Item" to register a new catalog entry.
             </div>
           </div>
 
@@ -421,28 +566,40 @@ export default function ItemsPage() {
                 </>
               )}
 
-              {!loading && visibleItems.length === 0 && (
-                <tr>
-                  <td style={{ ...tdStyle, padding: 18 }} colSpan={6}>
-                    <EmptyState
-                      title={qDebounced ? "No matching items found" : activeOnly ? "No active items" : "No items yet"}
-                      subtitle={
-                        qDebounced
-                          ? "Try a different keyword or clear search."
-                          : activeOnly
-                          ? "Switch to “All” to see inactive items, or create a new item."
-                          : "Register your first item to start tracking inventory."
-                      }
-                      actionText="+ New Item"
-                      onAction={() => nav("new")}
-                      secondaryText={qDebounced ? "Clear search" : activeOnly ? "Show all" : undefined}
-                      onSecondary={
-                        qDebounced ? () => setQ("") : activeOnly ? () => setActiveOnly(false) : undefined
-                      }
-                    />
-                  </td>
-                </tr>
-              )}
+              {!loading && visibleItems.length === 0 && (() => {
+                const emptyTitle = qDebounced
+                  ? "No matching items found"
+                  : activeOnly ? "No active items" : "No items yet";
+
+                const emptySubtitle = qDebounced
+                  ? "Try a different keyword or clear search."
+                  : activeOnly
+                  ? 'Switch to “All” to see inactive items, or create a new item.'
+                  : "Register your first item to start tracking inventory.";
+
+                const emptySecondaryText: string | undefined = qDebounced
+                  ? "Clear search"
+                  : activeOnly ? "Show all" : undefined;
+
+                const emptyOnSecondary: (() => void) | undefined = qDebounced
+                  ? () => setQ("")
+                  : activeOnly ? () => setActiveOnly(false) : undefined;
+
+                return (
+                  <tr>
+                    <td style={{ ...tdStyle, padding: 18 }} colSpan={6}>
+                      <EmptyState
+                        title={emptyTitle}
+                        subtitle={emptySubtitle}
+                        actionText="+ New Item"
+                        onAction={() => nav("new")}
+                        secondaryText={emptySecondaryText}
+                        onSecondary={emptyOnSecondary}
+                      />
+                    </td>
+                  </tr>
+                );
+              })()}
 
               {!loading &&
                 visibleItems.map((i) => {
@@ -534,7 +691,7 @@ export default function ItemsPage() {
           {qDebounced ? (
             <>
               {" "}
-              for “<b style={{ opacity: 1 }}>{qDebounced}</b>”
+              for "<b style={{ opacity: 1 }}>{qDebounced}</b>"
             </>
           ) : null}
         </div>
@@ -638,11 +795,11 @@ function EmptyState(props: {
         <button style={primaryBtn} onClick={onAction}>
           {actionText}
         </button>
-        {secondaryText && onSecondary && (
+        {secondaryText != null && onSecondary != null ? (
           <button style={secondaryBtn} onClick={onSecondary}>
             {secondaryText}
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );

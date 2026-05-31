@@ -1,12 +1,10 @@
-﻿// =============================================================================
-// Production Batches API Client
-// Mirrors: api/companies/{companyId}/branches/{branchId}/production/batches
+﻿// src/features/production/api/productionBatchesApi.ts
 //
-// Uses the shared axios `http` instance so base-URL, auth headers, and
-// interceptors are applied consistently with the rest of the app — avoiding
-// the mismatch that caused "[FromBody] req is required" when fetch sent
-// requests to a different origin than the axios instance.
-// =============================================================================
+// Production batch CRUD, recipe application, posting, and reversal.
+// Base path: /companies/{companyId}/branches/{branchId}/production/batches
+//
+// C# ProductionBatchStatus enum:
+//   Draft = 2 | Approved = 3 | Posted = 4 | Reversed = 5
 
 import { http } from "../../../api/http";
 import type { AxiosRequestConfig } from "axios";
@@ -14,62 +12,96 @@ import type { AxiosRequestConfig } from "axios";
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
 export interface ProductionInputLineDto {
-  id?: string | null;
-  lineNo?: number | null;
-  itemId?: string | null;
-  itemName?: string | null;
-  uomId?: string | null;
-  uomName?: string | null;
-  qty?: number | null;
-  qtyBase?: number | null;
-  source?: string | null;
+  id:            string;
+  lineNo:        number;
+  itemId:        string;
+  uomId:         string;
+  qty:           number;
+  qtyBase:       number;
+  unitCost:      number;
+  lineAmount:    number;
+  /** ProductionInputSource numeric enum — use normaliseSource() in components. */
+  source:        number;
   recipeLineId?: string | null;
+  batchNo?:      string | null;
+  expiryDate?:   string | null;
+  notes?:        string | null;
+}
+
+export interface ProductionOutputLineDto {
+  id:          string;
+  lineNo:      number;
+  itemId:      string;
+  uomId:       string;
+  qty:         number;
+  qtyBase:     number;
+  unitCost:    number;
+  lineAmount:  number;
+  batchNo?:    string | null;
+  expiryDate?: string | null;
+  notes?:      string | null;
 }
 
 export interface ProductionBatchDto {
-  id: string;
-  companyId: string;
-  branchId: string;
-  batchNo?: string | null;
-  status: "Draft" | "Posted" | "Reversed";
-  menuItemId?: string | null;
-  plannedQty?: number | null;
-  issueLocationId?: string | null;
-  outputLocationId?: string | null;
-  inputs?: ProductionInputLineDto[] | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
+  id:              string;
+  companyId:       string;
+  branchId:        string;
+  batchNo:         string;
+  /** Numeric status — see C# ProductionBatchStatus enum. */
+  status:          number;
+  issueLocationId: string;
+  outputLocationId:string;
+  producedAtUtc:   string;
+  inputs:          ProductionInputLineDto[];
+  outputs:         ProductionOutputLineDto[];
+  recipeId?:       string | null;
+  notes?:          string | null;
+  postedAtUtc?:    string | null;
+  postedBy?:       string | null;
+  ledgerGroupId?:  string | null;
 }
 
+// ── Requests ──────────────────────────────────────────────────────────────────
+
 export interface CreateProductionBatchRequest {
-  menuItemId: string;       // Guid string
-  plannedQty: number;
-  issueLocationId: string;  // Guid string
-  outputLocationId: string; // Guid string
+  menuItemId:       string;
+  plannedQty:       number;
+  issueLocationId:  string;
+  outputLocationId: string;
+  /** ISO 8601 datetime string — maps to C# DateTime ProducedAtUtc. */
+  producedAtUtc:    string;
+  notes?:           string | null;
+}
+
+export interface ProductionLineRequest {
+  itemId:      string;
+  uomId:       string;
+  qty:         number;
+  id?:         string | null;
+  lineNo?:     number | null;
+  batchNo?:    string | null;
+  expiryDate?: string | null;
+  notes?:      string | null;
 }
 
 export interface UpdateProductionLinesRequest {
-  inputs: {
-    lineNo: number;
-    itemId: string;
-    qty: number;
-    uomId?: string | null;
-    source?: string | null;
-    recipeLineId?: string | null;
-  }[];
+  inputs:  ProductionLineRequest[];
+  outputs: ProductionLineRequest[];
 }
 
+/** RecipeId is the recipe entity ID — not the menuItemId. */
 export interface ApplyRecipeRequest {
-  menuItemId: string;
-  plannedQty: number;
+  recipeId:              string;
+  outputQty:             number;
+  replaceExistingInputs: boolean;
 }
 
-// ── API Error ─────────────────────────────────────────────────────────────────
+// ── ApiError ──────────────────────────────────────────────────────────────────
 
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    public readonly title: string,
+    public readonly title:  string,
     public readonly detail?: string,
     public readonly errors?: Record<string, string[]>
   ) {
@@ -79,23 +111,17 @@ export class ApiError extends Error {
 
   static fromAxios(e: unknown): ApiError {
     const err  = e as any;
-    const res  = err?.response;
-    const data = res?.data;
-
-    const status = res?.status ?? 0;
-    const title  =
-      data?.title   ??
-      data?.message ??
-      err?.message  ??
-      "Request failed";
-    const detail = typeof data === "string" ? data : (data?.detail ?? undefined);
-    const errors = data?.errors ?? undefined;
-
-    return new ApiError(status, title, detail, errors);
+    const data = err?.response?.data;
+    return new ApiError(
+      err?.response?.status ?? 0,
+      data?.title ?? data?.message ?? err?.message ?? "Request failed",
+      typeof data === "string" ? data : (data?.detail ?? undefined),
+      data?.errors ?? undefined
+    );
   }
 }
 
-// ── Path helpers ──────────────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
 function batchesPath(companyId: string, branchId: string): string {
   return `/companies/${companyId}/branches/${branchId}/production/batches`;
@@ -105,28 +131,19 @@ function batchPath(companyId: string, branchId: string, batchId: string): string
   return `${batchesPath(companyId, branchId)}/${batchId}`;
 }
 
-// ── Core request wrapper ──────────────────────────────────────────────────────
-
 async function request<T>(
   method: "GET" | "POST" | "PUT" | "DELETE",
   url: string,
-  opts: { body?: unknown; signal?: AbortSignal } = {}
+  body?: unknown,
+  signal?: AbortSignal
 ): Promise<T> {
-  const config: AxiosRequestConfig = { signal: opts.signal };
-
+  const cfg: AxiosRequestConfig = { signal };
   try {
-    let res;
-    if (method === "GET") {
-      res = await http.get<T>(url, config);
-    } else if (method === "DELETE") {
-      res = await http.delete<T>(url, config);
-    } else if (method === "PUT") {
-      res = await http.put<T>(url, opts.body ?? {}, config);
-    } else {
-      // POST — always pass a body object so Content-Type: application/json
-      // is sent and ASP.NET Core [FromBody] can bind the model.
-      res = await http.post<T>(url, opts.body ?? {}, config);
-    }
+    const res =
+      method === "GET"    ? await http.get<T>(url, cfg) :
+      method === "DELETE" ? await http.delete<T>(url, cfg) :
+      method === "PUT"    ? await http.put<T>(url, body ?? {}, cfg) :
+                            await http.post<T>(url, body ?? {}, cfg);
     return res.data;
   } catch (e) {
     throw ApiError.fromAxios(e);
@@ -136,104 +153,41 @@ async function request<T>(
 // ── Full client ───────────────────────────────────────────────────────────────
 
 export const productionBatchesApi = {
-  create(
-    companyId: string,
-    branchId: string,
-    body: CreateProductionBatchRequest,
-    signal?: AbortSignal
-  ): Promise<string> {
-    return request<string>("POST", batchesPath(companyId, branchId), { body, signal });
+  create(companyId: string, branchId: string, body: CreateProductionBatchRequest, signal?: AbortSignal): Promise<string> {
+    return request("POST", batchesPath(companyId, branchId), body, signal);
   },
 
-  get(
-    companyId: string,
-    branchId: string,
-    batchId: string,
-    signal?: AbortSignal
-  ): Promise<ProductionBatchDto> {
-    return request<ProductionBatchDto>(
-      "GET",
-      batchPath(companyId, branchId, batchId),
-      { signal }
-    );
+  get(companyId: string, branchId: string, batchId: string, signal?: AbortSignal): Promise<ProductionBatchDto> {
+    return request("GET", batchPath(companyId, branchId, batchId), undefined, signal);
   },
 
-  updateLines(
-    companyId: string,
-    branchId: string,
-    batchId: string,
-    body: UpdateProductionLinesRequest,
-    signal?: AbortSignal
-  ): Promise<void> {
-    return request<void>(
-      "PUT",
-      `${batchPath(companyId, branchId, batchId)}/lines`,
-      { body, signal }
-    );
+  updateLines(companyId: string, branchId: string, batchId: string, body: UpdateProductionLinesRequest, signal?: AbortSignal): Promise<void> {
+    return request("PUT", `${batchPath(companyId, branchId, batchId)}/lines`, body, signal);
   },
 
-  applyRecipe(
-    companyId: string,
-    branchId: string,
-    batchId: string,
-    body: ApplyRecipeRequest,
-    signal?: AbortSignal
-  ): Promise<void> {
-    return request<void>(
-      "POST",
-      `${batchPath(companyId, branchId, batchId)}/apply-recipe`,
-      { body, signal }
-    );
+  applyRecipe(companyId: string, branchId: string, batchId: string, body: ApplyRecipeRequest, signal?: AbortSignal): Promise<void> {
+    return request("POST", `${batchPath(companyId, branchId, batchId)}/apply-recipe`, body, signal);
   },
 
-  post(
-    companyId: string,
-    branchId: string,
-    batchId: string,
-    signal?: AbortSignal
-  ): Promise<void> {
-    return request<void>(
-      "POST",
-      `${batchPath(companyId, branchId, batchId)}/post`,
-      { body: {}, signal }   // empty body — POST with no body fails [FromBody]
-    );
+  post(companyId: string, branchId: string, batchId: string, signal?: AbortSignal): Promise<void> {
+    return request("POST", `${batchPath(companyId, branchId, batchId)}/post`, {}, signal);
   },
 
-  reverse(
-    companyId: string,
-    branchId: string,
-    batchId: string,
-    signal?: AbortSignal
-  ): Promise<void> {
-    return request<void>(
-      "POST",
-      `${batchPath(companyId, branchId, batchId)}/reverse`,
-      { body: {}, signal }
-    );
+  reverse(companyId: string, branchId: string, batchId: string, signal?: AbortSignal): Promise<void> {
+    return request("POST", `${batchPath(companyId, branchId, batchId)}/reverse`, {}, signal);
   },
 };
 
-// ── Scoped client ─────────────────────────────────────────────────────────────
+// ── Scoped client (preferred at call sites) ───────────────────────────────────
 
 export function createScopedProductionBatchesApi(companyId: string, branchId: string) {
   return {
-    create: (body: CreateProductionBatchRequest, signal?: AbortSignal) =>
-      productionBatchesApi.create(companyId, branchId, body, signal),
-
-    get: (batchId: string, signal?: AbortSignal) =>
-      productionBatchesApi.get(companyId, branchId, batchId, signal),
-
-    updateLines: (batchId: string, body: UpdateProductionLinesRequest, signal?: AbortSignal) =>
-      productionBatchesApi.updateLines(companyId, branchId, batchId, body, signal),
-
-    applyRecipe: (batchId: string, body: ApplyRecipeRequest, signal?: AbortSignal) =>
-      productionBatchesApi.applyRecipe(companyId, branchId, batchId, body, signal),
-
-    post: (batchId: string, signal?: AbortSignal) =>
-      productionBatchesApi.post(companyId, branchId, batchId, signal),
-
-    reverse: (batchId: string, signal?: AbortSignal) =>
-      productionBatchesApi.reverse(companyId, branchId, batchId, signal),
+    create:      (body: CreateProductionBatchRequest, signal?: AbortSignal)     => productionBatchesApi.create(companyId, branchId, body, signal),
+    get:         (batchId: string, signal?: AbortSignal)                        => productionBatchesApi.get(companyId, branchId, batchId, signal),
+    updateLines: (batchId: string, body: UpdateProductionLinesRequest, signal?: AbortSignal) => productionBatchesApi.updateLines(companyId, branchId, batchId, body, signal),
+    applyRecipe: (batchId: string, body: ApplyRecipeRequest, signal?: AbortSignal)           => productionBatchesApi.applyRecipe(companyId, branchId, batchId, body, signal),
+    post:        (batchId: string, signal?: AbortSignal)                        => productionBatchesApi.post(companyId, branchId, batchId, signal),
+    reverse:     (batchId: string, signal?: AbortSignal)                        => productionBatchesApi.reverse(companyId, branchId, batchId, signal),
   };
 }
 

@@ -1,0 +1,358 @@
+:root {
+  --erp-bg: #0b1120;
+  --erp-panel: #111827;
+  --erp-panel-2: #172033;
+  --erp-border: rgba(255, 255, 255, 0.09);
+  --erp-text: #e5e7eb;
+  --erp-muted: #94a3b8;
+  --erp-primary: #38bdf8;
+  --erp-primary-2: #0ea5e9;
+  --erp-good: #22c55e;
+  --erp-warn: #f59e0b;
+  --erp-danger: #ef4444;
+  --erp-radius: 18px;
+  --erp-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+}
+
+.erp-pos-page {
+  min-height: 100vh;
+  padding: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.15), transparent 32rem),
+    linear-gradient(180deg, #0b1120 0%, #0f172a 100%);
+  color: var(--erp-text);
+}
+
+.erp-page-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.erp-page-title h1,
+.erp-panel h3,
+.erp-pos-session-bar h2 {
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+
+.erp-page-title p,
+.erp-pos-session-bar p {
+  color: var(--erp-muted);
+  margin: 7px 0 0;
+}
+
+.erp-eyebrow {
+  color: var(--erp-primary);
+  text-transform: uppercase;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  margin-bottom: 6px;
+}
+
+.erp-pos-session-bar,
+.erp-panel {
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.98), rgba(15, 23, 42, 0.98));
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius);
+  box-shadow: var(--erp-shadow);
+}
+
+.erp-pos-session-bar {
+  padding: 18px;
+  margin-bottom: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.erp-session-actions,
+.erp-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.erp-pos-layout {
+  display: grid;
+  grid-template-columns: 1fr minmax(430px, 1.25fr) 380px;
+  gap: 18px;
+  align-items: start;
+}
+
+.erp-import-layout {
+  display: grid;
+  grid-template-columns: minmax(420px, 0.9fr) minmax(420px, 1.1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.erp-panel {
+  padding: 18px;
+}
+
+.erp-input {
+  width: 100%;
+  background: #0b1220;
+  border: 1px solid var(--erp-border);
+  border-radius: 12px;
+  color: var(--erp-text);
+  padding: 11px 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.erp-input:focus {
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+}
+
+.erp-location-select {
+  width: min(360px, 100%);
+}
+
+.erp-form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 13px;
+  margin-top: 16px;
+}
+
+.erp-form-grid-wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.erp-form-grid label,
+.erp-check-row {
+  color: var(--erp-muted);
+  font-size: 0.82rem;
+  display: grid;
+  gap: 7px;
+}
+
+.erp-check-row {
+  display: flex;
+  align-items: center;
+  margin: 16px 0;
+}
+
+.erp-btn {
+  border: 1px solid var(--erp-border);
+  color: var(--erp-text);
+  background: #111827;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.erp-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.erp-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.erp-btn-primary {
+  background: linear-gradient(135deg, var(--erp-primary), var(--erp-primary-2));
+  border-color: transparent;
+  color: #06111f;
+}
+
+.erp-btn-block {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.erp-icon-btn {
+  border: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: white;
+  background: rgba(239, 68, 68, 0.16);
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.erp-menu-results {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.erp-menu-result {
+  width: 100%;
+  border: 1px solid var(--erp-border);
+  border-radius: 14px;
+  background: var(--erp-panel-2);
+  color: var(--erp-text);
+  padding: 13px;
+  display: flex;
+  justify-content: space-between;
+  text-align: left;
+  cursor: pointer;
+}
+
+.erp-menu-result small,
+.erp-cart-name small {
+  display: block;
+  color: var(--erp-muted);
+  margin-top: 4px;
+}
+
+.erp-cart-lines {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.erp-cart-line {
+  display: grid;
+  grid-template-columns: 1fr 90px 110px 38px;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.86);
+  border: 1px solid var(--erp-border);
+}
+
+.erp-number {
+  text-align: right;
+}
+
+.erp-totals {
+  margin-top: 18px;
+  border-top: 1px solid var(--erp-border);
+  padding-top: 12px;
+  display: grid;
+  gap: 9px;
+}
+
+.erp-total-row,
+.erp-payment-summary {
+  display: flex;
+  justify-content: space-between;
+  color: var(--erp-muted);
+}
+
+.erp-total-row-strong {
+  color: var(--erp-text);
+  font-size: 1.15rem;
+}
+
+.erp-payment-summary {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 16px;
+}
+
+.erp-badge {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--erp-primary);
+  font-weight: 800;
+}
+
+.erp-alert {
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--erp-text);
+  padding: 12px 14px;
+  border-radius: 14px;
+  margin: 14px 0;
+}
+
+.erp-alert-success {
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.erp-alert-danger {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.erp-empty {
+  color: var(--erp-muted);
+  border: 1px dashed var(--erp-border);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.erp-empty-large {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.erp-muted {
+  color: var(--erp-muted);
+}
+
+.erp-good {
+  color: var(--erp-good);
+}
+
+.erp-warn {
+  color: var(--erp-warn);
+}
+
+.erp-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.erp-kpi {
+  background: #0b1220;
+  border: 1px solid var(--erp-border);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.erp-kpi span {
+  color: var(--erp-muted);
+  font-size: 0.8rem;
+}
+
+.erp-kpi b {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.35rem;
+}
+
+.erp-warning-list {
+  margin-top: 16px;
+}
+
+.erp-warning-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--erp-border);
+  color: var(--erp-muted);
+}
+
+@media (max-width: 1180px) {
+  .erp-pos-layout,
+  .erp-import-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-pos-session-bar,
+  .erp-page-title {
+    flex-direction: column;
+  }
+}

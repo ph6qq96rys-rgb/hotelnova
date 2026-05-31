@@ -1,300 +1,130 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { NavLink } from "react-router-dom";
+// ─── GrnDraftListPage ─────────────────────────────────────────────────────────
+// Focused draft management view. Refactored as a thin shell.
+
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
+
+import { useGrnList } from "../hooks/useGrn.hooks";
 import { grnApi } from "../api/grnApi";
-import type { GrnListDto } from "../types/grn";
-
+import type { GrnListDto, GrnStatusFilter } from "../types/grn.types";
 import {
-  cardStyle,
-  labelStyle,
-  inputStyle,
-  errorStyle,
-  tableStyle,
-  thStyle,
-  tdStyle,
-  primaryBtn,
-  secondaryBtn,
-  dangerBtn,
-  stickyBar,
-} from "../../../../shared/inventoryStyles";
+  getGrnStatus, isDraft, isPosted, hasIssuedFromPostedGrn,
+  canReverseGrn, getReceivedDate, fmtDateTime, trim, extractApiError, 
+} from "../utils/grn.utils";
+import {
+  pageWrap, cardStyle, stickyBar, tableStyle, tableWrap,
+  thStyle, tdStyle, labelStyle, inputStyle, primaryBtn, secondaryBtn,
+  dangerBtn, StatusBadge, IssuedBadge, StatCard, PageHeader,
+  EmptyRow, LoadingRows, NavBtn, SectionHead, tokens,
+} from "../components/grn.ui";
 
-type StatusOption = "DRAFT" | "POSTED" | "CANCELLED" | "ALL";
-
-type GrnRow = GrnListDto & {
-  id?: string;
-  grnNumber?: string | null;
-  supplierName?: string | null;
-  status?: string | null;
-  receiptDate?: string | null;
-  receivedDate?: string | null;
-  receivedAtUtc?: string | null;
-  issued?: boolean | null;
-  hasIssue?: boolean | null;
-  issuedAtUtc?: string | null;
-  issueStatus?: string | null;
-};
-
-const STATUS_OPTIONS: { value: StatusOption; label: string }[] = [
-  { value: "DRAFT", label: "Draft" },
+const STATUS_OPTIONS: { value: GrnStatusFilter; label: string }[] = [
+  { value: "DRAFT", label: "Drafts" },
   { value: "POSTED", label: "Posted" },
   { value: "CANCELLED", label: "Cancelled" },
   { value: "ALL", label: "All" },
 ];
 
-function clean(value?: string | null): string {
-  return (value ?? "").trim();
-}
-
-function normalize(value: unknown): string {
-  return String(value ?? "").trim().toUpperCase();
-}
-
-function getErrorMessage(error: unknown): string {
-  const e = error as {
-    response?: { data?: { message?: string; title?: string } };
-    message?: string;
-  };
-
-  return (
-    e?.response?.data?.message ??
-    e?.response?.data?.title ??
-    e?.message ??
-    "Failed to load GRNs."
-  );
-}
-
-function formatDateTime(value?: string | null): string {
-  const text = clean(value);
-  if (!text) return "—";
-
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? text : date.toLocaleString();
-}
-
-function getReceivedDate(row: GrnRow): string | null {
-  return row.receiptDate ?? row.receivedDate ?? row.receivedAtUtc ?? null;
-}
-
-function getGrnStatus(row: GrnRow): StatusOption | string {
-  return normalize(row.status);
-}
-
-function isDraft(row: GrnRow): boolean {
-  return getGrnStatus(row) === "DRAFT";
-}
-
-function isPosted(row: GrnRow): boolean {
-  return getGrnStatus(row) === "POSTED";
-}
-
-function hasIssuedFromPostedGrn(row: GrnRow): boolean {
-  const issueStatus = normalize(row.issueStatus);
-
-  return Boolean(
-    row.issued ||
-      row.hasIssue ||
-      row.issuedAtUtc ||
-      issueStatus === "ISSUED"
-  );
-}
-
-function canReverse(row: GrnRow): boolean {
-  return isPosted(row) && !hasIssuedFromPostedGrn(row);
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const value = normalize(status);
-
-  const styleByStatus: Record<string, React.CSSProperties> = {
-    DRAFT: {
-      background: "#fef3c7",
-      color: "#92400e",
-      border: "1px solid #fde68a",
-    },
-    POSTED: {
-      background: "#dcfce7",
-      color: "#166534",
-      border: "1px solid #bbf7d0",
-    },
-    CANCELLED: {
-      background: "#fee2e2",
-      color: "#991b1b",
-      border: "1px solid #fecaca",
-    },
-  };
-
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        height: 24,
-        padding: "0 10px",
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 800,
-        ...(styleByStatus[value] ?? {
-          background: "#f1f5f9",
-          color: "#334155",
-          border: "1px solid #e2e8f0",
-        }),
-      }}
-    >
-      {status || "—"}
-    </span>
-  );
-}
-
 export default function GrnDraftListPage() {
+  const nav = useNavigate();
   const { companyId } = useAppScope();
+  const { rows, loading, error, refresh } = useGrnList();
 
-  const [rows, setRows] = useState<GrnRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<StatusOption>("DRAFT");
-
-  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<GrnStatusFilter>("DRAFT");
+  const [reversingGrnNumber, setReversingGrnNumber] = useState<string | null>(null);
   const [reverseError, setReverseError] = useState<string | null>(null);
   const [reverseOk, setReverseOk] = useState<string | null>(null);
-  const [reversingGrnNumber, setReversingGrnNumber] = useState<string | null>(
-    null
-  );
 
-  const load = useCallback(async () => {
-    if (!companyId) return;
+  const filtered = useMemo(() => {
+    if (statusFilter === "ALL") return rows;
+    return rows.filter((r) => getGrnStatus(r) === statusFilter);
+  }, [rows, statusFilter]);
 
-    setLoading(true);
-    setError(null);
+  const stats = useMemo(() => ({
+    drafts: rows.filter((r) => getGrnStatus(r) === "DRAFT").length,
+    posted: rows.filter((r) => getGrnStatus(r) === "POSTED").length,
+    reversible: rows.filter(canReverseGrn).length,
+  }), [rows]);
 
-    try {
-      const data = await grnApi.list(companyId);
-      setRows(Array.isArray(data) ? (data as GrnRow[]) : []);
-    } catch (err) {
-      setRows([]);
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const filteredRows = useMemo(() => {
-    if (status === "ALL") return rows;
-    return rows.filter((row) => getGrnStatus(row) === status);
-  }, [rows, status]);
-
-  const handleReverse = async (row: GrnRow) => {
-    if (!companyId) return;
+  const handleReverse = async (row: GrnListDto) => {
+    if (!companyId || !canReverseGrn(row)) return;
+    const grnNumber = trim((row as any).grnNumber);
+    if (!grnNumber) { setReverseError("Missing GRN number."); return; }
+    if (!window.confirm(`Reverse GRN "${grnNumber}"? This cannot be undone.`)) return;
 
     setReverseError(null);
     setReverseOk(null);
-
-    if (!isPosted(row)) return;
-
-    if (hasIssuedFromPostedGrn(row)) {
-      setReverseError("Cannot reverse: this posted GRN has already been issued.");
-      return;
-    }
-
-    const grnNumber = clean(row.grnNumber);
-
-    if (!grnNumber) {
-      setReverseError("Cannot reverse: missing GRN number.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Reverse posted GRN ${grnNumber}? This cannot be undone.`
-    );
-
-    if (!confirmed) return;
-
     setReversingGrnNumber(grnNumber);
-
     try {
-      await grnApi.reverseByNumber(companyId, grnNumber, { reason: null });
-      setReverseOk("GRN reversed successfully.");
-      await load();
-    } catch (err) {
-      setReverseError(getErrorMessage(err));
+      await grnApi.reverseById(companyId, grnNumber, { reason: null });
+      setReverseOk(`GRN ${grnNumber} reversed.`);
+      refresh();
+    } catch (e) {
+      setReverseError(extractApiError(e, "Failed to reverse GRN"));
     } finally {
       setReversingGrnNumber(null);
     }
   };
 
-  if (!companyId) {
-    return <div style={{ padding: 16 }}>Select a company first.</div>;
-  }
+  if (!companyId) return <div style={{ padding: 24 }}>Select a company to continue.</div>;
 
   return (
-    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
+    <div style={pageWrap}>
       <PageHeader
-        totalRows={rows.length}
-        visibleRows={filteredRows.length}
-        error={error}
-        reverseError={reverseError}
-        reverseOk={reverseOk}
+        title="Draft GRNs"
+        subtitle="Create and edit draft receipts before posting to inventory."
+        errorMsg={error || reverseError}
+        successMsg={reverseOk}
+        rightSlot={
+          <>
+            <NavBtn to={`/companies/${companyId}/grns`} style={secondaryBtn}>All GRNs</NavBtn>
+            <NavBtn to={`/companies/${companyId}/grns/reverse`} style={secondaryBtn}>Reverse by number</NavBtn>
+            <button style={primaryBtn} onClick={() => nav(`/companies/${companyId}/grns/drafts/new`)}>
+              + New Draft
+            </button>
+          </>
+        }
       />
 
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 20 }}>
+        <StatCard label="Drafts" value={stats.drafts} />
+        <StatCard label="Posted" value={stats.posted} />
+        <StatCard label="Can reverse" value={stats.reversible} />
+      </div>
+
+      {/* Filter */}
       <div style={cardStyle}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(12, 1fr)",
-            gap: 12,
-            alignItems: "end",
-          }}
-        >
-          <div style={{ gridColumn: "span 4" }}>
-            <label style={labelStyle}>Status</label>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ flex: "0 0 200px" }}>
+            <label style={labelStyle}>Filter by status</label>
             <select
-              style={inputStyle(false)}
-              value={status}
-              onChange={(event) => setStatus(event.target.value as StatusOption)}
+              style={inputStyle()}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as GrnStatusFilter)}
               disabled={loading}
             >
-              {STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
           </div>
-
-          <div
-            style={{
-              gridColumn: "span 8",
-              display: "flex",
-              gap: 10,
-              justifyContent: "flex-end",
-              flexWrap: "wrap",
-            }}
-          >
-            <button style={secondaryBtn} onClick={load} disabled={loading}>
-              {loading ? "Refreshing..." : "Refresh"}
+          <div style={{ marginTop: 18 }}>
+            <button style={secondaryBtn} onClick={refresh} disabled={loading}>
+              {loading ? "Refreshing…" : "↺ Refresh"}
             </button>
-
-            <NavButton
-              to={`/companies/${companyId}/grns/drafts/new`}
-              buttonStyle={primaryBtn}
-            >
-              + New Draft
-            </NavButton>
-
-            <NavButton
-              to={`/companies/${companyId}/grns/reverse`}
-              buttonStyle={secondaryBtn}
-            >
-              Reverse by Number
-            </NavButton>
           </div>
         </div>
       </div>
 
+      {/* Table */}
       <div style={cardStyle}>
-        <div style={{ marginTop: 14, overflowX: "auto" }}>
+        <SectionHead
+          title="GRN List"
+          subtitle={`Showing ${filtered.length} of ${rows.length} records`}
+        />
+        <div style={tableWrap}>
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -306,70 +136,58 @@ export default function GrnDraftListPage() {
                 <th style={{ ...thStyle, textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
-
             <tbody>
               {loading ? (
-                <EmptyRow message="Loading…" />
-              ) : filteredRows.length === 0 ? (
-                <EmptyRow message="No records for the selected status." />
+                <LoadingRows colSpan={6} />
+              ) : filtered.length === 0 ? (
+                <EmptyRow message="No records for the selected status." colSpan={6} />
               ) : (
-                filteredRows.map((row) => {
-                  const id = String(row.id ?? "");
-                  const grnNumber = clean(row.grnNumber);
+                filtered.map((row) => {
+                  const anyR = row as any;
+                  const id = String(anyR?.id ?? "");
+                  const grnNumber = trim(anyR?.grnNumber);
                   const posted = isPosted(row);
                   const draft = isDraft(row);
                   const issued = posted && hasIssuedFromPostedGrn(row);
-                  const reverseBusy = reversingGrnNumber === grnNumber;
+                  const canRev = canReverseGrn(row);
+                  const busy = reversingGrnNumber === grnNumber;
 
                   return (
                     <tr key={id || grnNumber}>
-                      <td style={tdStyle}>{formatDateTime(getReceivedDate(row))}</td>
-
-                      <td style={{ ...tdStyle, fontWeight: 800 }}>
-                        {grnNumber || "—"}
+                      <td style={{ ...tdStyle, color: tokens.colorMuted }}>
+                        {fmtDateTime(getReceivedDate(row))}
                       </td>
-
-                      <td style={tdStyle}>{clean(row.supplierName) || "—"}</td>
-
+                      <td style={{ ...tdStyle, fontWeight: 700, color: tokens.accent }}>
+                        {grnNumber || <span style={{ color: tokens.colorHint }}>—</span>}
+                      </td>
+                      <td style={tdStyle}>{trim(row.supplierName) || <span style={{ color: tokens.colorHint }}>—</span>}</td>
+                      <td style={tdStyle}><StatusBadge status={trim(anyR?.status)} /></td>
                       <td style={tdStyle}>
-                        <StatusBadge status={clean(row.status)} />
+                        {posted ? <IssuedBadge issued={issued} /> : <span style={{ color: tokens.colorHint, fontSize: 12 }}>—</span>}
                       </td>
-
-                      <td style={tdStyle}>
-                        {posted ? (issued ? "Yes" : "No") : "—"}
-                      </td>
-
                       <td style={{ ...tdStyle, textAlign: "right" }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 10,
-                            justifyContent: "flex-end",
-                          }}
-                        >
+                        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                           {draft ? (
-                            <NavButton
-                              to={`/companies/${companyId}/grns/drafts/${id}`}
-                              buttonStyle={secondaryBtn}
-                            >
+                            <NavBtn to={`/companies/${companyId}/grns/drafts/${id}`} style={secondaryBtn}>
                               Open
-                            </NavButton>
+                            </NavBtn>
                           ) : (
-                            <span style={{ opacity: 0.6, fontSize: 12 }}>—</span>
+                            <NavBtn to={`/companies/${companyId}/grns/${id}`} style={secondaryBtn}>
+                              View
+                            </NavBtn>
                           )}
-
                           {posted && (
                             <button
-                              style={dangerBtn}
-                              disabled={!canReverse(row) || reverseBusy}
+                              style={{
+                                ...dangerBtn,
+                                opacity: canRev ? 1 : 0.4,
+                                cursor: canRev ? "pointer" : "not-allowed",
+                              }}
+                              disabled={!canRev || busy}
                               onClick={() => handleReverse(row)}
-                              title={
-                                issued
-                                  ? "Cannot reverse: issued from this posted GRN"
-                                  : "Reverse this posted GRN"
-                              }
+                              title={issued ? "Cannot reverse: already issued" : "Reverse this posted GRN"}
                             >
-                              {reverseBusy ? "Reversing..." : "Reverse"}
+                              {busy ? "…" : "Reverse"}
                             </button>
                           )}
                         </div>
@@ -383,107 +201,16 @@ export default function GrnDraftListPage() {
         </div>
       </div>
 
+      {/* Sticky */}
       <div style={stickyBar}>
-        <div style={{ opacity: 0.85 }}>
-          <b>Tip:</b> Open drafts to edit. Reverse posted GRNs only if not issued.
-        </div>
-
+        <span style={{ fontSize: 12, color: tokens.colorMuted }}>
+          <b>Tip:</b> Open drafts to edit. Reverse posted GRNs only if not yet issued.
+        </span>
         <div style={{ display: "flex", gap: 10 }}>
-          <NavButton
-            to={`/companies/${companyId}/grns/drafts`}
-            buttonStyle={secondaryBtn}
-          >
-            Drafts
-          </NavButton>
-
-          <button style={secondaryBtn} onClick={load} disabled={loading}>
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-
-          <NavButton
-            to={`/companies/${companyId}/grns/drafts/new`}
-            buttonStyle={primaryBtn}
-          >
-            + New Draft
-          </NavButton>
+          <button style={secondaryBtn} onClick={refresh} disabled={loading}>↺ Refresh</button>
+          <button style={primaryBtn} onClick={() => nav(`/companies/${companyId}/grns/drafts/new`)}>+ New Draft</button>
         </div>
       </div>
     </div>
-  );
-}
-
-function PageHeader({
-  totalRows,
-  visibleRows,
-  error,
-  reverseError,
-  reverseOk,
-}: {
-  totalRows: number;
-  visibleRows: number;
-  error: string | null;
-  reverseError: string | null;
-  reverseOk: string | null;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        justifyContent: "space-between",
-        gap: 12,
-      }}
-    >
-      <div>
-        <div style={{ fontSize: 22, fontWeight: 800 }}>GRN Drafts</div>
-        <div style={{ opacity: 0.75, marginTop: 6 }}>
-          Drafts can be opened. Posted GRNs can be reversed if not issued.
-        </div>
-
-        {error && <div style={{ marginTop: 10, ...errorStyle }}>{error}</div>}
-
-        {reverseError && (
-          <div style={{ marginTop: 6, ...errorStyle }}>{reverseError}</div>
-        )}
-
-        {reverseOk && (
-          <div style={{ marginTop: 6, fontSize: 12, color: "green" }}>
-            {reverseOk}
-          </div>
-        )}
-      </div>
-
-      <div style={{ textAlign: "right" }}>
-        <div style={{ fontSize: 12, opacity: 0.75 }}>Showing</div>
-        <div style={{ fontSize: 22, fontWeight: 800 }}>{visibleRows}</div>
-        <div style={{ fontSize: 12, opacity: 0.7 }}>of {totalRows}</div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyRow({ message }: { message: string }) {
-  return (
-    <tr>
-      <td colSpan={6} style={{ padding: 18, opacity: 0.75 }}>
-        {message}
-      </td>
-    </tr>
-  );
-}
-
-function NavButton({
-  to,
-  buttonStyle,
-  children,
-}: {
-  to: string;
-  buttonStyle: React.CSSProperties;
-  children: React.ReactNode;
-}) {
-  return (
-    <NavLink to={to} style={{ textDecoration: "none" }}>
-      <button style={buttonStyle}>{children}</button>
-    </NavLink>
   );
 }

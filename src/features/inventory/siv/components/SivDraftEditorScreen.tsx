@@ -1,58 +1,41 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  Plus,
-  Trash2,
-  Loader2,
-  AlertCircle,
-  CheckCircle2,
-} from "lucide-react";
+// src/features/inventory/siv/components/SivDraftEditorScreen.tsx
 
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useSivScreenController } from "../hooks/useSivScreenController";
+import type {
+  FifoIssueCandidateDto,
+  InventoryItemSearchResult,
+  LocationOption,
+} from "../api/sivApi";
 import { sivApi } from "../api/sivApi";
-import type { InventorySearchItemDto } from "../../../inventoryMaster/items/types";
 import "../pages/siv-draft.css";
 
-type SivDraftEditorScreenProps = {
+type Props = {
   companyId: string;
   branchId: string;
   departmentId?: string | null;
   currentLocationId?: string | null;
   mode?: "create" | "edit";
   draftId?: string | null;
-  initialDraft?: any | null;
+  initialDraft?: unknown;
 };
 
-type ItemPatch = {
-  itemId: string;
-  itemName?: string;
-  uomId?: string;
-  uomCode?: string;
-};
-
-function formatQty(value: number | string | null | undefined): string {
-  if (value === null || value === undefined || value === "") return "—";
-  const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
-
-  return new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 2,
-  }).format(n);
+function fmtQty(v: number | string | null | undefined): string {
+  if (v == null || v === "") return "—";
+  const n = Number(v);
+  return Number.isFinite(n)
+    ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(n)
+    : "—";
 }
 
-function toIsoDate(value: string | Date | null | undefined): string {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
+function toIsoDate(v?: string | null): string {
+  if (!v) return "";
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
 }
 
-function makeFifoKey(opt: {
-  fifoLayerId?: string | null;
-  sourceId?: string | null;
-  batchNo?: string | null;
-  expiryDate?: string | null;
-}): string {
+function makeFifoKey(opt: Partial<FifoIssueCandidateDto>): string {
   return [
     opt.fifoLayerId || opt.sourceId || "no-source",
     opt.batchNo || "no-batch",
@@ -60,72 +43,28 @@ function makeFifoKey(opt: {
   ].join("|");
 }
 
-function requireString(value: string | null | undefined, name: string): string {
-  if (!value) throw new Error(`${name} is required`);
-  return value;
+function getApiError(e: unknown, fallback: string): string {
+  const err = e as any;
+  const data = err?.response?.data;
+
+  if (typeof data === "string") return data;
+
+  return (
+    data?.error ??
+    data?.Error ??
+    data?.message ??
+    data?.title ??
+    err?.message ??
+    fallback
+  );
 }
 
-function ItemDropdownCell({
-  disabled,
-  value,
-  items,
-  loading,
-  onOpen,
-  onSelect,
-}: {
-  disabled: boolean;
-  value: string;
-  items: InventorySearchItemDto[];
-  loading?: boolean;
-  onOpen?: () => void | Promise<void>;
-  onSelect: (patch: ItemPatch) => void | Promise<void>;
-}) {
-  return (
-    <select
-      className="lux-select"
-      value={value || ""}
-      disabled={disabled || loading}
-      onFocus={() => void onOpen?.()}
-      onMouseDown={() => void onOpen?.()}
-      onChange={(e) => {
-        const itemId = e.target.value;
-        const item = items.find((x) => x.id === itemId);
+function getItemUomId(item: InventoryItemSearchResult): string {
+  return String((item as any).uomId ?? item.baseUomId ?? "");
+}
 
-        if (!item) {
-          void onSelect({
-            itemId: "",
-            itemName: "",
-            uomId: "",
-            uomCode: "",
-          });
-          return;
-        }
-
-        void onSelect({
-          itemId: item.id,
-          itemName: item.name,
-          uomId: item.baseUomId ?? "",
-          uomCode: item.baseUomCode ?? "",
-        });
-      }}
-    >
-      <option value="">
-        {loading ? "Loading items..." : "Select inventory item"}
-      </option>
-
-      {items.map((item) => (
-        <option key={item.id} value={item.id}>
-          {item.name}
-          {item.sku
-            ? ` · ${item.sku}`
-            : item.barcode
-              ? ` · ${item.barcode}`
-              : ""}
-          {item.baseUomCode ? ` · ${item.baseUomCode}` : ""}
-        </option>
-      ))}
-    </select>
-  );
+function getItemUomCode(item: InventoryItemSearchResult): string {
+  return String((item as any).uomCode ?? item.baseUomCode ?? "");
 }
 
 export default function SivDraftEditorScreen({
@@ -136,10 +75,10 @@ export default function SivDraftEditorScreen({
   mode = "create",
   draftId,
   initialDraft,
-}: SivDraftEditorScreenProps) {
+}: Props) {
   const navigate = useNavigate();
 
-  const controller: any = useSivScreenController({
+  const ctrl = useSivScreenController({
     companyId,
     branchId,
     departmentId: departmentId ?? undefined,
@@ -152,85 +91,73 @@ export default function SivDraftEditorScreen({
     error,
     success,
 
-    fromLocations,
-    selectedFromLocationId,
-    setSelectedFromLocationId,
+    fromLocations: warehouseLocations,
+    selectedFromLocationId: selectedWarehouseId,
+    setSelectedFromLocationId: setSelectedWarehouseId,
 
     issueDate,
     setIssueDate,
-
     notes,
     setNotes,
 
     lines,
-    hydrateDraft,
+    selectedLines,
     addLine,
-    replaceLine,
     removeLine,
     updateLine,
-
-    searchInventoryItems,
+    hydrateDraft,
     onPickItem,
-
+    onChangeFifo,
+    searchInventoryItems,
+    canSaveDraft,
     createDraft,
     updateDraft,
-    canSaveDraft,
-  } = controller;
+  } = ctrl;
 
-  const [itemOptions, setItemOptions] = useState<InventorySearchItemDto[]>([]);
+  const warehouseLocationsLoading = loading;
+  const requestingLocationName = currentLocationId ?? "Your branch location";
+
+  const [itemOptions, setItemOptions] = useState<InventoryItemSearchResult[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [clientError, setClientError] = useState("");
   const [editHydrated, setEditHydrated] = useState(false);
 
-  const isEditMode = mode === "edit" && !!draftId;
-  const disableUntilHydrated = isEditMode && !editHydrated;
+  const isEdit = mode === "edit" && !!draftId;
+  const disableUntilHydrated = isEdit && !editHydrated;
 
   useEffect(() => {
-    if (!isEditMode) return;
-    if (!initialDraft) return;
-    if (editHydrated) return;
+    if (!isEdit || editHydrated) return;
 
-    hydrateDraft(initialDraft);
-    setEditHydrated(true);
-  }, [isEditMode, initialDraft, editHydrated, hydrateDraft]);
+    if (initialDraft) {
+      hydrateDraft(initialDraft as any);
+      setEditHydrated(true);
+      return;
+    }
 
-  useEffect(() => {
-    if (!isEditMode) return;
-    if (initialDraft) return;
     if (!draftId) return;
-    if (editHydrated) return;
 
     let active = true;
 
-    async function loadEditDraft() {
+    async function loadDraft() {
       try {
-        const data = await sivApi.getById(
-          companyId,
-          requireString(draftId, "draftId")
-        );
+        const response = await sivApi.getById(companyId, draftId!);
+        const data = (response as any)?.data ?? response;
 
         if (!active) return;
 
-        hydrateDraft(data);
+        hydrateDraft(data as any);
         setEditHydrated(true);
-      } catch (e: any) {
-        if (!active) return;
-
-        setClientError(
-          e?.response?.data?.title ||
-            e?.response?.data?.message ||
-            e?.message ||
-            "Failed to load SIV draft for editing."
-        );
+      } catch (e) {
+        if (active) setClientError(getApiError(e, "Failed to load SIV draft."));
       }
     }
 
-    void loadEditDraft();
+    void loadDraft();
 
     return () => {
       active = false;
     };
-  }, [isEditMode, initialDraft, draftId, companyId, editHydrated, hydrateDraft]);
+  }, [isEdit, initialDraft, draftId, companyId, editHydrated, hydrateDraft]);
 
   useEffect(() => {
     if (mode === "create") setEditHydrated(false);
@@ -238,461 +165,541 @@ export default function SivDraftEditorScreen({
 
   useEffect(() => {
     setItemOptions([]);
-  }, [selectedFromLocationId]);
+  }, [selectedWarehouseId]);
 
   useEffect(() => {
-    if (clientError) setClientError("");
-  }, [issueDate, notes, selectedFromLocationId, lines]);
+    setClientError("");
+  }, [issueDate, notes, selectedWarehouseId, lines.length]);
 
-  const selectedLines = useMemo(
-    () => lines.filter((line: any) => line.itemId),
-    [lines]
-  );
+  const loadItemOptions = useCallback(async () => {
+    if (!selectedWarehouseId || itemOptions.length > 0) return;
 
-  const totalQty = useMemo(
-    () =>
-      lines.reduce(
-        (sum: number, line: any) => sum + Number(line.qty || 0),
-        0
-      ),
-    [lines]
-  );
-
-  const totalAvailable = useMemo(
-    () =>
-      lines.reduce(
-        (sum: number, line: any) =>
-          sum + Number(line.availableBaseQty ?? line.availableQty ?? 0),
-        0
-      ),
-    [lines]
-  );
-
-  const duplicateLineKeys = useMemo(() => {
-    const seen = new Map<string, string>();
-    const duplicates = new Set<string>();
-
-    for (const line of lines) {
-      if (!line.itemId) continue;
-
-      const key = [
-        line.itemId || "",
-        line.uomId || "",
-        line.batchNo || "",
-        line.expiryDate || "",
-      ].join("|");
-
-      const existing = seen.get(key);
-
-      if (existing) {
-        duplicates.add(existing);
-        duplicates.add(line.key);
-      } else {
-        seen.set(key, line.key);
-      }
-    }
-
-    return duplicates;
-  }, [lines]);
-
-  async function loadItemOptions(): Promise<void> {
-    if (!selectedFromLocationId) {
-      setItemOptions([]);
-      return;
-    }
+    setItemsLoading(true);
 
     try {
-      setItemsLoading(true);
-
-      let data = await searchInventoryItems("");
-
-      if (!data || data.length === 0) {
-        data = await searchInventoryItems("a");
-      }
-
-      setItemOptions((data || []).slice(0, 200));
-    } catch {
+      const data = await searchInventoryItems("");
+      setItemOptions(Array.isArray(data) ? data : []);
+    } catch (e) {
       setItemOptions([]);
+      setClientError(getApiError(e, "Failed to load inventory items."));
     } finally {
       setItemsLoading(false);
     }
-  }
+  }, [selectedWarehouseId, itemOptions.length, searchInventoryItems]);
 
-  function getLineAvailable(line: any): number {
-    return Number(line.availableBaseQty ?? line.availableQty ?? 0);
-  }
+  const duplicateKeys = useMemo(() => {
+    const counts = new Map<string, number>();
 
-  function handleFifoChange(line: any, fifoKey: string): void {
-    const fifo = line.fifoOptions?.find((x: any) => makeFifoKey(x) === fifoKey);
-
-    replaceLine(line.key, {
-      selectedFifoKey: fifoKey,
-      batchNo: fifo?.batchNo ?? line.batchNo ?? "",
-      expiryDate: fifo?.expiryDate ?? line.expiryDate ?? "",
-      availableQty: fifo?.availableQty ?? line.availableQty,
-      availableBaseQty:
-        fifo?.availableBaseQty ??
-        fifo?.availableQty ??
-        line.availableBaseQty ??
-        line.availableQty,
-      lineError: "",
+    lines.forEach((l) => {
+      if (!l.itemId) return;
+      const k = `${l.itemId}|${l.uomId}|${l.batchNo}`;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
     });
-  }
 
-  function validateBeforeSave(): string {
-    if (!selectedFromLocationId) return "From location is required.";
-    if (selectedLines.length === 0) return "At least one item line is required.";
+    const dupes = new Set<string>();
 
-    if (selectedLines.some((line: any) => !line.uomId)) {
-      return "UOM is required. Please reselect the affected item line.";
-    }
+    lines.forEach((l) => {
+      if (!l.itemId) return;
+      const k = `${l.itemId}|${l.uomId}|${l.batchNo}`;
+      if ((counts.get(k) ?? 0) > 1) dupes.add(l.key);
+    });
 
-    if (selectedLines.some((line: any) => Number(line.qty || 0) <= 0)) {
-      return "Quantity must be greater than zero for all selected lines.";
-    }
+    return dupes;
+  }, [lines]);
 
-    if (
-      selectedLines.some(
-        (line: any) => Number(line.qty || 0) > getLineAvailable(line)
-      )
-    ) {
-      return "One or more lines exceed available stock.";
-    }
+  const totalQty = useMemo(
+    () => lines.reduce((s, l) => s + Number(l.qty || 0), 0),
+    [lines]
+  );
 
-    if (duplicateLineKeys.size > 0) {
-      return "Duplicate item + batch + UOM combinations are not allowed.";
-    }
+  const hasOverStock = lines.some((l) => {
+    const avail = l.availableQty ?? l.availableBaseQty;
+    const qty = Number(l.qty || 0);
+    return qty > 0 && avail != null && qty > avail;
+  });
 
-    if (selectedLines.some((line: any) => line.lineError)) {
-      return "Please resolve all line errors before saving the SIV.";
-    }
-
-    return "";
-  }
-
-  async function handleSaveDraft(): Promise<void> {
-    const validationMessage = validateBeforeSave();
-
-    if (validationMessage) {
-      setClientError(validationMessage);
-      return;
-    }
-
+  async function handleSave() {
     setClientError("");
 
-    if (isEditMode) {
-      const updated = await updateDraft(requireString(draftId, "draftId"));
+    try {
+      const result =
+        isEdit && draftId ? await updateDraft(draftId) : await createDraft();
 
-      if (updated?.id) {
-        navigate(`/companies/${companyId}/siv/open/${updated.id}`);
+      const saved = (result as any)?.data ?? result;
+
+      if (saved?.id) {
+        navigate(`/companies/${companyId}/siv/${saved.id}`, { replace: true });
       }
-
-      return;
-    }
-
-    const created = await createDraft();
-
-    if (created?.id) {
-      navigate(`/companies/${companyId}/siv/open/${created.id}`);
+    } catch {
+      // controller/hook already sets the error
     }
   }
 
-  function handleLocationChange(value: string): void {
-    setSelectedFromLocationId(value);
-    setClientError("");
-    setItemOptions([]);
-
-    for (const line of lines) {
-      replaceLine(line.key, {
-        itemId: "",
-        itemName: "",
-        uomId: "",
-        uomCode: "",
-        qty: "",
-        availableQty: undefined,
-        availableBaseQty: undefined,
-        batchNo: "",
-        expiryDate: "",
-        selectedFifoKey: "",
-        fifoOptions: [],
-        loadingFifo: false,
-        loadingAvailability: false,
-        lineError: line.itemId
-          ? "Location changed. Re-select item to refresh FIFO availability."
-          : "",
-      });
-    }
+  if (loading) {
+    return (
+      <div className="page">
+        <div
+          style={{
+            padding: 48,
+            textAlign: "center",
+            color: "var(--text-muted)",
+            fontSize: 13,
+          }}
+        >
+          Loading…
+        </div>
+      </div>
+    );
   }
+
+  const displayErr = clientError || error;
 
   return (
-    <div className="lux-page min-h-screen">
-      <div className="lux-grn-sticky-top">
-        <div className="lux-grn-top-inner">
-          <div className="lux-grn-block">
-            <div className="lux-grn-kicker">Inventory / Stock Issue Voucher</div>
-            <div className="lux-grn-title">
-              {isEditMode ? "Edit SIV Draft" : "Create SIV Draft"}
-            </div>
-            <div className="lux-grn-meta">
-              <span>Company: {companyId}</span>
-              <span className="lux-dot">•</span>
-              <span>Branch: {branchId}</span>
-              {isEditMode && draftId ? (
-                <>
-                  <span className="lux-dot">•</span>
-                  <span>Draft: {draftId}</span>
-                </>
-              ) : null}
-            </div>
+    <div className="page siv-page">
+      <div className="page-header">
+        <div>
+          <div className="page-kicker">
+            Inventory · SIV · {isEdit ? "Edit" : "New"}
           </div>
+          <div className="page-title">
+            {isEdit ? "Edit Stock Issue Request" : "New Stock Issue Request"}
+          </div>
+          <div className="page-sub">
+            {isEdit
+              ? "Update lines or header details, then save."
+              : "Select the warehouse and items you need. Your location is auto-assigned."}
+          </div>
+        </div>
 
-          <div className="lux-grn-fields">
-            <div className="lux-field compact">
-              <label className="lux-label">Date</label>
-              <input
-                type="date"
-                className="lux-input"
-                value={issueDate}
-                disabled={disableUntilHydrated}
-                onChange={(e) => setIssueDate(e.target.value)}
-              />
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {hasOverStock && (
+            <div className="badge badge-danger" style={{ fontSize: 11 }}>
+              ⚠ Qty exceeds available stock
             </div>
+          )}
 
-            <div className="lux-field compact wide">
-              <label className="lux-label">From Location</label>
-              <select
-                className="lux-select"
-                value={selectedFromLocationId || ""}
-                onChange={(e) => handleLocationChange(e.target.value)}
-                disabled={loading || disableUntilHydrated}
-              >
-                <option value="">
-                  {loading ? "Loading..." : "Select location"}
+          <button
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={!canSaveDraft || saving || disableUntilHydrated || hasOverStock}
+          >
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Save draft"}
+          </button>
+
+          <button className="btn" onClick={() => navigate(-1)} disabled={saving}>
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      {displayErr && (
+        <div className="alert alert-danger" style={{ marginBottom: 14 }}>
+          {displayErr}
+        </div>
+      )}
+
+      {success && (
+        <div className="alert alert-success" style={{ marginBottom: 14 }}>
+          {success}
+        </div>
+      )}
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="card-header">
+          <div className="card-title">Requisition Details</div>
+          <div className="card-subtitle">
+            You are requesting stock as: <strong>{requestingLocationName}</strong>
+          </div>
+        </div>
+
+        <div
+          className="card-body"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gap: 16,
+          }}
+        >
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label className="field-label">
+              Request from Warehouse
+              <span style={{ color: "var(--danger)", marginLeft: 3 }}>*</span>
+            </label>
+
+            <select
+              className="select"
+              value={selectedWarehouseId}
+              disabled={disableUntilHydrated || warehouseLocationsLoading}
+              onChange={(e) => {
+                setSelectedWarehouseId(e.target.value);
+                setClientError("");
+              }}
+            >
+              <option value="">
+                {warehouseLocationsLoading
+                  ? "Loading warehouses…"
+                  : "— Select warehouse —"}
+              </option>
+
+              {warehouseLocations.map((loc: LocationOption) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name}
+                  {loc.code ? ` (${loc.code})` : ""}
                 </option>
+              ))}
+            </select>
 
-                {fromLocations.map((location: any) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name}
-                    {location.code ? ` · ${location.code}` : ""}
-                  </option>
-                ))}
-              </select>
+            <div style={{ marginTop: 5, fontSize: 11, color: "var(--text-muted)" }}>
+              Stock will be pulled from this warehouse.
             </div>
           </div>
 
-          <div className="lux-grn-summary">
-            <div className="lux-sum-card highlight">
-              <div className="lux-sum-label">Issuing Qty</div>
-              <div className="lux-sum-value">{formatQty(totalQty)}</div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label className="field-label">Deliver to Your Location</label>
+
+            <div
+              style={{
+                padding: "8px 11px",
+                background: "var(--surface-2)",
+                border: "1px solid var(--border-soft)",
+                borderRadius: "var(--r)",
+                fontSize: 13,
+                color: "var(--text-muted)",
+                minHeight: 36,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: "var(--success)",
+                  flexShrink: 0,
+                }}
+              />
+              {requestingLocationName}
             </div>
 
-            <div className="lux-sum-card">
-              <div className="lux-sum-label">Items</div>
-              <div className="lux-sum-value">{selectedLines.length}</div>
+            <div style={{ marginTop: 5, fontSize: 11, color: "var(--text-muted)" }}>
+              Auto-assigned from your branch. Cannot be changed.
             </div>
+          </div>
 
-            <div className="lux-sum-card muted">
-              <div className="lux-sum-label">Available</div>
-              <div className="lux-sum-value">{formatQty(totalAvailable)}</div>
-            </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label className="field-label">Required by Date</label>
+            <input
+              className="input"
+              type="date"
+              value={issueDate}
+              disabled={disableUntilHydrated}
+              onChange={(e) => setIssueDate(e.target.value)}
+            />
+          </div>
+
+          <div className="field" style={{ gridColumn: "1 / -1", marginBottom: 0 }}>
+            <label className="field-label">Purpose / Remarks</label>
+            <textarea
+              className="input siv-textarea"
+              value={notes}
+              disabled={disableUntilHydrated}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                setClientError("");
+              }}
+              placeholder="Describe the purpose of this requisition."
+              rows={2}
+            />
           </div>
         </div>
       </div>
 
-      <div className="lux-shell lux-grn-shell">
-        {clientError ? (
-          <div className="lux-banner error">
-            <AlertCircle size={18} />
-            <div>{clientError}</div>
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="lux-banner error">
-            <AlertCircle size={18} />
-            <div>{error}</div>
-          </div>
-        ) : null}
-
-        {success ? (
-          <div className="lux-banner success">
-            <CheckCircle2 size={18} />
-            <div>{success}</div>
-          </div>
-        ) : null}
-
-        <section className="lux-card lux-section">
-          <div className="lux-section-head">
-            <div>
-              <h2 className="lux-card-title">Remarks</h2>
-              <div className="lux-card-subtitle">
-                Optional issue purpose or internal note.
-              </div>
+      <div className="card" style={{ padding: 0 }}>
+        <div className="card-header">
+          <div>
+            <div className="card-title">Requested Items</div>
+            <div className="card-subtitle">
+              {selectedLines.length > 0
+                ? `${selectedLines.length} item${
+                    selectedLines.length !== 1 ? "s" : ""
+                  } · Total qty: ${fmtQty(totalQty)}`
+                : "Add the items you need from the selected warehouse."}
             </div>
           </div>
 
-          <textarea
-            className="lux-textarea lux-grn-remarks-box"
-            value={notes}
-            disabled={disableUntilHydrated}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Remarks (optional)"
-          />
-        </section>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              setClientError("");
+              addLine();
+              void loadItemOptions();
+            }}
+            disabled={disableUntilHydrated || !selectedWarehouseId}
+            title={!selectedWarehouseId ? "Select a warehouse first" : "Add a line"}
+          >
+            + Add item
+          </button>
+        </div>
 
-        <section className="lux-card lux-section">
-          <div className="lux-section-head">
-            <div>
-              <h2 className="lux-card-title">Issue Lines</h2>
-              <div className="lux-card-subtitle">
-                {selectedLines.length} item(s) selected · Issuing Qty:{" "}
-                {formatQty(totalQty)}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className="lux-btn"
-              onClick={() => {
-                setClientError("");
-                addLine();
-              }}
-              disabled={disableUntilHydrated}
-            >
-              <Plus size={16} />
-              Add Line
-            </button>
+        {!selectedWarehouseId && (
+          <div
+            style={{
+              padding: "14px 16px",
+              background: "var(--surface-2)",
+              borderBottom: "1px solid var(--border-soft)",
+              fontSize: 13,
+              color: "var(--text-muted)",
+            }}
+          >
+            ℹ Select a warehouse above before adding items.
           </div>
+        )}
 
-          <div className="lux-table-wrap">
-            <table className="lux-table">
-              <thead>
+        <div style={{ overflowX: "auto" }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: 40 }}>#</th>
+                <th style={{ width: 300 }}>Item</th>
+                <th style={{ width: 240 }}>FIFO Lot</th>
+                <th style={{ width: 80 }}>UOM</th>
+                <th style={{ width: 110, textAlign: "right" }}>Available</th>
+                <th style={{ width: 110, textAlign: "right" }}>Request Qty</th>
+                <th style={{ width: 120 }}>Batch</th>
+                <th style={{ width: 110 }}>Expiry</th>
+                <th>Notes</th>
+                <th style={{ width: 52 }} />
+              </tr>
+            </thead>
+
+            <tbody>
+              {!selectedWarehouseId ? (
                 <tr>
-                  <th style={{ width: 320 }}>Item</th>
-                  <th style={{ width: 250 }}>FIFO Lot</th>
-                  <th style={{ width: 110 }}>UOM</th>
-                  <th style={{ width: 130 }}>Available</th>
-                  <th style={{ width: 130 }}>Issue Qty</th>
-                  <th style={{ width: 130 }}>Batch</th>
-                  <th style={{ width: 130 }}>Expiry</th>
-                  <th>Remarks</th>
-                  <th style={{ width: 72 }}>Action</th>
+                  <td
+                    colSpan={10}
+                    style={{
+                      padding: 48,
+                      textAlign: "center",
+                      color: "var(--text-soft)",
+                      fontSize: 13,
+                    }}
+                  >
+                    Select a warehouse above to start adding items.
+                  </td>
                 </tr>
-              </thead>
-
-              <tbody>
-                {lines.map((line: any, index: number) => {
-                  const available = getLineAvailable(line);
+              ) : (
+                lines.map((line, i) => {
+                  const available = line.availableQty ?? line.availableBaseQty;
                   const qty = Number(line.qty || 0);
-                  const duplicate = duplicateLineKeys.has(line.key);
+                  const isDupe = duplicateKeys.has(line.key);
+                  const overStock = qty > 0 && available != null && qty > available;
+                  const isExpired =
+                    !!line.expiryDate && new Date(line.expiryDate) < new Date();
 
-                  const effectiveLineError =
+                  const lineErr =
                     line.lineError ||
-                    (duplicate
-                      ? "Duplicate item + batch + UOM combination."
-                      : qty > 0 && qty > available
-                        ? "Quantity exceeds available stock."
-                        : "");
+                    (isDupe ? "Duplicate item + batch + UOM on this request." : "") ||
+                    (overStock
+                      ? `Exceeds available stock (${fmtQty(available)}).`
+                      : "");
 
                   return (
-                    <tr key={line.key}>
-                      <td>
-                        <ItemDropdownCell
-                          disabled={!selectedFromLocationId || disableUntilHydrated}
-                          value={String(line.itemId || "")}
-                          items={itemOptions}
-                          loading={itemsLoading}
-                          onOpen={async () => {
-                            if (!itemOptions.length) await loadItemOptions();
-                          }}
-                          onSelect={async (patch) => {
-                            setClientError("");
-                            await onPickItem(line.key, patch);
-                          }}
-                        />
-
-                        <div className="lux-row-note">
-                          {line.itemId
-                            ? `${line.itemName || "Selected item"} · Line ${
-                                index + 1
-                              }`
-                            : "Choose item from selected location."}
-                        </div>
+                    <tr
+                      key={line.key}
+                      style={{
+                        verticalAlign: "top",
+                        background: lineErr
+                          ? "var(--danger-bg)"
+                          : isExpired
+                          ? "var(--warn-bg)"
+                          : undefined,
+                      }}
+                    >
+                      <td
+                        style={{
+                          padding: "10px 10px",
+                          fontFamily: "var(--mono)",
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          paddingTop: 14,
+                        }}
+                      >
+                        {String(i + 1).padStart(2, "0")}
                       </td>
 
-                      <td>
+                      <td style={{ padding: "8px 10px" }}>
                         <select
-                          className="lux-select"
-                          value={line.selectedFifoKey || ""}
+                          className="select"
+                          style={{ fontSize: 12 }}
+                          value={line.itemId}
                           disabled={
-                            !line.itemId ||
-                            line.loadingFifo ||
-                            (line.fifoOptions?.length ?? 0) === 0 ||
-                            disableUntilHydrated
+                            !selectedWarehouseId ||
+                            disableUntilHydrated ||
+                            itemsLoading
                           }
+                          onFocus={() => void loadItemOptions()}
                           onChange={(e) => {
                             setClientError("");
-                            handleFifoChange(line, e.target.value);
+
+                            const item = itemOptions.find(
+                              (x) => x.id === e.target.value
+                            );
+
+                            void onPickItem(
+                              line.key,
+                              item
+                                ? {
+                                    itemId: item.id,
+                                    itemName: item.name,
+                                    uomId: getItemUomId(item),
+                                    uomCode: getItemUomCode(item),
+                                  }
+                                : {
+                                    itemId: "",
+                                    itemName: "",
+                                    uomId: "",
+                                    uomCode: "",
+                                  }
+                            );
                           }}
                         >
                           <option value="">
-                            {line.loadingFifo ? "Loading FIFO..." : "Select FIFO lot"}
+                            {itemsLoading ? "Loading items…" : "— Select item —"}
                           </option>
 
-                          {(line.fifoOptions || []).map((opt: any) => {
-                            const key = makeFifoKey(opt);
+                          {itemOptions.map((item) => {
+                            const uomCode = getItemUomCode(item);
 
                             return (
-                              <option key={key} value={key}>
-                                {(opt.sourceNumber || "FIFO")} ·{" "}
-                                {formatQty(opt.availableQty)} ·{" "}
-                                {opt.batchNo || "No batch"}
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                                {item.sku ? ` · ${item.sku}` : ""}
+                                {uomCode ? ` · ${uomCode}` : ""}
                               </option>
                             );
                           })}
                         </select>
 
-                        <div className="lux-row-note">
-                          {line.loadingFifo
-                            ? "Loading FIFO lots..."
-                            : line.fifoOptions?.[0]
-                              ? "FIFO lot selected"
-                              : isEditMode && line.batchNo
-                                ? "Saved FIFO lot"
-                                : "No FIFO lot loaded"}
-                        </div>
+                        {line.itemName && (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: "var(--text-muted)",
+                              marginTop: 3,
+                              fontFamily: "var(--mono)",
+                            }}
+                          >
+                            {line.itemName}
+                          </div>
+                        )}
                       </td>
 
-                      <td>
+                      <td style={{ padding: "8px 10px" }}>
+                        {line.loadingFifo ? (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "var(--text-muted)",
+                              padding: "8px 0",
+                            }}
+                          >
+                            Loading lots…
+                          </div>
+                        ) : line.fifoOptions.length > 0 ? (
+                          <select
+                            className="select"
+                            style={{ fontSize: 12, minWidth: 200 }}
+                            value={line.selectedFifoKey}
+                            disabled={disableUntilHydrated}
+                            onChange={(e) => {
+                              setClientError("");
+                              onChangeFifo(line.key, e.target.value);
+                            }}
+                          >
+                            <option value="">— Select lot —</option>
+
+                            {line.fifoOptions.map((opt) => {
+                              const k = makeFifoKey(opt);
+
+                              return (
+                                <option key={k} value={k}>
+                                  {opt.sourceNumber || "FIFO"} ·{" "}
+                                  {fmtQty(opt.availableQty)}
+                                  {opt.batchNo ? ` · ${opt.batchNo}` : ""}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        ) : line.itemId ? (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "var(--danger)",
+                              padding: "8px 0",
+                            }}
+                          >
+                            No stock available at this warehouse.
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "var(--text-soft)",
+                              padding: "8px 0",
+                            }}
+                          >
+                            —
+                          </div>
+                        )}
+                      </td>
+
+                      <td style={{ padding: "8px 10px" }}>
                         <input
-                          className="lux-input"
-                          value={line.uomCode || ""}
+                          className="input"
+                          style={{ fontSize: 12, color: "var(--text-muted)" }}
+                          value={line.uomCode || "—"}
+                          readOnly
                           disabled
                         />
                       </td>
 
-                      <td>
+                      <td style={{ padding: "8px 10px", textAlign: "right" }}>
                         <input
-                          className="lux-input"
-                          value={
-                            line.loadingAvailability
-                              ? "Loading..."
-                              : formatQty(available)
-                          }
+                          className="input"
+                          style={{
+                            fontSize: 12,
+                            textAlign: "right",
+                            fontFamily: "var(--mono)",
+                            color:
+                              available != null && available === 0
+                                ? "var(--danger)"
+                                : "var(--text-muted)",
+                          }}
+                          value={line.loadingAvailability ? "…" : fmtQty(available)}
+                          readOnly
                           disabled
                         />
                       </td>
 
-                      <td>
+                      <td style={{ padding: "8px 10px" }}>
                         <input
+                          className="input"
                           type="number"
                           min="0"
-                          step="0.01"
-                          className="lux-input"
+                          step="0.001"
+                          style={{
+                            fontSize: 12,
+                            textAlign: "right",
+                            fontFamily: "var(--mono)",
+                            borderColor: overStock ? "var(--danger)" : undefined,
+                          }}
                           value={line.qty}
                           disabled={disableUntilHydrated}
                           onChange={(e) => {
                             setClientError("");
+
                             const raw = e.target.value;
 
                             updateLine(
@@ -701,32 +708,47 @@ export default function SivDraftEditorScreen({
                               raw === "" ? "" : Math.max(0, Number(raw))
                             );
                           }}
-                          placeholder="0.00"
+                          placeholder="0.000"
                         />
                       </td>
 
-                      <td>
+                      <td style={{ padding: "8px 10px" }}>
                         <input
-                          className="lux-input"
-                          value={line.batchNo || ""}
+                          className="input"
+                          style={{ fontSize: 12, color: "var(--text-muted)" }}
+                          value={line.batchNo || "—"}
+                          readOnly
                           disabled
                         />
                       </td>
 
-                      <td>
+                      <td style={{ padding: "8px 10px" }}>
                         <input
-                          className="lux-input"
-                          value={line.expiryDate ? toIsoDate(line.expiryDate) : ""}
+                          className="input"
+                          style={{
+                            fontSize: 12,
+                            color: isExpired
+                              ? "var(--danger)"
+                              : "var(--text-muted)",
+                            borderColor: isExpired ? "var(--danger)" : undefined,
+                          }}
+                          value={toIsoDate(line.expiryDate) || "—"}
+                          readOnly
                           disabled
+                          title={isExpired ? "This lot has expired" : undefined}
                         />
                       </td>
 
-                      <td>
+                      <td style={{ padding: "8px 10px" }}>
                         <textarea
-                          className="lux-textarea"
-                          style={{ minHeight: 64 }}
-                          value={line.remarks || ""}
-                          placeholder="Line remarks"
+                          className="input"
+                          style={{
+                            minHeight: 60,
+                            fontSize: 12,
+                            resize: "vertical",
+                          }}
+                          value={line.remarks}
+                          placeholder="Optional"
                           disabled={disableUntilHydrated}
                           onChange={(e) => {
                             setClientError("");
@@ -734,60 +756,121 @@ export default function SivDraftEditorScreen({
                           }}
                         />
 
-                        {effectiveLineError ? (
-                          <div className="lux-line-error">{effectiveLineError}</div>
-                        ) : null}
+                        {lineErr && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--danger)",
+                              marginTop: 3,
+                            }}
+                          >
+                            ⚠ {lineErr}
+                          </div>
+                        )}
+
+                        {isExpired && !lineErr && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--warn)",
+                              marginTop: 3,
+                            }}
+                          >
+                            ⚠ Selected lot has expired.
+                          </div>
+                        )}
                       </td>
 
-                      <td>
+                      <td style={{ padding: "8px 10px", textAlign: "center" }}>
                         <button
-                          type="button"
-                          className="lux-btn danger"
+                          className="btn btn-sm"
+                          style={{
+                            padding: "4px 8px",
+                            color: "var(--danger)",
+                            borderColor: "var(--danger-border)",
+                          }}
                           onClick={() => {
                             setClientError("");
                             removeLine(line.key);
                           }}
                           disabled={lines.length === 1 || disableUntilHydrated}
-                          title="Remove line"
+                          title="Remove this line"
                         >
-                          <Trash2 size={16} />
+                          ✕
                         </button>
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                })
+              )}
+            </tbody>
 
-          <div className="lux-helper">
-            Quantity must be greater than zero, cannot exceed available stock,
-            and duplicate item + batch + UOM combinations are blocked.
-          </div>
-        </section>
+            {selectedLines.length > 0 && (
+              <tfoot>
+                <tr style={{ background: "var(--surface-2)", fontWeight: 600 }}>
+                  <td
+                    colSpan={5}
+                    style={{
+                      padding: "8px 10px",
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    Total requested
+                  </td>
 
-        <div className="lux-bottom-actions">
-          <button
-            type="button"
-            className="lux-btn ghost"
-            onClick={() => navigate(-1)}
-            disabled={saving}
-          >
-            Cancel
-          </button>
+                  <td
+                    style={{
+                      padding: "8px 10px",
+                      textAlign: "right",
+                      fontFamily: "var(--mono)",
+                      fontSize: 14,
+                    }}
+                  >
+                    {fmtQty(totalQty)}
+                  </td>
 
-          <button
-            type="button"
-            className="lux-btn primary"
-            onClick={() => void handleSaveDraft()}
-            disabled={!canSaveDraft || saving || disableUntilHydrated}
-          >
-            {saving ? <Loader2 size={16} className="animate-spin" /> : null}
-            {isEditMode ? "Save Changes" : "Save Draft"}
-          </button>
+                  <td colSpan={4} />
+                </tr>
+              </tfoot>
+            )}
+          </table>
         </div>
+
+        <div
+          style={{
+            padding: "9px 16px",
+            fontSize: 11,
+            color: "var(--text-soft)",
+            borderTop: "1px solid var(--border-soft)",
+            background: "var(--surface-2)",
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>ℹ Requested qty cannot exceed available warehouse stock.</span>
+          <span>Duplicate item + batch + UOM combinations are blocked.</span>
+          <span>Batch and expiry are assigned from the selected FIFO lot.</span>
+        </div>
+      </div>
+
+      <div className="siv-bottom-actions">
+        <button className="btn" onClick={() => navigate(-1)} disabled={saving}>
+          Cancel
+        </button>
+
+        <button
+          className="btn btn-primary"
+          onClick={handleSave}
+          disabled={!canSaveDraft || saving || disableUntilHydrated || hasOverStock}
+        >
+          {saving ? "Saving…" : isEdit ? "Save changes" : "Save draft"}
+        </button>
       </div>
     </div>
   );
 }
-

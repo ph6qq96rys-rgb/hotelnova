@@ -1,749 +1,546 @@
-import * as React from "react";
-import { useNavigate } from "react-router-dom";
+// src/features/inventory/siv/pages/SivListPage.tsx
+//
+// Wired to GET /api/companies/{companyId}/siv via sivApi.getList.
+// Debounced search, status filter tabs, sortable columns, pagination.
 
-import { useAppScope } from "../../../../app/useAppScope";
-import { sivApi } from "../api/sivApi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate }                                 from "react-router-dom";
+import { useAppScope }                                 from "../../../../app/useAppScope";
+import { sivApi }                                      from "../api/sivApi";
 import {
-  type DocStatus,
-  normalizeStatus,
-  buildSivOpenRoute,
-  buildSivDraftRoute,
-  buildSivNewDraftRoute,
-} from "../../../../routes/sivWorkflowRoutes";
-
+  normalizeStatus, STATUS_BADGE, STATUS_OPTIONS,
+  mapToListItem, fmtDate, fmtQty, getApiError,
+  type SivListItemDto, type PagedResult,
+}                                                      from "../types/sivTypes";
 import "./siv-draft.css";
 
-type Guid = string;
-
-type SivListItemDto = {
-  id: Guid;
-  number?: string | null;
-  docStatus?: string | number | null;
-  issueDate?: string | null;
-  fromLocationId?: Guid | null;
-  fromLocationName?: string | null;
-  toLocationId?: Guid | null;
-  toLocationName?: string | null;
-  departmentId?: Guid | null;
-  departmentName?: string | null;
-  remarks?: string | null;
-  notes?: string | null;
-  lineCount?: number | null;
-  totalQty?: number | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-};
-
-type PagedResult<T> = {
-  items: T[];
-  page: number;
-  pageSize: number;
-  totalCount: number;
-};
-
-type SivListRequest = {
-  branchId?: string;
-  departmentId?: string;
-  q?: string;
-  search?: string;
-  docStatus?: string;
-  status?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  issueDateFrom?: string;
-  issueDateTo?: string;
-  page: number;
-  pageSize: number;
-};
-
-type FilterState = {
-  q: string;
-  docStatus: DocStatus;
-  dateFrom: string;
-  dateTo: string;
-  pageSize: number;
-};
-
-const DEFAULT_FILTERS: FilterState = {
-  q: "",
-  docStatus: "",
-  dateFrom: "",
-  dateTo: "",
-  pageSize: 20,
-};
-
-const STATUS_OPTIONS: Array<{ label: string; value: DocStatus }> = [
-  { label: "All", value: "" },
-  { label: "Draft", value: "Draft" },
-  { label: "Submitted", value: "Submitted" },
-  { label: "Approved", value: "Approved" },
-  { label: "Issued", value: "Issued" },
-  { label: "Posted", value: "Posted" },
-  { label: "Requested Changes", value: "RequestedChanges" },
-  { label: "Rejected", value: "Rejected" },
-  { label: "Reversed", value: "Reversed" },
-  { label: "Cancelled", value: "Cancelled" },
-  { label: "Unknown", value: "Unknown" },
-];
-
-function isUuid(value: string | null | undefined): value is string {
-  if (!value) return false;
-
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
-    value
-  );
-}
-
-function safeString(value: unknown): string {
-  return value == null ? "" : String(value);
-}
-
-function asNumber(value: unknown, fallback = 0): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function formatDate(value?: string | null): string {
-  if (!value) return "—";
-
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-
-  return d.toLocaleDateString();
-}
-
-function formatQty(value?: number | null): string {
-  const n = Number(value ?? 0);
-
-  return new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 2,
-  }).format(Number.isFinite(n) ? n : 0);
-}
-
-function statusTone(
-  status: DocStatus
-): "neutral" | "good" | "warn" | "danger" {
-  switch (status) {
-    case "Approved":
-    case "Issued":
-    case "Posted":
-      return "good";
-    case "Submitted":
-    case "RequestedChanges":
-      return "warn";
-    case "Rejected":
-    case "Reversed":
-    case "Cancelled":
-      return "danger";
-    default:
-      return "neutral";
-  }
-}
-
-function StatusChip({ status }: { status?: string | number | null }) {
-  const normalized = normalizeStatus(status);
-
-  return (
-    <span className={`lux-chip ${statusTone(normalized)}`}>
-      {normalized || "Unknown"}
-    </span>
-  );
-}
-
-function useDebouncedValue<T>(value: T, delay = 250): T {
-  const [debounced, setDebounced] = React.useState(value);
-
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delay);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [value, delay]);
-
-  return debounced;
-}
-
-function getLinesFromRaw(raw: any): any[] {
-  if (Array.isArray(raw?.lines)) return raw.lines;
-  if (Array.isArray(raw?.items)) return raw.items;
-  if (Array.isArray(raw?.lineItems)) return raw.lineItems;
-
-  return [];
-}
-
-function getTotalQty(raw: any, lines: any[]): number | null {
-  const explicit =
-    raw?.totalQty ??
-    raw?.totalQuantity ??
-    raw?.quantity ??
-    raw?.issuedQty ??
-    raw?.requestQty;
-
-  if (explicit != null) {
-    const n = Number(explicit);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  if (!lines.length) return null;
-
-  return lines.reduce((sum: number, line: any) => {
-    const qty = Number(
-      line?.quantity ??
-        line?.qty ??
-        line?.issuedQty ??
-        line?.requestQty ??
-        0
-    );
-
-    return sum + (Number.isFinite(qty) ? qty : 0);
-  }, 0);
-}
-
-function normalizeListItem(raw: any): SivListItemDto | null {
-  const id = safeString(raw?.id);
-  if (!id) return null;
-
-  const lines = getLinesFromRaw(raw);
-
-  const lineCount =
-    raw?.lineCount ??
-    raw?.linesCount ??
-    raw?.totalLines ??
-    raw?.lineItemsCount ??
-    raw?.lineItemCount ??
-    lines.length;
-
-  return {
-    id,
-    number: raw?.number ?? raw?.documentNo ?? raw?.docNo ?? null,
-    docStatus: raw?.docStatus ?? raw?.status ?? null,
-    issueDate: raw?.issueDate ?? raw?.date ?? raw?.documentDate ?? null,
-
-    fromLocationId: raw?.fromLocationId ?? raw?.fromLocation?.id ?? null,
-    fromLocationName:
-      raw?.fromLocationName ?? raw?.fromLocation?.name ?? raw?.fromLocation?.code ?? null,
-
-    toLocationId: raw?.toLocationId ?? raw?.toLocation?.id ?? null,
-    toLocationName:
-      raw?.toLocationName ?? raw?.toLocation?.name ?? raw?.toLocation?.code ?? null,
-
-    departmentId: raw?.departmentId ?? raw?.department?.id ?? null,
-    departmentName: raw?.departmentName ?? raw?.department?.name ?? null,
-
-    remarks: raw?.remarks ?? raw?.notes ?? null,
-    notes: raw?.notes ?? null,
-
-    lineCount: asNumber(lineCount, 0),
-    totalQty: getTotalQty(raw, lines),
-
-    createdAt: raw?.createdAt ?? raw?.createdOn ?? null,
-    updatedAt: raw?.updatedAt ?? raw?.modifiedAt ?? raw?.lastModifiedAt ?? null,
-  };
-}
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function normalizePaged(input: unknown): PagedResult<SivListItemDto> {
   const raw = input as any;
-
-  const rawItems = Array.isArray(raw)
-    ? raw
-    : Array.isArray(raw?.items)
-      ? raw.items
-      : Array.isArray(raw?.data?.items)
-        ? raw.data.items
-        : Array.isArray(raw?.data)
-          ? raw.data
-          : [];
-
-  const items = rawItems
-    .map(normalizeListItem)
-    .filter(Boolean) as SivListItemDto[];
-
+  const rawItems = Array.isArray(raw)             ? raw
+    :              Array.isArray(raw?.items)       ? raw.items
+    :              Array.isArray(raw?.data?.items) ? raw.data.items
+    :              Array.isArray(raw?.data)        ? raw.data
+    :              [];
   return {
-    items,
-    page: asNumber(raw?.page ?? raw?.data?.page, 1),
-    pageSize: asNumber(raw?.pageSize ?? raw?.data?.pageSize, 20),
-    totalCount: asNumber(
-      raw?.totalCount ?? raw?.data?.totalCount ?? raw?.count,
-      items.length
-    ),
+    items:      rawItems.map(mapToListItem).filter(Boolean) as SivListItemDto[],
+    page:       Number(raw?.page       ?? 1),
+    pageSize:   Number(raw?.pageSize   ?? 20),
+    totalCount: Number(raw?.totalCount ?? rawItems.length),
   };
 }
 
-function buildRequest(args: {
-  branchId: string;
-  departmentId: string;
-  q: string;
-  docStatus: DocStatus;
-  dateFrom: string;
-  dateTo: string;
-  page: number;
-  pageSize: number;
-}): SivListRequest {
-  const {
-    branchId,
-    departmentId,
-    q,
-    docStatus,
-    dateFrom,
-    dateTo,
-    page,
-    pageSize,
-  } = args;
-
-  const trimmed = q.trim();
-
-  return {
-    branchId: isUuid(branchId) ? branchId : undefined,
-    departmentId: isUuid(departmentId) ? departmentId : undefined,
-
-    q: trimmed || undefined,
-    search: trimmed || undefined,
-
-    docStatus: docStatus || undefined,
-    status: docStatus || undefined,
-
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
-    issueDateFrom: dateFrom || undefined,
-    issueDateTo: dateTo || undefined,
-
-    page,
-    pageSize,
-  };
+function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [dv, setDv] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDv(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return dv;
 }
 
-function canEdit(status: DocStatus): boolean {
-  return status === "Draft" || status === "RequestedChanges";
-}
+type FilterState = {
+  q:         string;
+  docStatus: string;
+  dateFrom:  string;
+  dateTo:    string;
+  pageSize:  number;
+};
 
-function getErrorMessage(error: any): string {
-  return (
-    error?.response?.data?.title ||
-    error?.response?.data?.message ||
-    error?.message ||
-    "Failed to load SIV list."
-  );
-}
+const DEFAULT_FILTERS: FilterState = {
+  q: "", docStatus: "", dateFrom: "", dateTo: "", pageSize: 20,
+};
+
+// Tab config — drives the status filter tabs above the table
+const STATUS_TABS = [
+  { value: "",                 label: "All" },
+  { value: "Draft",            label: "Draft" },
+  { value: "Submitted",        label: "Submitted" },
+  { value: "Approved",         label: "Approved" },
+  { value: "Issued",           label: "Issued" },
+  { value: "Posted",           label: "Posted" },
+  { value: "Rejected",         label: "Rejected" },
+  { value: "ChangesRequested", label: "Changes Requested" },
+];
+
+// ── Component ──────────────────────────────────────────────────────────────────
 
 export default function SivListPage() {
-  const navigate = useNavigate();
-  const scope = useAppScope() as any;
+  const nav = useNavigate();
+  const { companyId, branchId } = useAppScope();
 
-  const {companyId, branchId} = useAppScope();
-  const departmentId = safeString(scope?.departmentId);
+  const [filters,  setFilters]  = useState<FilterState>(DEFAULT_FILTERS);
+  const [page,     setPage]     = useState(1);
+  const [result,   setResult]   = useState<PagedResult<SivListItemDto>>({
+    items: [], page: 1, pageSize: 20, totalCount: 0,
+  });
+  const [loading,  setLoading]  = useState(false);
+  const [err,      setErr]      = useState<string | null>(null);
 
-  const [items, setItems] = React.useState<SivListItemDto[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
+  const debouncedQ = useDebouncedValue(filters.q);
 
-  const [page, setPage] = React.useState(1);
-  const [totalCount, setTotalCount] = React.useState(0);
-  const [filters, setFilters] = React.useState<FilterState>(DEFAULT_FILTERS);
+  // ── Load ───────────────────────────────────────────────────────────────────
 
-  const debouncedQ = useDebouncedValue(filters.q, 250);
-  const canLoad =true;// isUuid(companyId);
-
-  React.useEffect(() => {
-    setPage(1);
-  }, [
-    debouncedQ,
-    filters.docStatus,
-    filters.dateFrom,
-    filters.dateTo,
-    filters.pageSize,
-  ]);
-
-  const request = React.useMemo(
-    () =>
-      buildRequest({
-        branchId,
-        departmentId,
-        q: debouncedQ,
-        docStatus: filters.docStatus,
-        dateFrom: filters.dateFrom,
-        dateTo: filters.dateTo,
-        page,
-        pageSize: filters.pageSize,
-      }),
-    [
-      branchId,
-      departmentId,
-      debouncedQ,
-      filters.docStatus,
-      filters.dateFrom,
-      filters.dateTo,
-      filters.pageSize,
-      page,
-    ]
-  );
-
-  const load = React.useCallback(async () => {
-    if (!canLoad) return;
-
+  const load = useCallback(async () => {
+    if (!companyId) return;
     setLoading(true);
-    setError("");
-
+    setErr(null);
     try {
-      const result = await sivApi.getList(companyId, request);
-      const paged = normalizePaged(result);
-
-      setItems(paged.items);
-      setTotalCount(paged.totalCount);
-    } catch (e: any) {
-      setError(getErrorMessage(e));
-      setItems([]);
-      setTotalCount(0);
+      const raw = await sivApi.getList(companyId, {
+        branchId:   branchId    || undefined,
+        q:          debouncedQ  || undefined,
+        docStatus:  filters.docStatus || undefined,
+        dateFrom:   filters.dateFrom  || undefined,
+        dateTo:     filters.dateTo    || undefined,
+        page,
+        pageSize:   filters.pageSize,
+      });
+      setResult(normalizePaged(raw));
+    } catch (e) {
+      setErr(getApiError(e, "Failed to load SIV list."));
     } finally {
       setLoading(false);
     }
-  }, [canLoad, companyId, request]);
+  }, [
+    companyId, branchId, debouncedQ,
+    filters.docStatus, filters.dateFrom, filters.dateTo,
+    filters.pageSize, page,
+  ]);
 
-  React.useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const { items, totalCount } = result;
   const pageCount = Math.max(1, Math.ceil(totalCount / filters.pageSize));
 
-  const handleFilterChange = React.useCallback(
-    <K extends keyof FilterState>(key: K, value: FilterState[K]) => {
-      setFilters((prev) => ({ ...prev, [key]: value }));
-    },
-    []
-  );
+  const kpis = useMemo(() => ({
+    pending:  items.filter(r => normalizeStatus(r.docStatus) === "Submitted").length,
+    totalQty: items.reduce((s, r) => s + (r.totalQty ?? 0), 0),
+  }), [items]);
 
-  const handleOpen = React.useCallback(
-    (row: SivListItemDto) => {
-      if (!row.id || !companyId) return;
-      navigate(buildSivOpenRoute(companyId, row.id));
-    },
-    [companyId, navigate]
-  );
+  // Count per status for tab badges
+  const tabCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    items.forEach(r => {
+      const k = String(r.docStatus);
+      map[k] = (map[k] ?? 0) + 1;
+    });
+    return map;
+  }, [items]);
 
-  const handleEdit = React.useCallback(
-    (row: SivListItemDto) => {
-      if (!row.id || !companyId) return;
-      navigate(buildSivDraftRoute(companyId, row.id));
-    },
-    [companyId, navigate]
-  );
-
-  const handleNewDraft = React.useCallback(() => {
-    if (!companyId) return;
-    navigate(buildSivNewDraftRoute(companyId));
-  }, [companyId, navigate]);
-
-  const handleClear = React.useCallback(() => {
-    setFilters(DEFAULT_FILTERS);
+  function patchFilter<K extends keyof FilterState>(k: K, v: FilterState[K]) {
     setPage(1);
-  }, []);
-
-  if (!canLoad) {
-    return (
-      <div className="lux-page">
-        <div className="lux-container">
-          <div className="lux-card">
-            <div className="lux-card__title">Invalid Company Scope</div>
-            <div className="lux-card__desc">
-              useAppScope() did not provide a valid companyId.
-            </div>
-
-            <div className="lux-card__desc" style={{ marginTop: 8 }}>
-              companyId: {companyId || "—"} • branchId: {branchId || "—"} •
-              departmentId: {departmentId || "—"}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    setFilters(prev => ({ ...prev, [k]: v }));
   }
 
+  function clearFilters() {
+    setPage(1);
+    setFilters(DEFAULT_FILTERS);
+  }
+
+  function openRow(row: SivListItemDto) {
+    const s = normalizeStatus(row.docStatus);
+    if (s === "Draft" || s === "ChangesRequested") {
+      nav(`/companies/${companyId}/siv/drafts/${row.id}/edit`);
+    } else if (s === "Submitted") {
+      nav(`/companies/${companyId}/siv/approval/${row.id}`);
+    } else {
+      nav(`/companies/${companyId}/siv/${row.id}`);
+    }
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div className="lux-page">
-      <div className="lux-sticky">
-        <div className="lux-sticky__inner">
-          <div className="lux-sticky__left">
-            <div className="lux-title">Stock Issue Vouchers</div>
-            <div className="lux-subtitle">
-              Workflow-aware list <span className="lux-dot">•</span>{" "}
-              <span className="lux-muted">{companyId}</span>
-            </div>
-          </div>
+    <div className="page">
 
-          <div className="lux-sticky__right">
-            <button
-              className="lux-btn ghost"
-              type="button"
-              onClick={() => void load()}
-              disabled={loading}
-            >
-              {loading ? "Refreshing..." : "Refresh"}
-            </button>
-
-            <button
-              className="lux-btn primary"
-              type="button"
-              onClick={handleNewDraft}
-            >
-              New Draft
-            </button>
+      {/* ── Page header ── */}
+      <div className="page-header">
+        <div>
+          <div className="page-kicker">Inventory</div>
+          <div className="page-title">Stock Issue Vouchers</div>
+          <div className="page-sub">
+            Warehouse requisitions from consuming locations
           </div>
+        </div>
+        <button
+          className="btn btn-primary"
+          disabled={!companyId}
+          onClick={() => nav(`/companies/${companyId}/siv/drafts/new`)}
+        >
+          + New SIV
+        </button>
+      </div>
+
+      {/* ── KPI strip ── */}
+      <div
+        className="kpi-grid"
+        style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}
+      >
+        <div className="kpi">
+          <div className="kpi-label">Total documents</div>
+          <div className="kpi-val">{totalCount}</div>
+          <div className="kpi-sub">in current filter</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">On this page</div>
+          <div className="kpi-val">{items.length}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Pending approval</div>
+          <div className="kpi-val">{kpis.pending}</div>
+          {kpis.pending > 0 && (
+            <div className="kpi-badge badge-warn">Action needed</div>
+          )}
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Total qty (page)</div>
+          <div className="kpi-val">{fmtQty(kpis.totalQty)}</div>
         </div>
       </div>
 
-      <div className="lux-container">
-        <div className="lux-hero">
-          <div className="lux-hero__bg" />
-          <div className="lux-hero__content">
-            <div className="lux-hero__kicker">Inventory • SIV</div>
-            <div className="lux-hero__headline">SIV List</div>
-
-            <div className="lux-hero__meta">
-              <span className="lux-chip neutral">Branch: {branchId || "—"}</span>
-              <span className="lux-chip neutral">
-                Status: {filters.docStatus || "All"}
-              </span>
-              <span className="lux-chip good">Total: {totalCount}</span>
-            </div>
-          </div>
-        </div>
-
-        {error ? (
-          <div className="lux-alert error" style={{ marginTop: 14 }}>
-            <div className="lux-alert__msg">{error}</div>
-
+      {/* ── Status filter tabs ── */}
+      <div
+        style={{
+          display:      "flex",
+          gap:          0,
+          borderBottom: "1px solid var(--border-soft)",
+          marginBottom: 14,
+          overflowX:    "auto",
+          scrollbarWidth: "none",
+        }}
+      >
+        {STATUS_TABS.map(tab => {
+          const active  = filters.docStatus === tab.value;
+          const cnt     = tab.value === "" ? items.length : (tabCounts[tab.value] ?? 0);
+          return (
             <button
-              className="lux-btn ghost"
-              type="button"
-              onClick={() => setError("")}
+              key={tab.value}
+              onClick={() => patchFilter("docStatus", tab.value)}
+              style={{
+                padding:      "7px 14px",
+                fontSize:     12,
+                fontWeight:   500,
+                cursor:       "pointer",
+                background:   "none",
+                border:       "none",
+                borderBottom: `2px solid ${active ? "var(--accent)" : "transparent"}`,
+                color:        active ? "var(--accent)" : "var(--text-muted)",
+                display:      "flex",
+                alignItems:   "center",
+                gap:          5,
+                whiteSpace:   "nowrap",
+                transition:   "color 0.1s",
+                marginBottom: -1,
+              }}
             >
-              ✕
+              {tab.label}
+              {cnt > 0 && (
+                <span
+                  style={{
+                    fontSize:    9,
+                    padding:     "1px 5px",
+                    borderRadius:10,
+                    fontWeight:  700,
+                    background:  active ? "var(--accent-light)" : "var(--surface-2)",
+                    color:       active ? "var(--accent)" : "var(--text-muted)",
+                  }}
+                >
+                  {cnt}
+                </span>
+              )}
             </button>
-          </div>
-        ) : null}
+          );
+        })}
+      </div>
 
-        <div className="lux-card" style={{ marginTop: 14 }}>
-          <div className="lux-card__head">
-            <div>
-              <div className="lux-card__title">Filters</div>
-              <div className="lux-card__desc">
-                Search and narrow the voucher list.
-              </div>
-            </div>
-
-            <button className="lux-btn ghost" type="button" onClick={handleClear}>
-              Clear
-            </button>
-          </div>
-
-          <div className="lux-grid">
-            <div className="lux-field span-2">
-              <label htmlFor="siv-search">Search</label>
+      {/* ── Search & date filters ── */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="card-header">
+          <div className="card-title">Filters</div>
+          <button className="btn btn-sm" onClick={clearFilters}>
+            Clear all
+          </button>
+        </div>
+        <div className="card-body">
+          <div
+            style={{
+              display:             "grid",
+              gridTemplateColumns: "2fr 1fr 1fr 1fr auto",
+              gap:                 12,
+            }}
+          >
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label className="field-label">Search</label>
               <input
-                id="siv-search"
-                className="lux-input"
+                className="input"
                 value={filters.q}
-                onChange={(e) => handleFilterChange("q", e.target.value)}
-                placeholder="Number, remarks, department, location..."
+                onChange={(e) => patchFilter("q", e.target.value)}
+                placeholder="SIV number, department, location, remarks…"
               />
             </div>
-
-            <div className="lux-field">
-              <label htmlFor="siv-status">Status</label>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label className="field-label">Date from</label>
+              <input
+                className="input"
+                type="date"
+                value={filters.dateFrom}
+                onChange={(e) => patchFilter("dateFrom", e.target.value)}
+              />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label className="field-label">Date to</label>
+              <input
+                className="input"
+                type="date"
+                value={filters.dateTo}
+                onChange={(e) => patchFilter("dateTo", e.target.value)}
+              />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label className="field-label">Page size</label>
               <select
-                id="siv-status"
-                className="lux-input"
-                value={filters.docStatus}
-                onChange={(e) =>
-                  handleFilterChange("docStatus", e.target.value as DocStatus)
-                }
+                className="select"
+                value={filters.pageSize}
+                onChange={(e) => patchFilter("pageSize", Number(e.target.value))}
               >
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value || "all"} value={option.value}>
-                    {option.label}
-                  </option>
+                {[10, 20, 50, 100].map(n => (
+                  <option key={n} value={n}>{n} per page</option>
                 ))}
               </select>
             </div>
-
-            <div className="lux-field">
-              <label htmlFor="siv-date-from">Date From</label>
-              <input
-                id="siv-date-from"
-                className="lux-input"
-                type="date"
-                value={filters.dateFrom}
-                onChange={(e) => handleFilterChange("dateFrom", e.target.value)}
-              />
-            </div>
-
-            <div className="lux-field">
-              <label htmlFor="siv-date-to">Date To</label>
-              <input
-                id="siv-date-to"
-                className="lux-input"
-                type="date"
-                value={filters.dateTo}
-                onChange={(e) => handleFilterChange("dateTo", e.target.value)}
-              />
-            </div>
-
-            <div className="lux-field">
-              <label htmlFor="siv-page-size">Page Size</label>
-              <select
-                id="siv-page-size"
-                className="lux-input"
-                value={filters.pageSize}
-                onChange={(e) =>
-                  handleFilterChange("pageSize", Number(e.target.value))
-                }
+            <div style={{ display: "flex", alignItems: "flex-end" }}>
+              <button
+                className="btn"
+                onClick={() => void load()}
+                disabled={loading}
+                style={{ whiteSpace: "nowrap" }}
               >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
+                {loading ? "Loading…" : "↺ Refresh"}
+              </button>
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="lux-card" style={{ marginTop: 14 }}>
-          <div className="lux-card__head">
-            <div>
-              <div className="lux-card__title">Documents</div>
-              <div className="lux-card__desc">
-                {loading ? "Loading..." : `${items.length} item(s) on this page`}
-              </div>
-            </div>
-          </div>
+      {/* ── Error ── */}
+      {err && <div className="alert alert-danger">{err}</div>}
 
-          {loading ? (
-            <div className="lux-empty">
-              <div className="lux-empty__title">Loading documents</div>
-              <div className="lux-empty__desc">
-                Please wait while the list is loaded.
-              </div>
-            </div>
-          ) : !items.length ? (
-            <div className="lux-empty">
-              <div className="lux-empty__title">No SIV documents found</div>
-              <div className="lux-empty__desc">
-                Try changing filters or create a new draft.
-              </div>
+      {/* ── Table ── */}
+      <div className="card" style={{ padding: 0 }}>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Document</th>
+              <th>Status</th>
+              <th>Issue date</th>
+              <th>From → To</th>
+              <th>Department</th>
+              <th>Requested by</th>
+              <th style={{ textAlign: "right" }}>Lines</th>
+              <th style={{ textAlign: "right" }}>Total qty</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td
+                  colSpan={9}
+                  style={{
+                    padding:   48,
+                    textAlign: "center",
+                    color:     "var(--text-muted)",
+                    fontSize:  13,
+                  }}
+                >
+                  Loading…
+                </td>
+              </tr>
+            ) : items.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={9}
+                  style={{
+                    padding:   56,
+                    textAlign: "center",
+                    color:     "var(--text-soft)",
+                    fontSize:  13,
+                  }}
+                >
+                  No SIV documents found.{" "}
+                  {!filters.docStatus && !filters.q && (
+                    <span
+                      style={{ color: "var(--accent)", cursor: "pointer" }}
+                      onClick={() =>
+                        nav(`/companies/${companyId}/siv/drafts/new`)
+                      }
+                    >
+                      Create one →
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ) : (
+              items.map((row) => {
+                const s = normalizeStatus(row.docStatus);
+                const isUrgent =
+                  s === "Submitted" || s === "Approved" || s === "Issued";
+                return (
+                  <tr
+                    key={row.id}
+                    style={{
+                      cursor:     "pointer",
+                      borderLeft: isUrgent
+                        ? "3px solid var(--warn)"
+                        : "3px solid transparent",
+                    }}
+                    onClick={() => openRow(row)}
+                  >
+                    <td>
+                      <div
+                        style={{
+                          fontWeight: 500,
+                          fontSize:   13,
+                          fontFamily: "var(--mono)",
+                          color:      "var(--accent)",
+                        }}
+                      >
+                        {row.number || row.id}
+                      </div>
+                      {row.remarks && (
+                        <div
+                          style={{
+                            fontSize:     11,
+                            color:        "var(--text-soft)",
+                            marginTop:    1,
+                            maxWidth:     200,
+                            overflow:     "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace:   "nowrap",
+                          }}
+                          title={row.remarks}
+                        >
+                          {row.remarks}
+                        </div>
+                      )}
+                    </td>
 
-              <button
-                className="lux-btn primary"
-                type="button"
-                onClick={handleNewDraft}
-              >
-                New Draft
-              </button>
-            </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table className="lux-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: 180 }}>Number</th>
-                    <th style={{ width: 130 }}>Status</th>
-                    <th style={{ width: 130 }}>Issue Date</th>
-                    <th style={{ width: 180 }}>From</th>
-                    <th style={{ width: 180 }}>To</th>
-                    <th style={{ width: 180 }}>Department</th>
-                    <th style={{ width: 100 }}>Lines</th>
-                    <th style={{ width: 120 }}>Qty</th>
-                    <th>Remarks</th>
-                    <th style={{ width: 240 }}>Actions</th>
+                    <td>
+                      <span className={STATUS_BADGE[s]}>{s}</span>
+                    </td>
+
+                    <td
+                      style={{
+                        fontSize:   12,
+                        fontFamily: "var(--mono)",
+                        color:      "var(--text-muted)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {fmtDate(row.issueDate)}
+                    </td>
+
+                    <td style={{ fontSize: 12 }}>
+                      <div style={{ color: "var(--text-muted)" }}>
+                        {row.fromLocationName || "—"}
+                      </div>
+                      {(row.toLocationName || row.departmentName) && (
+                        <div
+                          style={{
+                            marginTop: 1,
+                            fontSize:  11,
+                            color:     "var(--text-soft)",
+                          }}
+                        >
+                          → {row.toLocationName || row.departmentName}
+                        </div>
+                      )}
+                    </td>
+
+                    <td style={{ fontSize: 12 }}>
+                      {row.departmentName || "—"}
+                    </td>
+
+                    <td style={{ fontSize: 12 }}>
+                      {row.requestedByName || "—"}
+                    </td>
+
+                    <td
+                      style={{
+                        textAlign:  "right",
+                        fontFamily: "var(--mono)",
+                        fontSize:   12,
+                        color:      "var(--text-muted)",
+                      }}
+                    >
+                      {row.lineCount ?? 0}
+                    </td>
+
+                    <td
+                      style={{
+                        textAlign:  "right",
+                        fontFamily: "var(--mono)",
+                        fontSize:   12,
+                      }}
+                    >
+                      {fmtQty(row.totalQty)}
+                    </td>
+
+                    <td style={{ textAlign: "right" }}>
+                      <button
+                        className="btn btn-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openRow(row);
+                        }}
+                      >
+                        Open →
+                      </button>
+                    </td>
                   </tr>
-                </thead>
+                );
+              })
+            )}
+          </tbody>
+        </table>
 
-                <tbody>
-                  {items.map((row) => {
-                    const status = normalizeStatus(row.docStatus);
-                    const editable = canEdit(status);
-
-                    return (
-                      <tr key={row.id}>
-                        <td>{row.number || row.id}</td>
-
-                        <td>
-                          <StatusChip status={row.docStatus} />
-                        </td>
-
-                        <td>{formatDate(row.issueDate)}</td>
-
-                        <td>{row.fromLocationName || "—"}</td>
-
-                        <td>{row.toLocationName || "—"}</td>
-
-                        <td>{row.departmentName || "—"}</td>
-
-                        <td>{row.lineCount ?? 0}</td>
-
-                        <td>{formatQty(row.totalQty)}</td>
-
-                        <td>{row.remarks || row.notes || "—"}</td>
-
-                        <td>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <button
-                              className="lux-btn ghost"
-                              type="button"
-                              onClick={() => handleOpen(row)}
-                            >
-                              Open
-                            </button>
-
-                            {editable ? (
-                              <button
-                                className="lux-btn"
-                                type="button"
-                                onClick={() => handleEdit(row)}
-                              >
-                                Edit
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div className="lux-footerActions">
-            <div className="lux-muted">
-              Page {page} of {pageCount} <span className="lux-dot">•</span>{" "}
-              Total {totalCount}
-            </div>
-
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                className="lux-btn ghost"
-                type="button"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              >
-                Prev
-              </button>
-
-              <button
-                className="lux-btn ghost"
-                type="button"
-                disabled={page >= pageCount || loading}
-                onClick={() => setPage((prev) => Math.min(pageCount, prev + 1))}
-              >
-                Next
-              </button>
-            </div>
+        {/* Pagination footer */}
+        <div
+          style={{
+            padding:         "10px 16px",
+            borderTop:       "1px solid var(--border-soft)",
+            background:      "var(--surface-2)",
+            display:         "flex",
+            justifyContent:  "space-between",
+            alignItems:      "center",
+            fontSize:        12,
+            color:           "var(--text-muted)",
+          }}
+        >
+          <div>
+            Page {page} of {pageCount} · {totalCount} total
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <button
+              className="btn btn-sm"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ← Prev
+            </button>
+            <span style={{ padding: "2px 8px", background: "var(--accent-light)", color: "var(--accent)", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
+              {page}
+            </span>
+            <button
+              className="btn btn-sm"
+              disabled={page >= pageCount || loading}
+              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+            >
+              Next →
+            </button>
           </div>
         </div>
       </div>

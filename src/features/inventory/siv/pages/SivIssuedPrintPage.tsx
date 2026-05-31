@@ -1,310 +1,231 @@
-import * as React from "react";
+// src/features/inventory/siv/pages/SivIssuedPrintPage.tsx
+
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { sivApi } from "../api/sivApi";
-
-function safe(value: unknown): string {
-  return value == null ? "" : String(value);
-}
-
-function formatDate(value?: string | null): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
-}
-
-function formatQty(value?: number | null): string {
-  if (value == null) return "—";
-  return new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 2,
-  }).format(Number(value));
-}
-
-function unwrapApi(input: any): any {
-  return input?.data?.data ?? input?.data ?? input ?? {};
-}
-
-function pickLines(raw: any): any[] {
-  const lines =
-    raw?.lines ??
-    raw?.sivLines ??
-    raw?.issueLines ??
-    raw?.stockIssueVoucherLines ??
-    raw?.stockIssueLines ??
-    raw?.lineItems ??
-    raw?.items ??
-    raw?.details ??
-    raw?.documentLines ??
-    [];
-
-  return Array.isArray(lines) ? lines : [];
-}
+import { mapToVm, fmtDate, fmtQty, getApiError, type SivVm } from "../types/sivTypes";
 
 export default function SivIssuedPrintPage() {
   const { companyId = "", sivId = "", id = "" } = useParams();
   const documentId = sivId || id;
 
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState("");
-  const [doc, setDoc] = React.useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err,     setErr]     = useState("");
+  const [doc,     setDoc]     = useState<SivVm | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let active = true;
-
     async function load() {
       try {
-        setLoading(true);
-        setError("");
-
+        setLoading(true); setErr("");
         const raw = await sivApi.getById(companyId, documentId);
         if (!active) return;
-
-        setDoc(unwrapApi(raw));
-      } catch (e: any) {
-        if (!active) return;
-        setError(e?.response?.data?.title || e?.message || "Failed to load SIV print page.");
+        setDoc(mapToVm(raw.data));
+      } catch (e) {
+        if (active) setErr(getApiError(e, "Failed to load SIV."));
       } finally {
         if (active) setLoading(false);
       }
     }
-
     if (companyId && documentId) void load();
-
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [companyId, documentId]);
 
-  const lines = React.useMemo(() => pickLines(doc), [doc]);
+  const totalQty = useMemo(
+    () => (doc?.lines ?? []).reduce((s, l) => s + l.qty, 0),
+    [doc]
+  );
 
-  if (loading) return <div style={{ padding: 24 }}>Loading print page...</div>;
-  if (error) return <div style={{ padding: 24 }}>{error}</div>;
-  if (!doc) return <div style={{ padding: 24 }}>SIV not found.</div>;
+  if (loading) {
+    return <div style={{ padding: 32, fontFamily: "Arial", color: "#111" }}>
+      Loading print page…
+    </div>;
+  }
+
+  if (err || !doc) {
+    return <div style={{ padding: 32, fontFamily: "Arial", color: "#b91c1c" }}>
+      {err || "SIV not found."}
+    </div>;
+  }
 
   return (
-    <div className="print-page">
+    <>
       <style>{`
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
           background: #fff;
           color: #111827;
-          font-family: Arial, Helvetica, sans-serif;
+          font-family: "Segoe UI", Arial, sans-serif;
+          font-size: 13px;
+          line-height: 1.5;
         }
-
-        .print-page {
-          max-width: 980px;
-          margin: 0 auto;
-          padding: 32px;
-        }
-
-        .print-actions {
-          display: flex;
-          justify-content: flex-end;
-          margin-bottom: 18px;
-        }
-
+        .pp { max-width: 960px; margin: 0 auto; padding: 28px 32px; }
+        .no-print { display: flex; justify-content: flex-end; margin-bottom: 16px; }
         .print-btn {
           border: 1px solid #111827;
           background: #111827;
           color: #fff;
           border-radius: 8px;
-          padding: 9px 14px;
+          padding: 8px 16px;
           cursor: pointer;
-          font-weight: 700;
-        }
-
-        .header {
-          border-bottom: 2px solid #111827;
-          padding-bottom: 12px;
-          margin-bottom: 18px;
-        }
-
-        .title {
-          font-size: 22px;
-          font-weight: 800;
-          text-align: center;
-          margin: 0;
-          text-transform: uppercase;
-        }
-
-        .subtitle {
-          text-align: center;
           font-size: 13px;
-          margin-top: 4px;
-          color: #4b5563;
+          font-weight: 600;
         }
-
+        .doc-header {
+          border-bottom: 2px solid #111827;
+          padding-bottom: 14px;
+          margin-bottom: 18px;
+          text-align: center;
+        }
+        .doc-header h1 {
+          font-size: 20px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+        .doc-header .sub {
+          font-size: 12px;
+          color: #6b7280;
+          margin-top: 3px;
+        }
         .meta {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
-          gap: 8px 18px;
-          margin-top: 18px;
-          font-size: 13px;
-        }
-
-        .meta-item label {
-          display: block;
-          font-weight: 700;
-          color: #374151;
-          margin-bottom: 2px;
-        }
-
-        .table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-top: 18px;
+          gap: 10px 20px;
+          margin-bottom: 20px;
           font-size: 12.5px;
         }
-
-        .table th,
-        .table td {
+        .meta-item .label {
+          font-weight: 700;
+          color: #374151;
+          font-size: 10px;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          margin-bottom: 2px;
+        }
+        .tbl {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 12px;
+        }
+        .tbl th {
+          background: #f3f4f6;
           border: 1px solid #d1d5db;
-          padding: 8px;
+          padding: 7px 9px;
           text-align: left;
+          font-weight: 700;
+          font-size: 10.5px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .tbl td {
+          border: 1px solid #d1d5db;
+          padding: 7px 9px;
           vertical-align: top;
         }
-
-        .table th {
-          background: #f3f4f6;
-          font-weight: 800;
+        .tbl .num { text-align: right; }
+        .tbl tfoot td {
+          background: #f9fafb;
+          font-weight: 700;
         }
-
-        .num {
-          text-align: right;
-        }
-
-        .signatures {
+        .sigs {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 28px;
           margin-top: 52px;
-          font-size: 13px;
         }
-
-        .sig-line {
+        .sig-box {
           border-top: 1px solid #111827;
-          padding-top: 7px;
+          padding-top: 6px;
           text-align: center;
+          font-size: 12px;
+          color: #374151;
         }
-
         @media print {
-          .print-actions {
-            display: none;
-          }
-
-          .print-page {
-            padding: 0;
-            max-width: none;
-          }
-
-          @page {
-            size: A4;
-            margin: 14mm;
-          }
+          .no-print { display: none; }
+          .pp { padding: 0; max-width: none; }
+          @page { size: A4; margin: 14mm; }
         }
       `}</style>
 
-      <div className="print-actions">
-        <button className="print-btn" onClick={() => window.print()} type="button">
-          Print
-        </button>
-      </div>
+      <div className="pp">
+        <div className="no-print">
+          <button className="print-btn" onClick={() => window.print()}>
+            🖨 Print
+          </button>
+        </div>
 
-      <div className="header">
-        <h1 className="title">Stock Issue Voucher</h1>
-        <div className="subtitle">Issued Inventory Document</div>
+        <div className="doc-header">
+          <h1>Stock Issue Voucher</h1>
+          <div className="sub">Issued Inventory Document</div>
+        </div>
 
         <div className="meta">
-          <div className="meta-item">
-            <label>SIV No.</label>
-            <div>{safe(doc.number ?? doc.documentNumber ?? doc.voucherNo ?? doc.id)}</div>
-          </div>
+          {[
+            { label: "SIV No.",       value: doc.number || doc.id },
+            { label: "Status",        value: doc.docStatus },
+            { label: "Issue date",    value: fmtDate(doc.issueDate) },
+            { label: "Branch",        value: doc.branchId },
+            { label: "From location", value: doc.fromLocationName || "—" },
+            { label: "Department",    value: doc.departmentName   || "—" },
+            { label: "Remarks",       value: doc.remarks || doc.notes || "—" },
+          ].map(({ label, value }) => (
+            <div className="meta-item" key={label}>
+              <div className="label">{label}</div>
+              <div>{value || "—"}</div>
+            </div>
+          ))}
+        </div>
 
-          <div className="meta-item">
-            <label>Status</label>
-            <div>{safe(doc.docStatus ?? doc.status ?? "Issued")}</div>
-          </div>
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th style={{ width: 40 }}>#</th>
+              <th>Item</th>
+              <th style={{ width: 80 }}>UOM</th>
+              <th style={{ width: 80 }} className="num">Qty</th>
+              <th style={{ width: 110 }}>Batch</th>
+              <th style={{ width: 100 }}>Expiry</th>
+              <th>Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {doc.lines.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: "center",
+                  color: "#9ca3af", padding: 20 }}>
+                  No line items.
+                </td>
+              </tr>
+            ) : doc.lines.map((line, i) => (
+              <tr key={line.id || i}>
+                <td>{i + 1}</td>
+                <td style={{ fontWeight: 600 }}>{line.itemName || "—"}</td>
+                <td>{line.uomCode || line.uomName || "—"}</td>
+                <td className="num" style={{ fontWeight: 600 }}>
+                  {fmtQty(line.qty)}
+                </td>
+                <td>{line.batchNo || "—"}</td>
+                <td>{line.expiryDate ? fmtDate(line.expiryDate) : "—"}</td>
+                <td style={{ color: "#6b7280" }}>{line.remarks || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={3} style={{ textAlign: "right" }}>Total</td>
+              <td className="num">{fmtQty(totalQty)}</td>
+              <td colSpan={3} />
+            </tr>
+          </tfoot>
+        </table>
 
-          <div className="meta-item">
-            <label>Issue Date</label>
-            <div>{formatDate(doc.issueDate ?? doc.documentDate)}</div>
-          </div>
-
-          <div className="meta-item">
-            <label>Branch</label>
-            <div>{safe(doc.branchName ?? doc.branch?.name ?? doc.branchId)}</div>
-          </div>
-
-          <div className="meta-item">
-            <label>From Location</label>
-            <div>{safe(doc.fromLocationName ?? doc.fromLocation?.name ?? doc.fromLocationId)}</div>
-          </div>
-
-          <div className="meta-item">
-            <label>Department</label>
-            <div>{safe(doc.departmentName ?? doc.department?.name ?? doc.departmentId)}</div>
-          </div>
+        <div className="sigs">
+          <div className="sig-box">Prepared By</div>
+          <div className="sig-box">Issued By</div>
+          <div className="sig-box">Received By</div>
         </div>
       </div>
-
-      <table className="table">
-        <thead>
-          <tr>
-            <th style={{ width: 45 }}>#</th>
-            <th>Item</th>
-            <th style={{ width: 90 }}>UOM</th>
-            <th style={{ width: 90 }} className="num">Qty</th>
-            <th style={{ width: 120 }}>Batch</th>
-            <th style={{ width: 110 }}>Expiry</th>
-            <th>Remarks</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {lines.length ? (
-            lines.map((line: any, index: number) => (
-              <tr key={line.id ?? `${line.itemId}_${index}`}>
-                <td>{index + 1}</td>
-                <td>
-                  {safe(
-                    line.itemName ??
-                      line.inventoryItemName ??
-                      line.productName ??
-                      line.item?.name ??
-                      line.inventoryItem?.name ??
-                      line.itemId
-                  ) || "—"}
-                </td>
-                <td>
-                  {safe(
-                    line.uomCode ??
-                      line.unitOfMeasureCode ??
-                      line.uomName ??
-                      line.uom?.name ??
-                      line.uomId
-                  ) || "—"}
-                </td>
-                <td className="num">
-                  {formatQty(line.qty ?? line.quantity ?? line.issuedQty ?? line.issueQty)}
-                </td>
-                <td>{safe(line.batchNo ?? line.batchNumber) || "—"}</td>
-                <td>{formatDate(line.expiryDate ?? line.expirationDate)}</td>
-                <td>{safe(line.remarks ?? line.notes) || "—"}</td>
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={7} style={{ textAlign: "center" }}>
-                No line items found.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-      <div className="signatures">
-        <div className="sig-line">Prepared By</div>
-        <div className="sig-line">Issued By</div>
-        <div className="sig-line">Received By</div>
-      </div>
-    </div>
+    </>
   );
 }

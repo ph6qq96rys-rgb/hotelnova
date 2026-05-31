@@ -1,99 +1,181 @@
+// src/api/http.ts
+//
+// Central Axios instance.
+//
+// Request interceptor attaches:
+//   X-Tenant-Id   — database routing (TenantMiddleware)
+//   X-Company-Id  — business-entity scoping (AuthController, service layer)
+//   X-Branch-Id   — branch scoping (optional, omitted when absent)
+//   Authorization — Bearer token on non-auth requests
+//
+// Response interceptor handles 401 → silent refresh → retry (single-flight).
+
 import axios, { AxiosError } from "axios";
 import type { InternalAxiosRequestConfig } from "axios";
-import { loadAuth, saveAuth, clearAuth } from "../auth/auth.storage";
+import { loadAuth, saveAuth, clearAuth, getCompanyId, getBranchId } from "../auth/auth.storage";
+
+// ── Base URL ──────────────────────────────────────────────────────────────────
 
 const base =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:5009";
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ??
+  "http://localhost:5009";
+
 export const API_BASE = `${base}/api`;
+
+// ── Tenant / company resolution ───────────────────────────────────────────────
+
+/** Tenant ID used by TenantMiddleware to select the database.
+ *
+ * Resolution order:
+ *   1. localStorage "tenantId"   — explicit tenant key (multi-tenant picker)
+ *   2. localStorage "companyId"  — for systems where tenant === company (most common)
+ *   3. VITE_TENANT_ID env var    — dev/staging convenience default
+ *
+ * In most RestaurantFNB deployments each company IS the tenant (one DB per
+ * company), so companyId doubles as the tenant identifier. If your deployment
+ * uses a separate tenant slug, store it under "tenantId" after login.
+ */
+export function resolveTenantId(): string | null {
+  return (
+    localStorage.getItem("tenantId")  ??
+    localStorage.getItem("companyId") ??
+    (import.meta.env.VITE_TENANT_ID as string | undefined) ??
+    null
+  );
+}
+
+/** Company GUID used by the service layer for business-entity scoping. */
+export function resolveCompanyId(): string | null {
+  return getCompanyId() ?? (import.meta.env.VITE_COMPANY_ID as string | undefined) ?? null;
+}
+
+/** Branch GUID — optional, omitted from headers when absent. */
+export function resolveBranchId(): string | null {
+  return getBranchId() ?? null;
+}
+
+// ── Axios instance ────────────────────────────────────────────────────────────
 
 export const http = axios.create({
   baseURL: API_BASE,
   headers: { "Content-Type": "application/json" },
-  withCredentials: false, // set true if using HttpOnly refresh cookies
+  withCredentials: false,
 });
 
-/* ------------------------------------------------------------------ */
-/* Helpers */
-/* ------------------------------------------------------------------ */
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Normalize to a pathname-ish string for matching
-function getUrlPath(url?: string) {
+function getUrlPath(url?: string): string {
   if (!url) return "";
-  try {
-    if (url.startsWith("http")) return new URL(url).pathname;
-  } catch {}
-  return url; // relative path
+  try { if (url.startsWith("http")) return new URL(url).pathname; }
+  catch { /* fall through */ }
+  return url;
 }
 
-// Match auth endpoints reliably (whether "/api/auth/login" or "/auth/login")
-function isAuthEndpoint(url?: string) {
-  const p = getUrlPath(url).toLowerCase();
-  return (
-    p.includes("/auth/login") ||
-    p.includes("/auth/register") ||
-    p.includes("/auth/refresh")
-  );
+function isAuthEndpoint(url?: string): boolean {
+  const path = getUrlPath(url).toLowerCase();
+  return [
+    "/api/auth/login",
+    "/api/auth/register",
+    "/api/auth/refresh",
+    "/api/auth/logout",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password",
+  ].some(p => path.startsWith(p));
 }
 
-function setAuthHeader(config: InternalAxiosRequestConfig, token: string) {
-  config.headers = config.headers ?? {};
-  config.headers.Authorization = `Bearer ${token}`;
+// ── Token extraction (handles multiple backend shapes) ────────────────────────
+
+function extractToken(data: unknown, field: "accessToken" | "refreshToken"): string | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  const nested = d.token;
+  if (nested && typeof nested === "object") {
+    const n = nested as Record<string, unknown>;
+    const v = n[field] ?? (field === "accessToken" ? n.token : null);
+    if (typeof v === "string" && v) return v;
+  }
+  const flat = d[field];
+  if (typeof flat === "string" && flat) return flat;
+  const inner = d.data;
+  if (inner && typeof inner === "object") {
+    const iv = (inner as Record<string, unknown>)[field];
+    if (typeof iv === "string" && iv) return iv;
+  }
+  if (field === "accessToken" && typeof d.token === "string" && d.token) return d.token;
+  return null;
 }
 
-/* ------------------------------------------------------------------ */
-/* Refresh handling (single flight + queue) */
-/* ------------------------------------------------------------------ */
+function extractExpiresAt(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  if (typeof d.expiresAt === "string") return d.expiresAt;
+  const nested = d.token;
+  if (nested && typeof nested === "object") {
+    const v = (nested as Record<string, unknown>).expiresAt;
+    if (typeof v === "string") return v;
+  }
+  return null;
+}
+
+// ── Session invalidation event ────────────────────────────────────────────────
+//
+// AuthProvider listens for this to redirect to /login without a circular import.
+//
+//   useEffect(() => {
+//     const handler = () => logoutAndRedirect();
+//     window.addEventListener("auth:unauthenticated", handler);
+//     return () => window.removeEventListener("auth:unauthenticated", handler);
+//   }, [logoutAndRedirect]);
+
+export function dispatchUnauthenticated(): void {
+  window.dispatchEvent(new CustomEvent("auth:unauthenticated"));
+}
+
+// ── Refresh (single-flight) ───────────────────────────────────────────────────
 
 let refreshPromise: Promise<string | null> | null = null;
 
 async function refreshAccessToken(): Promise<string | null> {
   if (refreshPromise) return refreshPromise;
 
-  refreshPromise = (async () => {
+  refreshPromise = (async (): Promise<string | null> => {
     const auth = loadAuth();
-    const refreshToken = auth?.refreshToken;
-
-    // If you require refreshToken but don't have it -> fail
-    if (!refreshToken) {
+    if (!auth?.refreshToken) {
       clearAuth();
+      dispatchUnauthenticated();
       return null;
     }
 
     try {
-      // IMPORTANT: call refresh endpoint with a "bare" axios instance
-      // so the interceptor doesn't recurse.
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const tenantId  = resolveTenantId();
+      const companyId = resolveCompanyId();
+      const branchId  = resolveBranchId();
+      if (tenantId)  headers["X-Tenant-Id"]  = tenantId;
+      if (companyId) headers["X-Company-Id"] = companyId;
+      if (branchId)  headers["X-Branch-Id"]  = branchId;
+
       const res = await axios.post(
         `${API_BASE}/auth/refresh`,
-        { refreshToken },
-        { headers: { "Content-Type": "application/json" }, withCredentials: false }
+        { refreshToken: auth.refreshToken },
+        { headers, withCredentials: false }
       );
 
-      const accessToken: string | undefined =
-        res.data?.token?.accessToken ??
-        res.data?.accessToken ??
-        res.data?.token;
-
-      const newRefreshToken: string | undefined =
-        res.data?.token?.refreshToken ?? res.data?.refreshToken;
-
-      const expiresAt: string | undefined =
-        res.data?.token?.expiresAt ?? res.data?.expiresAt;
+      const accessToken  = extractToken(res.data, "accessToken");
+      const refreshToken = extractToken(res.data, "refreshToken") ?? auth.refreshToken;
+      const expiresAt    = extractExpiresAt(res.data) ?? auth.expiresAt;
 
       if (!accessToken) {
         clearAuth();
+        dispatchUnauthenticated();
         return null;
       }
 
-      saveAuth({
-        user: auth?.user ?? null,
-        accessToken,
-        refreshToken: newRefreshToken ?? refreshToken ?? null,
-        expiresAt: expiresAt ?? auth?.expiresAt ?? null,
-      });
-
+      saveAuth({ ...auth, accessToken, refreshToken, expiresAt });
       return accessToken;
     } catch {
       clearAuth();
+      dispatchUnauthenticated();
       return null;
     } finally {
       refreshPromise = null;
@@ -103,67 +185,49 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-/* ------------------------------------------------------------------ */
-/* Request interceptor: attach access token */
-/* ------------------------------------------------------------------ */
+// ── Request interceptor ───────────────────────────────────────────────────────
 
 http.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    if (isAuthEndpoint(config.url)) return config;
+    config.headers ??= {} as typeof config.headers;
 
-    const auth = loadAuth();
-    const token = auth?.accessToken;
+    const tenantId  = resolveTenantId();
+    const companyId = resolveCompanyId();
+    const branchId  = resolveBranchId();
 
-    if (token) setAuthHeader(config, token);
+    if (tenantId)  config.headers["X-Tenant-Id"]  = tenantId;
+    if (companyId) config.headers["X-Company-Id"] = companyId;
+    if (branchId)  config.headers["X-Branch-Id"]  = branchId;
+
+    if (!isAuthEndpoint(config.url)) {
+      const token = loadAuth()?.accessToken;
+      if (token) config.headers.Authorization = `Bearer ${token}`;
+    }
 
     return config;
   },
-  (error) => Promise.reject(error)
+  err => Promise.reject(err)
 );
 
-/* ------------------------------------------------------------------ */
-/* Response interceptor: 401 -> refresh -> retry once */
-/* ------------------------------------------------------------------ */
+// ── Response interceptor: 401 → refresh → retry ───────────────────────────────
+
+type RetryConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
 http.interceptors.response.use(
-  (res) => res,
+  res => res,
   async (err: AxiosError) => {
-    const status = err.response?.status;
+    const original = err.config as RetryConfig | undefined;
+    if (!original)                    return Promise.reject(err);
+    if (err.response?.status !== 401) return Promise.reject(err);
+    if (original._retry)              return Promise.reject(err);
+    if (isAuthEndpoint(original.url)) return Promise.reject(err);
 
-    const original =
-      err.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+    original._retry = true;
+    const token = await refreshAccessToken();
+    if (!token) return Promise.reject(err);
 
-    if (!original) return Promise.reject(err);
-
-    // Never refresh for auth endpoints
-    if (status === 401 && !original._retry && !isAuthEndpoint(original.url)) {
-      original._retry = true;
-
-      const nextToken = await refreshAccessToken();
-      if (!nextToken) {
-        // IMPORTANT:
-        // Do NOT hard-redirect here. Just reject.
-        // Guards/AuthProvider will detect missing auth and route to /login.
-        return Promise.reject(err);
-      }
-
-      setAuthHeader(original, nextToken);
-      return http.request(original);
-    }
-
-    return Promise.reject(err);
+    original.headers ??= {} as typeof original.headers;
+    original.headers.Authorization = `Bearer ${token}`;
+    return http.request(original);
   }
 );
-
-/* ------------------------------------------------------------------ */
-/* OPTIONAL: If you really need fetch wrapper, make it safe */
-/* ------------------------------------------------------------------ */
-
-export async function apiFetch(input: RequestInfo, init?: RequestInit) {
-  const res = await fetch(input, init);
-
-  // ❌ DO NOT redirect here.
-  // This causes loops and fights your router/guards.
-  // Let your app handle 401 centrally (RequireAuth/AuthProvider).
-  return res;
-}

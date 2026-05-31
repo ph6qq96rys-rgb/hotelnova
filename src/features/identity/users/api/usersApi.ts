@@ -74,4 +74,33 @@ export const usersApi = {
     http<UserDto[]>(`/companies/${companyId}/branches/${branchId}/users`, {
       method: "GET",
     }),
+    searchEmployees(companyId: string, params: {
+  branchId?: string;
+  q?: string;
+  unlinkedOnly?: boolean;
+  page?: number;
+  pageSize?: number;
+}) {
+  return http.get(`/companies/${companyId}/employees/search`, { params });
+},
+
+linkEmployee(companyId: string, userId: string, body: { employeeId: string }) {
+  return http.post(
+    `/companies/${companyId}/users/${userId}/link-employee`,
+    body
+  );
+},
+getEmployeesAvailableForUser(
+  companyId: string,
+  params: {
+    branchId?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  } = {}
+) {
+  return http.get(`/companies/${companyId}/employees/available-for-user`, {
+    params,
+  });
+},
 };

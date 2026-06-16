@@ -1,382 +1,1003 @@
 // src/modules/company/onboarding/steps/UsersStep.tsx
-//
-// Self-contained: fetches its own member list.
-// FIX: m.userId was undefined — backend returns "id" not "userId".
-//      getUserId() resolves the correct field regardless of API shape.
-// FIX: key={m.userId} was undefined → React "missing key" warning.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type React from "react";
-import type { BranchRole, BranchUserDto, CreateBranchUserFormValue } from "../../types/company.types";
+import type { StockLocation } from "../../types/company.types";
 import { onboardingApi } from "../api/onboardingApi";
-import { DEFAULT_USER_FORM } from "../state/onboarding.constants";
-import type { FieldErrors, OnboardingAction } from "../state/onboarding.types";
+import type {
+  CompanyUserDto,
+  EmployeeLookupDto,
+  FieldErrors,
+  OnboardingAction,
+} from "../state/onboarding.types";
 import { extractApiError, isEmail } from "../utils/onboarding.utils";
 import {
-  Field, Input, SelectInput, Btn, Alert, SectionTitle, EmptyState, Spinner,
+  Alert,
+  Btn,
+  EmptyState,
+  Field,
+  Input,
+  SectionTitle,
+  SelectInput,
+  Spinner,
 } from "../components/company.ui";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * The backend serialises ApplicationUser.Id as "id" (camelCase).
- * BranchUserDto.userId is a TypeScript-side convention that doesn't always
- * match the JSON field name. Check both to be resilient.
- */
-function getUserId(m: BranchUserDto): string {
-  const a = m as any;
-  return String(a.userId ?? a.id ?? a.Id ?? "");
-}
-
-function displayName(m: BranchUserDto): string {
-  const a = m as any;
-  if (a.fullName) return a.fullName;
-  const full = `${a.firstName ?? ""} ${a.lastName ?? ""}`.trim();
-  return full || a.userName || m.email || "—";
-}
-
-function initials(m: BranchUserDto): string {
-  const n = displayName(m);
-  return n.split(" ").filter(Boolean).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase() || "?";
-}
+type Props = {
+  companyId: string | null;
+  branchId: string | null;
+  branchName?: string;
+  saving: boolean;
+  dispatch: React.Dispatch<OnboardingAction>;
+  onChanged?: () => Promise<void> | void;
+};
 
 const ROLE_OPTIONS = [
+  { value: "SystemAdmin", label: "System Admin" },
+  { value: "CompanyAdmin", label: "Company Admin" },
   { value: "BranchAdmin", label: "Branch Admin" },
-  { value: "Staff",       label: "Staff"        },
-];
+  { value: "StoreManager", label: "Store Manager" },
+  { value: "StoreKeeper", label: "Store Keeper" },
+  { value: "WarehouseManager", label: "Warehouse Manager" },
+  { value: "FnbController", label: "F&B Controller" },
+  { value: "KitchenManager", label: "Kitchen Manager" },
+  { value: "BarManager", label: "Bar Manager" },
+  { value: "PurchasingOfficer", label: "Purchasing Officer" },
+  { value: "ProductionManager", label: "Production Manager" },
+  { value: "Cashier", label: "Cashier" },
+  { value: "InventoryClerk", label: "Inventory Clerk" },
+] as const;
 
-interface EditProfileForm { firstName: string; lastName: string; email: string; }
+type FormState = {
+  employeeId: string;
+  userName: string;
+  email: string;
+  password: string;
+  role: string;
+  stockLocationId: string;
+  isActive: boolean;
+};
 
-// ── Component ─────────────────────────────────────────────────────────────────
+const EMPTY_FORM: FormState = {
+  employeeId: "",
+  userName: "",
+  email: "",
+  password: "",
+  role: "CompanyAdmin",
+  stockLocationId: "",
+  isActive: true,
+};
 
-export function UsersStep(props: {
-  companyId:   string | null;
-  branchId:    string | null;
-  branchName?: string;
-  saving:      boolean;
-  dispatch:    React.Dispatch<OnboardingAction>;
-}) {
-  // ── Own data fetch ────────────────────────────────────────────────────────
-  const [members, setMembers] = useState<BranchUserDto[]>([]);
+function getId(x: any): string {
+  return String(x?.id ?? x?.Id ?? x?.userId ?? x?.employeeId ?? "");
+}
+
+function getRoles(x: any): string[] {
+  if (Array.isArray(x?.roles)) {
+    return x.roles.filter(Boolean).map(String);
+  }
+
+  if (typeof x?.roles === "string") {
+    return x.roles
+      .split(",")
+      .map((r: string) => r.trim())
+      .filter(Boolean);
+  }
+
+  return [x?.role, x?.roleName, x?.primaryRole].filter(Boolean).map(String);
+}
+
+function hasRole(x: any, roleName: string): boolean {
+  const expected = roleName.trim().toLowerCase();
+
+  return getRoles(x).some((role) => {
+    const current = role.trim().toLowerCase();
+
+    if (expected === "companyadmin") {
+      return (
+        current === "companyadmin" ||
+        current === "companyadministrator" ||
+        current === "admin"
+      );
+    }
+
+    return current === expected;
+  });
+}
+
+function isCompanyAdmin(x: any): boolean {
+  return hasRole(x, "CompanyAdmin");
+}
+
+function isSystemAdminRole(role: string): boolean {
+  return role.trim().toLowerCase() === "systemadmin";
+}
+
+function isCompanyAdminRole(role: string): boolean {
+  const value = role.trim().toLowerCase();
+  return value === "companyadmin" || value === "companyadministrator" || value === "admin";
+}
+
+function isBranchScopedRole(role: string): boolean {
+  return !isSystemAdminRole(role);
+}
+
+function displayName(x: any): string {
+  return (
+    x?.employeeName ??
+    x?.employee?.fullName ??
+    x?.fullName ??
+    x?.name ??
+    x?.userName ??
+    x?.email ??
+    "—"
+  );
+}
+
+function employeeLabel(e: EmployeeLookupDto): string {
+  return `${e.employeeCode ? `${e.employeeCode} — ` : ""}${
+    e.fullName ?? e.workEmail ?? e.id
+  }`;
+}
+
+function isActiveUser(x: any): boolean {
+  return x?.isActive === true || x?.isActive === undefined;
+}
+
+function normalizeRole(role: string): string {
+  if (isCompanyAdminRole(role)) return "CompanyAdmin";
+  return role;
+}
+
+export function UsersStep(props: Props) {
+  const [members, setMembers] = useState<CompanyUserDto[]>([]);
+  const [employees, setEmployees] = useState<EmployeeLookupDto[]>([]);
+  const [locations, setLocations] = useState<StockLocation[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const fetchMembers = useCallback(async () => {
-    if (!props.companyId || !props.branchId) { setMembers([]); return; }
-    setLoading(true);
-    try {
-      const data = await onboardingApi.listBranchUsers(props.companyId, props.branchId);
-      setMembers(Array.isArray(data) ? data : []);
-    } catch {
+  const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [busy, setBusy] = useState(false);
+
+  const [roleBusyId, setRoleBusyId] = useState<string | null>(null);
+  const [removeBusyId, setRemoveBusyId] = useState<string | null>(null);
+
+  const [editingUser, setEditingUser] = useState<CompanyUserDto | null>(null);
+  const [editRole, setEditRole] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editStockLocationId, setEditStockLocationId] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editIsActive, setEditIsActive] = useState(true);
+
+  const activeUsersCount = useMemo(
+    () => members.filter((x) => isActiveUser(x)).length,
+    [members],
+  );
+
+  const companyAdminCount = useMemo(
+    () => members.filter((x) => isCompanyAdmin(x) && isActiveUser(x)).length,
+    [members],
+  );
+
+  const branchAdminCount = useMemo(
+    () => members.filter((x) => hasRole(x, "BranchAdmin") && isActiveUser(x)).length,
+    [members],
+  );
+
+  const fetchAll = useCallback(async () => {
+    if (!props.companyId || !props.branchId) {
       setMembers([]);
+      setEmployees([]);
+      setLocations([]);
+      setLoadError("Company and branch are required before users can be loaded.");
+      return;
+    }
+
+    setLoading(true);
+    setLoadError(null);
+
+    try {
+      const [users, employeeLookups, stockLocations] = await Promise.all([
+        onboardingApi.listBranchUsers(props.companyId, props.branchId),
+        onboardingApi.listAvailableEmployees(props.companyId, props.branchId),
+        onboardingApi.listStockLocations(props.companyId, props.branchId),
+      ]);
+
+      setMembers(Array.isArray(users) ? users : []);
+      setEmployees(
+        Array.isArray(employeeLookups?.employees)
+          ? employeeLookups.employees
+          : [],
+      );
+      setLocations(Array.isArray(stockLocations) ? stockLocations : []);
+    } catch (err) {
+      setLoadError(extractApiError(err, "Failed to load users and employees."));
+      setMembers([]);
+      setEmployees([]);
+      setLocations([]);
     } finally {
       setLoading(false);
     }
   }, [props.companyId, props.branchId]);
 
-  useEffect(() => { void fetchMembers(); }, [fetchMembers]);
+  useEffect(() => {
+    void fetchAll();
+  }, [fetchAll]);
 
-  // ── Create state ──────────────────────────────────────────────────────────
-  const [form,   setForm]   = useState<CreateBranchUserFormValue>({ ...DEFAULT_USER_FORM });
-  const [errors, setErrors] = useState<FieldErrors>({});
+  const selectedEmployee = employees.find((x) => x.id === form.employeeId);
 
-  // ── Edit state ────────────────────────────────────────────────────────────
-  const [editingId,  setEditingId]  = useState<string | null>(null);
-  const [editForm,   setEditForm]   = useState<EditProfileForm>({ firstName: "", lastName: "", email: "" });
-  const [editErrors, setEditErrors] = useState<FieldErrors>({});
-  const [editSaving, setEditSaving] = useState(false);
+  useEffect(() => {
+    if (!selectedEmployee) return;
 
-  const adminCount = members.filter((m) => m.role === "BranchAdmin").length;
-
-  // ── Create validation ─────────────────────────────────────────────────────
+    setForm((x) => ({
+      ...x,
+      email: x.email || selectedEmployee.workEmail || "",
+      userName:
+        x.userName ||
+        selectedEmployee.workEmail ||
+        selectedEmployee.employeeCode ||
+        "",
+    }));
+  }, [selectedEmployee]);
 
   function validate(): boolean {
     const e: FieldErrors = {};
-    if (!form.firstName.trim())                     e.firstName = "First name is required.";
-    if (!form.lastName.trim())                      e.lastName  = "Last name is required.";
-    if (!form.userName.trim())                      e.userName  = "Username is required.";
-    if (!isEmail(form.email))                       e.email     = "Valid email is required.";
-    if (!form.password || form.password.length < 6) e.password  = "Password must be at least 6 characters.";
+    const role = normalizeRole(form.role);
+    const systemAdmin = isSystemAdminRole(role);
+
+    if (!form.employeeId) e.employeeId = "Employee is required.";
+    if (!form.userName.trim()) e.userName = "Username is required.";
+    if (form.email && !isEmail(form.email)) e.email = "Valid email is required.";
+
+    if (!form.password || form.password.trim().length < 8) {
+      e.password = "Password must be at least 8 characters.";
+    }
+
+    if (!role) e.role = "Role is required.";
+
+    if (!systemAdmin && !props.branchId) {
+      e.branchId = "Branch is required unless the user is System Admin.";
+    }
+
     setErrors(e);
     return Object.keys(e).length === 0;
   }
 
-  function validateEdit(): boolean {
-    const e: FieldErrors = {};
-    if (!editForm.firstName.trim()) e.firstName = "First name is required.";
-    if (!editForm.lastName.trim())  e.lastName  = "Last name is required.";
-    if (!isEmail(editForm.email))   e.email     = "Valid email is required.";
-    setEditErrors(e);
-    return Object.keys(e).length === 0;
-  }
+  function startEdit(member: CompanyUserDto) {
+    const roles = getRoles(member);
+    const primaryRole = normalizeRole(roles[0] ?? "BranchAdmin");
 
-  // ── Create handler ────────────────────────────────────────────────────────
+    setEditingUser(member);
+    setEditRole(primaryRole);
+    setEditEmail(member.email ?? "");
+    setEditStockLocationId(member.defaultStockLocationId ?? "");
+    setEditPassword("");
+    setEditIsActive(member.isActive !== false);
+  }
 
   async function create() {
-    if (!props.companyId || !props.branchId || !validate()) return;
-    props.dispatch({ type: "SAVE_START" });
-    try {
-      const created = await onboardingApi.createUser(props.companyId, {
-        userName:  form.userName.trim(),
-        email:     form.email.trim().toLowerCase(),
-        password:  form.password,
-        firstName: form.firstName.trim(),
-        lastName:  form.lastName.trim(),
-        branchId:  props.branchId,
-        storeId:   null,
-      });
-      try {
-        await onboardingApi.assignBranchUser(
-          props.companyId, props.branchId, created.id, form.role,
-        );
-      } catch {
-        await onboardingApi.updateBranchUserRole(
-          props.companyId, props.branchId, created.id, form.role,
-        );
-      }
-      setForm({ ...DEFAULT_USER_FORM });
-      await fetchMembers();
-      props.dispatch({ type: "SAVE_SUCCESS", notice: "User created and assigned." });
-    } catch (err) {
-      props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to create user.") });
-    }
-  }
+    if (!props.companyId || !validate()) return;
 
-  // ── Edit handlers ─────────────────────────────────────────────────────────
+    const role = normalizeRole(form.role);
+    const systemAdmin = isSystemAdminRole(role);
+    const selectedBranchId = props.branchId ?? "";
+    const selectedStockLocationId = form.stockLocationId;
 
-  function startEdit(m: BranchUserDto) {
-    const a = m as any;
-    setEditingId(getUserId(m));
-    setEditForm({
-      firstName: a.firstName ?? "",
-      lastName:  a.lastName  ?? "",
-      email:     m.email     ?? "",
-    });
-    setEditErrors({});
-  }
-
-  function cancelEdit() { setEditingId(null); setEditErrors({}); }
-
-  async function saveEdit(userId: string) {
-    if (!props.companyId || !validateEdit()) return;
-    setEditSaving(true);
-    props.dispatch({ type: "CLEAR_MESSAGES" });
-    try {
-      await onboardingApi.updateUser(props.companyId, userId, {
-        firstName: editForm.firstName.trim(),
-        lastName:  editForm.lastName.trim(),
-        email:     editForm.email.trim().toLowerCase(),
-      });
-      setEditingId(null);
-      await fetchMembers();
-      props.dispatch({ type: "SAVE_SUCCESS", notice: "User updated." });
-    } catch (err) {
-      props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to update user.") });
-    } finally { setEditSaving(false); }
-  }
-
-  // ── Role / remove handlers ────────────────────────────────────────────────
-
-  async function changeRole(userId: string, role: BranchRole) {
-    if (!props.companyId || !props.branchId) return;
-    const member = members.find((x) => getUserId(x) === userId);
-    if (member?.role === "BranchAdmin" && role !== "BranchAdmin" && adminCount <= 1) {
+    if (!systemAdmin && !selectedBranchId) {
       props.dispatch({
         type: "SAVE_ERROR",
-        error: "Assign another Branch Admin before demoting the last admin.",
+        error: "Branch is required unless the user is System Admin.",
       });
       return;
     }
+
+    setBusy(true);
     props.dispatch({ type: "SAVE_START" });
+
     try {
-      await onboardingApi.updateBranchUserRole(props.companyId, props.branchId, userId, role);
-      await fetchMembers();
-      props.dispatch({ type: "SAVE_SUCCESS", notice: "Role updated." });
+      const created = await onboardingApi.createUser(props.companyId, {
+        employeeId: form.employeeId,
+        userName: form.userName.trim(),
+        email: form.email.trim() || null,
+        password: form.password.trim(),
+        isActive: true,
+        roles: [role],
+        branches:
+          systemAdmin || !selectedBranchId
+            ? []
+            : [{ branchId: selectedBranchId, isDefault: true, isActive: true }],
+        stockLocations:
+          systemAdmin || !selectedStockLocationId
+            ? []
+            : [
+                {
+                  stockLocationId: selectedStockLocationId,
+                  isDefault: true,
+                  isActive: true,
+                  canReceive: true,
+                  canIssue: true,
+                  canTransfer: true,
+                  canSell: true,
+                  canAdjust: true,
+                },
+              ],
+      } as any);
+
+      const createdUserId = getId(created);
+
+      if (createdUserId) {
+        await onboardingApi.assignRoles(props.companyId, createdUserId, [role]);
+
+        await onboardingApi.setUserActiveStatus(
+          props.companyId,
+          createdUserId,
+          true,
+        );
+
+        if (!systemAdmin && selectedBranchId) {
+          await onboardingApi.assignUserBranches(props.companyId, createdUserId, [
+            selectedBranchId,
+          ]);
+        }
+
+        if (!systemAdmin && selectedStockLocationId) {
+          await onboardingApi.assignUserStockLocations(
+            props.companyId,
+            createdUserId,
+            [selectedStockLocationId],
+          );
+        }
+      }
+
+      setForm({ ...EMPTY_FORM });
+      await fetchAll();
+      await props.onChanged?.();
+
+      props.dispatch({
+        type: "SAVE_SUCCESS",
+        notice: "Active employee login account created successfully.",
+      });
     } catch (err) {
-      props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to update role.") });
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error: extractApiError(err, "Failed to create employee login account."),
+      });
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function remove(userId: string) {
-    if (!props.companyId || !props.branchId) return;
-    const member = members.find((x) => getUserId(x) === userId);
-    if (member?.role === "BranchAdmin" && adminCount <= 1) {
-      props.dispatch({ type: "SAVE_ERROR", error: "Cannot remove the last Branch Admin." });
+  async function saveUserSettings() {
+    if (!props.companyId || !editingUser) return;
+
+    const userId = getId(editingUser);
+    if (!userId) return;
+
+    const nextRole = normalizeRole(editRole);
+    const nextSystemAdmin = isSystemAdminRole(nextRole);
+
+    const currentRoles = getRoles(editingUser);
+    const removingLastCompanyAdmin =
+      currentRoles.some((r) => isCompanyAdminRole(r)) &&
+      !isCompanyAdminRole(nextRole) &&
+      companyAdminCount <= 1;
+
+    const deactivatingLastActiveUser =
+      editingUser.isActive !== false && !editIsActive && activeUsersCount <= 1;
+
+    if (removingLastCompanyAdmin) {
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error:
+          "Assign another Company Admin before changing the last active Company Admin.",
+      });
       return;
     }
+
+    if (deactivatingLastActiveUser) {
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error: "At least one active user is required for company onboarding.",
+      });
+      return;
+    }
+
+    setBusy(true);
     props.dispatch({ type: "SAVE_START" });
+
     try {
-      await onboardingApi.removeBranchUser(props.companyId, props.branchId, userId);
-      await fetchMembers();
-      props.dispatch({ type: "SAVE_SUCCESS", notice: "User removed." });
+      await onboardingApi.updateUser(props.companyId, userId, {
+        email: editEmail.trim() || null,
+        isActive: editIsActive,
+      } as any);
+
+      await onboardingApi.assignRoles(props.companyId, userId, [nextRole]);
+
+      await onboardingApi.setUserActiveStatus(
+        props.companyId,
+        userId,
+        editIsActive,
+      );
+
+      if (nextSystemAdmin) {
+        await onboardingApi.assignUserBranches(props.companyId, userId, []);
+        await onboardingApi.assignUserStockLocations(props.companyId, userId, []);
+      } else {
+        if (props.branchId) {
+          await onboardingApi.assignUserBranches(props.companyId, userId, [
+            props.branchId,
+          ]);
+        }
+
+        await onboardingApi.assignUserStockLocations(
+          props.companyId,
+          userId,
+          editStockLocationId ? [editStockLocationId] : [],
+        );
+      }
+
+      if (editPassword.trim()) {
+        if (editPassword.trim().length < 8) {
+          throw new Error("Password must be at least 8 characters.");
+        }
+
+        await onboardingApi.resetUserPassword(
+          props.companyId,
+          userId,
+          editPassword.trim(),
+        );
+      }
+
+      setEditingUser(null);
+      await fetchAll();
+      await props.onChanged?.();
+
+      props.dispatch({
+        type: "SAVE_SUCCESS",
+        notice: "User settings updated.",
+      });
     } catch (err) {
-      props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to remove user.") });
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error: extractApiError(err, "Failed to update user settings."),
+      });
+    } finally {
+      setBusy(false);
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  async function changeRole(userId: string, nextRoleRaw: string) {
+    if (!props.companyId || !userId) return;
+
+    const nextRole = normalizeRole(nextRoleRaw);
+    const member = members.find((x) => getId(x) === userId);
+    const currentRoles = member ? getRoles(member) : [];
+
+    const removingLastCompanyAdmin =
+      currentRoles.some((r) => isCompanyAdminRole(r)) &&
+      !isCompanyAdminRole(nextRole) &&
+      companyAdminCount <= 1;
+
+    const removingLastBranchAdmin =
+      currentRoles.some((r) => r.toLowerCase() === "branchadmin") &&
+      nextRole.toLowerCase() !== "branchadmin" &&
+      branchAdminCount <= 1;
+
+    if (removingLastCompanyAdmin) {
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error:
+          "Assign another Company Admin before changing the last active Company Admin.",
+      });
+      return;
+    }
+
+    if (removingLastBranchAdmin) {
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error: "Assign another Branch Admin before changing the last Branch Admin.",
+      });
+      return;
+    }
+
+    setRoleBusyId(userId);
+    props.dispatch({ type: "SAVE_START" });
+
+    try {
+      await onboardingApi.assignRoles(props.companyId, userId, [nextRole]);
+
+      await onboardingApi.setUserActiveStatus(props.companyId, userId, true);
+
+      await fetchAll();
+      await props.onChanged?.();
+
+      props.dispatch({
+        type: "SAVE_SUCCESS",
+        notice: "User role updated.",
+      });
+    } catch (err) {
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error: extractApiError(err, "Failed to update user role."),
+      });
+    } finally {
+      setRoleBusyId(null);
+    }
+  }
+
+  async function removeFromBranch(userId: string) {
+    if (!props.companyId || !props.branchId || !userId) return;
+
+    const member = members.find((x) => getId(x) === userId);
+
+    if (member && hasRole(member, "BranchAdmin") && branchAdminCount <= 1) {
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error: "Cannot remove the last Branch Admin from this branch.",
+      });
+      return;
+    }
+
+    setRemoveBusyId(userId);
+    props.dispatch({ type: "SAVE_START" });
+
+    try {
+      await onboardingApi.assignUserBranches(props.companyId, userId, []);
+      await onboardingApi.assignUserStockLocations(props.companyId, userId, []);
+
+      await fetchAll();
+      await props.onChanged?.();
+
+      props.dispatch({
+        type: "SAVE_SUCCESS",
+        notice: "User removed from branch.",
+      });
+    } catch (err) {
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error: extractApiError(err, "Failed to remove user from branch."),
+      });
+    } finally {
+      setRemoveBusyId(null);
+    }
+  }
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "24px 0", color: "#64748b" }}>
-        <Spinner /> Loading users…
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "24px 0",
+          color: "#64748b",
+        }}
+      >
+        <Spinner /> Loading employee accounts…
       </div>
     );
   }
 
+  const employeeOptions = [
+    { value: "", label: "— Select employee —" },
+    ...employees.map((e) => ({ value: e.id, label: employeeLabel(e) })),
+  ];
+
+  const locationOptions = [
+    { value: "", label: "— No stock location —" },
+    ...locations
+      .filter((x: any) => x.isActive !== false)
+      .map((x: any) => ({
+        value: String(x.id),
+        label: `${x.name}${x.code ? ` (${x.code})` : ""}`,
+      })),
+  ];
+
+  const selectedRole = normalizeRole(form.role);
+  const selectedRoleIsSystemAdmin = isSystemAdminRole(selectedRole);
+
+  const editRoleNormalized = normalizeRole(editRole);
+  const editRoleIsSystemAdmin = isSystemAdminRole(editRoleNormalized);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-      <SectionTitle
-        title="Branch users"
-        subtitle={`Create and assign users for ${props.branchName ?? "this branch"}. At least one Branch Admin is required.`}
-      />
-
-      {/* ── Create user form ──────────────────────────────────────────────── */}
-      <div className="ob-inner-card">
-        <div className="ob-inner-card-header">
-          <div className="ob-inner-card-title">Create branch user</div>
-          <div className="ob-inner-card-sub">
-            Create a user and assign them to this branch with the appropriate role.
-          </div>
-        </div>
-        <div className="ob-inner-card-body">
-          <div className="ob-grid-2">
-            <Field label="First name" required hint={errors.firstName}>
-              <Input value={form.firstName}
-                onChange={(v) => setForm((x) => ({ ...x, firstName: v }))}
-                placeholder="e.g. Hana" />
-            </Field>
-            <Field label="Last name" required hint={errors.lastName}>
-              <Input value={form.lastName}
-                onChange={(v) => setForm((x) => ({ ...x, lastName: v }))}
-                placeholder="e.g. Tesfaye" />
-            </Field>
-            <Field label="Username" required hint={errors.userName}>
-              <Input value={form.userName}
-                onChange={(v) => setForm((x) => ({ ...x, userName: v }))}
-                placeholder="e.g. hana.t" />
-            </Field>
-            <Field label="Email" required hint={errors.email}>
-              <Input value={form.email}
-                onChange={(v) => setForm((x) => ({ ...x, email: v }))}
-                placeholder="hana@company.com" type="email" />
-            </Field>
-            <Field label="Temporary password" required hint={errors.password}>
-              <Input value={form.password}
-                onChange={(v) => setForm((x) => ({ ...x, password: v }))}
-                type="password" placeholder="Minimum 6 characters" />
-            </Field>
-            <Field label="Role">
-              <SelectInput
-                value={form.role}
-                onChange={(v) => setForm((x) => ({ ...x, role: v as BranchRole }))}
-                options={ROLE_OPTIONS} />
-            </Field>
-          </div>
-        </div>
-        <div className="ob-inner-card-footer">
-          <Btn variant="primary" onClick={create} disabled={props.saving}>
-            {props.saving ? "Creating…" : "Create user"}
-          </Btn>
-        </div>
-      </div>
-
-      {/* ── Admin requirement notice ──────────────────────────────────────── */}
-      {adminCount === 0 && members.length > 0 && (
+      {loadError && (
         <Alert
-          tone="warn"
-          title="No Branch Admin assigned"
-          message="At least one user must have the Branch Admin role before setup can be completed."
+          tone="danger"
+          title="Unable to load employee accounts"
+          message={loadError}
         />
       )}
 
-      {/* ── Members list ──────────────────────────────────────────────────── */}
-      {members.length > 0 ? (
-        <div>
-          <div className="ob-members-hdr">
-            Branch members ({members.length}) · {adminCount} admin{adminCount !== 1 ? "s" : ""}
+      <div
+        style={{
+          border: "1px solid #e2e8f0",
+          borderRadius: 12,
+          background: "#fff",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid #f1f5f9",
+            background: "#fafbfc",
+          }}
+        >
+          <SectionTitle
+            title="Create employee login"
+            subtitle={`Create ERP access for employees assigned to ${
+              props.branchName ?? "this branch"
+            }.`}
+          />
+        </div>
+
+        <div
+          style={{
+            padding: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+          }}
+        >
+          {Object.values(errors)
+            .filter(Boolean)
+            .map((msg, i) => (
+              <Alert key={i} tone="danger" title="Validation" message={msg!} />
+            ))}
+
+          <div className="ob-grid-2">
+            <Field label="Employee" hint={errors.employeeId}>
+              <SelectInput
+                value={form.employeeId}
+                onChange={(value) =>
+                  setForm((x) => ({ ...x, employeeId: value }))
+                }
+                options={employeeOptions}
+              />
+            </Field>
+
+            <Field label="Role" hint={errors.role}>
+              <SelectInput
+                value={form.role}
+                onChange={(value) =>
+                  setForm((x) => ({
+                    ...x,
+                    role: normalizeRole(value),
+                    stockLocationId: isSystemAdminRole(value)
+                      ? ""
+                      : x.stockLocationId,
+                  }))
+                }
+                options={ROLE_OPTIONS as any}
+              />
+            </Field>
+
+            <Field label="Username" hint={errors.userName}>
+              <Input
+                value={form.userName}
+                onChange={(value) => setForm((x) => ({ ...x, userName: value }))}
+                placeholder="username or work email"
+              />
+            </Field>
+
+            <Field label="Email" hint={errors.email}>
+              <Input
+                value={form.email}
+                onChange={(value) => setForm((x) => ({ ...x, email: value }))}
+                placeholder="employee@example.com"
+              />
+            </Field>
+
+            <Field label="Temporary password" hint={errors.password}>
+              <Input
+                type="password"
+                value={form.password}
+                onChange={(value) => setForm((x) => ({ ...x, password: value }))}
+                placeholder="Minimum 8 characters"
+              />
+            </Field>
+
+            <Field label="Stock location access">
+              <SelectInput
+                value={form.stockLocationId}
+                onChange={(value) =>
+                  setForm((x) => ({ ...x, stockLocationId: value }))
+                }
+                options={locationOptions}
+                disabled={selectedRoleIsSystemAdmin}
+              />
+            </Field>
           </div>
 
-          {members.map((m) => {
-            const uid      = getUserId(m);   // ← resolved correctly
-            const isAdmin  = m.role === "BranchAdmin";
-            const isEditing = editingId === uid;
+          {selectedRoleIsSystemAdmin && (
+            <Alert
+              tone="warn"
+              title="System Admin selected"
+              message="System Admin will be created active, without branch or stock location assignment."
+            />
+          )}
 
-            if (isEditing) {
+          {!selectedRoleIsSystemAdmin && !form.stockLocationId && (
+            <Alert
+              tone="warn"
+              title="No stock location selected"
+              message="The user will be created active. Stock-location access can be configured later."
+            />
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Btn
+              variant="primary"
+              onClick={() => void create()}
+              disabled={
+                busy ||
+                !props.companyId ||
+                (!selectedRoleIsSystemAdmin && !props.branchId)
+              }
+            >
+              {busy ? "Creating…" : "Create active login account"}
+            </Btn>
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid #e2e8f0",
+          borderRadius: 12,
+          background: "#fff",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid #f1f5f9",
+            background: "#fafbfc",
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#0f172a",
+          }}
+        >
+          Branch users
+        </div>
+
+        <div style={{ padding: "8px 16px" }}>
+          {members.length === 0 ? (
+            <EmptyState
+              title="No user accounts"
+              sub="Create at least one active Company Admin or Branch Admin account."
+            />
+          ) : (
+            members.map((member) => {
+              const userId = getId(member);
+              const roles = getRoles(member).map(normalizeRole);
+              const primaryRole = normalizeRole(roles[0] ?? "Staff");
+              const active = isActiveUser(member);
+
               return (
-                <div key={uid || `edit-${m.email}`} className="ob-list-row"
-                  style={{ flexWrap: "wrap", gap: 10, background: "#f8faff", alignItems: "flex-start" }}>
-                  <div className={`ob-avatar ${isAdmin ? "ob-avatar--admin" : "ob-avatar--staff"}`}
-                    style={{ marginTop: 2 }}>
-                    {initials(m)}
+                <div
+                  key={userId || member.email}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 220px 190px",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 0",
+                    borderBottom: "1px solid #f8fafc",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#0f172a",
+                      }}
+                    >
+                      {displayName(member)}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "#94a3b8",
+                        marginTop: 2,
+                      }}
+                    >
+                      {member.email || member.userName}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        flexWrap: "wrap",
+                        marginTop: 5,
+                      }}
+                    >
+                      {roles.map((role) => (
+                        <span
+                          key={role}
+                          className={
+                            isCompanyAdminRole(role) || role === "BranchAdmin"
+                              ? "ob-badge ob-badge--success"
+                              : "ob-badge"
+                          }
+                        >
+                          {role}
+                        </span>
+                      ))}
+
+                      <span
+                        className={
+                          active
+                            ? "ob-badge ob-badge--success"
+                            : "ob-badge ob-badge--warn"
+                        }
+                      >
+                        {active ? "Active" : "Inactive"}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ flex: 1, minWidth: 220, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <Field label="First name" required hint={editErrors.firstName}>
-                      <Input value={editForm.firstName}
-                        onChange={(v) => setEditForm((f) => ({ ...f, firstName: v }))}
-                        placeholder="First name" />
-                    </Field>
-                    <Field label="Last name" required hint={editErrors.lastName}>
-                      <Input value={editForm.lastName}
-                        onChange={(v) => setEditForm((f) => ({ ...f, lastName: v }))}
-                        placeholder="Last name" />
-                    </Field>
-                    <Field label="Email" required hint={editErrors.email}>
-                      <Input value={editForm.email}
-                        onChange={(v) => setEditForm((f) => ({ ...f, email: v }))}
-                        type="email" placeholder="user@company.com" />
-                    </Field>
-                  </div>
-                  <SelectInput value={m.role}
-                    onChange={(v) => changeRole(uid, v as BranchRole)}
-                    options={ROLE_OPTIONS} />
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <Btn variant="primary" onClick={() => saveEdit(uid)} disabled={editSaving}
-                      style={{ padding: "4px 12px", fontSize: 12, minHeight: 30 }}>
-                      {editSaving ? "Saving…" : "Save"}
+
+                  <SelectInput
+                    value={primaryRole}
+                    disabled={roleBusyId === userId}
+                    onChange={(value) => void changeRole(userId, value)}
+                    options={ROLE_OPTIONS as any}
+                  />
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <Btn variant="ghost" onClick={() => startEdit(member)}>
+                      Configure
                     </Btn>
-                    <Btn variant="ghost" onClick={cancelEdit} disabled={editSaving}
-                      style={{ padding: "4px 10px", fontSize: 12, minHeight: 30 }}>
-                      Cancel
+
+                    <Btn
+                      variant="ghost"
+                      disabled={removeBusyId === userId}
+                      onClick={() => void removeFromBranch(userId)}
+                    >
+                      {removeBusyId === userId ? "Removing…" : "Remove"}
                     </Btn>
                   </div>
                 </div>
               );
-            }
-
-            return (
-              <div key={uid || `member-${m.email}`} className="ob-list-row">
-                <div className={`ob-avatar ${isAdmin ? "ob-avatar--admin" : "ob-avatar--staff"}`}>
-                  {initials(m)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>
-                    {displayName(m)}
-                  </div>
-                  <div style={{ fontSize: 11, color: "#94a3b8" }}>{m.email}</div>
-                </div>
-                <SelectInput value={m.role}
-                  onChange={(v) => changeRole(uid, v as BranchRole)}
-                  options={ROLE_OPTIONS} />
-                <Btn variant="ghost" onClick={() => startEdit(m)}
-                  style={{ padding: "4px 10px", fontSize: 12, minHeight: 30 }}>
-                  Edit
-                </Btn>
-                <Btn variant="ghost" onClick={() => remove(uid)}
-                  style={{ padding: "4px 10px", fontSize: 12, minHeight: 30 }}>
-                  Remove
-                </Btn>
-              </div>
-            );
-          })}
+            })
+          )}
         </div>
-      ) : (
-        <EmptyState
-          title="No users assigned yet"
-          sub="Create at least one Branch Admin to complete setup."
+      </div>
+
+      {editingUser && (
+        <div
+          style={{
+            border: "1px solid #e2e8f0",
+            borderRadius: 12,
+            background: "#fff",
+            padding: 16,
+          }}
+        >
+          <SectionTitle
+            title="Configure user settings"
+            subtitle={`Update role, email, stock location access, active status, and password for ${displayName(
+              editingUser,
+            )}.`}
+          />
+
+          <div className="ob-grid-2" style={{ marginTop: 14 }}>
+            <Field label="Role">
+              <SelectInput
+                value={editRoleNormalized}
+                onChange={(value) => {
+                  const role = normalizeRole(value);
+                  setEditRole(role);
+                  if (isSystemAdminRole(role)) setEditStockLocationId("");
+                }}
+                options={ROLE_OPTIONS as any}
+              />
+            </Field>
+
+            <Field label="Email">
+              <Input
+                value={editEmail}
+                onChange={setEditEmail}
+                placeholder="employee@example.com"
+              />
+            </Field>
+
+            <Field label="Stock location access">
+              <SelectInput
+                value={editStockLocationId}
+                onChange={setEditStockLocationId}
+                options={locationOptions}
+                disabled={editRoleIsSystemAdmin}
+              />
+            </Field>
+
+            <Field label="Reset password">
+              <Input
+                type="password"
+                value={editPassword}
+                onChange={setEditPassword}
+                placeholder="Leave blank to keep current password"
+              />
+            </Field>
+
+            <Field label="Active status">
+              <SelectInput
+                value={editIsActive ? "true" : "false"}
+                onChange={(value) => setEditIsActive(value === "true")}
+                options={[
+                  { value: "true", label: "Active" },
+                  { value: "false", label: "Inactive" },
+                ]}
+              />
+            </Field>
+          </div>
+
+          {editRoleIsSystemAdmin && (
+            <Alert
+              tone="warn"
+              title="System Admin selected"
+              message="Saving will remove branch and stock location assignments for this user."
+            />
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 8,
+              marginTop: 16,
+            }}
+          >
+            <Btn variant="ghost" onClick={() => setEditingUser(null)}>
+              Cancel
+            </Btn>
+
+            <Btn
+              variant="primary"
+              disabled={busy}
+              onClick={() => void saveUserSettings()}
+            >
+              {busy ? "Saving…" : "Save settings"}
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      {members.length > 0 && !members.some((x) => isActiveUser(x)) && (
+        <Alert
+          tone="danger"
+          title="No active user"
+          message="At least one active user is required before company activation."
         />
       )}
 
+      {members.length > 0 &&
+        !members.some((x) => isCompanyAdmin(x) && isActiveUser(x)) && (
+          <Alert
+            tone="warn"
+            title="Company Admin missing"
+            message="At least one active Company Admin is recommended. System Admin can still finish initial setup."
+          />
+        )}
+
+      {members.length > 0 &&
+        !members.some((x) => hasRole(x, "BranchAdmin") && isActiveUser(x)) && (
+          <Alert
+            tone="warn"
+            title="Branch Admin missing"
+            message="At least one Branch Admin is recommended for branch-level operations."
+          />
+        )}
     </div>
   );
 }

@@ -50,22 +50,36 @@ export function StoresStep(props: {
   branchName?: string;
   saving:      boolean;
   dispatch:    React.Dispatch<OnboardingAction>;
+  onChanged?:  () => Promise<void> | void;
 }) {
   // ── Own data fetch ────────────────────────────────────────────────────────
   const [stores,    setStores]    = useState<StoreDto[]>([]);
   const [locations, setLocations] = useState<StockLocation[]>([]);
   const [loading,   setLoading]   = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
-    if (!props.companyId || !props.branchId) { setStores([]); setLocations([]); return; }
+    if (!props.companyId || !props.branchId) {
+      setStores([]);
+      setLocations([]);
+      setLoadError("Company and branch are required before stores can be loaded.");
+      return;
+    }
+
     setLoading(true);
+    setLoadError(null);
+
     try {
       const [s, l] = await Promise.all([
-        onboardingApi.listStores(props.companyId, props.branchId).catch(() => []),
-        onboardingApi.listStockLocations(props.companyId, props.branchId).catch(() => []),
+        onboardingApi.listStores(props.companyId, props.branchId),
+        onboardingApi.listStockLocations(props.companyId, props.branchId),
       ]);
       setStores(Array.isArray(s) ? s : []);
       setLocations(Array.isArray(l) ? l : []);
+    } catch (err) {
+      setStores([]);
+      setLocations([]);
+      setLoadError(extractApiError(err, "Failed to load stores."));
     } finally {
       setLoading(false);
     }
@@ -90,7 +104,9 @@ export function StoresStep(props: {
   const [createErrors, setCreateErrors] = useState<FieldErrors>({});
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const activeLocations = locations.filter((l) => (l as any).isActive !== false);
+  const activeLocations = locations.filter((l: any) =>
+  l.isActive !== false && l.canIssue === true
+);
 
   const locationOptions = [
     { value: "", label: "— Select issue location —" },
@@ -101,6 +117,8 @@ export function StoresStep(props: {
   ];
 
   function getMappedName(s: StoreDto): string | null {
+    const a = s as any;
+    if (a.issueStockLocationName) return a.issueStockLocationName;
     const mid = getMappedId(s);
     if (!mid) return null;
     return (locations.find((l) => getId(l) === mid) as any)?.name ?? null;
@@ -132,6 +150,7 @@ export function StoresStep(props: {
         locationType: editForm.storeType,
       });
       await fetchAll();
+      await props.onChanged?.();
       closeEdit();
       props.dispatch({ type: "SAVE_SUCCESS", notice: "Store updated." });
     } catch (err) {
@@ -146,6 +165,7 @@ export function StoresStep(props: {
     try {
       await onboardingApi.mapStoreIssueLocation(props.companyId, props.branchId, sid, locationId);
       await fetchAll();
+      await props.onChanged?.();
       props.dispatch({ type: "SAVE_SUCCESS", notice: "Issue location mapped." });
     } catch (err) {
       props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to map location.") });
@@ -164,6 +184,7 @@ export function StoresStep(props: {
         locationType: createForm.storeType,
       });
       await fetchAll();
+      await props.onChanged?.();
       setCreateForm({ ...EMPTY_FORM });
       setShowCreate(false);
       props.dispatch({ type: "SAVE_SUCCESS", notice: "Store added." });
@@ -185,12 +206,19 @@ export function StoresStep(props: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-      {activeLocations.length === 0 && stores.length > 0 && (
-        <Alert tone="warn" title="No active stock locations"
-          message="Stores cannot be mapped until at least one active stock location exists." />
+      {loadError && (
+        <Alert tone="danger" title="Unable to load stores" message={loadError} />
       )}
 
-      {stores.length === 0 && !showCreate && (
+    {activeLocations.length === 0 && stores.length > 0 && !loadError && (
+          <Alert
+            tone="warn"
+            title="No issue-capable stock locations"
+            message="Stores can only be mapped to stock locations that can issue inventory."
+          />
+        )}
+
+      {stores.length === 0 && !showCreate && !loadError && (
         <EmptyState
           title="No stores yet"
           sub={`Add POS or sales units for ${props.branchName ?? "this branch"}.`}

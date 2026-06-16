@@ -5,14 +5,16 @@ import type { BranchDto, CreateBranchDto } from "../types/company.types";
 
 const base = (companyId: string) => `/companies/${companyId}/branches`;
 
-/** Unwrap any paged-response envelope into a plain array. */
+/** Unwrap paged-response envelopes into a plain array. */
 function unwrap<T>(raw: unknown): T[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw as T[];
+
   const r = raw as Record<string, unknown>;
-  if (Array.isArray(r.items))   return r.items   as T[];
-  if (Array.isArray(r.data))    return r.data     as T[];
-  if (Array.isArray(r.results)) return r.results  as T[];
+  if (Array.isArray(r.items)) return r.items as T[];
+  if (Array.isArray(r.data)) return r.data as T[];
+  if (Array.isArray(r.results)) return r.results as T[];
+
   return [];
 }
 
@@ -36,8 +38,7 @@ export const branchesApi = {
     companyId: string,
     branchId: string,
     dto: Partial<CreateBranchDto>,
-  ): Promise<BranchDto> => {
-    const res = await http.put<BranchDto>(`${base(companyId)}/${branchId}`, dto);
-    return res.data;
+  ): Promise<void> => {
+    await http.put(`${base(companyId)}/${branchId}`, dto);
   },
 };

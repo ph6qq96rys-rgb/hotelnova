@@ -3,338 +3,273 @@
 import type { ReactNode } from "react";
 import type { RouteObject } from "react-router-dom";
 import {
-  Users,
-  UserCheck,
-  CreditCard,
+  Briefcase,
   CalendarOff,
   Clock,
-  Briefcase,
-  Star,
+  CreditCard,
   School,
+  Star,
+  UserCheck,
+  Users,
 } from "lucide-react";
 
 import HRDashboardPage from "../features/hr/pages/HRDashboardPage";
-import EmployeeDetailPage from "../features/hr/pages/Employees/EmployeeDetailPage";
-import AttendancePage from "../features/hr/pages/attendance/AttendancePage";
+
 import EmployeeListPage from "../features/hr/pages/Employees/EmployeeListPage";
-import LeaveListPage from "../features/hr/pages/leave/Leavelistpage ";
-import PayrollListPage from "../features/hr/pages/payroll/PayrollListPage";
-import PerformancePage from "../features/hr/pages/performance/PerformancePage";
-import TrainingPage from "../features/hr/pages/training/TrainingPage";
+import EmployeeDetailPage from "../features/hr/pages/Employees/EmployeeDetailPage";
 import EmployeeFormPage from "../features/hr/pages/Employees/Employeeformpage";
 import EmployeeConfirmPage from "../features/hr/pages/Employees/EmployeeConfirmPage";
 import EmployeeTerminatePage from "../features/hr/pages/Employees/Employeeterminatepage";
-import JobPostingFormPage from "../features/hr/pages/recruitment/JobPostingFormPage";
-import JobPostingDetailPage from "../features/hr/pages/recruitment/Jobpostingdetailpage";
-import JobApplicationDetailPage from "../features/hr/pages/recruitment/Jobapplicationdetailpage";
+
+import AttendancePage from "../features/hr/pages/attendance/AttendancePage";
+
 import LeaveRequestFormPage from "../features/hr/pages/leave/LeaveRequestFormPage";
 import LeaveBalancePage from "../features/hr/pages/leave/LeaveBalancePage";
+import LeaveListPage from "../features/hr/pages/leave/Leavelistpage";
+
+import PayrollListPage from "../features/hr/pages/payroll/PayrollListPage";
 import PayrollRunFormPage from "../features/hr/pages/payroll/PayrollRunFormPage";
 import PayrollRunDetailPage from "../features/hr/pages/payroll/Payrollrundetailpage";
 import PaySlipDetailPage from "../features/hr/pages/payroll/Payslipdetailpage";
+
+import RecruitmentPage from "../features/hr/pages/RecruitmentPage";
+import JobPostingFormPage from "../features/hr/pages/recruitment/JobPostingFormPage";
+import JobPostingDetailPage from "../features/hr/pages/recruitment/Jobpostingdetailpage";
+import JobApplicationDetailPage from "../features/hr/pages/recruitment/Jobapplicationdetailpage";
+
+import PerformancePage from "../features/hr/pages/performance/PerformancePage";
 import PerformanceCycleFormPage from "../features/hr/pages/performance/PerformanceCycleFormPage";
 import PerformanceReviewPage from "../features/hr/pages/performance/Performancereviewpage";
+
+import TrainingPage from "../features/hr/pages/training/TrainingPage";
 import TrainingProgramFormPage from "../features/hr/pages/training/Trainingprogramformpage";
 import TrainingProgramDetailPage from "../features/hr/pages/training/Trainingprogramdetailpage";
-import RecruitmentPage from "../features/hr/pages/RecruitmentPage";
 
 export type AppRoute = RouteObject & {
-  path?: string;
   label?: string;
-  element?: ReactNode;
   icon?: ReactNode;
   nav?: boolean;
   section?: string;
   roles?: string[];
-  menu?: {
-    label: string;
-    icon?: ReactNode;
-    section?: string;
-  };
+
+  /**
+   * Sidebar-safe URL resolver.
+   * Use this for Link/NavLink/navigate.
+   */
+  getHref?: (companyId: string) => string;
 };
 
-export type CompanyRouteScope = {
-  companyId: string;
-};
+const HR_SECTION = "Human Resources";
 
-export const hrPaths = {
-  root: "/companies/:companyId/hr",
+const COMPANY_PATTERN = "/companies/:companyId";
+const HR_PATTERN = `${COMPANY_PATTERN}/hr`;
 
-  employees: "/companies/:companyId/hr/employees",
-  employeeNew: "/companies/:companyId/hr/employees/new",
-  employeeDetail: "/companies/:companyId/hr/employees/:employeeId",
-  employeeEdit: "/companies/:companyId/hr/employees/:employeeId/edit",
-  employeeConfirm: "/companies/:companyId/hr/employees/:employeeId/confirm",
-  employeeTerminate: "/companies/:companyId/hr/employees/:employeeId/terminate",
+const companyUrl = (companyId: string) => `/companies/${companyId}`;
+const hrUrl = (companyId: string) => `${companyUrl(companyId)}/hr`;
 
-  payroll: "/companies/:companyId/hr/payroll",
-  payrollNew: "/companies/:companyId/hr/payroll/new",
-  payrollRunDetail: "/companies/:companyId/hr/payroll/runs/:runId",
-  paySlipDetail: "/companies/:companyId/hr/payroll/payslips/:paySlipId",
+/**
+ * Route patterns are ONLY for React Router route definitions.
+ * Never use these directly for Sidebar links, Link, NavLink, navigate, or redirects.
+ */
+export const HR_ROUTE_PATTERNS = {
+  root: HR_PATTERN,
 
-  leave: "/companies/:companyId/hr/leave",
-  leaveNew: "/companies/:companyId/hr/leave/new",
-  leaveBalance: "/companies/:companyId/hr/leave/balances/:employeeId",
+  employees: `${HR_PATTERN}/employees`,
+  employeeNew: `${HR_PATTERN}/employees/new`,
+  employeeDetail: `${HR_PATTERN}/employees/:employeeId`,
+  employeeEdit: `${HR_PATTERN}/employees/:employeeId/edit`,
+  employeeConfirm: `${HR_PATTERN}/employees/:employeeId/confirm`,
+  employeeTerminate: `${HR_PATTERN}/employees/:employeeId/terminate`,
 
-  attendance: "/companies/:companyId/hr/attendance",
+  attendance: `${HR_PATTERN}/attendance`,
 
-  recruitment: "/companies/:companyId/hr/recruitment",
-  recruitmentNew: "/companies/:companyId/hr/recruitment/new",
-  jobPostingDetail: "/companies/:companyId/hr/recruitment/:postingId",
-  jobApplicationDetail:
-    "/companies/:companyId/hr/recruitment/:postingId/applications/:applicationId",
+  leave: `${HR_PATTERN}/leave`,
+  leaveNew: `${HR_PATTERN}/leave/new`,
+  leaveBalance: `${HR_PATTERN}/leave/balances/:employeeId`,
 
-  performance: "/companies/:companyId/hr/performance",
-  performanceCycleNew: "/companies/:companyId/hr/performance/cycles/new",
-  performanceCycleDetail:
-    "/companies/:companyId/hr/performance/cycles/:cycleId",
-  performanceReviewDetail:
-    "/companies/:companyId/hr/performance/reviews/:reviewId",
+  payroll: `${HR_PATTERN}/payroll`,
+  payrollNew: `${HR_PATTERN}/payroll/new`,
+  payrollRunDetail: `${HR_PATTERN}/payroll/runs/:runId`,
+  paySlipDetail: `${HR_PATTERN}/payroll/payslips/:paySlipId`,
 
-  training: "/companies/:companyId/hr/training",
-  trainingProgramNew: "/companies/:companyId/hr/training/programs/new",
-  trainingProgramDetail:
-    "/companies/:companyId/hr/training/programs/:programId",
-};
+  recruitment: `${HR_PATTERN}/recruitment`,
+  recruitmentNew: `${HR_PATTERN}/recruitment/new`,
+  jobPostingDetail: `${HR_PATTERN}/recruitment/:postingId`,
+  jobApplicationDetail: `${HR_PATTERN}/recruitment/:postingId/applications/:applicationId`,
 
-const companyRoot = (companyId: string) => `/companies/${companyId}`;
-const hrRoot = (companyId: string) => `${companyRoot(companyId)}/hr`;
+  performance: `${HR_PATTERN}/performance`,
+  performanceCycleNew: `${HR_PATTERN}/performance/cycles/new`,
+  performanceCycleDetail: `${HR_PATTERN}/performance/cycles/:cycleId`,
+  performanceReviewDetail: `${HR_PATTERN}/performance/reviews/:reviewId`,
 
-export const hrLinks = {
-  root: (companyId: string) => hrRoot(companyId),
+  training: `${HR_PATTERN}/training`,
+  trainingProgramNew: `${HR_PATTERN}/training/programs/new`,
+  trainingProgramDetail: `${HR_PATTERN}/training/programs/:programId`,
+} as const;
 
-  employees: (companyId: string) => `${hrRoot(companyId)}/employees`,
+/**
+ * URL builders are ONLY for real links, buttons, breadcrumbs, navigate(), redirects, Sidebar.
+ */
+export const HR_URLS = {
+  root: (companyId: string) => hrUrl(companyId),
 
-  employeeNew: (companyId: string) =>
-    `${hrRoot(companyId)}/employees/new`,
-
+  employees: (companyId: string) => `${hrUrl(companyId)}/employees`,
+  employeeNew: (companyId: string) => `${hrUrl(companyId)}/employees/new`,
   employeeDetail: (companyId: string, employeeId: string) =>
-    `${hrRoot(companyId)}/employees/${employeeId}`,
-
+    `${hrUrl(companyId)}/employees/${employeeId}`,
   employeeEdit: (companyId: string, employeeId: string) =>
-    `${hrRoot(companyId)}/employees/${employeeId}/edit`,
-
+    `${hrUrl(companyId)}/employees/${employeeId}/edit`,
   employeeConfirm: (companyId: string, employeeId: string) =>
-    `${hrRoot(companyId)}/employees/${employeeId}/confirm`,
-
+    `${hrUrl(companyId)}/employees/${employeeId}/confirm`,
   employeeTerminate: (companyId: string, employeeId: string) =>
-    `${hrRoot(companyId)}/employees/${employeeId}/terminate`,
+    `${hrUrl(companyId)}/employees/${employeeId}/terminate`,
 
-  attendance: (companyId: string) => `${hrRoot(companyId)}/attendance`,
+  attendance: (companyId: string) => `${hrUrl(companyId)}/attendance`,
 
-  leave: (companyId: string) => `${hrRoot(companyId)}/leave`,
-
-  leaveNew: (companyId: string) => `${hrRoot(companyId)}/leave/new`,
-
+  leave: (companyId: string) => `${hrUrl(companyId)}/leave`,
+  leaveNew: (companyId: string) => `${hrUrl(companyId)}/leave/new`,
   leaveBalance: (companyId: string, employeeId: string) =>
-    `${hrRoot(companyId)}/leave/balances/${employeeId}`,
+    `${hrUrl(companyId)}/leave/balances/${employeeId}`,
 
-  payroll: (companyId: string) => `${hrRoot(companyId)}/payroll`,
-
-  payrollNew: (companyId: string) => `${hrRoot(companyId)}/payroll/new`,
-
+  payroll: (companyId: string) => `${hrUrl(companyId)}/payroll`,
+  payrollNew: (companyId: string) => `${hrUrl(companyId)}/payroll/new`,
   payrollRunDetail: (companyId: string, runId: string) =>
-    `${hrRoot(companyId)}/payroll/runs/${runId}`,
-
+    `${hrUrl(companyId)}/payroll/runs/${runId}`,
   paySlipDetail: (companyId: string, paySlipId: string) =>
-    `${hrRoot(companyId)}/payroll/payslips/${paySlipId}`,
+    `${hrUrl(companyId)}/payroll/payslips/${paySlipId}`,
 
-  recruitment: (companyId: string) => `${hrRoot(companyId)}/recruitment`,
-
-  recruitmentNew: (companyId: string) =>
-    `${hrRoot(companyId)}/recruitment/new`,
-
+  recruitment: (companyId: string) => `${hrUrl(companyId)}/recruitment`,
+  recruitmentNew: (companyId: string) => `${hrUrl(companyId)}/recruitment/new`,
   jobPostingDetail: (companyId: string, postingId: string) =>
-    `${hrRoot(companyId)}/recruitment/${postingId}`,
-
+    `${hrUrl(companyId)}/recruitment/${postingId}`,
   jobApplicationDetail: (
     companyId: string,
     postingId: string,
     applicationId: string
-  ) =>
-    `${hrRoot(companyId)}/recruitment/${postingId}/applications/${applicationId}`,
+  ) => `${hrUrl(companyId)}/recruitment/${postingId}/applications/${applicationId}`,
 
-  performance: (companyId: string) => `${hrRoot(companyId)}/performance`,
-
+  performance: (companyId: string) => `${hrUrl(companyId)}/performance`,
   performanceCycleNew: (companyId: string) =>
-    `${hrRoot(companyId)}/performance/cycles/new`,
-
+    `${hrUrl(companyId)}/performance/cycles/new`,
   performanceCycleDetail: (companyId: string, cycleId: string) =>
-    `${hrRoot(companyId)}/performance/cycles/${cycleId}`,
-
+    `${hrUrl(companyId)}/performance/cycles/${cycleId}`,
   performanceReviewDetail: (companyId: string, reviewId: string) =>
-    `${hrRoot(companyId)}/performance/reviews/${reviewId}`,
+    `${hrUrl(companyId)}/performance/reviews/${reviewId}`,
 
-  training: (companyId: string) => `${hrRoot(companyId)}/training`,
-
+  training: (companyId: string) => `${hrUrl(companyId)}/training`,
   trainingProgramNew: (companyId: string) =>
-    `${hrRoot(companyId)}/training/programs/new`,
-
+    `${hrUrl(companyId)}/training/programs/new`,
   trainingProgramDetail: (companyId: string, programId: string) =>
-    `${hrRoot(companyId)}/training/programs/${programId}`,
-};
+    `${hrUrl(companyId)}/training/programs/${programId}`,
+} as const;
+
+export const hrPaths = HR_ROUTE_PATTERNS;
+export const hrLinks = HR_URLS;
+
+const navRoute = (
+  path: string,
+  label: string,
+  element: ReactNode,
+  icon: ReactNode,
+  getHref: (companyId: string) => string
+): AppRoute => ({
+  path,
+  label,
+  element,
+  icon,
+  nav: true,
+  section: HR_SECTION,
+  getHref,
+});
+
+const hiddenRoute = (path: string, element: ReactNode): AppRoute => ({
+  path,
+  element,
+  nav: true,
+});
 
 export function getHrRoutes(): AppRoute[] {
   return [
-    {
-      path: hrPaths.root,
-      label: "HR",
-      element: <HRDashboardPage />,
-      icon: <Users size={18} />,
-      nav: true,
-      section: "Human Resources",
-    },
-    {
-      path: hrPaths.employees,
-      label: "Employees",
-      element: <EmployeeListPage />,
-      icon: <UserCheck size={18} />,
-      nav: true,
-      section: "Human Resources",
-    },
-    {
-      path: hrPaths.employeeNew,
-      element: <EmployeeFormPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.employeeDetail,
-      element: <EmployeeDetailPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.employeeEdit,
-      element: <EmployeeFormPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.employeeConfirm,
-      element: <EmployeeConfirmPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.employeeTerminate,
-      element: <EmployeeTerminatePage />,
-      nav: false,
-    },
+    navRoute(
+      HR_ROUTE_PATTERNS.root,
+      "HR",
+      <HRDashboardPage />,
+      <Users size={18} />,
+      HR_URLS.root
+    ),
 
-    {
-      path: hrPaths.payroll,
-      label: "Payroll",
-      element: <PayrollListPage />,
-      icon: <CreditCard size={18} />,
-      nav: true,
-      section: "Human Resources",
-    },
-    {
-      path: hrPaths.payrollNew,
-      element: <PayrollRunFormPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.payrollRunDetail,
-      element: <PayrollRunDetailPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.paySlipDetail,
-      element: <PaySlipDetailPage />,
-      nav: false,
-    },
+    navRoute(
+      HR_ROUTE_PATTERNS.employees,
+      "Employees",
+      <EmployeeListPage />,
+      <UserCheck size={18} />,
+      HR_URLS.employees
+    ),
+    hiddenRoute(HR_ROUTE_PATTERNS.employeeNew, <EmployeeFormPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.employeeDetail, <EmployeeDetailPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.employeeEdit, <EmployeeFormPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.employeeConfirm, <EmployeeConfirmPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.employeeTerminate, <EmployeeTerminatePage />),
 
-    {
-      path: hrPaths.leave,
-      label: "Leave",
-      element: <LeaveListPage />,
-      icon: <CalendarOff size={18} />,
-      nav: true,
-      section: "Human Resources",
-    },
-    {
-      path: hrPaths.leaveNew,
-      element: <LeaveRequestFormPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.leaveBalance,
-      element: <LeaveBalancePage />,
-      nav: false,
-    },
+    navRoute(
+      HR_ROUTE_PATTERNS.payroll,
+      "Payroll",
+      <PayrollListPage />,
+      <CreditCard size={18} />,
+      HR_URLS.payroll
+    ),
+    hiddenRoute(HR_ROUTE_PATTERNS.payrollNew, <PayrollRunFormPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.payrollRunDetail, <PayrollRunDetailPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.paySlipDetail, <PaySlipDetailPage />),
 
-    {
-      path: hrPaths.attendance,
-      label: "Attendance",
-      element: <AttendancePage />,
-      icon: <Clock size={18} />,
-      nav: true,
-      section: "Human Resources",
-    },
+    navRoute(
+      HR_ROUTE_PATTERNS.leave,
+      "Leave",
+      <LeaveListPage />,
+      <CalendarOff size={18} />,
+      HR_URLS.leave
+    ),
+    hiddenRoute(HR_ROUTE_PATTERNS.leaveNew, <LeaveRequestFormPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.leaveBalance, <LeaveBalancePage />),
 
-    {
-      path: hrPaths.recruitment,
-      label: "Recruitment",
-      element: <RecruitmentPage />,
-      icon: <Briefcase size={18} />,
-      nav: true,
-      section: "Human Resources",
-    },
-    {
-      path: hrPaths.recruitmentNew,
-      element: <JobPostingFormPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.jobPostingDetail,
-      element: <JobPostingDetailPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.jobApplicationDetail,
-      element: <JobApplicationDetailPage />,
-      nav: false,
-    },
+    navRoute(
+      HR_ROUTE_PATTERNS.attendance,
+      "Attendance",
+      <AttendancePage />,
+      <Clock size={18} />,
+      HR_URLS.attendance
+    ),
 
-    {
-      path: hrPaths.performance,
-      label: "Performance",
-      element: <PerformancePage />,
-      icon: <Star size={18} />,
-      nav: true,
-      section: "Human Resources",
-    },
-    {
-      path: hrPaths.performanceCycleNew,
-      element: <PerformanceCycleFormPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.performanceCycleDetail,
-      element: <PerformanceCycleFormPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.performanceReviewDetail,
-      element: <PerformanceReviewPage />,
-      nav: false,
-    },
+    navRoute(
+      HR_ROUTE_PATTERNS.recruitment,
+      "Recruitment",
+      <RecruitmentPage />,
+      <Briefcase size={18} />,
+      HR_URLS.recruitment
+    ),
+    hiddenRoute(HR_ROUTE_PATTERNS.recruitmentNew, <JobPostingFormPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.jobPostingDetail, <JobPostingDetailPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.jobApplicationDetail, <JobApplicationDetailPage />),
 
-    {
-      path: hrPaths.training,
-      label: "Training",
-      element: <TrainingPage />,
-      icon: <School size={18} />,
-      nav: true,
-      section: "Human Resources",
-    },
-    {
-      path: hrPaths.trainingProgramNew,
-      element: <TrainingProgramFormPage />,
-      nav: false,
-    },
-    {
-      path: hrPaths.trainingProgramDetail,
-      element: <TrainingProgramDetailPage />,
-      nav: false,
-    },
+    navRoute(
+      HR_ROUTE_PATTERNS.performance,
+      "Performance",
+      <PerformancePage />,
+      <Star size={18} />,
+      HR_URLS.performance
+    ),
+    hiddenRoute(HR_ROUTE_PATTERNS.performanceCycleNew, <PerformanceCycleFormPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.performanceCycleDetail, <PerformanceCycleFormPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.performanceReviewDetail, <PerformanceReviewPage />),
+
+    navRoute(
+      HR_ROUTE_PATTERNS.training,
+      "Training",
+      <TrainingPage />,
+      <School size={18} />,
+      HR_URLS.training
+    ),
+    hiddenRoute(HR_ROUTE_PATTERNS.trainingProgramNew, <TrainingProgramFormPage />),
+    hiddenRoute(HR_ROUTE_PATTERNS.trainingProgramDetail, <TrainingProgramDetailPage />),
   ];
 }

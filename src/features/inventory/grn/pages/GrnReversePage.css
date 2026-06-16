@@ -1,0 +1,49 @@
+.grn-reverse-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.grn-reverse-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.grn-reverse-header h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 850;
+}
+
+.grn-reverse-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.grn-warning {
+  margin-top: 16px;
+  padding: 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  color: #78350f;
+}
+
+.grn-reverse-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .grn-reverse-header {
+    flex-direction: column;
+  }
+
+  .grn-reverse-grid {
+    grid-template-columns: 1fr;
+  }
+}

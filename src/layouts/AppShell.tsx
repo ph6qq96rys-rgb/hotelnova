@@ -1,3 +1,5 @@
+// src/layouts/AppShell.tsx
+
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
@@ -6,13 +8,13 @@ import { usePageMeta } from "../hooks/usePageMeta";
 
 export default function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const loc = useLocation();
+  const location = useLocation();
 
-  // One source of truth for title/subtitle/breadcrumb
-  const meta = usePageMeta(loc.pathname);
+  const meta = usePageMeta(location.pathname);
+  const crumbs = meta.crumbs ?? [];
 
   useEffect(() => {
-    document.title = `${meta.title} • HotelNova`;
+    document.title = `${meta.title || "Dashboard"} • HotelNova`;
   }, [meta.title]);
 
   return (
@@ -25,21 +27,34 @@ export default function AppShell() {
         <header className="hna-topbar">
           <Topbar
             onOpenSidebar={() => setSidebarOpen(true)}
-            title={meta.title}
+            title={meta.title || "Dashboard"}
             subtitle={meta.subtitle}
           />
         </header>
 
-        {/* Breadcrumb goes ABOVE content */}
-        {meta.crumbs?.length ? (
-          <div className="breadcrumb">
-            {meta.crumbs.map((c, i) => (
-              <span key={`${c.label}-${i}`}>
-                {c.to ? <NavLink to={c.to}>{c.label}</NavLink> : c.label}
-                {i < meta.crumbs.length - 1 ? " / " : ""}
-              </span>
-            ))}
-          </div>
+        {crumbs.length > 0 ? (
+          <nav className="breadcrumb" aria-label="Breadcrumb">
+            {crumbs.map((crumb, index) => {
+              const isLast = index === crumbs.length - 1;
+
+              const safeTo =
+                crumb.to && !crumb.to.includes(":")
+                  ? crumb.to
+                  : undefined;
+
+              return (
+                <span key={`${crumb.label}-${index}`}>
+                  {safeTo && !isLast ? (
+                    <NavLink to={safeTo}>{crumb.label}</NavLink>
+                  ) : (
+                    <span>{crumb.label}</span>
+                  )}
+
+                  {!isLast ? " / " : ""}
+                </span>
+              );
+            })}
+          </nav>
         ) : null}
 
         <main className="hna-content">

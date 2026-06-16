@@ -1,183 +1,200 @@
 // src/auth/AuthProvider.tsx
 
 import {
-  createContext, useCallback, useContext,
-  useEffect, useMemo, useRef, useState,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
   type ReactNode,
 } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { authApi } from "./auth.api";
-import { loadAuth, saveAuth, clearAuth } from "./auth.storage";
-import { safeReturnUrl } from "./returnUrl";
 import { http } from "../api/http";
-import type { LoginRequest, RegisterRequest, AuthUser, LoginResponse, AuthState } from "./auth.types";
-import {
-  getExpiresAtFromToken, getCompanyIdFromToken,
-  getBranchIdFromToken, getPermissionsFromToken, isTokenExpired,
-} from "./jwt.permissions";
-
-// ── Context type ──────────────────────────────────────────────────────────────
+import { authApi } from "./auth.api";
+import { clearAuth, loadAuth, saveAuth } from "./auth.storage";
+import { safeReturnUrl } from "./returnUrl";
+import type { AuthState, AuthUser, LoginRequest, LoginResponse, RegisterRequest } from "./auth.types";
+import { decodeJwt, getExpiresAtFromToken, getPermissionsFromToken, getRolesFromToken, isTokenExpired } from "./jwt";
+import { createPermissionSet, hasAllPermissions, hasAnyPermission, hasPermission, normalizePermissions } from "./permission.utils";
 
 export interface AuthContextValue {
-  user:               AuthUser | null;
-  isAuthenticated:    boolean;
-  isReady:            boolean;
-  isLoading:          boolean;
-  permissions:        string[];
-  hasPermission:      (permission: string) => boolean;
-  login:              (input: LoginRequest, remember?: boolean) => Promise<void>;
-  register:           (input: RegisterRequest, remember?: boolean) => Promise<void>;
-  logout:             () => void;
+  auth: AuthState | null;
+  user: AuthUser | null;
+  isAuthenticated: boolean;
+  isReady: boolean;
+  isLoading: boolean;
+  permissions: string[];
+  roles: string[];
+  permissionSet: ReadonlySet<string>;
+  companyId: string | null;
+  branchId: string | null;
+  departmentId: string | null;
+  stockLocationId: string | null;
+  storeId: string | null;
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (permissions: string[]) => boolean;
+  hasAllPermissions: (permissions: string[]) => boolean;
+  login: (input: LoginRequest, remember?: boolean) => Promise<void>;
+  register: (input: RegisterRequest, remember?: boolean) => Promise<void>;
+  logout: () => void;
+  refreshMe: () => Promise<void>;
   refreshFromStorage: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
 
-// ── Response normalisation ────────────────────────────────────────────────────
-
-function extractAccessToken(res: LoginResponse): string | null {
-  if (typeof res.accessToken === "string") return res.accessToken || null;
-  if (res.token && typeof res.token === "object")
-    return res.token.accessToken ?? res.token.token ?? null;
-  return null;
-}
-
-function extractRefreshToken(res: LoginResponse): string | null {
-  if (res.token && typeof res.token === "object")
-    return res.token.refreshToken ?? null;
-  return res.refreshToken ?? null;
-}
-
-function extractExpiresAt(res: LoginResponse, accessToken: string): string | null {
-  if (res.token && typeof res.token === "object" && res.token.expiresAt)
-    return res.token.expiresAt;
-  return res.expiresAt ?? getExpiresAtFromToken(accessToken);
-}
-
-function extractUser(res: LoginResponse): AuthUser | null {
-  if (res.token && typeof res.token === "object")
-    return (res.token.user as AuthUser | null | undefined) ?? null;
-  return res.user ?? null;
-}
-
-function extractStringField(res: LoginResponse, ...keys: string[]): string | null {
-  const obj = res as unknown as Record<string, unknown>;
-  for (const key of keys) {
-    const chain = key.split(".");
-    let v: unknown = obj;
-    for (const k of chain) {
-      v = (v as Record<string, unknown>)?.[k];
-    }
-    if (typeof v === "string" && v) return v;
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
   }
   return null;
 }
 
-function buildAuthState(res: LoginResponse, sessionOnly: boolean): AuthState | null {
-  const accessToken = extractAccessToken(res);
-  if (!accessToken) return null;
+function extractAccessToken(response: LoginResponse): string | null {
+  if (typeof response.accessToken === "string") return response.accessToken || null;
+  if (typeof response.token === "string") return response.token || null;
+  if (response.token && typeof response.token === "object") {
+    return response.token.accessToken ?? response.token.token ?? null;
+  }
+  return null;
+}
+
+function extractRefreshToken(response: LoginResponse): string | null {
+  if (response.token && typeof response.token === "object") return response.token.refreshToken ?? null;
+  return response.refreshToken ?? null;
+}
+
+function extractExpiresAt(response: LoginResponse, accessToken: string): string | null {
+  if (response.token && typeof response.token === "object" && response.token.expiresAt) {
+    return response.token.expiresAt;
+  }
+  return response.expiresAt ?? getExpiresAtFromToken(accessToken);
+}
+
+function getNestedString(obj: unknown, path: string): string | null {
+  let value: unknown = obj;
+  for (const key of path.split(".")) value = (value as Record<string, unknown> | null)?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function buildAuthUser(responseUser: Partial<AuthUser> | null | undefined, accessToken: string): AuthUser | null {
+  const claims = decodeJwt(accessToken);
+  const id = firstString(responseUser?.id, claims?.user_id, claims?.sub);
+  const email = firstString(responseUser?.email, claims?.email);
+
+  if (!id || !email) return null;
+
+  const firstName = firstString(responseUser?.firstName, claims?.first_name);
+  const lastName = firstString(responseUser?.lastName, claims?.last_name);
+  const fullName = firstString(responseUser?.fullName, claims?.name, [firstName, lastName].filter(Boolean).join(" "));
+
   return {
-    user:              extractUser(res),
+    id,
+    email,
+    fullName,
+    firstName,
+    lastName,
+    employeeId: firstString(responseUser?.employeeId, claims?.employee_id),
+    companyId: firstString(responseUser?.companyId, claims?.company_id),
+    branchId: firstString(responseUser?.branchId, claims?.branch_id),
+    departmentId: firstString(responseUser?.departmentId, claims?.department_id),
+    stockLocationId: firstString(responseUser?.stockLocationId, claims?.stock_location_id),
+    storeId: firstString(responseUser?.storeId, claims?.store_id),
+    roles: normalizePermissions(responseUser?.roles?.length ? responseUser.roles : getRolesFromToken(accessToken)),
+    permissions: normalizePermissions(responseUser?.permissions?.length ? responseUser.permissions : getPermissionsFromToken(accessToken)),
+    isActive: responseUser?.isActive,
+  };
+}
+
+function buildAuthState(response: LoginResponse, sessionOnly: boolean): AuthState {
+  const accessToken = extractAccessToken(response);
+  if (!accessToken) throw new Error("Login succeeded but no access token was returned.");
+
+  const tokenUser = response.token && typeof response.token === "object" ? response.token.user : null;
+  const user = buildAuthUser(response.user ?? tokenUser ?? null, accessToken);
+  const claims = decodeJwt(accessToken);
+  const permissions = normalizePermissions(user?.permissions?.length ? user.permissions : getPermissionsFromToken(accessToken));
+  const roles = normalizePermissions(user?.roles?.length ? user.roles : getRolesFromToken(accessToken));
+
+  return {
+    user,
     accessToken,
-    refreshToken:      extractRefreshToken(res),
-    expiresAt:         extractExpiresAt(res, accessToken),
-    permissions:       getPermissionsFromToken(accessToken),
-    companyId:         getCompanyIdFromToken(accessToken),
-    companyName:       extractStringField(res, "companyName", "company.name", "tenant.name"),
-    branchId:          getBranchIdFromToken(accessToken),
-    branchName:        extractStringField(res, "branchName", "branch.name", "outlet.name"),
-    departmentId:      null,
-    currentLocationId: null,
+    refreshToken: extractRefreshToken(response),
+    expiresAt: extractExpiresAt(response, accessToken),
+    permissions,
+    roles,
+    companyId: firstString(user?.companyId, claims?.company_id),
+    companyName: firstString(response.companyName, getNestedString(response, "company.name"), getNestedString(response, "tenant.name")),
+    branchId: firstString(user?.branchId, claims?.branch_id),
+    branchName: firstString(response.branchName, getNestedString(response, "branch.name"), getNestedString(response, "outlet.name")),
+    departmentId: firstString(user?.departmentId, claims?.department_id),
+    stockLocationId: firstString(user?.stockLocationId, claims?.stock_location_id),
+    storeId: firstString(user?.storeId, claims?.store_id),
     sessionOnly,
   };
 }
 
-// ── Provider ──────────────────────────────────────────────────────────────────
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const nav = useNavigate();
-
-  const [auth,      setAuth]      = useState<AuthState | null>(() => loadAuth());
-  const [isReady,   setIsReady]   = useState(false);
+  const navigate = useNavigate();
+  const [auth, setAuth] = useState<AuthState | null>(() => loadAuth());
+  const [isReady, setIsReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  const pathnameRef = useRef(window.location.pathname);
-  useEffect(() => { pathnameRef.current = window.location.pathname; });
-
-  useEffect(() => { setIsReady(true); }, []);
-
-  // ── Sync Authorization header ─────────────────────────────────────────────
+  const pathnameRef = useRef(window.location.pathname + window.location.search);
 
   useEffect(() => {
-    if (auth?.accessToken) {
-      http.defaults.headers.Authorization = `Bearer ${auth.accessToken}`;
-    } else {
-      delete http.defaults.headers.Authorization;
-    }
+    pathnameRef.current = window.location.pathname + window.location.search;
+  });
+
+  useEffect(() => setIsReady(true), []);
+
+  useEffect(() => {
+    if (auth?.accessToken) http.defaults.headers.Authorization = `Bearer ${auth.accessToken}`;
+    else delete http.defaults.headers.Authorization;
   }, [auth?.accessToken]);
-
-  // ── Derived ───────────────────────────────────────────────────────────────
-
-  const isAuthenticated = !!auth?.accessToken;
-  const permissions     = useMemo(() => auth?.permissions ?? [], [auth?.permissions]);
-  const hasPermission   = useCallback(
-    (p: string) => permissions.includes(p),
-    [permissions]
-  );
-
-  // ── Logout / redirect ─────────────────────────────────────────────────────
-
-  const AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
 
   const logoutAndRedirect = useCallback(() => {
     clearAuth();
     setAuth(null);
-    const current = pathnameRef.current;
-    if (AUTH_PATHS.some(p => current.startsWith(p))) return;
-    const returnUrl = encodeURIComponent(safeReturnUrl(current, "/dashboard"));
-    nav(`/login?returnUrl=${returnUrl}`, { replace: true });
-  }, [nav]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Listen for http.ts refresh failures ──────────────────────────────────
+    const current = pathnameRef.current;
+    if (AUTH_PATHS.some((path) => current.startsWith(path))) return;
+
+    const returnUrl = encodeURIComponent(safeReturnUrl(current, "/dashboard"));
+    navigate(`/login?returnUrl=${returnUrl}`, { replace: true });
+  }, [navigate]);
 
   useEffect(() => {
     window.addEventListener("auth:unauthenticated", logoutAndRedirect);
     return () => window.removeEventListener("auth:unauthenticated", logoutAndRedirect);
   }, [logoutAndRedirect]);
 
-  // ── Token expiry guards ───────────────────────────────────────────────────
-
   useEffect(() => {
     if (!isReady || !auth?.accessToken) return;
     if (isTokenExpired(auth.accessToken)) logoutAndRedirect();
-  }, [isReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isReady, auth?.accessToken, logoutAndRedirect]);
 
   useEffect(() => {
     if (!isReady || !auth?.accessToken || !auth.expiresAt) return;
-    const delay = Date.parse(auth.expiresAt) - Date.now();
-    if (delay <= 0) { logoutAndRedirect(); return; }
-    const t = window.setTimeout(logoutAndRedirect, delay);
-    return () => window.clearTimeout(t);
-  }, [isReady, auth?.accessToken, auth?.expiresAt, logoutAndRedirect]);
 
-  useEffect(() => {
-    if (!isReady || !auth?.accessToken) return;
-    const id = window.setInterval(() => {
-      if (auth.expiresAt && Date.now() >= Date.parse(auth.expiresAt))
-        logoutAndRedirect();
-    }, 15_000);
-    return () => window.clearInterval(id);
-  }, [isReady, auth?.accessToken, auth?.expiresAt, logoutAndRedirect]);
+    const expiresAt = Date.parse(auth.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      logoutAndRedirect();
+      return;
+    }
 
-  // ── Actions ───────────────────────────────────────────────────────────────
+    const timeout = window.setTimeout(logoutAndRedirect, Math.max(expiresAt - Date.now(), 0));
+    return () => window.clearTimeout(timeout);
+  }, [isReady, auth?.accessToken, auth?.expiresAt, logoutAndRedirect]);
 
   const login = useCallback(async (input: LoginRequest, remember = true) => {
     setIsLoading(true);
     try {
-      const res   = await authApi.login(input);
-      const state = buildAuthState(res, !remember);
-      if (!state) throw new Error("Login succeeded but no access token was returned.");
+      const response = await authApi.login(input);
+      const state = buildAuthState(response, !remember);
       saveAuth(state);
       setAuth(state);
     } finally {
@@ -188,48 +205,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(async (input: RegisterRequest, remember = true) => {
     setIsLoading(true);
     try {
-      const res   = await authApi.register(input);
-      const state = buildAuthState(res, !remember);
-      if (state) { saveAuth(state); setAuth(state); }
+      const response = await authApi.register(input);
+      const state = buildAuthState(response, !remember);
+      saveAuth(state);
+      setAuth(state);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   const logout = useCallback(() => {
-    authApi.logout();
+    void authApi.logout();
     clearAuth();
     setAuth(null);
-    nav("/login", { replace: true });
-  }, [nav]);
+    navigate("/login", { replace: true });
+  }, [navigate]);
+
+  const refreshMe = useCallback(async () => {
+    if (!auth?.accessToken) return;
+    const user = await authApi.me();
+    const next: AuthState = {
+      ...auth,
+      user,
+      permissions: normalizePermissions(user.permissions),
+      roles: normalizePermissions(user.roles),
+      companyId: user.companyId ?? auth.companyId,
+      branchId: user.branchId ?? auth.branchId,
+      departmentId: user.departmentId ?? auth.departmentId,
+      stockLocationId: user.stockLocationId ?? auth.stockLocationId,
+      storeId: user.storeId ?? auth.storeId,
+    };
+    saveAuth(next);
+    setAuth(next);
+  }, [auth]);
 
   const refreshFromStorage = useCallback(() => setAuth(loadAuth()), []);
 
-  // ── Context value ─────────────────────────────────────────────────────────
+  const permissions = useMemo(() => auth?.permissions ?? [], [auth?.permissions]);
+  const roles = useMemo(() => auth?.roles ?? [], [auth?.roles]);
+  const permissionSet = useMemo(() => createPermissionSet(permissions), [permissions]);
 
   const value = useMemo<AuthContextValue>(() => ({
+    auth,
     user: auth?.user ?? null,
-    isAuthenticated,
+    isAuthenticated: !!auth?.accessToken && !isTokenExpired(auth.accessToken),
     isReady,
     isLoading,
     permissions,
-    hasPermission,
+    roles,
+    permissionSet,
+    companyId: auth?.companyId ?? null,
+    branchId: auth?.branchId ?? null,
+    departmentId: auth?.departmentId ?? null,
+    stockLocationId: auth?.stockLocationId ?? null,
+    storeId: auth?.storeId ?? null,
+    hasPermission: (permission) => hasPermission(permissions, permission),
+    hasAnyPermission: (required) => hasAnyPermission(permissions, required),
+    hasAllPermissions: (required) => hasAllPermissions(permissions, required),
     login,
     register,
     logout,
+    refreshMe,
     refreshFromStorage,
-  }), [
-    auth?.user, isAuthenticated, isReady, isLoading,
-    permissions, hasPermission, login, register, logout, refreshFromStorage,
-  ]);
+  }), [auth, isReady, isLoading, permissions, roles, permissionSet, login, register, logout, refreshMe, refreshFromStorage]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// ── Hook ──────────────────────────────────────────────────────────────────────
-
 export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>.");
-  return ctx;
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used inside <AuthProvider>.");
+  return context;
 }

@@ -1,225 +1,688 @@
-// ─── GRN Utility Functions ────────────────────────────────────────────────────
-// Pure helpers. No React. No side effects. Fully testable.
+import type {
+  GrnDetailDto,
+  GrnDraft,
+  GrnFieldErrors,
+  GrnLineDraft,
+  GrnListDto,
+  ItemVm,
+  SelectOption,
+} from "../types/grn.types";
 
-import type { GrnListDto, GrnDetailDto, GrnLineDraft, GrnDraft, ItemVm, ItemUomVm } from "../types/grn.types";
 import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
 
-// ── String/Formatting ─────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// Core String Helpers
+// -----------------------------------------------------------------------------
 
-export const trim = (s?: string | null): string => (s ?? "").trim();
+export function trim(value: unknown): string {
+  return String(value ?? "").trim();
+}
 
-export const normalize = (v: unknown): string => String(v ?? "").trim().toUpperCase();
+export function normalize(value: unknown): string {
+  return trim(value).toUpperCase();
+}
 
-export const shortId = (id?: string | null, n = 8): string => {
-  const s = trim(id);
-  return !s ? "" : s.length <= n ? s : s.slice(-n);
-};
+export function toNullable(value: unknown): string | null {
+  const cleaned = trim(value);
+  return cleaned.length > 0 ? cleaned : null;
+}
 
-export const money = (n: number): string =>
-  Number.isFinite(n) ? n.toFixed(2) : "0.00";
+export function shortId(id?: string | null, length = 8): string {
+  const value = trim(id);
+  return value.length <= length ? value : value.slice(-length);
+}
 
-export const moneyInt = (n: number): string =>
-  Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
+export function isGuidLike(value?: string | null): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    trim(value)
+  );
+}
 
-// ── Date Formatting ───────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// Number / Money Helpers
+// -----------------------------------------------------------------------------
 
-export const todayDateOnly = (): string => new Date().toISOString().slice(0, 10);
+export function toNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
 
-export const dateOnlyToUtcIso = (dateOnly: string): string => {
-  const [y, m, d] = dateOnly.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toISOString();
-};
+export function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
 
-export const utcIsoToDateOnly = (iso: string | null | undefined): string =>
-  (iso ?? "").toString().slice(0, 10) || todayDateOnly();
+export function money(value: unknown): string {
+  return roundMoney(toNumber(value)).toFixed(2);
+}
 
-export const fmtDateTime = (v?: string | null): string => {
-  const s = trim(v);
-  if (!s) return "—";
-  const d = new Date(s);
-  return Number.isNaN(d.getTime())
-    ? s
-    : d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-};
+export function moneyInt(value: unknown, locale = "en-US"): string {
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(roundMoney(toNumber(value)));
+}
 
-export const fmtDateOnly = (v?: string | null): string => {
-  const s = trim(v);
-  if (!s) return "—";
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toISOString().slice(0, 10);
-};
+// -----------------------------------------------------------------------------
+// Date Helpers
+// -----------------------------------------------------------------------------
 
-export const toNullable = (s: string | null | undefined): string | null => {
-  const t = trim(s);
-  return t || null;
-};
+export function todayDateOnly(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
-// ── GRN Status Logic ──────────────────────────────────────────────────────────
+export function isDateOnly(value?: string | null): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(trim(value));
+}
 
-export const getGrnStatus = (r: GrnListDto): string => normalize((r as any).status);
-
-export const isDraft = (r: GrnListDto): boolean => getGrnStatus(r) === "DRAFT";
-
-export const isPosted = (r: GrnListDto): boolean => getGrnStatus(r) === "POSTED";
-
-export const isCancelled = (r: GrnListDto): boolean => getGrnStatus(r) === "CANCELLED";
-
-export const isReversed = (r: GrnListDto): boolean => getGrnStatus(r) === "REVERSED";
-
-export const hasIssuedFromPostedGrn = (r: GrnListDto | GrnDetailDto): boolean => {
-  const anyR = r as any;
-  const issueStatus = normalize(anyR?.issueStatus);
-  return Boolean(anyR?.issued || anyR?.hasIssue || anyR?.issuedAtUtc || issueStatus === "ISSUED");
-};
-
-export const canReverseGrn = (r: GrnListDto): boolean =>
-  isPosted(r) && !hasIssuedFromPostedGrn(r);
-
-// ── GRN Received Date (multi-field fallback) ─────────────────────────────────
-
-export const getReceivedDate = (r: GrnListDto): string | null =>
-  (r as any).receiptDate ?? r.receivedDate ?? r.receivedAtUtc ?? null;
-
-// ── Item View Model ───────────────────────────────────────────────────────────
-
-export const pickId = (obj: any, ...paths: string[]): string => {
-  for (const p of paths) {
-    const v = obj?.[p];
-    if (typeof v === "string" && v.trim()) return v.trim();
+export function dateOnlyToUtcIso(dateOnly: string): string {
+  if (!isDateOnly(dateOnly)) {
+    throw new Error(`Invalid date-only value: ${dateOnly}`);
   }
+
+  const [year, month, day] = dateOnly.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toISOString();
+}
+
+export function utcIsoToDateOnly(value?: string | null): string {
+  const raw = trim(value);
+
+  if (!raw) return todayDateOnly();
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return raw.slice(0, 10);
+  }
+
+  const date = new Date(raw);
+
+  return Number.isNaN(date.getTime())
+    ? todayDateOnly()
+    : date.toISOString().slice(0, 10);
+}
+
+export function fmtDateOnly(value?: string | null): string {
+  const raw = trim(value);
+
+  if (!raw) return "—";
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return raw.slice(0, 10);
+  }
+
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? raw : date.toISOString().slice(0, 10);
+}
+
+export function fmtDateTime(value?: string | null, locale = "en-US"): string {
+  const raw = trim(value);
+
+  if (!raw) return "—";
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+// -----------------------------------------------------------------------------
+// GRN Status
+// -----------------------------------------------------------------------------
+
+export enum GrnStatusKind {
+  Draft = "DRAFT",
+  Submitted = "SUBMITTED",
+  Approved = "APPROVED",
+  Posted = "POSTED",
+  Cancelled = "CANCELLED",
+  Reversed = "REVERSED",
+}
+
+export function getGrnStatus(record: Pick<GrnListDto, "status">): string {
+  return normalize(record.status);
+}
+
+export function isDraft(record: Pick<GrnListDto, "status">): boolean {
+  return getGrnStatus(record) === GrnStatusKind.Draft;
+}
+
+export function isPosted(record: Pick<GrnListDto, "status">): boolean {
+  return getGrnStatus(record) === GrnStatusKind.Posted;
+}
+
+export function isCancelled(record: Pick<GrnListDto, "status">): boolean {
+  return getGrnStatus(record) === GrnStatusKind.Cancelled;
+}
+
+export function isReversed(record: Pick<GrnListDto, "status">): boolean {
+  return getGrnStatus(record) === GrnStatusKind.Reversed;
+}
+
+type GrnIssueState = {
+  issued?: boolean | null;
+  hasIssue?: boolean | null;
+  hasIssues?: boolean | null;
+  hasIssued?: boolean | null;
+  hasIssuedLines?: boolean | null;
+  isIssued?: boolean | null;
+  issuedAtUtc?: string | null;
+  issueStatus?: string | null;
+};
+
+export function hasIssuedFromPostedGrn(
+  record: GrnListDto | GrnDetailDto
+): boolean {
+  const state = record as GrnIssueState;
+
+  return Boolean(
+    state.issued ||
+      state.hasIssue ||
+      state.hasIssues ||
+      state.hasIssued ||
+      state.hasIssuedLines ||
+      state.isIssued ||
+      state.issuedAtUtc ||
+      normalize(state.issueStatus) === "ISSUED"
+  );
+}
+
+export function canReverseGrn(record: GrnListDto | GrnDetailDto): boolean {
+  return isPosted(record) && !hasIssuedFromPostedGrn(record);
+}
+
+// -----------------------------------------------------------------------------
+// Generic Safe Pickers
+// -----------------------------------------------------------------------------
+
+type LooseRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): LooseRecord {
+  return value && typeof value === "object" ? (value as LooseRecord) : {};
+}
+
+export function pickString(source: unknown, ...keys: string[]): string {
+  const obj = asRecord(source);
+
+  for (const key of keys) {
+    const value = obj[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
   return "";
-};
+}
 
-export const pickDateOnly = (obj: any, ...paths: string[]): string => {
-  for (const p of paths) {
-    const v = obj?.[p];
-    if (typeof v === "string" && v.trim()) return utcIsoToDateOnly(v.trim());
-  }
-  return todayDateOnly();
+export function pickNestedString(
+  source: unknown,
+  objectKey: string,
+  ...keys: string[]
+): string {
+  const obj = asRecord(source);
+  return pickString(obj[objectKey], ...keys);
+}
+
+export function pickDateOnly(source: unknown, ...keys: string[]): string {
+  const raw = pickString(source, ...keys);
+  return raw ? utcIsoToDateOnly(raw) : todayDateOnly();
+}
+
+// -----------------------------------------------------------------------------
+// GRN Received Date
+// -----------------------------------------------------------------------------
+
+export function getReceivedDate(record: GrnListDto): string | null {
+  return (
+    pickString(
+      record,
+      "receiptDate",
+      "receivedDate",
+      "receivedAtUtc",
+      "receivedAt"
+    ) || null
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Inventory Item Mapping
+// -----------------------------------------------------------------------------
+
+type InventoryItemLoose = InventoryItemDto & {
+  id?: string | null;
+  name?: string | null;
+  code?: string | null;
+  sku?: string | null;
+  baseUomId?: string | null;
+  baseUomCode?: string | null;
+  baseUomName?: string | null;
+  baseUom?: {
+    id?: string | null;
+    code?: string | null;
+    name?: string | null;
+  } | null;
+  uoms?: Array<{
+    id?: string | null;
+    uomId?: string | null;
+    name?: string | null;
+    code?: string | null;
+    uomName?: string | null;
+    isBase?: boolean | null;
+    isDefaultPurchase?: boolean | null;
+  }> | null;
+  itemUoms?: Array<{
+    id?: string | null;
+    uomId?: string | null;
+    name?: string | null;
+    code?: string | null;
+    uomName?: string | null;
+    isBase?: boolean | null;
+    isDefaultPurchase?: boolean | null;
+  }> | null;
 };
 
 export function toItemVm(dto: InventoryItemDto): ItemVm {
-  const d: any = dto;
-  const id = trim(d.id);
-  const name = trim(d.name);
-  const code = trim(d.code) || trim(d.sku) || undefined;
+  const item = dto as InventoryItemLoose;
 
-  const baseUomId = trim(d.baseUomId);
+  const id = trim(item.id);
+  const name = trim(item.name) || "Unnamed item";
+  const code = trim(item.code) || trim(item.sku) || undefined;
+
+  const baseUomId = trim(item.baseUomId);
   const baseUomName =
-    trim(d.baseUomCode) || trim(d.baseUomName) || trim(d.baseUom?.code) || trim(d.baseUom?.name) || undefined;
+    trim(item.baseUomCode) ||
+    trim(item.baseUomName) ||
+    trim(item.baseUom?.code) ||
+    trim(item.baseUom?.name) ||
+    undefined;
 
-  const uomsRaw: any[] = Array.isArray(d.uoms) ? d.uoms : Array.isArray(d.itemUoms) ? d.itemUoms : [];
+  const rawUoms = Array.isArray(item.uoms)
+    ? item.uoms
+    : Array.isArray(item.itemUoms)
+      ? item.itemUoms
+      : [];
 
-  const uoms: ItemUomVm[] = uomsRaw
-    .map((u: any) => ({
-      uomId: trim(u.uomId ?? u.id),
-      uomName: trim(u.uomName ?? u.name ?? u.code ?? "UOM"),
-      isDefaultPurchase: !!(u.isDefaultPurchase || u.isBase),
-    }))
-    .filter((x) => !!x.uomId);
+  const mappedUoms = rawUoms
+    .map((uom) => {
+      const value = trim(uom.uomId ?? uom.id);
+      const label =
+        trim(uom.uomName) ||
+        trim(uom.name) ||
+        trim(uom.code) ||
+        "UOM";
 
-  if (!uoms.length && baseUomId) {
-    uoms.push({ uomId: baseUomId, uomName: baseUomName ?? "Base UOM", isDefaultPurchase: true });
+      return value
+        ? {
+            value,
+            label,
+            isDefaultPurchase: Boolean(uom.isDefaultPurchase || uom.isBase),
+          }
+        : null;
+    })
+    .filter(Boolean) as Array<SelectOption<string> & { isDefaultPurchase?: boolean }>;
+
+  if (mappedUoms.length === 0 && baseUomId) {
+    mappedUoms.push({
+      value: baseUomId,
+      label: baseUomName ?? "Base UOM",
+      isDefaultPurchase: true,
+    });
   }
 
-  const defaultUomId = uoms.find((x) => x.isDefaultPurchase)?.uomId ?? baseUomId ?? uoms[0]?.uomId ?? "";
-  const friendlyMain = code ? `${code} — ${name}` : name;
-  const sid = shortId(id, 8);
-  const label = sid ? `${friendlyMain}  ·  #${sid}` : friendlyMain;
+  const defaultUomId =
+    mappedUoms.find((x) => x.isDefaultPurchase)?.value ||
+    baseUomId ||
+    mappedUoms[0]?.value ||
+    "";
 
-  return { id, code, name, label, baseUomId, baseUomName, uoms, defaultUomId };
+  const uoms: SelectOption<string>[] = mappedUoms.map((uom) => ({
+    value: uom.value,
+    label: uom.label,
+    disabled: uom.disabled,
+  }));
+
+  const friendlyName = code ? `${code} — ${name}` : name;
+  const suffix = shortId(id, 8);
+  const label = suffix ? `${friendlyName} · #${suffix}` : friendlyName;
+
+  return {
+    id,
+    code,
+    name,
+    label,
+    baseUomId,
+    baseUomName,
+    uoms,
+    defaultUomId,
+  };
 }
 
-// ── DTO → Draft Normalization ─────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// DTO → Draft Normalization
+// -----------------------------------------------------------------------------
 
-export function normalizeGrnLineDto(l: any): GrnLineDraft {
+export type GrnLineDtoLike = {
+  inventoryItemId?: string | null;
+  InventoryItemId?: string | null;
+  itemId?: string | null;
+  ItemId?: string | null;
+  inventoryItem?: { id?: string | null; Id?: string | null } | null;
+  item?: { id?: string | null; Id?: string | null } | null;
+
+  uomId?: string | null;
+  UomId?: string | null;
+  unitId?: string | null;
+  UnitId?: string | null;
+  uom?: { id?: string | null; Id?: string | null } | null;
+  unitOfMeasure?: { id?: string | null; Id?: string | null } | null;
+
+  quantity?: number | string | null;
+  Quantity?: number | string | null;
+  qty?: number | string | null;
+  Qty?: number | string | null;
+
+  unitCost?: number | string | null;
+  UnitCost?: number | string | null;
+
+  expiryDateUtc?: string | null;
+  ExpiryDateUtc?: string | null;
+  expiryDate?: string | null;
+  ExpiryDate?: string | null;
+
+  batchNo?: string | null;
+  BatchNo?: string | null;
+
+  notes?: string | null;
+  Notes?: string | null;
+  note?: string | null;
+};
+
+export type GrnDraftDtoLike = {
+  id?: string | null;
+  Id?: string | null;
+
+  locationId?: string | null;
+  LocationId?: string | null;
+
+  receivingLocationId?: string | null;
+  ReceivingLocationId?: string | null;
+
+  warehouseId?: string | null;
+  WarehouseId?: string | null;
+
+  receivedDateUtc?: string | null;
+  ReceivedDateUtc?: string | null;
+
+  receivedAtUtc?: string | null;
+  ReceivedAtUtc?: string | null;
+
+  receivedAt?: string | null;
+  ReceivedAt?: string | null;
+
+  receiptDate?: string | null;
+  ReceiptDate?: string | null;
+
+  receivedDate?: string | null;
+  ReceivedDate?: string | null;
+
+  supplierName?: string | null;
+  SupplierName?: string | null;
+
+  notes?: string | null;
+  Notes?: string | null;
+
+  lines?: GrnLineDtoLike[] | null;
+};
+
+export function normalizeGrnLineDto(line: GrnLineDtoLike): GrnLineDraft {
+  const expiryRaw =
+    line.expiryDateUtc ??
+    line.ExpiryDateUtc ??
+    line.expiryDate ??
+    line.ExpiryDate ??
+    null;
+
   return {
     itemId:
-      pickId(l, "inventoryItemId", "InventoryItemId", "itemId", "ItemId") ||
-      pickId(l?.inventoryItem, "id", "Id") ||
-      pickId(l?.item, "id", "Id"),
+      pickString(line, "inventoryItemId", "InventoryItemId", "itemId", "ItemId") ||
+      pickNestedString(line, "inventoryItem", "id", "Id") ||
+      pickNestedString(line, "item", "id", "Id"),
+
     uomId:
-      pickId(l, "uomId", "UomId", "unitId", "UnitId") ||
-      pickId(l?.uom, "id", "Id") ||
-      pickId(l?.unitOfMeasure, "id", "Id"),
-    quantity: Number(l?.quantity ?? l?.Quantity ?? 0),
-    unitCost: Number(l?.unitCost ?? l?.UnitCost ?? 0),
-    expiryDate: (() => {
-      const raw = l?.expiryDateUtc ?? l?.ExpiryDateUtc ?? l?.expiryDate ?? l?.ExpiryDate;
-      return typeof raw === "string" ? utcIsoToDateOnly(raw.trim()) : null;
-    })(),
-    notes: trim(l?.notes ?? l?.Notes ?? l?.note ?? ""),
+      pickString(line, "uomId", "UomId", "unitId", "UnitId") ||
+      pickNestedString(line, "uom", "id", "Id") ||
+      pickNestedString(line, "unitOfMeasure", "id", "Id"),
+
+    quantity: toNumber(line.quantity ?? line.Quantity ?? line.qty ?? line.Qty),
+    unitCost: toNumber(line.unitCost ?? line.UnitCost),
+
+    expiryDate:
+      typeof expiryRaw === "string" && expiryRaw.trim()
+        ? utcIsoToDateOnly(expiryRaw)
+        : null,
+
+    batchNo: trim(line.batchNo ?? line.BatchNo ?? ""),
+    notes: trim(line.notes ?? line.Notes ?? line.note),
   };
 }
 
-export function normalizeDraftDto(dto: any): GrnDraft {
+export function normalizeDraftDto(dto: GrnDraftDtoLike): GrnDraft {
   return {
-    id: trim(dto?.id ?? dto?.Id ?? ""),
-    locationId: pickId(dto, "locationId", "LocationId", "warehouseId", "WarehouseId"),
-    receivedDate: pickDateOnly(dto, "receivedDateUtc", "ReceivedDateUtc", "receiptDate", "ReceiptDate", "receivedDate"),
-    supplierName: trim(dto?.supplierName ?? dto?.SupplierName ?? ""),
-    notes: trim(dto?.notes ?? dto?.Notes ?? ""),
-    lines: (Array.isArray(dto?.lines) ? dto.lines : []).map(normalizeGrnLineDto),
+    id: trim(dto.id ?? dto.Id) || undefined,
+
+    locationId: pickString(
+      dto,
+      "receivingLocationId",
+      "ReceivingLocationId",
+      "locationId",
+      "LocationId",
+      "warehouseId",
+      "WarehouseId"
+    ),
+
+    receivedDate: pickDateOnly(
+      dto,
+      "receivedDateUtc",
+      "ReceivedDateUtc",
+      "receivedAtUtc",
+      "ReceivedAtUtc",
+      "receivedAt",
+      "ReceivedAt",
+      "receiptDate",
+      "ReceiptDate",
+      "receivedDate",
+      "ReceivedDate"
+    ),
+
+    supplierName: trim(dto.supplierName ?? dto.SupplierName),
+    notes: trim(dto.notes ?? dto.Notes),
+
+    lines: Array.isArray(dto.lines)
+      ? dto.lines.map(normalizeGrnLineDto)
+      : [],
   };
 }
 
-// ── Label Caches ──────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// Label Caches
+// -----------------------------------------------------------------------------
 
 export function buildItemLabelCache(items: ItemVm[]): Record<string, string> {
-  return Object.fromEntries(items.map((item) => [item.id, item.label]));
+  return Object.fromEntries(
+    items
+      .filter((item) => trim(item.id))
+      .map((item) => [item.id, item.label])
+  );
 }
 
 export function buildUomLabelCache(items: ItemVm[]): Record<string, string> {
   const result: Record<string, string> = {};
+
   for (const item of items) {
     for (const uom of item.uoms) {
-      result[uom.uomId] = uom.uomName;
+      if (trim(uom.value)) {
+        result[uom.value] = uom.label;
+      }
     }
   }
+
   return result;
 }
 
-// ── Error Messages ────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// API Error Extraction
+// -----------------------------------------------------------------------------
 
-export function extractApiError(e: unknown, fallback = "An error occurred"): string {
-  const anyE = e as any;
-  return (
-    anyE?.response?.data?.message ??
-    anyE?.response?.data?.title ??
-    anyE?.message ??
-    fallback
-  );
-}
+type ApiErrorShape = {
+  response?: {
+    data?: {
+      message?: string;
+      title?: string;
+      detail?: string;
+      errors?: Record<string, string[]>;
+    };
+  };
+  message?: string;
+};
 
-// ── GRN Draft Validation ──────────────────────────────────────────────────────
+export function extractApiError(
+  error: unknown,
+  fallback = "An error occurred"
+): string {
+  const e = error as ApiErrorShape;
+  const data = e.response?.data;
 
-import type { GrnFieldErrors } from "../types/grn.types";
+  if (data?.message) return data.message;
+  if (data?.title) return data.title;
+  if (data?.detail) return data.detail;
 
-export function validateGrnDraft(form: GrnDraft): GrnFieldErrors {
-  const errors: GrnFieldErrors = {};
-
-  if (!trim(form.locationId)) errors.locationId = "Warehouse is required";
-  if (!trim(form.receivedDate)) errors.receivedDate = "Received date is required";
-
-  if (form.lines.length === 0) {
-    errors.lines = "At least one line is required";
+  if (data?.errors) {
+    const firstError = Object.values(data.errors).flat()[0];
+    if (firstError) return firstError;
   }
 
-  const lineErrors: GrnFieldErrors["lineErrors"] = {};
-  form.lines.forEach((l, i) => {
-    const le: Record<string, string> = {};
-    if (!trim(l.itemId)) le.inventoryItemId = "Select an item";
-    if (!trim(l.uomId)) le.uomId = "Select a unit";
-    if (!(Number(l.quantity) > 0)) le.quantity = "Qty must be > 0";
-    if (Number(l.unitCost) < 0) le.unitCost = "Cost cannot be negative";
-    if (Object.keys(le).length > 0) lineErrors[i] = le;
+  if (e.message) return e.message;
+
+  return fallback;
+}
+
+// -----------------------------------------------------------------------------
+// GRN Draft Validation
+// -----------------------------------------------------------------------------
+
+export type GrnValidationContext = {
+  items?: ItemVm[];
+  requireSupplier?: boolean;
+  requireExpiryForPerishable?: boolean;
+};
+
+export function validateGrnDraft(
+  form: GrnDraft,
+  context: GrnValidationContext = {}
+): GrnFieldErrors {
+  const errors: GrnFieldErrors = {};
+  const lineErrors: NonNullable<GrnFieldErrors["lineErrors"]> = {};
+
+  const itemMap = new Map((context.items ?? []).map((item) => [item.id, item]));
+
+  if (!trim(form.locationId)) {
+    errors.locationId = "Receiving location is required.";
+  }
+
+  if (!trim(form.receivedDate)) {
+    errors.receivedDate = "Received date is required.";
+  } else if (!isDateOnly(form.receivedDate)) {
+    errors.receivedDate = "Received date must be a valid date.";
+  }
+
+  if (context.requireSupplier && !trim(form.supplierName)) {
+    errors.supplierName = "Supplier is required.";
+  }
+
+  if (!Array.isArray(form.lines) || form.lines.length === 0) {
+    errors.lines = "At least one GRN line is required.";
+    return errors;
+  }
+
+  const duplicateTracker = new Map<string, number>();
+
+  form.lines.forEach((line, index) => {
+    const currentErrors: Record<string, string> = {};
+
+    const itemId = trim(line.itemId);
+    const uomId = trim(line.uomId);
+    const batchNo = normalize(line.batchNo);
+    const expiryDate = trim(line.expiryDate);
+
+    if (!itemId) {
+      currentErrors.inventoryItemId = "Select an item.";
+    }
+
+    if (!uomId) {
+      currentErrors.uomId = "Select a unit.";
+    }
+
+    const quantity = toNumber(line.quantity);
+    const unitCost = toNumber(line.unitCost);
+
+    if (!(quantity > 0)) {
+      currentErrors.quantity = "Quantity must be greater than zero.";
+    }
+
+    if (unitCost < 0) {
+      currentErrors.unitCost = "Unit cost cannot be negative.";
+    }
+
+    if (expiryDate && !isDateOnly(expiryDate)) {
+      currentErrors.expiryDate = "Expiry date must be a valid date.";
+    }
+
+    const item = itemId ? itemMap.get(itemId) : undefined;
+
+    if (item && uomId) {
+      const uomBelongsToItem =
+        item.baseUomId === uomId || item.uoms.some((uom) => uom.value === uomId);
+
+      if (!uomBelongsToItem) {
+        currentErrors.uomId = "Selected unit is not valid for this item.";
+      }
+    }
+
+    const duplicateKey = [
+      itemId,
+      uomId,
+      batchNo || "NO_BATCH",
+      expiryDate || "NO_EXPIRY",
+    ].join("|");
+
+    if (itemId && uomId) {
+      const firstIndex = duplicateTracker.get(duplicateKey);
+
+      if (firstIndex !== undefined) {
+        currentErrors.duplicate = `Duplicate line. Same item, UOM, batch, and expiry already exists on line ${
+          firstIndex + 1
+        }.`;
+      } else {
+        duplicateTracker.set(duplicateKey, index);
+      }
+    }
+
+    if (Object.keys(currentErrors).length > 0) {
+      lineErrors[index] = currentErrors;
+    }
   });
 
-  if (Object.keys(lineErrors).length > 0) errors.lineErrors = lineErrors;
+  if (Object.keys(lineErrors).length > 0) {
+    errors.lineErrors = lineErrors;
+  }
 
   return errors;
 }
 
-export const hasErrors = (errors: GrnFieldErrors): boolean =>
-  Object.keys(errors).length > 0;
+export function hasErrors(errors: GrnFieldErrors): boolean {
+  return Object.keys(errors).length > 0;
+}

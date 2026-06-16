@@ -1,0 +1,47 @@
+.erp-btn {
+  height: 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0 14px;
+  background: white;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.erp-btn-primary {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+
+.erp-btn-danger {
+  background: #dc2626;
+  color: white;
+  border-color: #dc2626;
+}
+
+.erp-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.erp-status-posted {
+  color: #166534;
+}
+
+.erp-status-draft {
+  color: #92400e;
+}
+
+.erp-status-reversed {
+  color: #991b1b;
+}
+
+.erp-status-cancelled {
+  color: #334155;
+}

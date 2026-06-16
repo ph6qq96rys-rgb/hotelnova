@@ -1,228 +1,473 @@
-// ─── GrnListPage ──────────────────────────────────────────────────────────────
-// Primary GRN list view. Thin rendering shell — all state via hooks.
-
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
+import { grnApi, type GrnStatus } from "../api/grnApi";
+import type { GrnListDto } from "../types/grn.types";
+import "./GrnListPage.css";
 
-import { useGrnList } from "../hooks/useGrn.hooks";
-import { grnApi } from "../api/grnApi";
-import type { GrnListDto, GrnStatusFilter } from "../types/grn.types";
-import {
-  getGrnStatus, isDraft, isPosted, hasIssuedFromPostedGrn,
-  canReverseGrn, getReceivedDate, fmtDateTime, trim, moneyInt, extractApiError,
-} from "../utils/grn.utils";
-import {
-  pageWrap, cardStyle, stickyBar, tableStyle, tableWrap,
-  thStyle, tdStyle, labelStyle, inputStyle, primaryBtn, secondaryBtn,
-  dangerBtn, StatusBadge, IssuedBadge, StatCard, PageHeader,
-   EmptyRow, LoadingRows, NavBtn, SectionHead, tokens,
-} from "../components/grn.ui";
+type GrnStatusFilter = GrnStatus | "ALL";
 
-const STATUS_OPTIONS: { value: GrnStatusFilter; label: string }[] = [
-  { value: "ALL", label: "All statuses" },
-  { value: "DRAFT", label: "Draft" },
-  { value: "POSTED", label: "Posted" },
-  { value: "CANCELLED", label: "Cancelled" },
-  { value: "REVERSED", label: "Reversed" },
+type ApiError = {
+  response?: {
+    data?: {
+      title?: string;
+      detail?: string;
+      message?: string;
+    };
+  };
+  message?: string;
+};
+
+type NormalizedGrn = GrnListDto & {
+  id: string;
+  grnNumber?: string | null;
+  supplierName?: string | null;
+  receivingLocationName?: string | null;
+  locationName?: string | null;
+  warehouseName?: string | null;
+  receivedDate?: string | Date | null;
+  receivedAt?: string | Date | null;
+  receiptDate?: string | Date | null;
+  receivedAtUtc?: string | Date | null;
+  status?: string | null;
+  totalCost?: number | null;
+  totalAmount?: number | null;
+  grandTotal?: number | null;
+  lineCount?: number | null;
+  linesCount?: number | null;
+  hasIssues?: boolean | null;
+  hasIssuedLines?: boolean | null;
+  isIssued?: boolean | null;
+  issued?: boolean | null;
+};
+
+const STATUS_OPTIONS: GrnStatusFilter[] = [
+  "ALL",
+  "DRAFT",
+  "POSTED",
+  "REVERSED",
+  "CANCELLED",
 ];
 
-export default function GrnListPage() {
-  const nav = useNavigate();
-  const { companyId } = useAppScope();
-  const { rows, loading, error, refresh } = useGrnList();
+function toText(value: unknown): string {
+  return String(value ?? "").trim();
+}
 
-  const [statusFilter, setStatusFilter] = useState<GrnStatusFilter>("ALL");
-  const [search, setSearch] = useState("");
-  const [reversingId, setReversingId] = useState<string | null>(null);
-  const [reverseError, setReverseError] = useState<string | null>(null);
-  const [reverseOk, setReverseOk] = useState<string | null>(null);
+function toNumber(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
 
-  // ── Derived ────────────────────────────────────────────────────────────────
+function formatMoney(value: unknown): string {
+  return toNumber(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
 
-  const filtered = useMemo(() => {
-    let result = rows;
-    if (statusFilter !== "ALL") result = result.filter((r) => getGrnStatus(r) === statusFilter);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      result = result.filter(
-        (r) =>
-          trim((r as any).grnNumber).toLowerCase().includes(q) ||
-          trim(r.supplierName).toLowerCase().includes(q)
-      );
-    }
-    return result;
-  }, [rows, statusFilter, search]);
+function formatDate(value: unknown): string {
+  const raw = toText(value);
+  if (!raw) return "—";
 
-  const stats = useMemo(() => ({
-    total: rows.length,
-    draft: rows.filter((r) => getGrnStatus(r) === "DRAFT").length,
-    posted: rows.filter((r) => getGrnStatus(r) === "POSTED").length,
-    totalValue: rows.reduce((acc, r) => acc + (Number((r as any).totalCost) || 0), 0),
-  }), [rows]);
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "—";
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  return parsed.toLocaleString();
+}
 
-  const onReverse = async (r: GrnListDto) => {
-    if (!companyId || !canReverseGrn(r)) return;
-    const anyR = r as any;
-    const id = String(anyR?.id ?? "");
-    const grnNumber = trim(anyR?.grnNumber) || id;
-    if (!window.confirm(`Reverse posted GRN "${grnNumber}"? This cannot be undone.`)) return;
+function getStatus(row: NormalizedGrn): GrnStatus {
+  const status = toText(row.status).toUpperCase();
+  return (status || "DRAFT") as GrnStatus;
+}
 
-    setReverseError(null);
-    setReverseOk(null);
-    setReversingId(id);
-    try {
-      await grnApi.reverseById(companyId, id, { reason: null });
-      setReverseOk(`GRN ${grnNumber} reversed successfully.`);
-      refresh();
-    } catch (e) {
-      setReverseError(extractApiError(e, "Failed to reverse GRN"));
-    } finally {
-      setReversingId(null);
-    }
-  };
+function isDraft(row: NormalizedGrn): boolean {
+  return getStatus(row) === "DRAFT";
+}
 
-  // ── Guards ─────────────────────────────────────────────────────────────────
+function isPosted(row: NormalizedGrn): boolean {
+  return getStatus(row) === "POSTED";
+}
 
-  if (!companyId) return <div style={{ padding: 24 }}>Select a company to continue.</div>;
+function hasIssuedStock(row: NormalizedGrn): boolean {
+  return Boolean(
+    row.hasIssues ||
+      row.hasIssuedLines ||
+      row.isIssued ||
+      row.issued
+  );
+}
+
+function canReverse(row: NormalizedGrn): boolean {
+  return isPosted(row) && !hasIssuedStock(row);
+}
+
+function getLocationName(row: NormalizedGrn): string {
+  return toText(
+    row.receivingLocationName ??
+      row.locationName ??
+      row.warehouseName
+  );
+}
+
+function getReceiptDate(row: NormalizedGrn): unknown {
+  return (
+    row.receivedDate ??
+    row.receivedAt ??
+    row.receiptDate ??
+    row.receivedAtUtc
+  );
+}
+
+function getTotal(row: NormalizedGrn): number {
+  return toNumber(row.totalCost ?? row.totalAmount ?? row.grandTotal);
+}
+
+function getLineCount(row: NormalizedGrn): string | number {
+  return row.lineCount ?? row.linesCount ?? "—";
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  const e = error as ApiError;
 
   return (
-    <div style={pageWrap}>
-      {/* Page Header */}
-      <PageHeader
-        title="Goods Receipt Notes"
-        subtitle="Manage stock receipts, drafts, and reversals across all locations."
-        errorMsg={error || reverseError}
-        successMsg={reverseOk}
-        rightSlot={
-          <>
-            <NavBtn to={`/companies/${companyId}/grns/reverse`} style={secondaryBtn}>
-              Reverse by number
-            </NavBtn>
-            <button style={primaryBtn} onClick={() => nav(`/companies/${companyId}/grns/drafts/new`)}>
+    e?.response?.data?.title ||
+    e?.response?.data?.detail ||
+    e?.response?.data?.message ||
+    e?.message ||
+    fallback
+  );
+}
+
+function StatusBadge({ status }: { status: GrnStatus }) {
+  return (
+    <span className={`grn-status grn-status--${status.toLowerCase()}`}>
+      {status}
+    </span>
+  );
+}
+
+export default function GrnListPage() {
+  const navigate = useNavigate();
+  const { companyId } = useAppScope();
+
+  const [rows, setRows] = useState<NormalizedGrn[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<GrnStatusFilter>("ALL");
+
+  // Permission-ready flags.
+  // Replace these with your real auth/permission hook later.
+  const canCreateGrn = true;
+  const canViewGrn = true;
+  const canReverseGrn = true;
+
+  const load = useCallback(async () => {
+    if (!companyId) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await grnApi.list(companyId, {
+        status,
+      });
+
+      setRows((result ?? []) as NormalizedGrn[]);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load GRNs."));
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, status]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.toLowerCase().trim();
+
+    return rows.filter((row) => {
+      const rowStatus = getStatus(row);
+
+      if (status !== "ALL" && rowStatus !== status) return false;
+      if (!q) return true;
+
+      return (
+        toText(row.grnNumber).toLowerCase().includes(q) ||
+        toText(row.supplierName).toLowerCase().includes(q) ||
+        getLocationName(row).toLowerCase().includes(q)
+      );
+    });
+  }, [rows, search, status]);
+
+  const stats = useMemo(() => {
+    return {
+      total: rows.length,
+      drafts: rows.filter(isDraft).length,
+      posted: rows.filter(isPosted).length,
+      reversed: rows.filter((x) => getStatus(x) === "REVERSED").length,
+      value: rows.reduce((sum, row) => sum + getTotal(row), 0),
+    };
+  }, [rows]);
+
+  async function handleReverse(row: NormalizedGrn) {
+    if (!companyId) return;
+
+    if (!canReverseGrn) {
+      setError("You do not have permission to reverse GRNs.");
+      return;
+    }
+
+    if (!canReverse(row)) {
+      setError("Only posted GRNs with no issued stock can be reversed.");
+      return;
+    }
+
+    const id = toText(row.id);
+    const grnNo = toText(row.grnNumber) || id;
+
+    const confirmed = window.confirm(
+      `Reverse posted GRN ${grnNo}? This will create reversal inventory entries.`
+    );
+
+    if (!confirmed) return;
+
+    setBusyId(id);
+    setError(null);
+
+    try {
+      await grnApi.reverseById(companyId, id, {
+        reason: "",
+      });
+
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to reverse GRN."));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function openGrn(row: NormalizedGrn) {
+    if (!companyId || !canViewGrn) return;
+
+    const id = toText(row.id);
+    const path = isDraft(row)
+      ? `/companies/${companyId}/grns/drafts/${id}`
+      : `/companies/${companyId}/grns/${id}`;
+
+    navigate(path);
+  }
+
+  if (!companyId) {
+    return (
+      <main className="grn-page">
+        <section className="grn-empty">
+          Select a company to continue.
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="grn-page">
+      <header className="grn-header">
+        <div>
+          <h1>Goods Receipt Notes</h1>
+          <p>
+            Receive supplier stock, manage drafts, post to inventory, and
+            reverse eligible receipts.
+          </p>
+        </div>
+
+        <div className="grn-actions">
+          {canReverseGrn && (
+            <button
+              type="button"
+              className="grn-btn"
+              onClick={() => navigate(`/companies/${companyId}/grns/reverse`)}
+            >
+              Reverse Center
+            </button>
+          )}
+
+          {canCreateGrn && (
+            <button
+              type="button"
+              className="grn-btn grn-btn--primary"
+              onClick={() =>
+                navigate(`/companies/${companyId}/grns/drafts/new`)
+              }
+            >
               + New GRN
             </button>
-          </>
-        }
-      />
+          )}
+        </div>
+      </header>
 
-      {/* Stat Strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginTop: 20 }}>
-        <StatCard label="Total GRNs" value={stats.total} />
-        <StatCard label="Drafts" value={stats.draft} />
-        <StatCard label="Posted" value={stats.posted} />
-        <StatCard label="Total value" value={`$${moneyInt(stats.totalValue)}`} accent />
-      </div>
+      {error && (
+        <div role="alert" className="grn-alert">
+          {error}
+        </div>
+      )}
 
-      {/* Filters */}
-      <div style={cardStyle}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 12, alignItems: "end" }}>
-          <div>
-            <label style={labelStyle}>Search</label>
+      <section className="grn-stats">
+        <article>
+          <span>Total GRNs</span>
+          <strong>{stats.total}</strong>
+        </article>
+
+        <article>
+          <span>Drafts</span>
+          <strong>{stats.drafts}</strong>
+        </article>
+
+        <article>
+          <span>Posted</span>
+          <strong>{stats.posted}</strong>
+        </article>
+
+        <article>
+          <span>Reversed</span>
+          <strong>{stats.reversed}</strong>
+        </article>
+
+        <article>
+          <span>Total Value</span>
+          <strong>${formatMoney(stats.value)}</strong>
+        </article>
+      </section>
+
+      <section className="grn-card">
+        <div className="grn-filters">
+          <div className="grn-field">
+            <label htmlFor="grn-search">Search</label>
             <input
-              style={inputStyle()}
+              id="grn-search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="GRN number or supplier…"
-              disabled={loading}
+              placeholder="GRN number, supplier, or location"
             />
           </div>
-          <div>
-            <label style={labelStyle}>Status</label>
+
+          <div className="grn-field">
+            <label htmlFor="grn-status">Status</label>
             <select
-              style={inputStyle()}
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as GrnStatusFilter)}
-              disabled={loading}
+              id="grn-status"
+              value={status}
+              onChange={(e) =>
+                setStatus(e.target.value as GrnStatusFilter)
+              }
             >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option === "ALL" ? "All" : option}
+                </option>
               ))}
             </select>
           </div>
-          <button style={secondaryBtn} onClick={refresh} disabled={loading}>
-            {loading ? "Refreshing…" : "↺ Refresh"}
+
+          <button
+            type="button"
+            className="grn-btn"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            {loading ? "Loading…" : "Refresh"}
           </button>
         </div>
-      </div>
+      </section>
 
-      {/* Table */}
-      <div style={cardStyle}>
-        <SectionHead
-          title="Records"
-          subtitle={`Showing ${filtered.length} of ${rows.length}`}
-        />
-        <div style={tableWrap}>
-          <table style={tableStyle}>
+      <section className="grn-card">
+        <div className="grn-table-wrap">
+          <table className="grn-table">
             <thead>
               <tr>
-                <th style={thStyle}>GRN #</th>
-                <th style={thStyle}>Supplier</th>
-                <th style={thStyle}>Location</th>
-                <th style={thStyle}>Receipt Date</th>
-                <th style={thStyle}>Lines</th>
-                <th style={thStyle}>Total Cost</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Issued</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Actions</th>
+                <th>GRN #</th>
+                <th>Supplier</th>
+                <th>Location</th>
+                <th>Receipt Date</th>
+                <th>Lines</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Issued</th>
+                <th className="grn-align-right">Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {loading ? (
-                <LoadingRows colSpan={9} />
-              ) : filtered.length === 0 ? (
-                <EmptyRow message="No GRNs match the current filters." colSpan={9} />
+                <tr>
+                  <td colSpan={9}>Loading GRNs…</td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={9}>No GRNs found.</td>
+                </tr>
               ) : (
-                filtered.map((r) => {
-                  const anyR = r as any;
-                  const id = String(anyR?.id ?? "");
-                  const grnNumber = trim(anyR?.grnNumber);
-                  const posted = isPosted(r);
-                  const draft = isDraft(r);
-                  const issued = posted && hasIssuedFromPostedGrn(r);
-                  const canRev = canReverseGrn(r);
-                  const busy = reversingId === id;
+                filteredRows.map((row) => {
+                  const id = toText(row.id);
+                  const statusValue = getStatus(row);
+                  const reverseAllowed = canReverse(row);
+                  const isBusy = busyId === id;
 
                   return (
-                    <tr key={id} style={{ cursor: "default" }}>
-                      <td style={{ ...tdStyle, fontWeight: 700, color: tokens.accent }}>
-                        {grnNumber || <span style={{ color: tokens.colorHint }}>—</span>}
+                    <tr key={id}>
+                      <td className="grn-number">
+                        {toText(row.grnNumber) || "—"}
                       </td>
-                      <td style={tdStyle}>{trim(r.supplierName) || <span style={{ color: tokens.colorHint }}>—</span>}</td>
-                      <td style={tdStyle}>{trim(anyR?.locationName) || <span style={{ color: tokens.colorHint }}>—</span>}</td>
-                      <td style={{ ...tdStyle, color: tokens.colorMuted }}>{fmtDateTime(getReceivedDate(r))}</td>
-                      <td style={{ ...tdStyle, textAlign: "center" }}>{anyR?.lineCount ?? "—"}</td>
-                      <td style={{ ...tdStyle, fontVariantNumeric: "tabular-nums" }}>
-                        {anyR?.totalCost != null ? `$${moneyInt(Number(anyR.totalCost))}` : "—"}
+
+                      <td>{toText(row.supplierName) || "—"}</td>
+
+                      <td>{getLocationName(row) || "—"}</td>
+
+                      <td>{formatDate(getReceiptDate(row))}</td>
+
+                      <td>{getLineCount(row)}</td>
+
+                      <td>${formatMoney(getTotal(row))}</td>
+
+                      <td>
+                        <StatusBadge status={statusValue} />
                       </td>
-                      <td style={tdStyle}><StatusBadge status={trim((r as any).status)} /></td>
-                      <td style={tdStyle}>
-                        {posted ? <IssuedBadge issued={issued} /> : <span style={{ color: tokens.colorHint, fontSize: 12 }}>—</span>}
+
+                      <td>
+                        {isPosted(row)
+                          ? hasIssuedStock(row)
+                            ? "Yes"
+                            : "No"
+                          : "—"}
                       </td>
-                      <td style={{ ...tdStyle, textAlign: "right" }}>
-                        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                          {draft ? (
-                            <NavBtn to={`/companies/${companyId}/grns/drafts/${id}`} style={secondaryBtn}>
-                              Edit
-                            </NavBtn>
-                          ) : (
-                            <NavBtn to={`/companies/${companyId}/grns/${id}`} style={secondaryBtn}>
-                              View
-                            </NavBtn>
-                          )}
-                          {posted && (
-                            <button
-                              style={{ ...dangerBtn, opacity: canRev ? 1 : 0.45, cursor: canRev ? "pointer" : "not-allowed" }}
-                              disabled={!canRev || busy}
-                              onClick={() => onReverse(r)}
-                              title={issued ? "Cannot reverse: already issued" : canRev ? "Reverse this GRN" : "Not reversible"}
-                            >
-                              {busy ? "…" : "Reverse"}
-                            </button>
-                          )}
-                        </div>
+
+                      <td className="grn-row-actions">
+                        <button
+                          type="button"
+                          className="grn-btn grn-btn--sm"
+                          disabled={!canViewGrn}
+                          onClick={() => openGrn(row)}
+                        >
+                          {isDraft(row) ? "Edit" : "View"}
+                        </button>
+
+                        {isPosted(row) && canReverseGrn && (
+                          <button
+                            type="button"
+                            className="grn-btn grn-btn--sm grn-btn--danger"
+                            disabled={!reverseAllowed || isBusy}
+                            title={
+                              reverseAllowed
+                                ? "Reverse this GRN"
+                                : "Cannot reverse after stock has been issued"
+                            }
+                            onClick={() => void handleReverse(row)}
+                          >
+                            {isBusy ? "…" : "Reverse"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -231,19 +476,7 @@ export default function GrnListPage() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Sticky Bar */}
-      <div style={stickyBar}>
-        <span style={{ fontSize: 12, color: tokens.colorMuted }}>
-          <b>Tip:</b> Only posted GRNs that haven't been issued can be reversed.
-        </span>
-        <div style={{ display: "flex", gap: 10 }}>
-          <NavBtn to={`/companies/${companyId}/grns/drafts`} style={secondaryBtn}>Drafts</NavBtn>
-          <button style={secondaryBtn} onClick={refresh} disabled={loading}>↺ Refresh</button>
-          <button style={primaryBtn} onClick={() => nav(`/companies/${companyId}/grns/drafts/new`)}>+ New GRN</button>
-        </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

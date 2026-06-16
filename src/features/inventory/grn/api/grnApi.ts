@@ -1,95 +1,325 @@
-﻿import type {
+﻿import { http } from "../../../../api/http";
+import type { ItemUomDto } from "../../../inventoryMaster/items/types";
+import type {
   CreateGrnDraftRequest,
-  GrnListDto,
   GrnDetailDto,
+  GrnListDto,
   ReverseGrnRequest,
 } from "../types/grn.types";
-import { http } from "../../../../api/http";
-import type { ItemUomDto } from "../../../inventoryMaster/items/types";
 
-function unwrap<T>(resData: unknown): T {
-  const d = resData as Record<string, unknown>;
-  if (d?.data   !== undefined) return d.data   as T;
-  if (d?.result !== undefined) return d.result as T;
-  if (d?.items  !== undefined) return d.items  as T;
-  return resData as T;
-}
+export type GrnStatus = "DRAFT" | "POSTED" | "REVERSED" | "CANCELLED" | "ALL";
 
-const toIso = (d: Date | string): string =>
-  typeof d === "string" ? d : d.toISOString();
-
-const cleanParams = (params: Record<string, string | undefined>) => {
-  const query: Record<string, string> = {};
-  Object.entries(params).forEach(([key, value]) => {
-    if (value?.trim()) query[key] = value;
-  });
-  return query;
-};
+export type GrnScope =
+  | string
+  | {
+      companyId: string;
+      branchId?: string | null;
+    };
 
 export interface GrnListParams {
-  status?: string;
-  from?: string;
-  to?: string;
+  status?: GrnStatus;
+  from?: string | Date | null;
+  to?: string | Date | null;
+  q?: string | null;
 }
 
-export interface GrnDateRangeParams {
-  from: Date | string;
-  to: Date | string;
-  status?: string;
+type ApiEnvelope<T> = {
+  data?: T;
+  result?: T;
+  items?: T;
+};
+
+type PagedResult<T> = {
+  items?: T[];
+  totalCount?: number;
+  page?: number;
+  pageSize?: number;
+};
+
+export type GrnIdentityResult = {
+  id?: string;
+  grnId?: string;
+  draftId?: string;
+};
+
+function unwrap<T>(payload: unknown): T {
+  const value = payload as ApiEnvelope<T> | null | undefined;
+
+  if (value?.data !== undefined) return value.data;
+  if (value?.result !== undefined) return value.result;
+  if (value?.items !== undefined) return value.items;
+
+  return payload as T;
 }
 
-const base = (companyId: string) => `/companies/${companyId}/grns`;
+function unwrapArray<T>(payload: unknown): T[] {
+  const value = unwrap<T[] | PagedResult<T>>(payload);
+
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray((value as PagedResult<T>).items)) {
+    return (value as PagedResult<T>).items ?? [];
+  }
+
+  return [];
+}
+
+function cleanText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function cleanNullable(value: unknown): string | null {
+  const cleaned = cleanText(value);
+  return cleaned.length ? cleaned : null;
+}
+
+function assertRequired(value: unknown, label: string): string {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) {
+    throw new Error(`${label} is required.`);
+  }
+
+  return cleaned;
+}
+
+function assertPositiveNumber(value: unknown, label: string): number {
+  const number = Number(value);
+
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new Error(`${label} must be greater than zero.`);
+  }
+
+  return number;
+}
+
+function assertNonNegativeNumber(value: unknown, label: string): number {
+  const number = Number(value);
+
+  if (!Number.isFinite(number) || number < 0) {
+    throw new Error(`${label} cannot be negative.`);
+  }
+
+  return number;
+}
+
+function toIso(value?: string | Date | null): string | undefined {
+  if (!value) return undefined;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
+  }
+
+  const cleaned = value.trim();
+  return cleaned.length ? cleaned : undefined;
+}
+
+function cleanParams(params: Record<string, string | undefined>) {
+  return Object.fromEntries(
+    Object.entries(params).filter(
+      ([, value]) => value !== undefined && value.trim().length > 0,
+    ),
+  );
+}
+
+function resolveScope(scope: GrnScope): { companyId: string; branchId?: string | null } {
+  if (typeof scope === "string") {
+    return {
+      companyId: assertRequired(scope, "Company"),
+    };
+  }
+
+  return {
+    companyId: assertRequired(scope.companyId, "Company"),
+    branchId: cleanNullable(scope.branchId),
+  };
+}
+
+function base(scope: GrnScope): string {
+  const resolved = resolveScope(scope);
+  const companyId = encodeURIComponent(resolved.companyId);
+
+  if (resolved.branchId) {
+    return `/companies/${companyId}/branches/${encodeURIComponent(
+      resolved.branchId,
+    )}/grns`;
+  }
+
+  return `/companies/${companyId}/grns`;
+}
+
+function inventoryItemBase(scope: GrnScope): string {
+  const resolved = resolveScope(scope);
+  const companyId = encodeURIComponent(resolved.companyId);
+
+  if (resolved.branchId) {
+    return `/companies/${companyId}/branches/${encodeURIComponent(
+      resolved.branchId,
+    )}/inventory-master/items`;
+  }
+
+  return `/companies/${companyId}/inventory-master/items`;
+}
+
+function validateReverseRequest(body: ReverseGrnRequest): ReverseGrnRequest {
+  return {
+    ...body,
+    reason: assertRequired(body.reason, "Reversal reason"),
+  };
+}
+
+function validateDraftRequest(body: CreateGrnDraftRequest): CreateGrnDraftRequest {
+  const receivingLocationId = assertRequired(
+    body.receivingLocationId,
+    "Receiving location",
+  );
+
+  const receivedDate = assertRequired(body.receivedDate, "Received date");
+
+  if (!Array.isArray(body.lines) || body.lines.length === 0) {
+    throw new Error("At least one GRN line is required.");
+  }
+
+  return {
+    ...body,
+    receivingLocationId,
+    receivedDate,
+    supplierName: cleanText(body.supplierName),
+    notes: cleanNullable(body.notes),
+    lines: body.lines.map((line, index) => {
+      const lineNo = index + 1;
+
+      return {
+        ...line,
+        itemId: assertRequired(line.itemId, `Line ${lineNo} item`),
+        uomId: assertRequired(line.uomId, `Line ${lineNo} UOM`),
+        quantity: assertPositiveNumber(line.quantity, `Line ${lineNo} quantity`),
+        unitCost: assertNonNegativeNumber(
+          line.unitCost,
+          `Line ${lineNo} unit cost`,
+        ),
+        batchNo: cleanNullable(line.batchNo),
+        expiryDate: cleanNullable(line.expiryDate),
+        notes: cleanNullable(line.notes),
+      };
+    }),
+  };
+}
 
 export const grnApi = {
-  createDraft(companyId: string, body: CreateGrnDraftRequest): Promise<GrnDetailDto> {
-    return http.post(base(companyId), body).then((r) => unwrap<GrnDetailDto>(r.data));
+  async list(scope: GrnScope, params?: GrnListParams): Promise<GrnListDto[]> {
+    const response = await http.get(base(scope), {
+      params: cleanParams({
+        status:
+          params?.status && params.status !== "ALL"
+            ? String(params.status)
+            : undefined,
+        from: toIso(params?.from),
+        to: toIso(params?.to),
+        q: params?.q?.trim() || undefined,
+      }),
+    });
+
+    return unwrapArray<GrnListDto>(response.data);
   },
 
-  // FIX: getDraftById was byte-for-byte identical to getById — removed.
-  // Use getById for both draft and posted GRNs; the backend route is the same.
-  getById(companyId: string, grnId: string): Promise<GrnDetailDto> {
-    return http.get(`${base(companyId)}/${grnId}`).then((r) => unwrap<GrnDetailDto>(r.data));
+  async getById(scope: GrnScope, grnId: string): Promise<GrnDetailDto> {
+    const id = assertRequired(grnId, "GRN id");
+
+    const response = await http.get(`${base(scope)}/${encodeURIComponent(id)}`);
+
+    return unwrap<GrnDetailDto>(response.data);
   },
 
-  updateDraft(companyId: string, draftId: string, body: CreateGrnDraftRequest): Promise<GrnDetailDto> {
-    return http.put(`${base(companyId)}/${draftId}`, body).then((r) => unwrap<GrnDetailDto>(r.data));
+  async createDraft(
+    scope: GrnScope,
+    body: CreateGrnDraftRequest,
+  ): Promise<GrnDetailDto & GrnIdentityResult> {
+    const response = await http.post(base(scope), validateDraftRequest(body));
+
+    return unwrap<GrnDetailDto & GrnIdentityResult>(response.data);
   },
 
-  postDraft(companyId: string, draftId: string): Promise<void> {
-    return http.post(`${base(companyId)}/${draftId}/post`, {}).then(() => undefined);
+  async updateDraft(
+    scope: GrnScope,
+    draftId: string,
+    body: CreateGrnDraftRequest,
+  ): Promise<GrnDetailDto & GrnIdentityResult> {
+    const id = assertRequired(draftId, "Draft id");
+
+    const response = await http.put(
+      `${base(scope)}/${encodeURIComponent(id)}`,
+      validateDraftRequest(body),
+    );
+
+    return unwrap<GrnDetailDto & GrnIdentityResult>(response.data);
   },
 
-  list(companyId: string, params?: GrnListParams): Promise<GrnListDto[]> {
-    return http
-      .get(base(companyId), { params: cleanParams({ status: params?.status, from: params?.from, to: params?.to }) })
-      .then((r) => unwrap<GrnListDto[]>(r.data));
+  async postDraft(
+    scope: GrnScope,
+    draftId: string,
+  ): Promise<GrnDetailDto & GrnIdentityResult> {
+    const id = assertRequired(draftId, "Draft id");
+
+    const response = await http.post(
+      `${base(scope)}/${encodeURIComponent(id)}/post`,
+      {},
+    );
+
+    return unwrap<GrnDetailDto & GrnIdentityResult>(response.data);
   },
 
-  listByDateRange(companyId: string, { from, to, status }: GrnDateRangeParams): Promise<GrnDetailDto[]> {
-    return http
-      .get(base(companyId), { params: cleanParams({ from: toIso(from), to: toIso(to), status }) })
-      .then((r) => unwrap<GrnDetailDto[]>(r.data));
+  async reverseById(
+    scope: GrnScope,
+    grnId: string,
+    body: ReverseGrnRequest,
+  ): Promise<void> {
+    const id = assertRequired(grnId, "GRN id");
+
+    await http.post(
+      `${base(scope)}/${encodeURIComponent(id)}/reverse`,
+      validateReverseRequest(body),
+    );
   },
 
-  reverse(companyId: string, grnId: string, body: ReverseGrnRequest): Promise<void> {
-    return http.post(`${base(companyId)}/${grnId}/reverse`, body).then(() => undefined);
+  async reverseByBatch(
+    scope: GrnScope,
+    batchNo: string,
+    body: ReverseGrnRequest,
+  ): Promise<void> {
+    const batch = assertRequired(batchNo, "Batch number");
+
+    await http.post(
+      `${base(scope)}/reverse-by-batch/${encodeURIComponent(batch)}`,
+      validateReverseRequest(body),
+    );
   },
 
-  // FIX: renamed from reverseByNumber. The original JSDoc explicitly stated
-  // the parameter is a GUID, not a GRN number — the name was misleading.
-  reverseById(companyId: string, grnId: string, body: ReverseGrnRequest): Promise<void> {
-    return grnApi.reverse(companyId, grnId, body);
+  async findByNumber(scope: GrnScope, grnNumber: string): Promise<GrnListDto | null> {
+    const q = grnNumber.trim();
+    if (!q) return null;
+
+    const rows = await grnApi.list(scope, {
+      q,
+      status: "ALL",
+    });
+
+    return (
+      rows.find(
+        (row) =>
+          String(row.grnNumber ?? "").trim().toLowerCase() === q.toLowerCase(),
+      ) ??
+      rows[0] ??
+      null
+    );
   },
 
-  reverseByBatch(companyId: string, batchNo: string, body: ReverseGrnRequest): Promise<void> {
-    return http
-      .post(`${base(companyId)}/reverse-by-batch/${encodeURIComponent(batchNo)}`, body)
-      .then(() => undefined);
-  },
+  async getItemUoms(scope: GrnScope, itemId: string): Promise<ItemUomDto[]> {
+    const id = assertRequired(itemId, "Item id");
 
-  getItemUoms(companyId: string, itemId: string): Promise<ItemUomDto[]> {
-    return http
-      .get(`/companies/${companyId}/inventory-master/items/${itemId}/uoms`)
-      .then((r) => unwrap<ItemUomDto[]>(r.data));
+    const response = await http.get(
+      `${inventoryItemBase(scope)}/${encodeURIComponent(id)}/uoms`,
+    );
+
+    return unwrapArray<ItemUomDto>(response.data);
   },
 };

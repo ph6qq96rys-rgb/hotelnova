@@ -13,14 +13,9 @@ import {
   ClipboardList,
 } from "lucide-react";
 
-import DashboardPage from "../pages/DashboardPage";
-import UsersPage from "../features/identity/users/pages/UsersPage";
-import RolesPage from "../pages/RolesPage";
-import PermissionsPage from "../pages/PermissionsPage";
-import SettingsPage from "../pages/SettingsPage";
+import DashboardPage from "../pages/DashboardPage"
+import SettingsPage from "../modules/security/pages/SettingsPage";
 import InventoryMasterHomePage from "../features/inventoryMaster/pages/InventoryMasterHomePage";
-import UomsPage from "../features/inventoryMaster/pages/UomsPage";
-import CategoriesPage from "../features/inventoryMaster/pages/CategoriesPage";
 import InventoryItemsPage from "../features/inventoryMaster/items/pages/InventoryItemsPage";
 import InventoryLedgerPage from "../features/inventory/ledger/pages/InventoryLedgerPage";
 import OrgLocationsPage from "../features/org/pages/OrgLocationsPage";
@@ -32,22 +27,25 @@ import ProductionBatchPage from "../features/production/pages/ProductionBatchPag
 import RecipeEditorPage from "../features/production/pages/RecipeEditorPage";
 import MenuItemCreatePage from "../features/production/pages/MenuItemCreatePage";
 import MenuItemDetailPage from "../features/production/pages/MenuItemDetailPage";
-import AssignAccessPage from "../pages/RolesPermissionsPage";
-import RolesPermissionsPage from "../features/security/pages/RolesPermissionsPage";
+import MenuCategoriesPage from "../features/production/pages/MenuCategoriesPage"
+import RolesPermissionsPage from "../modules/security/pages/RolesPermissionsPage";
 import AdjustmentListPage from "../features/inventory/adjustments/pages/AdjustmentListPage";
 import AdjustmentDetailsPage from "../features/inventory/adjustments/pages/AdjustmentDetailsPage";
 import AdjustmentApprovalPage from "../features/inventory/adjustments/pages/AdjustmentApprovalPage";
 import AdjustmentDraftEditorPage from "../features/inventory/adjustments/pages/AdjustmentDraftEditorPage";
 
 // ── Auth pages — rendered outside the authenticated shell ────────────────────
-import RegisterPage from "../pages/RegisterPage";
 import ForgotPasswordPage from "../pages/ForgotPasswordPage";
-import ResetPasswordPage from "../pages/ResetPasswordPage";
+
+
 import MenuEngineeringPage from "../features/production/pages/MenuEngineeringPage";
 import InventoryControlSettingsPage from "../features/inventory/settings/pages/InventoryControlSettingsPage";
 import StockTransferDetailPage from "../features/inventory/stock-transfers/pages/StockTransferDetailPage";
 import FnbControlCenterPage from "../features/reports/fnb/pages/FnbControlCenterPage";
 import ImportInventoryItemsPage from "../features/inventoryMaster/items/pages/Importinventoryitemspage";
+import ItemUpsertPage from "../features/inventoryMaster/items/pages/ItemUpsertPage";
+import TelegramSivRequestPage from "../features/telegram-miniapp/siv-request/TelegramSivRequestPage";
+import UsersPage from "../modules/security/pages/UsersPage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -70,9 +68,8 @@ export type AppRoute = RouteObject & {
 //  Keep them separate from appRoutes so the shell layout never wraps them.
 
 export const publicRoutes: AppRoute[] = [
-  { path: "/register",         element: <RegisterPage /> },
+  //{ path: "/register",         element: <RegisterPage /> },
   { path: "/forgot-password",  element: <ForgotPasswordPage /> },
-  { path: "/reset-password",   element: <ResetPasswordPage /> },
 ];
 
 // ── Authenticated app routes ──────────────────────────────────────────────────
@@ -103,28 +100,9 @@ export const routeConfig: AppRoute[] = [
     icon: <Users size={18} />,
     nav: true,
     section: "Identity",
-   // permissions: ["users.view"],
+   permissions: ["users.view"],
   },
-  {
-    // Fixed casing: "/Roles" → "/roles"
-    path: "/roles",
-    label: "Roles",
-    element: <RolesPage />,
-    icon: <Shield size={18} />,
-    nav: true,
-    section: "Identity",
-    //permissions: ["roles.view"],
-  },
-  {
-    // Fixed casing: "/Permissions" → "/permissions"
-    path: "/permissions",
-    label: "Permissions",
-    element: <PermissionsPage />,
-    icon: <Shield size={18} />,
-    nav: true,
-    section: "Identity",
-   // permissions: ["permissions.view"],
-  },
+  
   {
     // Fixed casing: "/RolesPermissions" → "/roles-permissions"
     path: "/roles-permissions",
@@ -133,17 +111,9 @@ export const routeConfig: AppRoute[] = [
     icon: <Shield size={18} />,
     nav: true,
     section: "Identity",
-   // permissions: ["roles.view"],
+   permissions: ["roles.view"],
   },
-  {
-    path: "/companies/:companyId/access-control",
-    label: "Assign Access",
-    element: <AssignAccessPage />,
-    icon: <Shield size={18} />,
-    nav: true,
-    section: "Identity",
-    permissions: ["roles.view"],
-  },
+
 
   // ── Inventory master ───────────────────────────────────────────────────────
 
@@ -154,26 +124,9 @@ export const routeConfig: AppRoute[] = [
     icon: <Package size={18} />,
     nav: true,
     section: "Inventory",
-    //permissions: ["inventory.view"],
-  },
-  {
-    path: "/inventory-master/uoms",
-    label: "Units of Measure",
-    element: <UomsPage />,
-    icon: <Sliders size={18} />,
-    nav: false,
-    section: "Inventory",
-   // permissions: ["inventory.view"],
-  },
-  {
-    path: "/inventory-master/categories",
-    label: "Categories",
-    element: <CategoriesPage />,
-    icon: <Sliders size={18} />,
-    nav: false,
-    section: "Inventory",
     permissions: ["inventory.view"],
   },
+
   {
     path: "/inventory-master/items",
     label: "Items",
@@ -181,7 +134,27 @@ export const routeConfig: AppRoute[] = [
     icon: <Package size={18} />,
     nav: true,
     section: "Inventory",
-    //permissions: ["inventory.view"],
+    permissions: ["inventory.view"],
+  },
+  {
+    // Create new item — navigated to from InventoryItemsPage "+ New item" button
+    path: "/inventory-master/items/new",
+    element: <ItemUpsertPage />,
+    nav: false,
+    permissions: ["inventory.manage"],
+  },
+  {
+    // Edit existing item — navigated to from row "Edit" button
+    path: "/inventory-master/items/:id/edit",
+    element: <ItemUpsertPage />,
+    nav: false,
+    permissions: ["inventory.manage"],
+  },
+  {
+    path: "/inventory-master/items/import",
+    element: <ImportInventoryItemsPage />,
+    nav: false,
+    permissions: ["inventory.manage"],
   },
   {
     // Fixed typo: "leger" → "ledger"
@@ -191,7 +164,7 @@ export const routeConfig: AppRoute[] = [
     icon: <ClipboardList size={18} />,
     nav: true,
     section: "Inventory",
-    //permissions: ["inventory.view"],
+    permissions: ["inventory.view"],
   },
   //Inventory Control Settings
 {
@@ -201,15 +174,8 @@ export const routeConfig: AppRoute[] = [
   icon: <Settings size={18} />,
   nav: true,
   section: "Inventory",
- // permissions: ["inventory.manage"],
+  permissions: ["inventory.manage"],
 },
-{ path: "/inventory/items/import", 
-    element: <ImportInventoryItemsPage />,
-    label: "Import Items",
-    icon: <Package size={18} />,
-    nav: true,
-    section: "Inventory",
-   },
   // ── Stock transfers ────────────────────────────────────────────────────────
 
 {
@@ -293,37 +259,58 @@ export const routeConfig: AppRoute[] = [
   },
 // ── Menu & production ─────────────────────────────────────────────────────
 
- {
+ 
+
+{
+  path: "/production/menu/categories",
+  label: "Menu Categories",
+  element: <MenuCategoriesPage />,
+  icon: <ChefHat size={18} />,
+  nav: true,
+  section: "Production",
+  permissions: ["inventory.view"],
+},
+{
   path: "/production/menu/items/new",
   label: "Create Menu Item",
   element: <MenuItemCreatePage />,
   icon: <ChefHat size={18} />,
   nav: true,
   section: "Production",
- // permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/production/menu/items/:id",
+  label: "Menu Configuration",
   element: <MenuItemDetailPage />,
-  nav: false,
+  nav: true,
   section: "Production",
- // permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
+},
+{
+  path: "/telegram/siv-request",
+  label:"Mini App",
+  icon:<ChefHat size={18}/>,
+  nav:true,
+  section:"Production",
+  element: <TelegramSivRequestPage />
 },
 {
   path: "/production/recipes",
-  label: "Recipe Editor",
+  label: "Recipe Management",
   element: <RecipeEditorPage />,
   icon: <ChefHat size={18} />,
   nav: true,
   section: "Production",
- // permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/production/menu/items/:id/recipe",
+  label: "Recipe Editor",
   element: <RecipeEditorPage />,
   nav: false,
   section: "Production",
- // permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/production/batches",
@@ -332,21 +319,23 @@ export const routeConfig: AppRoute[] = [
   icon: <ChefHat size={18} />,
   nav: true,
   section: "Production",
- // permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/production/batches/new",
+  label: "New Production Batch",
   element: <ProductionBatchPage />,
   nav: false,
   section: "Production",
- // permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/production/batches/:batchId",
+  label: "Production Batch Detail",
   element: <ProductionBatchPage />,
   nav: false,
   section: "Production",
- // permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
 {
   path: "/production/menu-engineering",
@@ -355,7 +344,7 @@ export const routeConfig: AppRoute[] = [
   icon: <ChefHat size={18} />,
   nav: true,
   section: "Production",
- // permissions: ["inventory.view"],
+  permissions: ["inventory.view"],
 },
   // ── Organisation & locations ───────────────────────────────────────────────
 

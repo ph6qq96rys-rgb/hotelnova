@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authApi, ApiError } from "../auth/auth.api";
-import "./security.css";
 
 function IconEye({ off }: { off?: boolean }) {
   return off ? (

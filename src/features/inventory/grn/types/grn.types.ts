@@ -1,32 +1,42 @@
-﻿// ─── GRN Domain Types ────────────────────────────────────────────────────────
-// Single source of truth for all GRN-related types across the module.
+﻿export type Guid = string;
+export type IsoDateString = string;
+export type DateOnlyString = string;
+export type DecimalNumber = number;
 
-// ── Enums ────────────────────────────────────────────────────────────────────
+export const GRN_STATUSES = [
+  "DRAFT",
+  "SUBMITTED",
+  "APPROVED",
+  "POSTED",
+  "REVERSED",
+  "CANCELLED",
+] as const;
 
-export type GrnStatus = "DRAFT" | "POSTED" | "CANCELLED" | "REVERSED";
-
+export type GrnStatus = (typeof GRN_STATUSES)[number];
 export type GrnStatusFilter = GrnStatus | "ALL";
 
-export const GRN_STATUS_LABELS: Record<GrnStatus, string> = {
-  DRAFT: "Draft",
-  POSTED: "Posted",
-  CANCELLED: "Cancelled",
-  REVERSED: "Reversed",
-};
-
-// ── DTO Shapes (what the API returns) ────────────────────────────────────────
+export interface SelectOption<T = string> {
+  value: T;
+  label: string;
+  disabled?: boolean;
+}
 
 export interface GrnLineDto {
-  id?: string;
-  inventoryItemId?: string;
-  itemId?: string;
+  id: Guid;
+  grnId: Guid;
+  lineNo: number;
+  itemId: Guid;
+  inventoryItemId?: Guid | null;
   itemName?: string | null;
   itemCode?: string | null;
-  uomId?: string;
+  uomId: Guid;
   uomName?: string | null;
   uomCode?: string | null;
   quantity: number;
   unitCost: number;
+  lineAmount?: number | null;
+  taxAmount?: number | null;
+  totalAmount?: number | null;
   batchNo?: string | null;
   expiryDate?: string | null;
   expiryDateUtc?: string | null;
@@ -34,105 +44,149 @@ export interface GrnLineDto {
 }
 
 export interface GrnListDto {
-  id: string;
-  grnNumber: string | null;
+  id: Guid;
+  grnNumber?: string | null;
+  grnNo?: string | null;
   supplierName?: string | null;
-  status?: string | null;
+  status: GrnStatus;
   receiptDate?: string | null;
   receivedDate?: string | null;
+  receivedAt?: string | null;
   receivedAtUtc?: string | null;
+  receivingLocationId?: Guid | null;
+  locationId?: Guid | null;
+  warehouseId?: Guid | null;
+  receivingLocationName?: string | null;
+  locationName?: string | null;
+  warehouseName?: string | null;
   issued?: boolean | null;
   hasIssue?: boolean | null;
-  issuedAtUtc?: string | null;
-  issueStatus?: string | null;
-  locationId?: string | null;
-  locationName?: string | null;
+  hasIssues?: boolean | null;
+  hasIssued?: boolean | null;
+  hasIssuedLines?: boolean | null;
+  isIssued?: boolean | null;
   totalCost?: number | null;
+  totalAmount?: number | null;
+  grandTotal?: number | null;
   lineCount?: number | null;
+  linesCount?: number | null;
 }
 
 export interface GrnDetailDto extends GrnListDto {
-  lines: GrnLineDto[];
+  companyId?: Guid | null;
+  branchId?: Guid | null;
   notes?: string | null;
-  branchId?: string | null;
+  lines: GrnLineDto[];
+  createdAt?: string | null;
   createdAtUtc?: string | null;
+  postedAt?: string | null;
   postedAtUtc?: string | null;
+  reversedAt?: string | null;
   reversedAtUtc?: string | null;
   reversedByUser?: string | null;
   reverseReason?: string | null;
 }
 
-// ── Request Shapes (what we send to the API) ─────────────────────────────────
-
-export interface GrnLineDraft {
-  itemId: string;
-  uomId: string;
+export interface CreateGrnLineRequest {
+  itemId: Guid;
+  uomId: Guid;
   quantity: number;
   unitCost: number;
+  batchNo?: string | null;
+  expiryDate?: string | null;
+  notes?: string | null;
+}
+
+export interface CreateGrnDraftRequest {
+  companyId?: Guid;
+  receivingLocationId: Guid;
+  receivedDate: string;
+  supplierName?: string | null;
+  notes?: string | null;
+  lines: CreateGrnLineRequest[];
+}
+
+export type UpdateGrnDraftRequest = CreateGrnDraftRequest;
+
+export interface ReverseGrnRequest {
+  reason: string;
+}
+
+export interface GrnActionResultDto {
+  id?: Guid;
+  grnId?: Guid;
+  draftId?: Guid;
+  grnNumber?: string | null;
+  status?: GrnStatus;
+}
+
+export interface GrnLineDraft {
+  itemId: Guid;
+  uomId: Guid;
+  quantity: number;
+  unitCost: number;
+  batchNo: string;
   expiryDate: string | null;
   notes: string;
 }
 
 export interface GrnDraft {
-  id?: string;
-  locationId: string;
-  receivedDate: string; // yyyy-MM-dd
+  id?: Guid;
+  locationId: Guid;
+  receivedDate: string;
   supplierName: string;
   notes: string;
   lines: GrnLineDraft[];
 }
 
-export interface CreateGrnDraftRequest {
-  locationId: string;
-  supplierName: string | null;
-  receivedDate: string;
-  notes: string | null;
-  lines: Array<{
-    itemId: string;
-    uomId: string;
-    quantity: number;
-    unitCost: number;
-    receivedDate?: string | null;
-    notes?: string | null;
-  }>;
-}
+export const createEmptyGrnLine = (): GrnLineDraft => ({
+  itemId: "",
+  uomId: "",
+  quantity: 1,
+  unitCost: 0,
+  batchNo: "",
+  expiryDate: null,
+  notes: "",
+});
 
-export interface ReverseGrnRequest {
-  reason: string | null;
-}
-
-// ── View Model Helpers ────────────────────────────────────────────────────────
-
-export interface SelectOption<T = string> {
-  value: T;
-  label: string;
-}
-
-export interface ItemUomVm {
-  uomId: string;
-  uomName: string;
-  isDefaultPurchase?: boolean;
-}
+export const createEmptyGrnDraft = (): GrnDraft => ({
+  id: undefined,
+  locationId: "",
+  receivedDate: new Date().toISOString().slice(0, 10),
+  supplierName: "",
+  notes: "",
+  lines: [createEmptyGrnLine()],
+});
 
 export interface ItemVm {
-  id: string;
-  code?: string;
+  id: Guid;
+  code?: string | null;
   name: string;
   label: string;
-  baseUomId: string;
-  baseUomName?: string;
-  uoms: ItemUomVm[];
-  defaultUomId: string;
+  baseUomId: Guid;
+  baseUomName?: string | null;
+  uoms: SelectOption<string>[];
+  defaultUomId: Guid;
 }
 
-// ── Form Validation ───────────────────────────────────────────────────────────
+export type GrnLineFieldKey =
+  | keyof GrnLineDraft
+  | "inventoryItemId"
+  | "duplicate";
 
-export type GrnLineFieldErrors = Partial<Record<keyof GrnLineDraft, string>>;
+export type GrnLineFieldErrors = Partial<Record<GrnLineFieldKey, string>>;
 
 export interface GrnFieldErrors {
   locationId?: string;
+  receivingLocationId?: string;
   receivedDate?: string;
   supplierName?: string;
+  notes?: string;
   lines?: string;
   lineErrors?: Record<number, GrnLineFieldErrors>;
+}
+
+export interface GrnValidationResult {
+  isValid: boolean;
+  errors: GrnFieldErrors;
 }

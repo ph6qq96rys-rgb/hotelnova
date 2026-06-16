@@ -40,10 +40,10 @@ export default function PosPage() {
   useEffect(() => {
     if (!companyId || !branchId) return;
     salesApi.currentSession(companyId, branchId)
-      .then((r) => setSession((r as any).data ?? r))
+      .then((r) => setSession(r.data ?? null))
       .catch(() => setSession(null));
 
-    salesApi.listStockLocations(companyId, branchId)
+   salesApi.listStockLocations(companyId, { branchId })
       .then((rows) => {
         const active = rows.filter((x) => x.isActive !== false);
         setLocations(active);
@@ -146,7 +146,7 @@ export default function PosPage() {
           : null,
       });
 
-      const sale = (response as any).data ?? response;
+      const sale = response.data ?? response;
       setReceipt({ saleNo: sale.saleNo ?? sale.id, total, change });
       resetOrder();
     } catch (e) {

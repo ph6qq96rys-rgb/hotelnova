@@ -1,45 +1,92 @@
-﻿import { Routes, Route, Navigate } from "react-router-dom";
+﻿// src/routes/AppRoutes.tsx
+
 import type { ReactNode } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 
-import LoginPage           from "../pages/LoginPage";
-import RegisterPage        from "../pages/RegisterPage";
-import ForgotPasswordPage  from "../pages/ForgotPasswordPage";
-import ResetPasswordPage   from "../pages/ResetPasswordPage";
-
-import RequireAuth    from "../auth/RequireAuth";
+import RequireAuth from "../auth/RequireAuth";
 import RequireCompany from "../auth/RequireCompany";
-import AppShell       from "../layouts/AppShell";
+import AppShell from "../layouts/AppShell";
 
-import { routeConfig }            from "./routeConfig";
+import LoginPage from "../pages/LoginPage";
+import RegisterPage from "../pages/RegisterPage";
+import ForgotPasswordPage from "../pages/ForgotPasswordPage";
+import ResetPasswordPage from "../pages/ResetPasswordPage";
+
+import CompanyOnboardingModule from "../features/company/onboarding/CompanyOnboardingModule";
+import SystemAdminCompaniesPage from "../features/company/onboarding/SystemAdmin/pages/SystemAdminCompaniesPage";
+import PlatformTenantsPage from "../pages/platform/PlatformTenantsPage";
+
+import { routeConfig } from "./routeConfig";
 import { companyRoutes } from "./companyRoutes";
-import { useGrnRoutes }     from "./grnroutes";
-import { useSalesRoutes }         from "./sales-cogsroute";
+import { useGrnRoutes } from "./grnroutes";
+import { useSalesRoutes } from "./sales-cogsroute";
 import { getHrRoutes } from "./hrRoutes";
+import { getPostRoutes } from "./posRoutes";
 
-// Import AppRoute from the canonical definition so the type is consistent
-// everywhere — AppRoute uses Omit<RouteObject, "children"> which allows
-// index: true without conflicting with NonIndexRouteObject's index: false.
 import type { AppRoute } from "./sales-cogsroute";
 
-import { userManagementRoutes }   from "./userManagementRoutes";
-import { authRoutes }             from "./authRoutes";
-import { inventoryMasterRoutes }  from "./inventoryMasterRoutes";
+const COMPANY_ONBOARDING_PATH = "companies/onboarding";
 
 export default function AppRoutes() {
   const grnRoutes = useGrnRoutes();
-  const salesRoutes     = useSalesRoutes();
-  const hrRoute         = getHrRoutes();
+  const salesRoutes = useSalesRoutes();
+  const hrRoutes = getHrRoutes();
+  const posRoutes = getPostRoutes();
+
+  const protectedCompanyRoutes = companyRoutes.filter(
+    (route) =>
+      normalizeRoutePath(route.path ?? "") !== COMPANY_ONBOARDING_PATH
+  ) as AppRoute[];
 
   return (
     <Routes>
-      {/* ── Public ──────────────────────────────────────────────────────── */}
-      <Route path="/login"           element={<LoginPage />} />
-      <Route path="/register"        element={<RegisterPage />} />
+      {/* Public auth routes — must stay before protected wildcard */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password"  element={<ResetPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-      {/* ── Protected ───────────────────────────────────────────────────── */}
+      {/* Platform routes — authenticated, but not company-scoped */}
       <Route
+        path="/platform"
+        element={
+          <RequireAuth>
+            <AppShell />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<Navigate to="tenants" replace />} />
+        <Route path="tenants" element={<PlatformTenantsPage />} />
+      </Route>
+
+      {/* System-admin routes — authenticated, but not company-scoped */}
+      <Route
+        path="/system-admin"
+        element={
+          <RequireAuth>
+            <AppShell />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<Navigate to="companies" replace />} />
+        <Route path="companies" element={<SystemAdminCompaniesPage />} />
+      </Route>
+
+      {/* Company onboarding — authenticated, but company may not exist yet */}
+      <Route
+        path="/companies/onboarding"
+        element={
+          <RequireAuth>
+            <AppShell />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<CompanyOnboardingModule />} />
+      </Route>
+
+      {/* Main ERP workspace — authenticated and company-scoped */}
+      <Route
+        path="/*"
         element={
           <RequireAuth>
             <RequireCompany>
@@ -48,45 +95,81 @@ export default function AppRoutes() {
           </RequireAuth>
         }
       >
-        {renderRoutes(routeConfig           as AppRoute[])}
-        {renderRoutes(companyRoutes         as AppRoute[])}
-        {renderRoutes(grnRoutes)}
-        {renderRoutes(salesRoutes)}
-        {renderRoutes(authRoutes            as AppRoute[])}
-        {renderRoutes(inventoryMasterRoutes as AppRoute[])}
-        {renderRoutes(userManagementRoutes  as AppRoute[])}
-        {renderRoutes(hrRoute)}
-      </Route>
+        {renderRoutes(routeConfig as AppRoute[], "routeConfig")}
+        {renderRoutes(protectedCompanyRoutes, "companyRoutes")}
+        {renderRoutes(grnRoutes, "grnRoutes")}
+        {renderRoutes(salesRoutes, "salesRoutes")}
+        {renderRoutes(hrRoutes as AppRoute[], "hrRoutes")}
+        {renderRoutes(posRoutes as AppRoute[], "posRoutes")}
 
-      {/* ── Fallback ────────────────────────────────────────────────────── */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="*" element={<Navigate to="dashboard" replace />} />
+      </Route>
     </Routes>
   );
 }
 
-// ── renderRoutes ──────────────────────────────────────────────────────────────
-// Accepts AppRoute[] (not RouteObject[]) so index: true is valid.
-// RouteObject's discriminated union types index as false | undefined on
-// NonIndexRouteObject, which conflicts with AppRoute's index?: boolean.
+function renderRoutes(
+  routes: AppRoute[],
+  namespace: string,
+  parentPath = "",
+  depth = 0
+): ReactNode {
+  return routes.map((route, index) => {
+    const routeKey = buildRouteKey(
+      route,
+      namespace,
+      parentPath,
+      depth,
+      index
+    );
 
-function renderRoutes(routes: AppRoute[]): ReactNode {
-  return routes.map((r, i) => {
-    const key = r.path ?? `route-${i}`;
-
-    if (r.index === true) {
-      return <Route key={key} index element={r.element as ReactNode} />;
+    if (route.index === true) {
+      return (
+        <Route
+          key={routeKey}
+          index
+          element={route.element as ReactNode}
+        />
+      );
     }
 
-    const path = r.path ? stripLeadingSlash(r.path) : undefined;
+    if (!route.path) return null;
+
+    const path = normalizeRoutePath(route.path);
 
     return (
-      <Route key={key} path={path} element={r.element as ReactNode}>
-        {Array.isArray(r.children) ? renderRoutes(r.children) : null}
+      <Route
+        key={routeKey}
+        path={path}
+        element={route.element as ReactNode}
+      >
+        {Array.isArray(route.children)
+          ? renderRoutes(route.children, namespace, path, depth + 1)
+          : null}
       </Route>
     );
   });
 }
 
-function stripLeadingSlash(path: string): string {
-  return path.startsWith("/") ? path.slice(1) : path;
+function normalizeRoutePath(path: string): string {
+  return path.replace(/^\/+/, "");
+}
+
+function buildRouteKey(
+  route: AppRoute,
+  namespace: string,
+  parentPath: string,
+  depth: number,
+  index: number
+): string {
+  const segment = route.path ?? (route.index ? "index" : "slot");
+
+  return [
+    namespace,
+    parentPath || "root",
+    segment,
+    `d${depth}`,
+    `i${index}`,
+  ].join("__");
 }

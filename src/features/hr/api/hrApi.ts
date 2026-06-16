@@ -34,6 +34,49 @@ import type {
   PositionDto,
 } from '../types/index';
 
+// ── Shared API Types ──────────────────────────────────────────────────────────
+
+export interface BranchDto {
+  id: string;
+  companyId?: string;
+  name: string;
+  code?: string | null;
+  isActive?: boolean | null;
+}
+
+export interface LookupOptionDto {
+  id: string;
+  name: string;
+  code?: string | null;
+}
+
+export interface EmployeeManagerLookupDto {
+  id: string;
+  name: string;
+  employeeNo?: string | null;
+  branchId?: string | null;
+  branchName?: string | null;
+  departmentId?: string | null;
+  departmentName?: string | null;
+}
+
+export interface EmployeeRegistrationLookupsDto {
+  employees: LookupOptionDto[];
+  branches: LookupOptionDto[];
+  departments: LookupOptionDto[];
+  positions: LookupOptionDto[];
+  managers: EmployeeManagerLookupDto[];
+  statuses: string[];
+}
+
+type PagedResponse<T> = {
+  items?: T[];
+  data?: T[];
+  value?: T[];
+  results?: T[];
+  records?: T[];
+};
+
 const base = (companyId: string): string => `/companies/${companyId}/hr`;
 
 const cleanParams = <T extends Record<string, unknown>>(params?: T): T | undefined => {
@@ -44,6 +87,45 @@ const cleanParams = <T extends Record<string, unknown>>(params?: T): T | undefin
   ) as T;
 
   return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+};
+
+const toArray = <T>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+
+  if (value && typeof value === 'object') {
+    const candidate = value as PagedResponse<T>;
+    if (Array.isArray(candidate.items)) return candidate.items;
+    if (Array.isArray(candidate.data)) return candidate.data;
+    if (Array.isArray(candidate.value)) return candidate.value;
+    if (Array.isArray(candidate.results)) return candidate.results;
+    if (Array.isArray(candidate.records)) return candidate.records;
+  }
+
+  return [];
+};
+
+const normalizeLookups = (value: unknown): EmployeeRegistrationLookupsDto => {
+  if (!value || typeof value !== 'object') {
+    return {
+      employees: [],
+      branches: [],
+      departments: [],
+      positions: [],
+      managers: [],
+      statuses: [],
+    };
+  }
+
+  const dto = value as Partial<EmployeeRegistrationLookupsDto>;
+
+  return {
+    employees: toArray<LookupOptionDto>(dto.employees),
+    branches: toArray<LookupOptionDto>(dto.branches),
+    departments: toArray<LookupOptionDto>(dto.departments),
+    positions: toArray<LookupOptionDto>(dto.positions),
+    managers: toArray<EmployeeManagerLookupDto>(dto.managers),
+    statuses: toArray<string>(dto.statuses),
+  };
 };
 
 // ── Employees ─────────────────────────────────────────────────────────────────
@@ -61,20 +143,40 @@ export const employeeApi = {
     }
   ): Promise<EmployeeListDto[]> =>
     http
-      .get<EmployeeListDto[]>(`${base(companyId)}/employees`, {
+      .get<unknown>(`${base(companyId)}/employees`, {
         params: cleanParams(params),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<EmployeeListDto>(r.data)),
 
   get: (companyId: string, id: string): Promise<EmployeeDetailDto> =>
     http.get<EmployeeDetailDto>(`${base(companyId)}/employees/${id}`).then((r) => r.data),
 
   orgChart: (companyId: string, rootId?: string): Promise<OrgChartNodeDto[]> =>
     http
-      .get<OrgChartNodeDto[]>(`${base(companyId)}/employees/org-chart`, {
+      .get<unknown>(`${base(companyId)}/employees/org-chart`, {
         params: cleanParams({ rootId }),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<OrgChartNodeDto>(r.data)),
+
+  registrationLookups: (
+    companyId: string,
+    params?: { branchId?: string; includeManagers?: boolean }
+  ): Promise<EmployeeRegistrationLookupsDto> =>
+    http
+      .get<unknown>(`${base(companyId)}/employees/registration-lookups`, {
+        params: cleanParams(params),
+      })
+      .then((r) => normalizeLookups(r.data)),
+
+  availableForUser: (
+    companyId: string,
+    params?: { branchId?: string; q?: string; page?: number; pageSize?: number; includeManagers?: boolean }
+  ): Promise<EmployeeRegistrationLookupsDto> =>
+    http
+      .get<unknown>(`${base(companyId)}/employees/available-for-user`, {
+        params: cleanParams(params),
+      })
+      .then((r) => normalizeLookups(r.data)),
 
   create: (companyId: string, body: Record<string, unknown>) =>
     http.post(`${base(companyId)}/employees`, body).then((r) => r.data),
@@ -106,10 +208,10 @@ export const employeeApi = {
 export const payrollApi = {
   listRuns: (companyId: string, year: number, status?: PayrollRunStatus): Promise<PayrollRunDto[]> =>
     http
-      .get<PayrollRunDto[]>(`${base(companyId)}/payroll/runs`, {
+      .get<unknown>(`${base(companyId)}/payroll/runs`, {
         params: cleanParams({ year, status }),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<PayrollRunDto>(r.data)),
 
   createRun: (companyId: string, body: Record<string, unknown>) =>
     http.post(`${base(companyId)}/payroll/runs`, body).then((r) => r.data),
@@ -132,10 +234,10 @@ export const payrollApi = {
     year?: number
   ): Promise<PaySlipSummaryDto[]> =>
     http
-      .get<PaySlipSummaryDto[]>(`${base(companyId)}/payroll/employees/${employeeId}/payslips`, {
+      .get<unknown>(`${base(companyId)}/payroll/employees/${employeeId}/payslips`, {
         params: cleanParams({ year }),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<PaySlipSummaryDto>(r.data)),
 };
 
 // ── Leave ─────────────────────────────────────────────────────────────────────
@@ -150,10 +252,10 @@ export const leaveApi = {
     }
   ): Promise<LeaveRequestDto[]> =>
     http
-      .get<LeaveRequestDto[]>(`${base(companyId)}/leave/requests`, {
+      .get<unknown>(`${base(companyId)}/leave/requests`, {
         params: cleanParams(params),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<LeaveRequestDto>(r.data)),
 
   submit: (companyId: string, body: Record<string, unknown>) =>
     http.post(`${base(companyId)}/leave/requests`, body).then((r) => r.data),
@@ -171,10 +273,10 @@ export const leaveApi = {
 
   getBalances: (companyId: string, employeeId: string, year: number): Promise<LeaveBalanceDto[]> =>
     http
-      .get<LeaveBalanceDto[]>(`${base(companyId)}/leave/balances/${employeeId}`, {
+      .get<unknown>(`${base(companyId)}/leave/balances/${employeeId}`, {
         params: { year },
       })
-      .then((r) => r.data),
+      .then((r) => toArray<LeaveBalanceDto>(r.data)),
 
   teamCalendar: (
     companyId: string,
@@ -183,10 +285,10 @@ export const leaveApi = {
     to: string
   ): Promise<LeaveCalendarEntryDto[]> =>
     http
-      .get<LeaveCalendarEntryDto[]>(`${base(companyId)}/leave/team-calendar`, {
+      .get<unknown>(`${base(companyId)}/leave/team-calendar`, {
         params: { managerId, from, to },
       })
-      .then((r) => r.data),
+      .then((r) => toArray<LeaveCalendarEntryDto>(r.data)),
 };
 
 // ── Attendance ────────────────────────────────────────────────────────────────
@@ -223,10 +325,10 @@ export const attendanceApi = {
     to: string
   ): Promise<AttendanceRecordDto[]> =>
     http
-      .get<AttendanceRecordDto[]>(`${base(companyId)}/attendance/employees/${employeeId}`, {
+      .get<unknown>(`${base(companyId)}/attendance/employees/${employeeId}`, {
         params: { from, to },
       })
-      .then((r) => r.data),
+      .then((r) => toArray<AttendanceRecordDto>(r.data)),
 
   approveOvertime: (companyId: string, id: string, approverId: string, note?: string) =>
     http
@@ -245,10 +347,10 @@ export const recruitmentApi = {
     }
   ): Promise<JobPostingDto[]> =>
     http
-      .get<JobPostingDto[]>(`${base(companyId)}/recruitment/postings`, {
+      .get<unknown>(`${base(companyId)}/recruitment/postings`, {
         params: cleanParams(params),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<JobPostingDto>(r.data)),
 
   createPosting: (companyId: string, body: Record<string, unknown>) =>
     http.post(`${base(companyId)}/recruitment/postings`, body).then((r) => r.data),
@@ -259,10 +361,10 @@ export const recruitmentApi = {
     status?: ApplicationStatus
   ): Promise<JobApplicationDto[]> =>
     http
-      .get<JobApplicationDto[]>(`${base(companyId)}/recruitment/postings/${postingId}/applications`, {
+      .get<unknown>(`${base(companyId)}/recruitment/postings/${postingId}/applications`, {
         params: cleanParams({ status }),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<JobApplicationDto>(r.data)),
 
   apply: (companyId: string, body: Record<string, unknown>) =>
     http.post(`${base(companyId)}/recruitment/applications`, body).then((r) => r.data),
@@ -284,10 +386,10 @@ export const recruitmentApi = {
 export const performanceApi = {
   listCycles: (companyId: string, status?: CycleStatus): Promise<PerformanceCycleDto[]> =>
     http
-      .get<PerformanceCycleDto[]>(`${base(companyId)}/performance/cycles`, {
+      .get<unknown>(`${base(companyId)}/performance/cycles`, {
         params: cleanParams({ status }),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<PerformanceCycleDto>(r.data)),
 
   createCycle: (companyId: string, body: Record<string, unknown>) =>
     http.post(`${base(companyId)}/performance/cycles`, body).then((r) => r.data),
@@ -318,10 +420,10 @@ export const trainingApi = {
     }
   ): Promise<TrainingProgramDto[]> =>
     http
-      .get<TrainingProgramDto[]>(`${base(companyId)}/training/programs`, {
+      .get<unknown>(`${base(companyId)}/training/programs`, {
         params: cleanParams(params),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<TrainingProgramDto>(r.data)),
 
   createProgram: (companyId: string, body: Record<string, unknown>) =>
     http.post(`${base(companyId)}/training/programs`, body).then((r) => r.data),
@@ -341,10 +443,10 @@ export const trainingApi = {
     status?: EnrollmentStatus
   ): Promise<MyTrainingDto[]> =>
     http
-      .get<MyTrainingDto[]>(`${base(companyId)}/training/employees/${employeeId}/my-trainings`, {
+      .get<unknown>(`${base(companyId)}/training/employees/${employeeId}/my-trainings`, {
         params: cleanParams({ status }),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<MyTrainingDto>(r.data)),
 
   getComplianceReport: (
     companyId: string,
@@ -354,10 +456,48 @@ export const trainingApi = {
     }
   ): Promise<TrainingComplianceDto[]> =>
     http
-      .get<TrainingComplianceDto[]>(`${base(companyId)}/training/compliance-report`, {
+      .get<unknown>(`${base(companyId)}/training/compliance-report`, {
         params: cleanParams(params),
       })
-      .then((r) => r.data),
+      .then((r) => toArray<TrainingComplianceDto>(r.data)),
+};
+
+// ── Branches ─────────────────────────────────────────────────────────────────
+
+export const branchApi = {
+  list: (
+    companyId: string,
+    params?: { activeOnly?: boolean; search?: string }
+  ): Promise<BranchDto[]> =>
+    http
+      .get<unknown>(`/companies/${companyId}/branches`, {
+        params: cleanParams(params),
+      })
+      .then((r) => toArray<BranchDto>(r.data)),
+};
+
+// ── Organization Structure ───────────────────────────────────────────────────
+
+export const orgStructureApi = {
+  listDepartments: (
+    companyId: string,
+    params?: { branchId?: string; activeOnly?: boolean }
+  ): Promise<DepartmentDto[]> =>
+    http
+      .get<unknown>(`${base(companyId)}/departments`, {
+        params: cleanParams(params),
+      })
+      .then((r) => toArray<DepartmentDto>(r.data)),
+
+  listPositions: (
+    companyId: string,
+    params?: { departmentId?: string; branchId?: string; activeOnly?: boolean }
+  ): Promise<PositionDto[]> =>
+    http
+      .get<unknown>(`${base(companyId)}/positions`, {
+        params: cleanParams(params),
+      })
+      .then((r) => toArray<PositionDto>(r.data)),
 };
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -369,30 +509,4 @@ export const hrDashboardApi = {
         params: cleanParams({ branchId }),
       })
       .then((r) => r.data),
-};
-// ── Append these to src/features/hr/api/hrApi.ts ─────────────────────────────
-
-
-
-
-export const orgStructureApi = {
-  listDepartments: (
-    companyId: string,
-    params?: { branchId?: string; activeOnly?: boolean }
-  ): Promise<DepartmentDto[]> =>
-    http
-      .get<DepartmentDto[]>(`${base(companyId)}/departments`, {
-        params: cleanParams(params),
-      })
-      .then(r => r.data),
-
-  listPositions: (
-    companyId: string,
-    params?: { departmentId?: string; activeOnly?: boolean }
-  ): Promise<PositionDto[]> =>
-    http
-      .get<PositionDto[]>(`${base(companyId)}/positions`, {
-        params: cleanParams(params),
-      })
-      .then(r => r.data),
 };

@@ -222,3 +222,66 @@ export type RecipeDto = {
   isActive: boolean;
   lines: any[];
 };
+export type MenuItemType = number;
+
+export interface MenuCategoryDto {
+  id: string;
+  name: string;
+  code?: string | null;
+  isActive?: boolean;
+  defaultConsumptionLocationId?: string | null;
+  defaultConsumptionLocationName?: string | null;
+}
+
+export interface StockLocationDto {
+  id: string;
+  name: string;
+  code?: string | null;
+  isActive?: boolean;
+}
+
+export interface MenuItemDto {
+  id: string;
+  companyId: string;
+  branchId: string;
+  name: string;
+  code: string;
+  externalCode?: string | null;
+  categoryId: string;
+  categoryName: string;
+  subCategoryId?: string | null;
+  subCategoryName?: string | null;
+  itemType: MenuItemType;
+  cost: number;
+  sellingPrice: number;
+  isActive: boolean;
+  isAvailableForSale: boolean;
+  consumptionLocationId?: string | null;
+  consumptionLocationName?: string | null;
+  categoryConsumptionLocationId?: string | null;
+  categoryConsumptionLocationName?: string | null;
+  outputItemId?: string | null;
+  outputItemName?: string | null;
+  outputUomId?: string | null;
+  outputUomName?: string | null;
+  hasRecipe: boolean;
+  hasConsumptionLocation: boolean;
+  unitsSold: number;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface UpsertMenuItemRequest {
+  name: string;
+  code?: string | null;
+  externalCode?: string | null;
+  categoryId: string;
+  subCategoryId?: string | null;
+  itemType: MenuItemType;
+  sellingPrice: number;
+  isActive: boolean;
+  isAvailableForSale: boolean;
+  consumptionLocationId?: string | null;
+  outputItemId?: string | null;
+  outputUomId?: string | null;
+}

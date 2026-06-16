@@ -42,5 +42,6 @@ export function createInitialOnboardingState(
     saving:         false,
     error:          null,
     notice:         null,
+    readiness: {},
   };
 }

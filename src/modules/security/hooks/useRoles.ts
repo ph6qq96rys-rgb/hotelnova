@@ -2,33 +2,60 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { securityApi } from "../api/securityApi";
-import { isCancelled, extractSecurityError } from "../utils/security.utils";
-import { useAbortable } from "./useAbortable";
+import { extractSecurityError, isCancelled } from "../utils/security.utils";
 import type { RoleDto } from "../types/security.types";
 
-export function useRoles(companyId: string | null) {
-  const [roles,   setRoles]   = useState<RoleDto[]>([]);
+export function useRoles(companyId?: string | null) {
+  const [roles, setRoles] = useState<RoleDto[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
-  const { begin, abort } = useAbortable();
+  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!companyId) { setRoles([]); setError(null); return; }
-    const signal = begin();
-    setLoading(true); setError(null);
-    try {
-      const res = await securityApi.listRoles(companyId, signal);
-      setRoles(Array.isArray(res.data) ? res.data : []);
-    } catch (e) {
-      if (isCancelled(e)) return;
-      setRoles([]);
-      setError(extractSecurityError(e, "Failed to load roles."));
-    } finally { setLoading(false); }
-  }, [companyId, begin]);
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!companyId) {
+        setRoles([]);
+        setError(null);
+        return;
+      }
 
-  useEffect(() => { void load(); return abort; }, [load, abort]);
+      setLoading(true);
+      setError(null);
 
-  const byId = useMemo(() => new Map(roles.map((r) => [r.id, r])), [roles]);
+      try {
+        const result = await securityApi.listRoles(companyId, signal);
+        setRoles(Array.isArray(result) ? result : []);
+      } catch (e) {
+        if (isCancelled(e)) return;
 
-  return { roles, byId, loading, error, refresh: load };
+        setRoles([]);
+        setError(extractSecurityError(e, "Failed to load roles."));
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [companyId]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void load(controller.signal);
+
+    return () => controller.abort();
+  }, [load]);
+
+  const byId = useMemo(
+    () => new Map(roles.map((role) => [role.id, role])),
+    [roles]
+  );
+
+  return {
+    roles,
+    byId,
+    loading,
+    error,
+    refresh: () => load(),
+  };
 }

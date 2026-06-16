@@ -1,619 +1,1064 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
-
-import { grnApi } from "../api/grnApi";
+import { grnApi, type GrnScope } from "../api/grnApi";
 import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
 import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryItemsApi";
-
 import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
-import type { SelectOption, GrnDetailDto, CreateGrnDraftRequest } from "../types/grn.types";
-import { SelectDropdown } from "../../../../components/controls/SelectDropdown";
+import type { CreateGrnDraftRequest, GrnDetailDto } from "../types/grn.types";
 import {
-  cardStyle, labelStyle, inputStyle, errorStyle,
-  tableStyle, thStyle, tdStyle,
-  primaryBtn, secondaryBtn, dangerBtn,
-  stickyBar, totRow,
-} from "../../../../shared/inventoryStyles";
+  PageHeader,
+  SectionHead,
+  InlineAlert,
+  cardStyle,
+  dangerBtn,
+  errorInline,
+  inputStyle,
+  labelStyle,
+  pageWrap,
+  primaryBtn,
+  secondaryBtn,
+  stickyBar,
+  tableStyle,
+  tableWrap,
+  tdStyle,
+  thStyle,
+  tokens,
+} from "../components/grn.ui";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const todayDateOnly = () => new Date().toISOString().slice(0, 10);
-
-function dateOnlyToUtcIso(dateOnly: string) {
-  const [y, m, d] = dateOnly.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toISOString();
-}
-
-function utcIsoToDateOnly(iso: string | null | undefined) {
-  return (iso ?? "").toString().slice(0, 10) || todayDateOnly();
-}
-
-function toNullable(s: string | null | undefined): string | null {
-  const t = (s ?? "").trim();
-  return t || null;
-}
-
-function money(n: number) {
-  if (!Number.isFinite(n)) return "0.00";
-  return n.toFixed(2);
-}
-
-const clean = (s?: string | null) => (s ?? "").trim();
-
-const shortId = (id?: string | null, n = 8) => {
-  const s = clean(id);
-  return s.length <= n ? s : s.slice(-n);
-};
-
-const labelWithShortId = (main: string, id?: string | null) => {
-  const sid = shortId(id, 8);
-  return sid ? `${main}  ·  #${sid}` : main;
-};
-
-function unwrapArray<T>(res: unknown): T[] {
-  const r = res as any;
-  const raw = r?.data ?? r?.items ?? r?.result ?? r;
-  return Array.isArray(raw) ? (raw as T[]) : [];
-}
-
-// ── View Models ───────────────────────────────────────────────────────────────
-
-type ItemUomVm = { uomId: string; uomName: string; isDefaultPurchase?: boolean };
-
-type ItemVm = {
-  id: string;
-  code?: string;
-  name: string;
+type Option = {
+  value: string;
   label: string;
-  baseUomId: string;
-  baseUomName?: string;
-  uoms: ItemUomVm[];
-  defaultUomId: string;
 };
 
-function toItemVm(dto: InventoryItemDto): ItemVm {
-  const d = dto as any;
-
-  const id          = clean(d.id);
-  const name        = clean(d.name);
-  const code        = clean(d.code) || clean(d.sku) || undefined;
-  const baseUomId   = clean(d.baseUomId);
-  const baseUomName =
-    clean(d.baseUomCode) || clean(d.baseUomName) ||
-    clean(d.baseUom?.code) || clean(d.baseUom?.name) || undefined;
-
-  const uomsRaw: any[] = Array.isArray(d.uoms) ? d.uoms
-    : Array.isArray(d.itemUoms) ? d.itemUoms : [];
-
-  const uoms: ItemUomVm[] = uomsRaw
-    .map((u: any) => ({
-      uomId: clean(u.uomId ?? u.id),
-      uomName: clean(u.uomName ?? u.name ?? u.code ?? "UOM"),
-      isDefaultPurchase: !!(u.isDefaultPurchase || u.isBase),
-    }))
-    .filter((x) => !!x.uomId);
-
-  if (!uoms.length && baseUomId)
-    uoms.push({ uomId: baseUomId, uomName: baseUomName ?? "Base UOM", isDefaultPurchase: true });
-
-  const defaultUomId =
-    uoms.find((x) => x.isDefaultPurchase)?.uomId ?? baseUomId ?? uoms[0]?.uomId ?? "";
-
-  const friendlyMain = code ? `${code} — ${name}` : name;
-  const label        = labelWithShortId(friendlyMain, id);
-
-  return { id, code, name, label, baseUomId, baseUomName, uoms, defaultUomId };
-}
-
-// ── Form Types ────────────────────────────────────────────────────────────────
-
-export type GrnLineDraft = {
+type GrnLineForm = {
   itemId: string;
   uomId: string;
-  quantity: number;
-  unitCost: number;
-  expiryDate: string | null;
+  quantity: string;
+  unitCost: string;
+  batchNo: string;
+  expiryDate: string;
   notes: string;
 };
 
-export type GrnDraft = {
+type GrnForm = {
   id?: string;
-  locationId: string;
+  receivingLocationId: string;
   receivedDate: string;
   supplierName: string;
   notes: string;
-  lines: GrnLineDraft[];
+  lines: GrnLineForm[];
 };
 
-type FieldErrors = {
-  locationId?: string;
-  receivedDate?: string;
-  lines?: string;
-  lineErrors?: Record<number, Partial<Record<keyof GrnLineDraft, string>>>;
+type ItemVm = {
+  id: string;
+  label: string;
+  uoms: Option[];
+  defaultUomId: string;
 };
 
-const makeEmptyLine = (): GrnLineDraft => ({
-  itemId: "", uomId: "", quantity: 1, unitCost: 0, expiryDate: null, notes: "",
-});
+type UomCatalog = Map<string, { code: string; name: string }>;
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+type LineErrors = Partial<Record<keyof GrnLineForm, string>>;
+
+type FormErrors = Partial<
+  Record<"receivingLocationId" | "receivedDate" | "lines", string>
+> & {
+  lineErrors?: Record<number, LineErrors>;
+};
+
+const formGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
+  gap: 14,
+};
+
+const textareaStyle: React.CSSProperties = {
+  ...inputStyle(false),
+  minHeight: 72,
+  resize: "vertical",
+};
+
+function clean(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function nullable(value: string): string | null {
+  const cleaned = clean(value);
+  return cleaned.length ? cleaned : null;
+}
+
+function emptyLine(): GrnLineForm {
+  return {
+    itemId: "",
+    uomId: "",
+    quantity: "1",
+    unitCost: "0",
+    batchNo: "",
+    expiryDate: "",
+    notes: "",
+  };
+}
+
+function parseDecimal(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function isPositive(value: unknown): boolean {
+  const parsed = parseDecimal(value);
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function isNonNegative(value: unknown): boolean {
+  const parsed = parseDecimal(value);
+  return Number.isFinite(parsed) && parsed >= 0;
+}
+
+function money(value: unknown): string {
+  const parsed = parseDecimal(value);
+  const safe = Number.isFinite(parsed) ? parsed : 0;
+
+  return safe.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function dateOnly(value: unknown): string {
+  const raw = clean(value);
+  return raw ? raw.slice(0, 10) : today();
+}
+
+function dateToIso(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    throw new Error("Invalid date.");
+  }
+
+  return new Date(Date.UTC(year, month - 1, day)).toISOString();
+}
+
+function unwrapArray<T>(value: unknown): T[] {
+  const envelope = value as {
+    data?: unknown;
+    items?: unknown;
+    result?: unknown;
+  };
+
+  const raw = envelope?.data ?? envelope?.items ?? envelope?.result ?? value;
+  return Array.isArray(raw) ? (raw as T[]) : [];
+}
+
+function isActive(row: Record<string, unknown>): boolean {
+  return row.isActive === true || row.isActive === undefined || row.isActive === null;
+}
+
+function isReceivingLocation(row: Record<string, unknown>): boolean {
+  const type = clean(row.locationType ?? row.type ?? row.stockLocationType).toLowerCase();
+
+  if (!type) return true;
+
+  return [
+    "warehouse",
+    "mainwarehouse",
+    "main warehouse",
+    "storage",
+    "store",
+    "receiving",
+    "receivinglocation",
+    "receiving location",
+  ].includes(type);
+}
+
+function locationLabel(row: Record<string, unknown>): string {
+  const name = clean(row.name) || "Location";
+  const code = clean(row.code);
+  const type = clean(row.locationType ?? row.type ?? row.stockLocationType);
+
+  return [name, code ? `(${code})` : "", type ? `— ${type}` : ""]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function uomLabel(uomId: string, catalog: UomCatalog): string {
+  const uom = catalog.get(uomId);
+  if (!uom) return uomId;
+
+  return uom.code ? `${uom.code} — ${uom.name}` : uom.name;
+}
+
+function uniqueOptions(options: Option[]): Option[] {
+  const seen = new Set<string>();
+
+  return options.filter((option) => {
+    if (!option.value || seen.has(option.value)) return false;
+    seen.add(option.value);
+    return true;
+  });
+}
+
+function itemToVm(dto: InventoryItemDto, catalog: UomCatalog): ItemVm {
+  const allowed = dto.allowedUoms ?? [];
+
+  let uoms = uniqueOptions(
+    allowed
+      .filter((u) => Boolean(u.uomId))
+      .map((u) => ({
+        value: u.uomId,
+        label: uomLabel(u.uomId, catalog),
+      })),
+  );
+
+  if (!uoms.length) {
+    uoms = uniqueOptions(
+      [
+        dto.baseUomId
+          ? {
+              value: dto.baseUomId,
+              label: uomLabel(dto.baseUomId, catalog),
+            }
+          : null,
+        dto.issueUomId && dto.issueUomId !== dto.baseUomId
+          ? {
+              value: dto.issueUomId,
+              label: uomLabel(dto.issueUomId, catalog),
+            }
+          : null,
+      ].filter(Boolean) as Option[],
+    );
+  }
+
+  const purchaseUom = allowed.find((u) => u.isPurchase);
+  const baseUom = dto.baseUomId
+    ? allowed.find((u) => u.uomId === dto.baseUomId)
+    : undefined;
+  const issueUom = allowed.find((u) => u.isIssue);
+
+  const defaultUomId =
+    purchaseUom?.uomId ??
+    baseUom?.uomId ??
+    dto.baseUomId ??
+    issueUom?.uomId ??
+    uoms[0]?.value ??
+    "";
+
+  return {
+    id: dto.id,
+    label: dto.sku ? `${dto.sku} — ${dto.name}` : dto.name || dto.id,
+    uoms,
+    defaultUomId,
+  };
+}
+
+function extractError(error: unknown, fallback = "An unexpected error occurred."): string {
+  const e = error as {
+    response?: {
+      data?: {
+        detail?: string;
+        title?: string;
+        message?: string;
+        error?: string;
+        errors?: Record<string, string[]>;
+      };
+    };
+    message?: string;
+  };
+
+  const validationErrors = e?.response?.data?.errors;
+
+  if (validationErrors) {
+    const first = Object.values(validationErrors).flat().find(Boolean);
+    if (first) return first;
+  }
+
+  return (
+    e?.response?.data?.detail ??
+    e?.response?.data?.title ??
+    e?.response?.data?.message ??
+    e?.response?.data?.error ??
+    e?.message ??
+    fallback
+  );
+}
+
+function grnBasePath(companyId: string, branchId?: string | null): string {
+  const company = encodeURIComponent(companyId);
+
+  if (branchId) {
+    return `/companies/${company}/branches/${encodeURIComponent(branchId)}/grns`;
+  }
+
+  return `/companies/${company}/grns`;
+}
+
+function Select({
+  value,
+  options,
+  onChange,
+  placeholder,
+  disabled,
+  hasError,
+}: {
+  value: string;
+  options: Option[];
+  onChange: (value: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+  hasError?: boolean;
+}) {
+  return (
+    <select
+      style={inputStyle(hasError)}
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">{placeholder}</option>
+
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export default function GrnDraftEditorPage() {
-  const nav = useNavigate();
-  const { companyId, branchId } = useAppScope();
+  const navigate = useNavigate();
   const { draftId } = useParams<{ draftId?: string }>();
-  const isEdit = !!draftId;
+  const { companyId, branchId } = useAppScope();
 
-  // ── Form state ─────────────────────────────────────────────────────────────
+  const itemDetailCache = useRef<Map<string, InventoryItemDto>>(new Map());
 
-  const [form, setForm] = useState<GrnDraft>({
-    locationId: "", receivedDate: todayDateOnly(), supplierName: "", notes: "", lines: [],
+  const grnScope = useMemo<GrnScope | null>(
+    () =>
+      companyId
+        ? {
+            companyId,
+            branchId,
+          }
+        : null,
+    [companyId, branchId],
+  );
+
+  const basePath = useMemo(
+    () => (companyId ? grnBasePath(companyId, branchId) : "/"),
+    [companyId, branchId],
+  );
+
+  const [form, setForm] = useState<GrnForm>({
+    receivingLocationId: "",
+    receivedDate: today(),
+    supplierName: "",
+    notes: "",
+    lines: [emptyLine()],
   });
 
-  const setHeader = (patch: Partial<GrnDraft>) => setForm((f) => ({ ...f, ...patch }));
-
-  const addLine = () => setForm((f) => ({ ...f, lines: [...f.lines, makeEmptyLine()] }));
-
-  const updateLine = (idx: number, patch: Partial<GrnLineDraft>) =>
-    setForm((f) => ({
-      ...f,
-      lines: f.lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)),
-    }));
-
-  const removeLine = (idx: number) => {
-    setForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== idx) }));
-    setErrors((prev) => {
-      if (!prev.lineErrors) return prev;
-      const remapped: FieldErrors["lineErrors"] = {};
-      for (const [k, v] of Object.entries(prev.lineErrors)) {
-        const i = Number(k);
-        if (i < idx) remapped[i] = v;
-        else if (i > idx) remapped[i - 1] = v;
-      }
-      return { ...prev, lineErrors: remapped };
-    });
-  };
-
-  // ── Warehouses ─────────────────────────────────────────────────────────────
-
-  const [warehouseOptions, setWarehouseOptions] = useState<SelectOption<string>[]>([]);
-  const [warehousesLoading, setWarehousesLoading] = useState(false);
-
-  useEffect(() => {
-    if (!companyId || !branchId) { setWarehouseOptions([]); return; }
-    setWarehousesLoading(true);
-    stockLocationsApi
-      .list(companyId, branchId)
-      .then((res: any) =>
-        setWarehouseOptions(
-          unwrapArray<any>(res).map((x) => ({ value: String(x.id), label: clean(x.name) || "Warehouse" }))
-        )
-      )
-      .catch(() => setWarehouseOptions([]))
-      .finally(() => setWarehousesLoading(false));
-  }, [companyId, branchId]);
-
-  // ── Items ──────────────────────────────────────────────────────────────────
-
+  const [locations, setLocations] = useState<Option[]>([]);
   const [items, setItems] = useState<ItemVm[]>([]);
-  const [itemsLoading, setItemsLoading] = useState(false);
+  const [uomCatalog, setUomCatalog] = useState<UomCatalog>(new Map());
+
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [loadingDraft, setLoadingDraft] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [posting, setPosting] = useState(false);
+
+  const busy = saving || posting;
 
   useEffect(() => {
-    if (!companyId) { setItems([]); return; }
+    if (!companyId) {
+      setLocations([]);
+      return;
+    }
+
     let alive = true;
-    setItemsLoading(true);
-    inventoryItemsApi
+
+    setLoadingLocations(true);
+
+    stockLocationsApi
       .list(companyId)
-      .then((res: any) => {
+      .then((response) => {
         if (!alive) return;
-        setItems(unwrapArray<InventoryItemDto>(res).map(toItemVm));
+
+        const options = unwrapArray<Record<string, unknown>>(response)
+          .filter((row) => isActive(row) && isReceivingLocation(row))
+          .map((row) => ({
+            value: clean(row.id),
+            label: locationLabel(row),
+          }))
+          .filter((x) => Boolean(x.value));
+
+        setLocations(options);
       })
-      .catch(() => { if (alive) setItems([]); })
-      .finally(() => { if (alive) setItemsLoading(false); });
-    return () => { alive = false; };
+      .catch((error: unknown) => {
+        if (!alive) return;
+        setLocations([]);
+        setSubmitError(extractError(error, "Failed to load receiving locations."));
+      })
+      .finally(() => {
+        if (alive) setLoadingLocations(false);
+      });
+
+    return () => {
+      alive = false;
+    };
   }, [companyId]);
 
-  const itemById      = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
-  const itemOptions   = useMemo<SelectOption<string>[]>(
-    () => items.map((it) => ({ value: it.id, label: it.label })),
-    [items]
-  );
+  useEffect(() => {
+    if (!companyId) {
+      setItems([]);
+      setUomCatalog(new Map());
+      itemDetailCache.current.clear();
+      return;
+    }
 
-  // ── Load draft (edit mode) ─────────────────────────────────────────────────
+    let alive = true;
+
+    setLoadingItems(true);
+
+    Promise.all([
+      inventoryItemsApi.list(companyId),
+      inventoryItemsApi.getUoms(companyId),
+    ])
+      .then(([itemsResponse, uomsResponse]) => {
+        if (!alive) return;
+
+        const catalog = new Map(
+          (uomsResponse ?? []).map((u) => [
+            u.id,
+            {
+              code: u.code ?? u.symbol ?? "",
+              name: u.name,
+            },
+          ]),
+        );
+
+        setUomCatalog(catalog);
+
+        setItems(
+          unwrapArray<InventoryItemDto>(itemsResponse).map((dto) =>
+            itemToVm(dto, catalog),
+          ),
+        );
+      })
+      .catch((error: unknown) => {
+        if (!alive) return;
+        setItems([]);
+        setSubmitError(extractError(error, "Failed to load inventory items."));
+      })
+      .finally(() => {
+        if (alive) setLoadingItems(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [companyId]);
 
   useEffect(() => {
-    if (!companyId || !draftId) return;
+    if (!grnScope || !draftId) return;
+
     let alive = true;
+
+    setLoadingDraft(true);
+
     grnApi
-      .getById(companyId, draftId)
+      .getById(grnScope, draftId)
       .then((dto: GrnDetailDto) => {
         if (!alive) return;
-        const d = dto as any;
+
+        const d = dto as GrnDetailDto & {
+          warehouseId?: string | null;
+          locationId?: string | null;
+          receivedAt?: string | null;
+          receiptDate?: string | null;
+          receivedAtUtc?: string | null;
+          lines?: Array<Record<string, unknown>>;
+        };
+
+        const lines = Array.isArray(d.lines)
+          ? d.lines.map((line) => ({
+              itemId: clean(line.itemId),
+              uomId: clean(line.uomId),
+              quantity: String(line.quantity ?? 1),
+              unitCost: String(line.unitCost ?? 0),
+              batchNo: clean(line.batchNo),
+              expiryDate: clean(line.expiryDate ?? line.expiryDateUtc).slice(0, 10),
+              notes: clean(line.notes),
+            }))
+          : [];
+
         setForm({
-          id:           d.id,
-          locationId:   d.locationId ?? d.warehouseId ?? "",
-          receivedDate: utcIsoToDateOnly(d.receivedDateUtc ?? d.receivedAtUtc ?? d.receiptDate),
-          supplierName: d.supplierName ?? "",
-          notes:        d.notes ?? "",
-          lines: (d.lines ?? []).map((l: any) => ({
-            // FIX: was `l.itemId ?? l.itemId ?? ""` — duplicate operand.
-            // Second ?? now falls back to l.id for APIs that return id instead of itemId.
-            itemId:     l.itemId ?? l.id ?? "",
-            uomId:      l.uomId  ?? l.unitId ?? "",
-            quantity:   Number(l.quantity ?? 0),
-            unitCost:   Number(l.unitCost  ?? 0),
-            expiryDate: l.expiryDateUtc ? utcIsoToDateOnly(l.expiryDateUtc) : null,
-            notes:      l.notes ?? "",
-          })),
+          id: clean(d.id),
+          receivingLocationId: clean(
+            d.receivingLocationId ?? d.locationId ?? d.warehouseId,
+          ),
+          receivedDate: dateOnly(
+            d.receivedDate ?? d.receivedAt ?? d.receiptDate ?? d.receivedAtUtc,
+          ),
+          supplierName: clean(d.supplierName),
+          notes: clean(d.notes),
+          lines: lines.length ? lines : [emptyLine()],
         });
       })
-      .catch((e: any) => {
+      .catch((error: unknown) => {
         if (!alive) return;
-        setSubmitError(e?.response?.data?.title ?? e?.message ?? "Failed to load draft");
+        setSubmitError(extractError(error, "Failed to load GRN draft."));
+      })
+      .finally(() => {
+        if (alive) setLoadingDraft(false);
       });
-    return () => { alive = false; };
-  }, [companyId, draftId]);
 
-  // ── Totals ─────────────────────────────────────────────────────────────────
+    return () => {
+      alive = false;
+    };
+  }, [grnScope, draftId]);
 
-  const subtotal = useMemo(
-    () => form.lines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.unitCost) || 0), 0),
-    [form.lines]
+  const itemMap = useMemo(
+    () => new Map(items.map((item) => [item.id, item])),
+    [items],
   );
 
-  // ── Validation ─────────────────────────────────────────────────────────────
+  const itemOptions = useMemo(
+    () => items.map((item) => ({ value: item.id, label: item.label })),
+    [items],
+  );
 
-  const [errors,      setErrors]      = useState<FieldErrors>({});
-  const [saving,      setSaving]      = useState(false);
-  const [posting,     setPosting]     = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const subtotal = useMemo(
+    () =>
+      form.lines.reduce((sum, line) => {
+        const qty = parseDecimal(line.quantity);
+        const cost = parseDecimal(line.unitCost);
 
-  const validate = (current: GrnDraft): FieldErrors => {
-    const e: FieldErrors = {};
-    if (!clean(current.locationId))  e.locationId  = "Warehouse is required.";
-    if (!clean(current.receivedDate)) e.receivedDate = "Received date is required.";
-    if (!current.lines.length)       e.lines        = "Add at least one line.";
+        if (!Number.isFinite(qty) || !Number.isFinite(cost)) return sum;
 
-    const lineErrors: FieldErrors["lineErrors"] = {};
-    current.lines.forEach((l, idx) => {
-      const le: Partial<Record<keyof GrnLineDraft, string>> = {};
-      if (!clean(l.itemId))                                  le.itemId   = "Item is required.";
-      if (!clean(l.uomId))                                   le.uomId    = "Unit is required.";
-      if (!Number.isFinite(l.quantity) || l.quantity <= 0)   le.quantity = "Qty must be > 0.";
-      if (!Number.isFinite(l.unitCost) || l.unitCost < 0)    le.unitCost = "Cost cannot be negative.";
-      if (Object.keys(le).length) lineErrors[idx] = le;
+        return sum + qty * cost;
+      }, 0),
+    [form.lines],
+  );
+
+  function patch(value: Partial<GrnForm>) {
+    setForm((current) => ({ ...current, ...value }));
+    setSuccessMsg(null);
+  }
+
+  function patchLine(index: number, value: Partial<GrnLineForm>) {
+    setForm((current) => ({
+      ...current,
+      lines: current.lines.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, ...value } : line,
+      ),
+    }));
+    setSuccessMsg(null);
+  }
+
+  function addLine() {
+    setForm((current) => ({
+      ...current,
+      lines: [...current.lines, emptyLine()],
+    }));
+  }
+
+  function removeLine(index: number) {
+    setForm((current) => ({
+      ...current,
+      lines:
+        current.lines.length <= 1
+          ? [emptyLine()]
+          : current.lines.filter((_, lineIndex) => lineIndex !== index),
+    }));
+  }
+
+  function validateForm(): FormErrors {
+    const nextErrors: FormErrors = {};
+    const lineErrors: NonNullable<FormErrors["lineErrors"]> = {};
+
+    if (!clean(form.receivingLocationId)) {
+      nextErrors.receivingLocationId = "Receiving location is required.";
+    }
+
+    if (!clean(form.receivedDate)) {
+      nextErrors.receivedDate = "Received date is required.";
+    }
+
+    if (!form.lines.length) {
+      nextErrors.lines = "At least one line is required.";
+    }
+
+    form.lines.forEach((line, index) => {
+      const lineError: LineErrors = {};
+
+      if (!clean(line.itemId)) lineError.itemId = "Item is required.";
+      if (!clean(line.uomId)) lineError.uomId = "UOM is required.";
+
+      if (!isPositive(line.quantity)) {
+        lineError.quantity = "Quantity must be greater than zero.";
+      }
+
+      if (!isNonNegative(line.unitCost)) {
+        lineError.unitCost = "Unit cost cannot be negative.";
+      }
+
+      if (Object.keys(lineError).length) {
+        lineErrors[index] = lineError;
+      }
     });
 
-    if (Object.keys(lineErrors).length) e.lineErrors = lineErrors;
-    return e;
-  };
+    if (Object.keys(lineErrors).length) {
+      nextErrors.lineErrors = lineErrors;
+    }
 
-  const hasErrors = (e: FieldErrors) =>
-    !!(e.locationId || e.receivedDate || e.lines || Object.keys(e.lineErrors ?? {}).length);
+    return nextErrors;
+  }
 
-  // ── Payload ────────────────────────────────────────────────────────────────
+  function hasErrors(value: FormErrors): boolean {
+    return Boolean(
+      value.receivingLocationId ||
+        value.receivedDate ||
+        value.lines ||
+        Object.keys(value.lineErrors ?? {}).length,
+    );
+  }
 
-  const buildPayload = (): CreateGrnDraftRequest => ({
-    locationId:   form.locationId,
-    receivedDate: dateOnlyToUtcIso(form.receivedDate),
-    supplierName: toNullable(form.supplierName) ?? "",
-    notes:        toNullable(form.notes),
-    lines: form.lines.map((l) => ({
-      itemId:        l.itemId,
-      quantity:      Number(l.quantity),
-      uomId:         l.uomId,
-      unitCost:      Number(l.unitCost),
-      expiryDateUtc: l.expiryDate ? dateOnlyToUtcIso(l.expiryDate) : null,
-      notes:         toNullable(l.notes),
-    })),
-  });
+  function buildPayload(): CreateGrnDraftRequest {
+    return {
+      receivingLocationId: clean(form.receivingLocationId),
+      receivedDate: dateToIso(form.receivedDate),
+      supplierName: clean(form.supplierName),
+      notes: nullable(form.notes),
+      lines: form.lines.map((line) => ({
+        itemId: clean(line.itemId),
+        uomId: clean(line.uomId),
+        quantity: parseDecimal(line.quantity),
+        unitCost: parseDecimal(line.unitCost),
+        batchNo: nullable(line.batchNo),
+        expiryDate: line.expiryDate ? dateToIso(line.expiryDate) : null,
+        notes: nullable(line.notes),
+      })),
+    };
+  }
 
-  // ── Save draft ─────────────────────────────────────────────────────────────
-
-  const saveDraft = async () => {
+  async function save() {
     setSubmitError(null);
-    const e = validate(form);
-    setErrors(e);
-    if (hasErrors(e) || !companyId) return;
+    setSuccessMsg(null);
+
+    const nextErrors = validateForm();
+    setErrors(nextErrors);
+
+    if (hasErrors(nextErrors) || !grnScope) return;
 
     setSaving(true);
+
     try {
       const payload = buildPayload();
 
-      if (!form.id) {
-        // New draft — create and navigate to the edit route.
-        const created = await grnApi.createDraft(companyId, payload);
-        setForm((f) => ({ ...f, id: created.id }));
-        nav(`/companies/${companyId}/grns/drafts/${created.id}`, { replace: true });
-      } else {
-        // FIX: was calling createDraft() (creating a duplicate) then postDraft()
-        // (immediately submitting it). Correct path is updateDraft to persist changes.
-        await grnApi.updateDraft(companyId, form.id, payload);
+      const result = form.id
+        ? await grnApi.updateDraft(grnScope, form.id, payload)
+        : await grnApi.createDraft(grnScope, payload);
+
+      const id = clean(result.id ?? result.draftId ?? result.grnId);
+
+      if (!id) {
+        throw new Error("Draft was saved, but the server did not return a draft ID.");
       }
-    } catch (err: any) {
-      setSubmitError(err?.response?.data?.title ?? err?.message ?? "Failed to save draft");
+
+      setForm((current) => ({ ...current, id }));
+      setSuccessMsg("GRN draft saved.");
+
+      if (!form.id) {
+        navigate(`${basePath}/drafts/${encodeURIComponent(id)}`, { replace: true });
+      }
+    } catch (error: unknown) {
+      setSubmitError(extractError(error, "Failed to save GRN draft."));
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  // ── Post GRN ───────────────────────────────────────────────────────────────
-
-  const postGrn = async () => {
+  async function post() {
     setSubmitError(null);
-    const e = validate(form);
-    setErrors(e);
-    if (hasErrors(e) || !companyId) return;
+    setSuccessMsg(null);
+
+    const nextErrors = validateForm();
+    setErrors(nextErrors);
+
+    if (hasErrors(nextErrors) || !grnScope) return;
 
     setPosting(true);
+
     try {
       const payload = buildPayload();
-      let draftIdToPost: string;
 
-      if (!form.id) {
-        // New form — create the draft first.
-        const created = await grnApi.createDraft(companyId, payload);
-        draftIdToPost = created.id;
-        setForm((f) => ({ ...f, id: draftIdToPost }));
-      } else {
-        // FIX: updateDraft was commented out, meaning postGrn submitted the last
-        // saved server state rather than the current form. Save current state first.
-        await grnApi.updateDraft(companyId, form.id, payload);
-        draftIdToPost = form.id;
+      const result = form.id
+        ? await grnApi.updateDraft(grnScope, form.id, payload)
+        : await grnApi.createDraft(grnScope, payload);
+
+      const draftIdToPost = form.id || clean(result.id ?? result.draftId ?? result.grnId);
+
+      if (!draftIdToPost) {
+        throw new Error("Could not obtain draft ID.");
       }
 
-      await grnApi.postDraft(companyId, draftIdToPost);
-      nav(`/companies/${companyId}/grns/${draftIdToPost}`);
-    } catch (err: any) {
-      setSubmitError(err?.response?.data?.title ?? err?.message ?? "Failed to post GRN");
+      const posted = await grnApi.postDraft(grnScope, draftIdToPost);
+      const postedId = clean(posted?.id ?? posted?.grnId) || draftIdToPost;
+
+      navigate(`${basePath}/${encodeURIComponent(postedId)}`);
+    } catch (error: unknown) {
+      setSubmitError(extractError(error, "Failed to post GRN."));
     } finally {
       setPosting(false);
     }
-  };
+  }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  async function fetchItemDetail(itemId: string, lineIndex: number) {
+    if (!companyId || !itemId) {
+      patchLine(lineIndex, { itemId: "", uomId: "" });
+      return;
+    }
+
+    const existing = itemMap.get(itemId);
+
+    if (existing) {
+      patchLine(lineIndex, {
+        itemId,
+        uomId: existing.defaultUomId || existing.uoms[0]?.value || "",
+      });
+    } else {
+      patchLine(lineIndex, { itemId, uomId: "" });
+    }
+
+    const cached = itemDetailCache.current.get(itemId);
+
+    if (cached) {
+      const vm = itemToVm(cached, uomCatalog);
+
+      setItems((current) =>
+        current.some((item) => item.id === itemId)
+          ? current.map((item) => (item.id === itemId ? vm : item))
+          : [...current, vm],
+      );
+
+      patchLine(lineIndex, {
+        itemId,
+        uomId: vm.defaultUomId || vm.uoms[0]?.value || "",
+      });
+
+      return;
+    }
+
+    try {
+      const detail = await inventoryItemsApi.get(companyId, itemId);
+      itemDetailCache.current.set(itemId, detail);
+
+      const vm = itemToVm(detail, uomCatalog);
+
+      setItems((current) =>
+        current.some((item) => item.id === itemId)
+          ? current.map((item) => (item.id === itemId ? vm : item))
+          : [...current, vm],
+      );
+
+      patchLine(lineIndex, {
+        itemId,
+        uomId: vm.defaultUomId || vm.uoms[0]?.value || "",
+      });
+    } catch (error: unknown) {
+      setSubmitError(extractError(error, "Failed to load item UOM details."));
+    }
+  }
+
+  if (!companyId) {
+    return (
+      <div style={pageWrap}>
+        <InlineAlert type="warning" message="Select a company to continue." />
+      </div>
+    );
+  }
+
+  const locationPlaceholder = loadingLocations
+    ? "Loading locations…"
+    : locations.length
+      ? "Select receiving location"
+      : "No active receiving locations found";
+
+  const itemPlaceholder = loadingItems ? "Loading items…" : "Select item";
 
   return (
-    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>{isEdit ? "Edit GRN Draft" : "New GRN Draft"}</div>
-          <div style={{ opacity: 0.75, marginTop: 6 }}>
-            Select warehouse, then add line items. Units are restricted to each item's allowed UOM list.
+    <div style={pageWrap}>
+      <PageHeader
+        title={draftId ? "Edit GRN Draft" : "New GRN"}
+        subtitle="Receive goods into an approved stock location. Save as draft or post to inventory after review."
+        errorMsg={submitError}
+        successMsg={successMsg}
+        rightSlot={
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 12, color: tokens.colorMuted }}>Document Total</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: tokens.colorPrimary }}>
+              ${money(subtotal)}
+            </div>
           </div>
-          {(form.id || draftId) && (
-            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
-              Draft ID: <b>{form.id ?? draftId}</b>
-            </div>
-          )}
-          {!companyId && (
-            <div style={{ marginTop: 10, color: "rgb(220,38,38)", fontSize: 12 }}>
-              Company not selected. Cannot submit.
-            </div>
-          )}
-          {!branchId && (
-            <div style={{ marginTop: 6, color: "rgb(220,38,38)", fontSize: 12 }}>
-              Branch not selected. Warehouse list unavailable.
-            </div>
-          )}
-          {submitError && (
-            <div style={{ marginTop: 10, color: "rgb(220,38,38)", fontSize: 12 }}>{submitError}</div>
-          )}
-        </div>
+        }
+      />
 
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 12, opacity: 0.75 }}>Subtotal</div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>{money(subtotal)}</div>
+      {loadingDraft && (
+        <div style={cardStyle}>
+          <InlineAlert type="info" message="Loading GRN draft…" />
         </div>
-      </div>
+      )}
 
       <div style={cardStyle}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
+        <div style={formGrid}>
           <div style={{ gridColumn: "span 4" }}>
-            <SelectDropdown<string>
-              label="Warehouse *"
-              value={form.locationId || null}
-              options={warehouseOptions}
-              loading={warehousesLoading}
-              disabled={!companyId || !branchId}
-              placeholder={!branchId ? "Select branch first…" : "Select warehouse…"}
-              onChange={(v) => setHeader({ locationId: v ?? "" })}
+            <label style={labelStyle}>Receiving Location *</label>
+            <Select
+              value={form.receivingLocationId}
+              options={locations}
+              disabled={busy || loadingLocations || locations.length === 0}
+              placeholder={locationPlaceholder}
+              hasError={Boolean(errors.receivingLocationId)}
+              onChange={(value) => patch({ receivingLocationId: value })}
             />
-            {errors.locationId && <div style={errorStyle}>{errors.locationId}</div>}
+            {errors.receivingLocationId && (
+              <div style={errorInline}>{errors.receivingLocationId}</div>
+            )}
           </div>
 
           <div style={{ gridColumn: "span 3" }}>
             <label style={labelStyle}>Received Date *</label>
             <input
-              style={inputStyle(!!errors.receivedDate)}
+              style={inputStyle(Boolean(errors.receivedDate))}
               type="date"
+              disabled={busy}
               value={form.receivedDate}
-              onChange={(e) => setHeader({ receivedDate: e.target.value })}
+              onChange={(event) => patch({ receivedDate: event.target.value })}
             />
-            {errors.receivedDate && <div style={errorStyle}>{errors.receivedDate}</div>}
+            {errors.receivedDate && <div style={errorInline}>{errors.receivedDate}</div>}
           </div>
 
           <div style={{ gridColumn: "span 5" }}>
-            <label style={labelStyle}>Supplier Name</label>
+            <label style={labelStyle}>Supplier</label>
             <input
               style={inputStyle(false)}
+              disabled={busy}
               value={form.supplierName}
-              onChange={(e) => setHeader({ supplierName: e.target.value })}
-              placeholder="Supplier"
+              onChange={(event) => patch({ supplierName: event.target.value })}
+              placeholder="Supplier name"
             />
           </div>
 
           <div style={{ gridColumn: "span 12" }}>
             <label style={labelStyle}>Notes</label>
             <textarea
-              style={{ ...inputStyle(false), minHeight: 72, resize: "vertical" }}
+              style={textareaStyle}
+              disabled={busy}
               value={form.notes}
-              onChange={(e) => setHeader({ notes: e.target.value })}
-              placeholder="Optional receiving notes…"
+              onChange={(event) => patch({ notes: event.target.value })}
+              placeholder="Receiving notes"
             />
           </div>
         </div>
       </div>
 
       <div style={cardStyle}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>Lines</div>
-            <div style={{ opacity: 0.75, marginTop: 4 }}>
-              Item dropdown shows <b>Code — Name</b> with a short id. UOM dropdown shows friendly unit names.
-            </div>
-          </div>
-          <button style={primaryBtn} onClick={addLine}>+ Add Line</button>
-        </div>
+        <SectionHead
+          title="Line Items"
+          subtitle="Use purchase/receiving UOM where available. Quantity and cost are validated before save/post."
+          action={
+            <button type="button" style={primaryBtn} disabled={busy} onClick={addLine}>
+              + Add Line
+            </button>
+          }
+        />
 
-        {errors.lines && <div style={{ ...errorStyle, marginTop: 10 }}>{errors.lines}</div>}
+        {errors.lines && <div style={errorInline}>{errors.lines}</div>}
 
-        <div style={{ marginTop: 14, overflowX: "auto" }}>
+        <div style={tableWrap}>
           <table style={tableStyle}>
             <thead>
               <tr>
                 <th style={thStyle}>Item *</th>
                 <th style={thStyle}>Qty *</th>
-                <th style={thStyle}>Unit (UOM) *</th>
+                <th style={thStyle}>UOM *</th>
                 <th style={thStyle}>Unit Cost</th>
+                <th style={thStyle}>Batch</th>
                 <th style={thStyle}>Expiry</th>
-                <th style={thStyle}>Line Notes</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Line Total</th>
-                <th style={thStyle}></th>
+                <th style={thStyle}>Notes</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
+                <th style={thStyle} />
               </tr>
             </thead>
 
             <tbody>
-              {form.lines.length === 0 ? (
-                <tr>
-                  <td colSpan={8} style={{ padding: 18, opacity: 0.75 }}>
-                    No lines yet. Click <b>Add Line</b>.
-                  </td>
-                </tr>
-              ) : (
-                form.lines.map((l, idx) => {
-                  const le        = errors.lineErrors?.[idx] ?? {};
-                  const lineTotal = (Number(l.quantity) || 0) * (Number(l.unitCost) || 0);
-                  const item      = l.itemId ? itemById.get(l.itemId) : undefined;
-                  const uomOptions: SelectOption<string>[] =
-                    item?.uoms.map((u) => ({ value: u.uomId, label: u.uomName })) ?? [];
+              {form.lines.map((line, index) => {
+                const lineError = errors.lineErrors?.[index] ?? {};
+                const item = itemMap.get(line.itemId);
+                const qty = parseDecimal(line.quantity);
+                const cost = parseDecimal(line.unitCost);
+                const total =
+                  Number.isFinite(qty) && Number.isFinite(cost) ? qty * cost : 0;
 
-                  return (
-                    <tr key={idx}>
-                      <td style={tdStyle}>
-                        <SelectDropdown<string>
-                          value={l.itemId || null}
-                          options={itemOptions}
-                          loading={itemsLoading}
-                          placeholder="Select item…"
-                          onChange={(v) => {
-                            const id = v ?? "";
-                            const it = id ? itemById.get(id) : undefined;
-                            updateLine(idx, { itemId: id, uomId: it?.defaultUomId ?? "" });
-                          }}
-                        />
-                        {le.itemId && <div style={errorStyle}>{le.itemId}</div>}
-                      </td>
+                return (
+                  <tr key={index}>
+                    <td style={tdStyle}>
+                      <Select
+                        value={line.itemId}
+                        options={itemOptions}
+                        disabled={busy || loadingItems}
+                        placeholder={itemPlaceholder}
+                        hasError={Boolean(lineError.itemId)}
+                        onChange={(value) => {
+                          void fetchItemDetail(value, index);
+                        }}
+                      />
+                      {lineError.itemId && <div style={errorInline}>{lineError.itemId}</div>}
+                    </td>
 
-                      <td style={tdStyle}>
-                        <input
-                          style={inputStyle(!!le.quantity)}
-                          type="number"
-                          min={0}
-                          value={l.quantity}
-                          onChange={(e) => updateLine(idx, { quantity: Number(e.target.value) })}
-                        />
-                        {le.quantity && <div style={errorStyle}>{le.quantity}</div>}
-                      </td>
+                    <td style={tdStyle}>
+                      <input
+                        style={inputStyle(Boolean(lineError.quantity))}
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        disabled={busy}
+                        value={line.quantity}
+                        onChange={(event) =>
+                          patchLine(index, { quantity: event.target.value })
+                        }
+                      />
+                      {lineError.quantity && (
+                        <div style={errorInline}>{lineError.quantity}</div>
+                      )}
+                    </td>
 
-                      <td style={tdStyle}>
-                        <SelectDropdown<string>
-                          value={l.uomId || null}
-                          options={uomOptions}
-                          disabled={!l.itemId}
-                          placeholder={!l.itemId ? "Select item first…" : "Select unit…"}
-                          onChange={(v) => updateLine(idx, { uomId: v ?? "" })}
-                        />
-                        {le.uomId && <div style={errorStyle}>{le.uomId}</div>}
-                        {item?.baseUomId && (
-                          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6 }}>
-                            Base UOM: <b>{item.baseUomName ?? "Base"}</b>{" "}
-                            <span style={{ opacity: 0.8 }}>· #{shortId(item.baseUomId, 8)}</span>
-                          </div>
-                        )}
-                      </td>
+                    <td style={tdStyle}>
+                      <Select
+                        value={line.uomId}
+                        options={item?.uoms ?? []}
+                        disabled={busy || !line.itemId}
+                        placeholder={line.itemId ? "Select UOM" : "Select item first"}
+                        hasError={Boolean(lineError.uomId)}
+                        onChange={(value) => patchLine(index, { uomId: value })}
+                      />
+                      {lineError.uomId && <div style={errorInline}>{lineError.uomId}</div>}
+                    </td>
 
-                      <td style={tdStyle}>
-                        <input
-                          style={inputStyle(!!le.unitCost)}
-                          type="number"
-                          min={0}
-                          value={l.unitCost}
-                          onChange={(e) => updateLine(idx, { unitCost: Number(e.target.value) })}
-                        />
-                        {le.unitCost && <div style={errorStyle}>{le.unitCost}</div>}
-                      </td>
+                    <td style={tdStyle}>
+                      <input
+                        style={inputStyle(Boolean(lineError.unitCost))}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        disabled={busy}
+                        value={line.unitCost}
+                        onChange={(event) =>
+                          patchLine(index, { unitCost: event.target.value })
+                        }
+                      />
+                      {lineError.unitCost && (
+                        <div style={errorInline}>{lineError.unitCost}</div>
+                      )}
+                    </td>
 
-                      <td style={tdStyle}>
-                        <input
-                          style={inputStyle(false)}
-                          type="date"
-                          value={l.expiryDate ?? ""}
-                          onChange={(e) => updateLine(idx, { expiryDate: e.target.value || null })}
-                        />
-                      </td>
+                    <td style={tdStyle}>
+                      <input
+                        style={inputStyle(false)}
+                        disabled={busy}
+                        value={line.batchNo}
+                        onChange={(event) =>
+                          patchLine(index, { batchNo: event.target.value })
+                        }
+                        placeholder="Optional"
+                      />
+                    </td>
 
-                      <td style={tdStyle}>
-                        <input
-                          style={inputStyle(false)}
-                          value={l.notes}
-                          onChange={(e) => updateLine(idx, { notes: e.target.value })}
-                          placeholder="Optional"
-                        />
-                      </td>
+                    <td style={tdStyle}>
+                      <input
+                        style={inputStyle(false)}
+                        type="date"
+                        disabled={busy}
+                        value={line.expiryDate}
+                        onChange={(event) =>
+                          patchLine(index, { expiryDate: event.target.value })
+                        }
+                      />
+                    </td>
 
-                      <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800 }}>
-                        {money(lineTotal)}
-                      </td>
+                    <td style={tdStyle}>
+                      <input
+                        style={inputStyle(false)}
+                        disabled={busy}
+                        value={line.notes}
+                        onChange={(event) =>
+                          patchLine(index, { notes: event.target.value })
+                        }
+                        placeholder="Optional"
+                      />
+                    </td>
 
-                      <td style={tdStyle}>
-                        <button style={dangerBtn} onClick={() => removeLine(idx)}>Remove</button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+                    <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800 }}>
+                      ${money(total)}
+                    </td>
+
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        style={dangerBtn}
+                        disabled={busy}
+                        onClick={() => removeLine(index)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-          <div style={{ minWidth: 280 }}>
-            <div style={totRow}>
-              <span style={{ opacity: 0.75 }}>Subtotal</span>
-              <b>{money(subtotal)}</b>
-            </div>
-            <div style={{ ...totRow, marginTop: 6, fontSize: 16 }}>
-              <span>Total</span>
-              <b>{money(subtotal)}</b>
-            </div>
-          </div>
         </div>
       </div>
 
       <div style={stickyBar}>
-        <div style={{ opacity: 0.85 }}>
-          <b>Tip:</b> Save Draft first, then Post when you confirm quantities &amp; cost.
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button style={secondaryBtn} onClick={() => nav(`/companies/${companyId}/grns/drafts`)}>
-            Drafts
+        <span style={{ color: tokens.colorMuted, fontSize: 13 }}>
+          {form.id ? `Draft saved: ${form.id}` : "Unsaved draft"}
+        </span>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            style={secondaryBtn}
+            disabled={busy}
+            onClick={() => navigate(basePath)}
+          >
+            Cancel
           </button>
-          <button style={secondaryBtn} onClick={saveDraft} disabled={saving || posting || !companyId}>
-            {saving ? "Saving…" : form.id ? "Update Draft" : "Save Draft"}
+
+          <button
+            type="button"
+            style={secondaryBtn}
+            disabled={busy}
+            onClick={() => void save()}
+          >
+            {saving ? "Saving…" : "Save Draft"}
           </button>
-          <button style={primaryBtn} onClick={postGrn} disabled={saving || posting || !companyId}>
+
+          <button
+            type="button"
+            style={primaryBtn}
+            disabled={busy}
+            onClick={() => void post()}
+          >
             {posting ? "Posting…" : "Post GRN"}
           </button>
         </div>

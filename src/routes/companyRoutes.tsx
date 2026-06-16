@@ -1,77 +1,32 @@
 ﻿import RequirePermission from "../auth/RequirePermission";
 
-
 import OrgLocationsPage from "../features/org/pages/OrgLocationsPage";
-
 import CompanyOnboardingModule from "../features/company/onboarding/CompanyOnboardingModule";
 import CompanySettingsPage from "../features/company/onboarding/CompanySettingsPage";
 
 export const companyRoutes = [
-  // =========================================================
-  // Companies
-  // =========================================================
-
-  
-
-  // =========================================================
-  // ERP Onboarding
-  // =========================================================
-
-  {
-    path: "companies/new",
-    element: (
-      // <RequirePermission permission="companies.create">
-      <CompanyOnboardingModule />
-      // </RequirePermission>
-    ),
-  },
-
   {
     path: "companies/onboarding",
-    label: "Company Onboarding",
+    element: <CompanyOnboardingModule />,
+    label: "Company Setup",
     nav: true,
-    element: (
-      // <RequirePermission permission="companies.create">
-      <CompanyOnboardingModule />
-      // </RequirePermission>
-    ),
-
+    section: "Administration",
   },
 
   {
     path: "companies/:companyId/onboarding",
-    element: (
-      // <RequirePermission permission="companies.update">
-      <CompanyOnboardingModule />
-      // </RequirePermission>
-    ),
+    element: <CompanyOnboardingModule />,
+    nav: false,
+    section: "Administration",
   },
-
-  {
-    path: "companies/:companyId/branches/:branchId/onboarding",
-    element: (
-      // <RequirePermission permission="branches.update">
-      <CompanyOnboardingModule />
-      // </RequirePermission>
-    ),
-  },
-
-  // =========================================================
-  // Company Settings
-  // =========================================================
 
   {
     path: "companies/:companyId/settings",
-    element: (
-      // <RequirePermission permission="companies.update">
-      <CompanySettingsPage />
-      // </RequirePermission>
-    ),
+    element: <CompanySettingsPage />,
+    label: "Company Settings",
+    nav: true,
+    section: "Administration",
   },
-
-  // =========================================================
-  // Organization
-  // =========================================================
 
   {
     path: "organizations",
@@ -80,5 +35,8 @@ export const companyRoutes = [
         <OrgLocationsPage />
       </RequirePermission>
     ),
+    label: "Organization Structure",
+    nav: true,
+    section: "Administration",
   },
 ];

@@ -3,19 +3,14 @@
 import type React from "react";
 import type {
   BranchDto,
-  BranchRole,
-  BranchUserDto,
   CompanyDto,
   CompanySettingsDto,
+  OnboardingReadinessDto,
   StockLocation,
   StoreDto,
 } from "../../types/company.types";
 
-// ── Primitive helpers ─────────────────────────────────────────────────────────
-
 export type Nullable<T> = T | null | undefined;
-
-// ── Wizard step keys ──────────────────────────────────────────────────────────
 
 export type WizardStepKey =
   | "company"
@@ -26,83 +21,139 @@ export type WizardStepKey =
   | "review";
 
 export type StepDefinition = {
-  key:      WizardStepKey;
-  title:    string;
+  key: WizardStepKey;
+  title: string;
   subtitle: string;
-  icon:     React.ComponentType<{ className?: string; size?: number }>;
+  icon: React.ComponentType<{ className?: string; size?: number }>;
   required: boolean;
 };
 
-// ── Domain value types ────────────────────────────────────────────────────────
+export type StoreType =
+  | "DineIn"
+  | "Takeaway"
+  | "Delivery"
+  | "Bar"
+  | "Retail";
 
-export type StoreType = "DineIn" | "Takeaway" | "Delivery" | "Bar" | "Retail";
-
-/** "FIFO" | "WeightedAverage" — must match backend CostingMethod enum */
 export type CostingMethod = "FIFO" | "WeightedAverage";
 
-/** Keyed by field name; value is the error message. */
 export type FieldErrors = Record<string, string | undefined>;
 
-// ── Onboarding state ──────────────────────────────────────────────────────────
-
-export type OnboardingState = {
-  /** Active wizard step key. Changed only via SET_ACTIVE. */
-  active:         WizardStepKey;
-
-  companyId:      string | null;
-  branchId:       string | null;
-
-  company:        CompanyDto | null;
-  /** All branches for the company — used by BranchStep to list selectable rows. */
-  branches:       BranchDto[];
-  /** The active/selected branch full record. */
-  branch:         BranchDto | null;
-
-  settings:       CompanySettingsDto;
-
-  /** Stock locations for the active branch. */
-  stockLocations: StockLocation[];
-  /** Stores for the active branch. */
-  stores:         StoreDto[];
-  /** Branch users for the active branch. */
-  members:        BranchUserDto[];
-
-  loading:        boolean;
-  saving:         boolean;
-  error:          string | null;
-  notice:         string | null;
-};
-
-// ── Readiness ─────────────────────────────────────────────────────────────────
-
 export type StepReadiness = {
-  /** Step has the minimum required data to be considered complete. */
-  done:   boolean;
-  /** Step cannot be navigated to until prerequisites are met. */
+  done: boolean;
   locked: boolean;
 };
 
 export type OnboardingReadiness = Record<WizardStepKey, StepReadiness>;
 
-// ── Actions ───────────────────────────────────────────────────────────────────
-//
-// Navigation rule: only SET_ACTIVE may change state.active.
-// LOAD_SUCCESS and SAVE_SUCCESS must NOT include active in their patch types
-// to prevent accidental step-navigation side effects from data operations.
+export interface EmployeeLookupDto {
+  id: string;
+  employeeCode?: string | null;
+  fullName?: string | null;
+  workEmail?: string | null;
+  phoneNumber?: string | null;
+  branchId?: string | null;
+}
 
-/** Data that a LOAD_SUCCESS may update — explicitly excludes active step. */
-export type LoadPatch = Omit<Partial<OnboardingState>, "active" | "loading" | "saving" | "error" | "notice">;
+export interface CompanyUserDto {
+  id: string;
+  employeeId?: string | null;
+  employeeName?: string | null;
+  employeeCode?: string | null;
+  email: string;
+  userName: string;
+  phoneNumber?: string | null;
+  companyId: string;
+  defaultBranchId?: string | null;
+  defaultStockLocationId?: string | null;
+  roles: string[];
+  isActive: boolean;
+}
 
-/** Data that a SAVE_SUCCESS may update — explicitly excludes active step. */
-export type SavePatch = Omit<Partial<OnboardingState>, "active" | "loading" | "saving" | "error" | "notice">;
+export interface CreateCompanyUserDto {
+  employeeId: string;
+  email: string | null;
+  userName: string;
+  password: string;
+  phoneNumber?: string | null;
+  roles: string[];
+  branchIds: string[];
+  stockLocationIds: string[];
+}
+
+export interface UpdateCompanyUserDto {
+  email?: string | null;
+  phoneNumber?: string | null;
+}
+
+export interface AssignUserBranchesDto {
+  branchIds: string[];
+}
+
+export interface AssignUserStockLocationsDto {
+  stockLocationIds: string[];
+}
+
+export interface SetUserActiveStatusRequest {
+  isActive: boolean;
+}
+
+export interface ResetUserPasswordRequest {
+  newPassword: string;
+}
+
+export type OnboardingState = {
+  active: WizardStepKey;
+
+  companyId: string | null;
+  branchId: string | null;
+
+  company: CompanyDto | null;
+  branches: BranchDto[];
+  branch: BranchDto | null;
+
+  settings: CompanySettingsDto;
+
+  stockLocations: StockLocation[];
+  stores: StoreDto[];
+  members: CompanyUserDto[];
+
+  readiness?: OnboardingReadinessDto;
+
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  notice: string | null;
+};
+
+export type LoadPatch = Omit<
+  Partial<OnboardingState>,
+  "active" | "loading" | "saving" | "error" | "notice"
+>;
+
+export type SavePatch = Omit<
+  Partial<OnboardingState>,
+  "active" | "loading" | "saving" | "error" | "notice"
+>;
+
+export interface OnboardingSnapshotDto {
+  company: CompanyDto | null;
+  settings: CompanySettingsDto | null;
+  branches: BranchDto[];
+  activeBranch: BranchDto | null;
+  stockLocations: StockLocation[];
+  stores: StoreDto[];
+  users: CompanyUserDto[];
+  readiness: OnboardingReadinessDto;
+}
 
 export type OnboardingAction =
-  | { type: "SET_ACTIVE";    step: WizardStepKey }
-  | { type: "SET_CONTEXT";   companyId?: string | null; branchId?: string | null }
+  | { type: "SET_ACTIVE"; step: WizardStepKey }
+  | { type: "SET_CONTEXT"; companyId?: string | null; branchId?: string | null }
   | { type: "LOAD_START" }
-  | { type: "LOAD_ERROR";    error: string }
-  | { type: "LOAD_SUCCESS";  patch: LoadPatch }
+  | { type: "LOAD_ERROR"; error: string }
+  | { type: "LOAD_SUCCESS"; patch: LoadPatch }
   | { type: "SAVE_START" }
-  | { type: "SAVE_ERROR";    error: string }
-  | { type: "SAVE_SUCCESS";  notice?: string; patch?: SavePatch }
+  | { type: "SAVE_ERROR"; error: string }
+  | { type: "SAVE_SUCCESS"; notice?: string; patch?: SavePatch }
   | { type: "CLEAR_MESSAGES" };

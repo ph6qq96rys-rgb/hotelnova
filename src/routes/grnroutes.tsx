@@ -31,117 +31,142 @@ export type AppRoute = RouteObject & {
   };
 };
 
-export function useGrnRoutes(): AppRoute[] {
+const SECTION_INVENTORY = "Inventory";
+
+const companyBase = "/companies/:companyId";
+const branchBase = "/companies/:companyId/branches/:branchId";
+
+const grnBase = `${companyBase}/grns`;
+const branchGrnBase = `${branchBase}/grns`;
+
+const sivBase = `${companyBase}/siv`;
+const branchSivBase = `${branchBase}/siv`;
+
+function grnRoutes(base: string, nav: boolean): AppRoute[] {
   return [
     {
-      path: "grns",
+      path: base,
       element: <GrnListPage />,
       label: "GRNs",
-      nav: true,
-      section: "Inventory",
-      menu: { label: "GRNs", section: "Inventory" },
+      nav,
+      section: SECTION_INVENTORY,
+      menu: { label: "GRNs", section: SECTION_INVENTORY },
     },
     {
-      path: "grns/drafts",
+      path: `${base}/drafts`,
       element: <GrnDraftListPage />,
       label: "GRN Drafts",
       nav: false,
-      section: "Inventory",
-      menu: { label: "GRN Drafts", section: "Inventory" },
+      section: SECTION_INVENTORY,
+      menu: { label: "GRN Drafts", section: SECTION_INVENTORY },
     },
     {
-      path: "grns/drafts/new",
+      path: `${base}/drafts/new`,
       element: <GrnDraftEditorPage />,
       label: "New GRN Draft",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
     {
-      path: "grns/drafts/:draftId",
+      path: `${base}/drafts/:draftId`,
       element: <GrnDraftEditorPage />,
       label: "Edit GRN Draft",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
     {
-      path: "grns/reverse",
+      path: `${base}/reverse`,
       element: <GrnReversePage />,
       label: "Reverse GRN",
       nav: false,
-      section: "Inventory",
-      menu: { label: "Reverse GRN", section: "Inventory" },
+      section: SECTION_INVENTORY,
+      menu: { label: "Reverse GRN", section: SECTION_INVENTORY },
     },
     {
-      path: "grns/:grnId",
+      path: `${base}/:grnId`,
       element: <GrnDetailPage />,
       label: "GRN Detail",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
+  ];
+}
 
+function sivRoutes(base: string, nav: boolean): AppRoute[] {
+  return [
     {
-      path: "siv",
+      path: base,
       element: <SivListPage />,
       label: "SIVs",
-      nav: true,
-      section: "Inventory",
-      menu: { label: "SIVs", section: "Inventory" },
+      nav,
+      section: SECTION_INVENTORY,
+      menu: { label: "SIVs", section: SECTION_INVENTORY },
     },
     {
-      path: "siv/drafts/new",
+      path: `${base}/drafts/new`,
       element: <SivDraftEditorPage mode="create" />,
       label: "New SIV Draft",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
     {
-      path: "siv/drafts/:draftId/edit",
+      path: `${base}/drafts/:draftId/edit`,
       element: <SivDraftEditorPage mode="edit" />,
       label: "Edit SIV Draft",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
     {
-      path: "siv/drafts/:draftId",
+      path: `${base}/drafts/:draftId`,
       element: <SivDraftEditorPage mode="edit" />,
       label: "Edit SIV Draft",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
     {
-      path: "siv/approval/:sivId",
+      path: `${base}/approval/:sivId`,
       element: <SivApprovalPage />,
       label: "SIV Approval",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
     {
-      path: "siv/open/:id",
+      path: `${base}/open/:id`,
       element: <SivOpenRedirectPage />,
       label: "Open SIV Redirect",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
     {
-      path: "siv/open/:sivId/details",
+      path: `${base}/open/:sivId/details`,
       element: <SivDetailsPage />,
       label: "Open SIV",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
     {
-      path: "siv/:sivId/print",
+      path: `${base}/:sivId/print`,
       element: <SivIssuedPrintPage />,
       label: "Print SIV",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
     {
-      path: "siv/:sivId",
+      path: `${base}/:sivId`,
       element: <SivDetailsPage />,
       label: "SIV Detail",
       nav: false,
-      section: "Inventory",
+      section: SECTION_INVENTORY,
     },
+  ];
+}
+
+export function useGrnRoutes(): AppRoute[] {
+  return [
+    ...grnRoutes(grnBase, true),
+    ...grnRoutes(branchGrnBase, false),
+
+    ...sivRoutes(sivBase, true),
+    ...sivRoutes(branchSivBase, false),
   ];
 }

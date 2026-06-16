@@ -53,7 +53,7 @@ export default function SalesDashboardPage() {
         toDate: TODAY,
       });
 
-      const data = (response as any).data ?? response;
+      const data = response.data ?? response;
       setSales(data.items ?? []);
     } catch (e) {
       setErr(extractApiError(e, "Failed to load dashboard."));

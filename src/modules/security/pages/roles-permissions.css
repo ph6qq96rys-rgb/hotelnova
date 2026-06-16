@@ -1,0 +1,513 @@
+.rp-shell {
+  padding: 20px;
+  color: #e5e7eb;
+  background: #070a11;
+  min-height: 100%;
+}
+
+.rp-header,
+.rp-panel,
+.rp-kpis > div,
+.rp-savebar,
+.rp-drawer {
+  background: #0d1320;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px;
+}
+
+.rp-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  margin-bottom: 14px;
+}
+
+.rp-header h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.rp-header p,
+.rp-muted,
+.rp-role small,
+.rp-user small,
+.rp-side span,
+.rp-kpis span {
+  color: rgba(255,255,255,.58);
+}
+
+.rp-kicker {
+  color: #769aff;
+  text-transform: uppercase;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: .1em;
+  margin-bottom: 6px;
+}
+
+.rp-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rp-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.rp-kpis > div {
+  padding: 14px;
+}
+
+.rp-kpis span {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.rp-kpis strong {
+  display: block;
+  font-size: 24px;
+  margin-top: 8px;
+}
+
+.rp-grid {
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr) 310px;
+  gap: 12px;
+}
+
+.rp-panel {
+  min-height: 70vh;
+  overflow: hidden;
+}
+
+.rp-panel.main {
+  display: flex;
+  flex-direction: column;
+}
+
+.rp-panel-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 13px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.rp-input,
+.rp-textarea {
+  width: 100%;
+  background: rgba(0,0,0,.28);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+  color: #fff;
+  padding: 9px 10px;
+  outline: none;
+}
+
+.rp-textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.rp-panel > .rp-input {
+  margin: 12px;
+  width: calc(100% - 24px);
+}
+
+.rp-list {
+  padding: 8px;
+}
+
+.rp-role {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #e5e7eb;
+  padding: 11px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+}
+
+.rp-role:hover,
+.rp-role.active {
+  background: rgba(91,132,255,.13);
+  border-color: rgba(91,132,255,.35);
+}
+
+.rp-role em {
+  color: rgba(255,255,255,.42);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.rp-role-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.rp-role-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.rp-role-head p {
+  margin: 4px 0 0;
+  color: rgba(255,255,255,.58);
+}
+
+.rp-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.rp-tabs button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(255,255,255,.62);
+  border-radius: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.rp-tabs button.active {
+  background: rgba(255,255,255,.08);
+  color: #fff;
+  border-color: rgba(255,255,255,.12);
+}
+
+.rp-body {
+  padding: 14px;
+  overflow: auto;
+}
+
+.rp-toolbar {
+  margin-bottom: 12px;
+}
+
+.rp-permission-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.rp-permission-group {
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.rp-group-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px;
+  background: rgba(255,255,255,.03);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.rp-group-head span {
+  display: block;
+  color: rgba(255,255,255,.48);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.rp-permission-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px;
+}
+
+.rp-permission {
+  display: flex;
+  gap: 9px;
+  padding: 9px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.025);
+  border: 1px solid rgba(255,255,255,.06);
+}
+
+.rp-permission small {
+  display: block;
+  margin-top: 2px;
+  color: rgba(255,255,255,.48);
+}
+
+.rp-members-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.rp-user-list,
+.rp-members-grid section {
+  display: grid;
+  gap: 8px;
+}
+
+.rp-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  padding: 9px;
+}
+
+.rp-user > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.rp-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(91,132,255,.14);
+  color: #93b4ff;
+  font-weight: 800;
+}
+
+.rp-overview {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.rp-overview > div,
+.rp-governance {
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  padding: 13px;
+}
+
+.rp-overview span {
+  display: block;
+  color: rgba(255,255,255,.48);
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.rp-overview strong {
+  display: block;
+  margin-top: 7px;
+  font-size: 20px;
+}
+
+.rp-governance {
+  grid-column: 1 / -1;
+}
+
+.rp-side {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.rp-side > div {
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.rp-side strong {
+  display: block;
+  margin-top: 5px;
+}
+
+.rp-btn {
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: #fff;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.rp-btn.primary {
+  background: #5b84ff;
+  border-color: #5b84ff;
+}
+
+.rp-btn.danger {
+  color: #fb7185;
+  background: rgba(251,113,133,.12);
+  border-color: rgba(251,113,133,.3);
+}
+
+.rp-btn.mini {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.rp-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.rp-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(255,255,255,.08);
+}
+
+.rp-badge.success {
+  color: #34d399;
+  background: rgba(52,211,153,.12);
+}
+
+.rp-badge.danger {
+  color: #fb7185;
+  background: rgba(251,113,133,.12);
+}
+
+.rp-badge.warning {
+  color: #fbbf24;
+  background: rgba(251,191,36,.12);
+}
+
+.rp-alert {
+  padding: 11px 12px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.rp-alert.success {
+  background: rgba(52,211,153,.12);
+  color: #34d399;
+}
+
+.rp-alert.danger {
+  background: rgba(251,113,133,.12);
+  color: #fb7185;
+}
+
+.rp-savebar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(920px, calc(100vw - 32px));
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.45);
+  z-index: 30;
+}
+
+.rp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 50;
+}
+
+.rp-drawer {
+  width: 420px;
+  max-width: 92vw;
+  border-radius: 0;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.rp-drawer-head,
+.rp-drawer-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rp-field {
+  display: grid;
+  gap: 6px;
+}
+
+.rp-field span {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.rp-empty {
+  padding: 40px;
+  text-align: center;
+  color: rgba(255,255,255,.62);
+}
+
+@media (max-width: 1200px) {
+  .rp-grid {
+    grid-template-columns: 280px 1fr;
+  }
+
+  .rp-grid > aside:last-child {
+    display: none;
+  }
+}
+
+@media (max-width: 800px) {
+  .rp-grid,
+  .rp-kpis,
+  .rp-overview,
+  .rp-members-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rp-header {
+    flex-direction: column;
+  }
+
+  .rp-permission-list {
+    grid-template-columns: 1fr;
+  }
+  .lux-text-right {
+  text-align: right;
+}
+
+.lux-emptyInline {
+  padding: 36px;
+  text-align: center;
+  color: #64748b;
+}
+
+.lux-emptyInline__title {
+  font-weight: 800;
+  color: #111827;
+  font-size: 16px;
+}
+
+.lux-emptyInline__hint {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.lux-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+}
+}

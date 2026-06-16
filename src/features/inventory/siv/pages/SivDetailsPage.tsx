@@ -1054,7 +1054,7 @@ export default function SivDetailsPage() {
           busy={busy}
           onConfirm={() => run("Post", () =>
             sivApi.post(companyId, sivId)
-              .then((r) => { if (r?.data?.error) throw new Error(r.data.error); })
+              .then((r) => { if (r?.data?.message != null) throw new Error(r.data.message); })
           )}
           onCancel={() => setModal("none")}
         />

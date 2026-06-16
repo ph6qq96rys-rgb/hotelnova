@@ -1,26 +1,58 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { salesApi } from "../api/salesApi";
 import type { PosSessionDto, SessionReportDto } from "../api/salesTypes";
 import { PosSessionStatus } from "../api/salesTypes";
-import { Alert, Button, Card, Field, Kpi, dateTime, extractApiError, money } from "../components/pos-ui";
+import {
+  Alert,
+  Button,
+  Card,
+  Field,
+  Kpi,
+  dateTime,
+  extractApiError,
+  money,
+} from "../components/pos-ui";
 import "../components/pos.css";
 
 function useAppScope() {
-  return {
-    companyId: localStorage.getItem("companyId") ?? "",
-    branchId: localStorage.getItem("branchId") ?? "",
-  };
+  const companyId = localStorage.getItem("companyId") ?? "";
+  const branchId = localStorage.getItem("branchId") ?? "";
+
+  return { companyId, branchId };
+}
+
+function parseAmount(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function isSessionOpen(session: PosSessionDto | null): boolean {
+  return session?.status === PosSessionStatus.Open || session?.status === 1;
+}
+
+function formatReportLabel(key: string): string {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (x) => x.toUpperCase())
+    .trim();
 }
 
 function ReportGrid({ report }: { report: SessionReportDto }) {
-  const entries = Object.entries(report).filter(([, v]) => typeof v !== "object" && v !== null && v !== undefined);
+  const entries = Object.entries(report).filter(([, value]) => {
+    return value !== null && value !== undefined && typeof value !== "object";
+  });
+
+  if (entries.length === 0) {
+    return <Alert tone="info">No report totals were returned.</Alert>;
+  }
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+    <div className="pos-kpi-grid">
       {entries.map(([key, value]) => (
         <Kpi
           key={key}
-          label={key.replace(/([A-Z])/g, " $1")}
+          label={formatReportLabel(key)}
           value={typeof value === "number" ? money(value) : String(value)}
         />
       ))}
@@ -29,44 +61,73 @@ function ReportGrid({ report }: { report: SessionReportDto }) {
 }
 
 export default function PosSessionPage() {
-  const nav = useNavigate();
+  const navigate = useNavigate();
   const { companyId, branchId } = useAppScope();
 
   const [session, setSession] = useState<PosSessionDto | null>(null);
   const [report, setReport] = useState<SessionReportDto | null>(null);
+
   const [cashierName, setCashierName] = useState("");
   const [terminal, setTerminal] = useState("POS-01");
   const [openingFloat, setOpeningFloat] = useState("0");
   const [closingFloat, setClosingFloat] = useState("0");
+
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const isOpen = session?.status === PosSessionStatus.Open || session?.status === 1;
+  const hasScope = Boolean(companyId && branchId);
+  const isOpen = useMemo(() => isSessionOpen(session), [session]);
 
-  async function refresh() {
-    if (!companyId || !branchId) return;
-    const response = await salesApi.currentSession(companyId, branchId);
-    setSession((response as any).data ?? response);
-  }
+  const refresh = useCallback(async () => {
+    if (!hasScope) {
+      setSession(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await salesApi.currentSession(companyId, branchId);
+      setSession(response.data ?? null);
+    } catch {
+      setSession(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, branchId, hasScope]);
 
   useEffect(() => {
-    refresh().catch(() => setSession(null));
-  }, [companyId, branchId]);
+    void refresh();
+  }, [refresh]);
 
-  async function open() {
-    if (!cashierName.trim()) {
+  async function handleOpenSession() {
+    if (!hasScope) {
+      setErr("Company and branch context are required.");
+      return;
+    }
+
+    const normalizedCashierName = cashierName.trim();
+    const normalizedTerminal = terminal.trim() || "POS-01";
+
+    if (!normalizedCashierName) {
       setErr("Cashier name is required.");
       return;
     }
+
     setBusy(true);
     setErr(null);
+    setReport(null);
+
     try {
       const response = await salesApi.openSession(companyId, branchId, {
-        cashierName: cashierName.trim(),
-        terminal: terminal.trim() || "POS-01",
-        openingFloat: Number(openingFloat) || 0,
+        cashierName: normalizedCashierName,
+        terminal: normalizedTerminal,
+        openingFloat: parseAmount(openingFloat),
       });
-      setSession((response as any).data ?? response);
+
+      setSession(response.data ?? response);
+      setClosingFloat("0");
     } catch (e) {
       setErr(extractApiError(e, "Failed to open session."));
     } finally {
@@ -74,17 +135,21 @@ export default function PosSessionPage() {
     }
   }
 
-  async function close() {
-    if (!session) return;
+  async function handleCloseSession() {
+    if (!hasScope || !session?.id) return;
+
     setBusy(true);
     setErr(null);
+
     try {
       const closeResponse = await salesApi.closeSession(companyId, branchId, session.id, {
-        closingFloat: Number(closingFloat) || 0,
+        closingFloat: parseAmount(closingFloat),
       });
-      setSession((closeResponse as any).data ?? closeResponse);
+
+      setSession(closeResponse.data ?? closeResponse);
+
       const reportResponse = await salesApi.xReport(companyId, branchId, session.id);
-      setReport((reportResponse as any).data ?? reportResponse);
+      setReport(reportResponse.data ?? reportResponse);
     } catch (e) {
       setErr(extractApiError(e, "Failed to close session."));
     } finally {
@@ -92,13 +157,15 @@ export default function PosSessionPage() {
     }
   }
 
-  async function xReport() {
-    if (!session) return;
+  async function handleXReport() {
+    if (!hasScope || !session?.id) return;
+
     setBusy(true);
     setErr(null);
+
     try {
       const response = await salesApi.xReport(companyId, branchId, session.id);
-      setReport((response as any).data ?? response);
+      setReport(response.data ?? response);
     } catch (e) {
       setErr(extractApiError(e, "Failed to generate X report."));
     } finally {
@@ -106,14 +173,21 @@ export default function PosSessionPage() {
     }
   }
 
-  async function zReport() {
-    if (!session) return;
-    if (!window.confirm("Generate Z Report and finalize this session?")) return;
+  async function handleZReport() {
+    if (!hasScope || !session?.id) return;
+
+    const confirmed = window.confirm(
+      "Generate Z Report and finalize this POS session? This action should normally be done only at end of shift."
+    );
+
+    if (!confirmed) return;
+
     setBusy(true);
     setErr(null);
+
     try {
       const response = await salesApi.zReport(companyId, branchId, session.id);
-      setReport((response as any).data ?? response);
+      setReport(response.data ?? response);
       await refresh();
     } catch (e) {
       setErr(extractApiError(e, "Failed to generate Z report."));
@@ -129,50 +203,114 @@ export default function PosSessionPage() {
           <h1>POS Session</h1>
           <p>Open, close, reconcile, and run X/Z reports.</p>
         </div>
+
         <div className="pos-actions">
-          <Button onClick={() => nav("/sales")}>Sales</Button>
-          {isOpen && <Button variant="primary" onClick={() => nav("/sales/pos")}>Go to Terminal</Button>}
+          <Button onClick={() => navigate("/sales")}>Sales</Button>
+
+          {isOpen && (
+            <Button variant="primary" onClick={() => navigate("/sales/pos")}>
+              Go to Terminal
+            </Button>
+          )}
         </div>
       </div>
 
+      {!hasScope && (
+        <Alert tone="danger">
+          Company and branch context are missing. Please sign in again or select a branch.
+        </Alert>
+      )}
+
       {err && <Alert tone="danger">{err}</Alert>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(320px, 440px) 1fr", gap: 16, alignItems: "start" }}>
-        <Card title={isOpen ? "Current Session" : "Open Session"} subtitle={isOpen ? "Shift is active" : "Start a cashier shift"}>
-          {!isOpen ? (
-            <div style={{ display: "grid", gap: 14 }}>
-              <Field label="Cashier Name">
-                <input value={cashierName} onChange={(e) => setCashierName(e.target.value)} placeholder="Cashier name" />
-              </Field>
-              <Field label="Terminal">
-                <input value={terminal} onChange={(e) => setTerminal(e.target.value)} placeholder="POS-01" />
-              </Field>
-              <Field label="Opening Float">
-                <input value={openingFloat} onChange={(e) => setOpeningFloat(e.target.value)} inputMode="decimal" />
-              </Field>
-              <Button variant="primary" size="lg" onClick={open} disabled={busy}>{busy ? "Opening..." : "Open Session"}</Button>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: 14 }}>
-              <Kpi label="Cashier" value={session?.cashierName || "—"} />
-              <Kpi label="Opened" value={dateTime(session?.openedAtUtc)} />
-              <Kpi label="Opening Float" value={money(session?.openingFloat)} />
-              <Field label="Closing Cash Count">
-                <input value={closingFloat} onChange={(e) => setClosingFloat(e.target.value)} inputMode="decimal" />
-              </Field>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <Button onClick={xReport} disabled={busy}>X Report</Button>
-                <Button variant="danger" onClick={close} disabled={busy}>{busy ? "Closing..." : "Close Session"}</Button>
-              </div>
-              <Button variant="primary" onClick={zReport} disabled={busy}>Generate Z Report</Button>
-            </div>
-          )}
-        </Card>
+      {loading ? (
+        <Alert tone="info">Loading current POS session...</Alert>
+      ) : (
+        <div className="pos-session-layout">
+          <Card
+            title={isOpen ? "Current Session" : "Open Session"}
+            subtitle={isOpen ? "Shift is active" : "Start a cashier shift"}
+          >
+            {!isOpen ? (
+              <div className="pos-form-grid">
+                <Field label="Cashier Name">
+                  <input
+                    value={cashierName}
+                    onChange={(e) => setCashierName(e.target.value)}
+                    placeholder="Cashier name"
+                    disabled={busy || !hasScope}
+                  />
+                </Field>
 
-        <Card title="Session Report" subtitle="X/Z report preview">
-          {report ? <ReportGrid report={report} /> : <Alert tone="info">Generate an X Report to preview shift totals.</Alert>}
-        </Card>
-      </div>
+                <Field label="Terminal">
+                  <input
+                    value={terminal}
+                    onChange={(e) => setTerminal(e.target.value)}
+                    placeholder="POS-01"
+                    disabled={busy || !hasScope}
+                  />
+                </Field>
+
+                <Field label="Opening Float">
+                  <input
+                    value={openingFloat}
+                    onChange={(e) => setOpeningFloat(e.target.value)}
+                    inputMode="decimal"
+                    disabled={busy || !hasScope}
+                  />
+                </Field>
+
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onClick={handleOpenSession}
+                  disabled={busy || !hasScope}
+                >
+                  {busy ? "Opening..." : "Open Session"}
+                </Button>
+              </div>
+            ) : (
+              <div className="pos-form-grid">
+                <Kpi label="Cashier" value={session?.cashierName || "—"} />
+                <Kpi label="Terminal" value={session?.terminal || "—"} />
+                <Kpi label="Opened" value={dateTime(session?.openedAtUtc)} />
+                <Kpi label="Opening Float" value={money(session?.openingFloat)} />
+
+                <Field label="Closing Cash Count">
+                  <input
+                    value={closingFloat}
+                    onChange={(e) => setClosingFloat(e.target.value)}
+                    inputMode="decimal"
+                    disabled={busy}
+                  />
+                </Field>
+
+                <div className="pos-two-column-actions">
+                  <Button onClick={handleXReport} disabled={busy}>
+                    X Report
+                  </Button>
+
+                  <Button variant="danger" onClick={handleCloseSession} disabled={busy}>
+                    {busy ? "Processing..." : "Close Session"}
+                  </Button>
+                </div>
+
+                <Button variant="primary" onClick={handleZReport} disabled={busy}>
+                  Generate Z Report
+                </Button>
+              </div>
+            )}
+          </Card>
+
+          <Card title="Session Report" subtitle="X/Z report preview">
+            {report ? (
+              <ReportGrid report={report} />
+            ) : (
+              <Alert tone="info">Generate an X Report to preview shift totals.</Alert>
+            )}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

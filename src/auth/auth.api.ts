@@ -1,17 +1,16 @@
 // src/auth/auth.api.ts
-//
-// HTTP client for auth endpoints.
-// All headers (X-Tenant-Id, X-Company-Id, X-Branch-Id, Authorization) are
-// injected by the http.ts interceptor — no manual header passing here.
 
 import axios from "axios";
+
 import { http } from "../api/http";
 import type {
-  LoginRequest, LoginResponse,
-  RegisterRequest, ResetPasswordRequest, AuthUser,
+  AuthUser,
+  ForgotPasswordRequest,
+  LoginRequest,
+  LoginResponse,
+  RegisterRequest,
+  ResetPasswordRequest,
 } from "./auth.types";
-
-// ── Error normalisation ───────────────────────────────────────────────────────
 
 export class ApiError extends Error {
   constructor(
@@ -24,78 +23,216 @@ export class ApiError extends Error {
   }
 }
 
+function clean(value: unknown): string | null {
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : null;
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeTenantSlug(value: unknown): string | null {
+  return clean(value)?.toLowerCase() ?? null;
+}
+
+function getStoredTenantSlug(): string | null {
+  return normalizeTenantSlug(
+    localStorage.getItem("tenantSlug") ??
+      sessionStorage.getItem("tenantSlug") ??
+      localStorage.getItem("tenantId") ??
+      sessionStorage.getItem("tenantId")
+  );
+}
+
+function rememberTenantSlug(tenantSlug: string | null): void {
+  if (!tenantSlug) return;
+
+  localStorage.setItem("tenantSlug", tenantSlug);
+  localStorage.removeItem("tenantId");
+}
+
+function clearTenantScope(): void {
+  localStorage.removeItem("tenantSlug");
+  localStorage.removeItem("tenantId");
+  sessionStorage.removeItem("tenantSlug");
+  sessionStorage.removeItem("tenantId");
+}
+
+function tenantHeaders(
+  tenantSlug: string | null
+): Record<string, string> | undefined {
+  return tenantSlug
+    ? {
+        "X-Tenant-Id": tenantSlug,
+      }
+    : undefined;
+}
+
 function extractValidationErrors(errors: unknown): string | null {
   if (!errors) return null;
-  if (Array.isArray(errors))
-    return errors.filter(Boolean).join("\n") || null;
-  if (typeof errors === "object") {
-    const msgs = Object.values(errors as Record<string, unknown>)
-      .flatMap(v => Array.isArray(v) ? v : [v])
-      .filter((v): v is string => typeof v === "string");
-    return msgs.join("\n") || null;
+
+  if (Array.isArray(errors)) {
+    return errors.map(String).filter(Boolean).join("\n") || null;
   }
+
+  if (typeof errors === "object") {
+    return (
+      Object.values(errors as Record<string, unknown>)
+        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .map(String)
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .join("\n") || null
+    );
+  }
+
   return null;
 }
 
-function normalizeError(err: unknown): never {
-  if (axios.isAxiosError(err)) {
-    const status = err.response?.status ?? null;
-    const data   = err.response?.data as Record<string, unknown> | undefined;
-    const message =
-      (typeof data?.error   === "string" ? data.error   : null) ??
-      (typeof data?.message === "string" ? data.message : null) ??
-      extractValidationErrors(data?.errors)                      ??
-      (typeof data?.detail  === "string" ? data.detail  : null) ??
-      (typeof data?.title   === "string" ? data.title   : null) ??
-      err.message ?? "Request failed.";
-    throw new ApiError(message, status, data);
-  }
-  throw err;
+function extractErrorMessage(data: unknown, fallback: string): string {
+  if (!data || typeof data !== "object") return fallback;
+
+  const body = data as Record<string, unknown>;
+
+  return (
+    clean(body.error) ??
+    clean(body.message) ??
+    extractValidationErrors(body.errors) ??
+    clean(body.detail) ??
+    clean(body.title) ??
+    fallback
+  );
 }
 
-// ── API ───────────────────────────────────────────────────────────────────────
+function normalizeError(error: unknown): never {
+  if (error instanceof ApiError) throw error;
+  if (!axios.isAxiosError(error)) throw error;
+
+  const status = error.response?.status ?? null;
+  const data = error.response?.data;
+
+  const fallback = !error.response
+    ? "Unable to reach the server. Please check your connection and try again."
+    : error.message || "Request failed.";
+
+  throw new ApiError(
+    extractErrorMessage(data, fallback),
+    status,
+    data
+  );
+}
 
 export const authApi = {
-  async login(req: LoginRequest): Promise<LoginResponse> {
+  async login(request: LoginRequest): Promise<LoginResponse> {
     try {
-      const res = await http.post<LoginResponse>("/auth/login", {
-        email:    req.email.trim().toLowerCase(),
-        password: req.password,
-      });
-      return res.data;
-    } catch (err) { normalizeError(err); }
+      const tenantSlug = normalizeTenantSlug(request.tenantSlug);
+      const email = normalizeEmail(request.email);
+
+      const response = await http.post<LoginResponse>(
+        "/auth/login",
+        {
+          tenantSlug,
+          email,
+          password: request.password,
+        },
+        {
+          headers: tenantHeaders(tenantSlug),
+        }
+      );
+
+      if (tenantSlug) {
+        rememberTenantSlug(
+          tenantSlug ??
+            normalizeTenantSlug(response.data.tenantSlug)
+        );
+      } else {
+        clearTenantScope();
+      }
+
+      return response.data;
+    } catch (error) {
+      normalizeError(error);
+    }
   },
 
-  async register(req: RegisterRequest): Promise<LoginResponse> {
-    try {
-      const res = await http.post<LoginResponse>("/auth/register", {
-        ...req,
-        email: req.email.trim().toLowerCase(),
-      });
-      return res.data;
-    } catch (err) { normalizeError(err); }
+  async register(_request: RegisterRequest): Promise<LoginResponse> {
+    throw new ApiError(
+      "Self-registration is disabled. Please contact your company administrator.",
+      403
+    );
   },
 
   async me(): Promise<AuthUser> {
     try {
-      return (await http.get<AuthUser>("/auth/me")).data;
-    } catch (err) { normalizeError(err); }
+      const response = await http.get<AuthUser>("/auth/me");
+      return response.data;
+    } catch (error) {
+      normalizeError(error);
+    }
   },
 
-  /** Fire-and-forget — client always clears state regardless of response. */
   async logout(): Promise<void> {
-    try { await http.post("/auth/logout", {}); }
-    catch { /* intentional no-op */ }
-  },
-
-  async forgotPassword(email: string): Promise<void> {
     try {
-      await http.post("/auth/forgot-password", { email: email.trim().toLowerCase() });
-    } catch (err) { normalizeError(err); }
+      await http.post("/auth/logout", {});
+    } catch {
+      // Local logout must continue even if server logout fails.
+    }
   },
 
-  async resetPassword(req: ResetPasswordRequest): Promise<void> {
-    try { await http.post("/auth/reset-password", req); }
-    catch (err) { normalizeError(err); }
+  async forgotPassword(
+    request: ForgotPasswordRequest | string
+  ): Promise<void> {
+    try {
+      const tenantSlug =
+        typeof request === "string"
+          ? getStoredTenantSlug()
+          : normalizeTenantSlug(request.tenantSlug) ??
+            getStoredTenantSlug();
+
+      const email =
+        typeof request === "string"
+          ? normalizeEmail(request)
+          : normalizeEmail(request.email);
+
+      await http.post(
+        "/auth/forgot-password",
+        {
+          tenantSlug,
+          email,
+        },
+        {
+          headers: tenantHeaders(tenantSlug),
+        }
+      );
+    } catch (error) {
+      normalizeError(error);
+    }
+  },
+
+  async resetPassword(
+    request: ResetPasswordRequest
+  ): Promise<void> {
+    try {
+      const tenantSlug =
+        normalizeTenantSlug(request.tenantSlug) ??
+        getStoredTenantSlug();
+
+      await http.post(
+        "/auth/reset-password",
+        {
+          tenantSlug,
+          email: normalizeEmail(request.email),
+          token: request.token,
+          newPassword: request.newPassword,
+        },
+        {
+          headers: tenantHeaders(tenantSlug),
+        }
+      );
+    } catch (error) {
+      normalizeError(error);
+    }
   },
 };

@@ -121,9 +121,17 @@ export interface StockLocation {
 }
 
 export interface CreateStockLocationDto {
-  name:         string;
-  code:         string;
+  name:         string|null|undefined;
+  code:         string|null|undefined;
   locationType: StockLocationType;
+  isActive:    boolean;
+  isDefault:    boolean;
+  isDefaultReceiving:boolean;
+  isDefaultIssue:boolean;
+  canIssue:    boolean;
+  canReceive:  boolean;
+  canSell:     boolean;
+  canProduce:  boolean;
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -178,3 +186,14 @@ export type StoreVm  = StoreDto;
 // These aliases keep them compiling without changes.
 export type Store = StoreDto;
 export type CreateStockLocationPayload = CreateStockLocationDto;
+export type OnboardingReadinessDto = {
+  hasCompany?: boolean;
+  hasBranch?: boolean;
+  hasStockLocation?: boolean;
+  hasStockLocations?: boolean;
+  hasStore?: boolean;
+  hasStores?: boolean;
+  hasBranchAdmin?: boolean;
+  storesMappedToIssueLocations?: boolean;
+  canFinish?: boolean;
+};

@@ -1,72 +1,101 @@
 // src/modules/security/hooks/useEffectivePermissions.ts
-//
-// Computes effective permissions = union of all role permission keys + direct.
-// Role details are cached per companyId+roleId to avoid redundant API calls.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { securityApi } from "../api/securityApi";
-import { uniqSorted } from "../utils/security.utils";
-import type { RoleAssignment, EffectivePermissionsState } from "../types/security.types";
+import { extractSecurityError, isCancelled, uniqSorted } from "../utils/security.utils";
+import type {
+  EffectivePermissionsState,
+  RoleAssignment,
+} from "../types/security.types";
 
 export function useEffectivePermissions(
-  companyId:            string | null,
-  roleAssignments:      RoleAssignment[],
+  companyId: string | null | undefined,
+  roleAssignments: RoleAssignment[],
   directPermissionKeys: string[]
 ) {
-  const [state, setState] = useState<EffectivePermissionsState>({ status: "idle" });
+  const [state, setState] = useState<EffectivePermissionsState>({
+    status: "idle",
+  });
 
-  // Cache keyed by `${companyId}:${roleId}` — prevents cross-company hits
   const cache = useRef<Map<string, string[]>>(new Map());
 
   const roleIds = useMemo(
-    () => uniqSorted(roleAssignments.map((a) => a.roleId)),
+    () => uniqSorted(roleAssignments.map((assignment) => assignment.roleId)),
     [roleAssignments]
   );
 
   useEffect(() => {
-    let alive = true;
+    const controller = new AbortController();
 
-    if (!companyId || roleIds.length === 0) {
-      setState({ status: "loaded", rolePermissionKeys: [] });
-      return;
-    }
+    async function load() {
+      if (!companyId || roleIds.length === 0) {
+        setState({
+          status: "loaded",
+          rolePermissionKeys: [],
+        });
+        return;
+      }
 
-    setState({ status: "loading" });
+      setState({ status: "loading" });
 
-    (async () => {
       try {
-        const missing = roleIds.filter((id) => !cache.current.has(`${companyId}:${id}`));
+        const missingRoleIds = roleIds.filter(
+          (roleId) => !cache.current.has(`${companyId}:${roleId}`)
+        );
 
-        if (missing.length > 0) {
-          const details = await Promise.all(
-            missing.map((id) => securityApi.getRole(companyId, id))
+        if (missingRoleIds.length > 0) {
+          const roleDetails = await Promise.all(
+            missingRoleIds.map((roleId) =>
+              securityApi.getRole(companyId, roleId, controller.signal)
+            )
           );
-          for (const d of details) {
-            const key = `${companyId}:${d.data.role.id}`;
-            cache.current.set(key, d.data.permissionKeys ?? []);
+
+          for (const detail of roleDetails) {
+            const cacheKey = `${companyId}:${detail.role.id}`;
+            cache.current.set(cacheKey, detail.permissionKeys ?? []);
           }
         }
 
-        if (!alive) return;
+        if (controller.signal.aborted) return;
 
-        const collected = roleIds.flatMap(
-          (id) => cache.current.get(`${companyId}:${id}`) ?? []
+        const collectedPermissionKeys = roleIds.flatMap(
+          (roleId) => cache.current.get(`${companyId}:${roleId}`) ?? []
         );
-        setState({ status: "loaded", rolePermissionKeys: uniqSorted(collected) });
-      } catch (e: unknown) {
-        if (!alive) return;
-        const msg = e instanceof Error ? e.message : "Failed to compute effective permissions.";
-        setState({ status: "error", message: msg });
-      }
-    })();
 
-    return () => { alive = false; };
+        setState({
+          status: "loaded",
+          rolePermissionKeys: uniqSorted(collectedPermissionKeys),
+        });
+      } catch (error) {
+        if (controller.signal.aborted || isCancelled(error)) return;
+
+        setState({
+          status: "error",
+          message: extractSecurityError(
+            error,
+            "Failed to compute effective permissions."
+          ),
+        });
+      }
+    }
+
+    void load();
+
+    return () => controller.abort();
   }, [companyId, roleIds]);
 
-  const effective = useMemo<string[]>(() => {
-    const rolePerms = state.status === "loaded" ? state.rolePermissionKeys : [];
-    return uniqSorted([...rolePerms, ...(directPermissionKeys ?? [])]);
+  const effective = useMemo(() => {
+    const rolePermissionKeys =
+      state.status === "loaded" ? state.rolePermissionKeys : [];
+
+    return uniqSorted([
+      ...rolePermissionKeys,
+      ...(directPermissionKeys ?? []),
+    ]);
   }, [state, directPermissionKeys]);
 
-  return { state, effective };
+  return {
+    state,
+    effective,
+  };
 }

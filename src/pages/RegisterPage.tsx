@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError } from "../auth/auth.api";
-import "./security.css";
+import "../styles/modules.identity.css";
 
 function scorePassword(pwd: string): 0 | 1 | 2 | 3 | 4 {
   if (!pwd) return 0;

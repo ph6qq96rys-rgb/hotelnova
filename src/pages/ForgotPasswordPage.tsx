@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { authApi, ApiError } from "../auth/auth.api";
-import "./security.css";
+import "../styles/modules.identity.css";
 
 function IconAlert() {
   return (

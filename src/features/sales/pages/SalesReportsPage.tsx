@@ -22,10 +22,80 @@ type SalesSummary = {
   pending: number;
 };
 
-function useAppScope() {
+type AppScope = {
+  companyId: string;
+  branchId: string;
+};
+
+function clean(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function readJsonStorage(key: string): any | null {
+  const raw = localStorage.getItem(key) ?? sessionStorage.getItem(key);
+
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function readJwtPayload(token?: string | null): any | null {
+  if (!token || !token.includes(".")) return null;
+
+  try {
+    const payload = token.split(".")[1];
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(window.atob(normalized));
+  } catch {
+    return null;
+  }
+}
+
+function getStoredValue(keys: string[]): string {
+  for (const key of keys) {
+    const value = clean(localStorage.getItem(key) ?? sessionStorage.getItem(key));
+    if (value) return value;
+  }
+
+  return "";
+}
+
+function resolveAppScope(): AppScope {
+  const auth =
+    readJsonStorage("auth") ??
+    readJsonStorage("authState") ??
+    readJsonStorage("restaurantfnb.auth") ??
+    readJsonStorage("hotelnova.auth");
+
+  const token =
+    clean(auth?.accessToken) ||
+    clean(auth?.token) ||
+    clean(localStorage.getItem("accessToken")) ||
+    clean(sessionStorage.getItem("accessToken"));
+
+  const claims = readJwtPayload(token);
+
+  const companyId =
+    getStoredValue(["companyId", "company_id", "selectedCompanyId"]) ||
+    clean(auth?.companyId) ||
+    clean(auth?.company_id) ||
+    clean(claims?.company_id) ||
+    clean(claims?.CompanyId);
+
+  const branchId =
+    getStoredValue(["branchId", "branch_id", "selectedBranchId"]) ||
+    clean(auth?.branchId) ||
+    clean(auth?.branch_id) ||
+    clean(claims?.branch_id) ||
+    clean(claims?.BranchId);
+
   return {
-    companyId: localStorage.getItem("companyId") ?? "",
-    branchId: localStorage.getItem("branchId") ?? "",
+    companyId,
+    branchId,
   };
 }
 
@@ -47,16 +117,15 @@ function normalizeSalesList(response: unknown): SaleListItemDto[] {
   const data = (response as any)?.data ?? response;
 
   if (Array.isArray(data)) return data;
-
   if (Array.isArray(data?.items)) return data.items;
-
   if (Array.isArray(data?.Items)) return data.Items;
+  if (Array.isArray(data?.data?.items)) return data.data.items;
 
   return [];
 }
 
 export default function SalesReportsPage() {
-  const { companyId, branchId } = useAppScope();
+  const [scope, setScope] = useState<AppScope>(() => resolveAppScope());
 
   const [fromDate, setFromDate] = useState(today());
   const [toDate, setToDate] = useState(today());
@@ -67,11 +136,31 @@ export default function SalesReportsPage() {
   const [loading, setLoading] = useState(false);
   const [postingCogs, setPostingCogs] = useState(false);
 
+  const companyId = scope.companyId;
+  const branchId = scope.branchId;
+
   const canQuery = Boolean(companyId && branchId);
 
+  const refreshScope = useCallback(() => {
+    const next = resolveAppScope();
+    setScope(next);
+
+    if (!next.companyId || !next.branchId) {
+      setItems([]);
+      setErr(
+        "Missing company or branch context. Please switch tenant again or select a default branch."
+      );
+    } else {
+      setErr(null);
+    }
+
+    return next;
+  }, []);
+
   const load = useCallback(async () => {
-    if (!canQuery) {
-      setErr("Company and branch are required. Please select a company and branch first.");
+    const activeScope = refreshScope();
+
+    if (!activeScope.companyId || !activeScope.branchId) {
       return;
     }
 
@@ -79,12 +168,16 @@ export default function SalesReportsPage() {
     setErr(null);
 
     try {
-      const response = await salesApi.list(companyId, branchId, {
-        page: 1,
-        pageSize: 100,
-        fromDate,
-        toDate,
-      });
+      const response = await salesApi.list(
+        activeScope.companyId,
+        activeScope.branchId,
+        {
+          page: 1,
+          pageSize: 100,
+          fromDate,
+          toDate,
+        }
+      );
 
       setItems(normalizeSalesList(response));
     } catch (e) {
@@ -93,17 +186,27 @@ export default function SalesReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [branchId, canQuery, companyId, fromDate, toDate]);
+  }, [fromDate, refreshScope, toDate]);
 
   useEffect(() => {
-    if (canQuery) {
+    const activeScope = refreshScope();
+
+    if (activeScope.companyId && activeScope.branchId) {
       void load();
     }
-  }, [canQuery, load]);
+  }, [load, refreshScope]);
 
   const summary = useMemo<SalesSummary>(() => {
-    const sales = items.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
-    const cogs = items.reduce((sum, row) => sum + Number(row.totalCogs || 0), 0);
+    const sales = items.reduce(
+      (sum, row) => sum + Number(row.totalAmount || 0),
+      0
+    );
+
+    const cogs = items.reduce(
+      (sum, row) => sum + Number(row.totalCogs || 0),
+      0
+    );
+
     const posted = items.filter((row) => row.isInventoryPosted).length;
     const grossProfit = sales - cogs;
 
@@ -120,8 +223,9 @@ export default function SalesReportsPage() {
   }, [items]);
 
   const handlePostBulkCogs = async () => {
-    if (!canQuery) {
-      setErr("Company and branch are required.");
+    const activeScope = refreshScope();
+
+    if (!activeScope.companyId || !activeScope.branchId) {
       return;
     }
 
@@ -129,7 +233,7 @@ export default function SalesReportsPage() {
     setErr(null);
 
     try {
-      await salesApi.postBulkCogs(companyId, branchId, {
+      await salesApi.postBulkCogs(activeScope.companyId, activeScope.branchId, {
         fromDate,
         toDate,
       });
@@ -176,7 +280,7 @@ export default function SalesReportsPage() {
           <Button
             variant="secondary"
             onClick={handlePostBulkCogs}
-            disabled={loading || postingCogs || items.length === 0}
+            disabled={loading || postingCogs || items.length === 0 || !canQuery}
           >
             {postingCogs ? "Posting COGS..." : "Post Pending COGS"}
           </Button>
@@ -185,7 +289,8 @@ export default function SalesReportsPage() {
 
       {!canQuery && (
         <Alert tone="danger">
-          Missing company or branch context. Please select company and branch again.
+          Missing company or branch context. Please switch tenant again or make sure
+          the selected user has a default branch.
         </Alert>
       )}
 
@@ -234,6 +339,7 @@ export default function SalesReportsPage() {
             {items.map((row) => {
               const totalAmount = Number(row.totalAmount || 0);
               const totalCogs = Number(row.totalCogs || 0);
+
               const grossProfit =
                 typeof row.grossProfit === "number"
                   ? row.grossProfit

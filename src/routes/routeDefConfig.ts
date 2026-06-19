@@ -1,75 +1,135 @@
+// src/routes/routeDefConfig.ts
+
 import { routeConfig } from "./routeConfig";
 import { companyRoutes } from "./companyRoutes";
 import { useGrnRoutes } from "./grnroutes";
 import { useSalesRoutes } from "./sales-cogsroute";
 import { getHrRoutes } from "./hrRoutes";
+import { getPostRoutes } from "./posRoutes";
 import { useAppScope } from "../app/useAppScope";
-import {getPostRoutes} from "./posRoutes";
+import { inventoryMasterRoutes } from "./inventoryMasterRoutes";
 
 import type { AppRoute } from "./sales-cogsroute";
 
-function resolveRoutePath(path: string | undefined, companyId?: string | null) {
+type RouteWithHref = AppRoute & {
+  getHref?: (companyId: string) => string;
+};
+
+function cleanPath(path?: string | null): string | undefined {
   if (!path) return undefined;
 
-  if (path.includes(":companyId")) {
-    if (!companyId) return undefined;
-    return path.replace(/:companyId/g, companyId);
-  }
+  const clean = path
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
 
-  return path;
+  return clean || undefined;
 }
 
-function flattenRoutes(
-  routes: AppRoute[],
-  companyId?: string | null,
-  parentPath = ""
-): AppRoute[] {
-  const result: AppRoute[] = [];
+function stripCompanyPrefix(path?: string | null): string | undefined {
+  const clean = cleanPath(path);
 
-  for (const r of routes) {
-    const segment = r.path ?? "";
+  if (!clean) return undefined;
 
-    const fullPath = segment.startsWith("/")
-      ? segment
-      : parentPath && segment
-      ? `${parentPath}/${segment}`.replace(/\/+/g, "/")
-      : parentPath || segment;
+  if (clean === "companies/:companyId") return undefined;
 
-    const resolvedPath = resolveRoutePath(fullPath, companyId);
+  if (clean.startsWith("companies/:companyId/")) {
+    return clean.replace(/^companies\/:companyId\/?/, "");
+  }
 
-    result.push({
-      ...r,
-      path: resolvedPath,
-    });
-
-    if (Array.isArray((r as any).children)) {
-      result.push(
-        ...flattenRoutes((r as any).children as AppRoute[], companyId, fullPath)
-      );
+  if (clean.startsWith("companies/")) {
+    const parts = clean.split("/");
+    if (parts.length >= 3) {
+      return parts.slice(2).join("/");
     }
   }
+
+  return clean;
+}
+
+function companyHref(companyId: string, path?: string | null): string {
+  const clean = stripCompanyPrefix(path);
+
+  if (!clean) {
+    return `/companies/${companyId}/dashboard`;
+  }
+
+  return `/companies/${companyId}/${clean}`;
+}
+
+function normalizeRoute(
+  route: AppRoute,
+  parentPath = ""
+): RouteWithHref {
+  const rawPath = cleanPath(route.path);
+  const ownPath = stripCompanyPrefix(rawPath);
+
+  const fullPath =
+    ownPath && parentPath
+      ? `${parentPath}/${ownPath}`.replace(/\/+/g, "/")
+      : ownPath || parentPath;
+
+  const normalized: RouteWithHref = {
+    ...route,
+    path: ownPath,
+    getHref: (companyId: string) => companyHref(companyId, fullPath),
+  };
+
+  if (Array.isArray((route as any).children)) {
+    normalized.children = ((route as any).children as AppRoute[]).map((child) =>
+      normalizeRoute(child, fullPath)
+    ) as any;
+  }
+
+  return normalized;
+}
+
+function flattenRoutes(routes: AppRoute[]): RouteWithHref[] {
+  const result: RouteWithHref[] = [];
+
+  function walk(items: AppRoute[], parentPath = "") {
+    for (const route of items) {
+      const normalized = normalizeRoute(route, parentPath);
+      result.push(normalized);
+
+      if (Array.isArray((route as any).children)) {
+        const childParent =
+          stripCompanyPrefix(route.path) ??
+          parentPath;
+
+        walk((route as any).children as AppRoute[], childParent);
+      }
+    }
+  }
+
+  walk(routes);
 
   return result;
 }
 
-export function useAppRoutes(): AppRoute[] {
+export function useAppRoutes(): RouteWithHref[] {
   const { companyId } = useAppScope();
 
   const grnRoutes = useGrnRoutes();
   const salesRoutes = useSalesRoutes();
   const hrRoutes = getHrRoutes();
-  const posRoutes = getPostRoutes();  
-  
+  const posRoutes = getPostRoutes();
 
-  return flattenRoutes(
-    [
-      ...(routeConfig as AppRoute[]),
-      ...(companyRoutes as AppRoute[]),
-      ...grnRoutes,
-      ...salesRoutes,
-      ...hrRoutes,
-      ...posRoutes,
-    ],
-    companyId
-  );
+  const allRoutes: AppRoute[] = [
+    ...(routeConfig as AppRoute[]),
+    ...(companyRoutes as AppRoute[]),
+    ...(inventoryMasterRoutes as AppRoute[]),
+    ...grnRoutes,
+    ...salesRoutes,
+    ...(hrRoutes as AppRoute[]),
+    ...(posRoutes as AppRoute[]),
+  ];
+
+  return flattenRoutes(allRoutes).map((route) => ({
+    ...route,
+    path: stripCompanyPrefix(route.path),
+    getHref: companyId
+      ? () => companyHref(companyId, route.path)
+      : route.getHref,
+  }));
 }

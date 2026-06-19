@@ -1,10 +1,10 @@
 // src/features/hr/pages/Employees/EmployeeListPage.tsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
-import { hrLinks } from "../../../../routes/hrRoutes";
+import { useErpNavigate } from "../../../../routes/useErpNavigation";
 import { employeeApi } from "../../api/hrApi";
 import type { EmployeeListDto, EmploymentStatus } from "../../types/index";
 import {
@@ -22,7 +22,7 @@ const STATUS_OPTIONS: EmploymentStatus[] = [
 ];
 
 export default function EmployeeListPage() {
-  const nav = useNavigate();
+  const nav = useErpNavigate();
 
   const { companyId: routeCompanyId } = useParams<{
     companyId: string;
@@ -40,15 +40,13 @@ export default function EmployeeListPage() {
 
   const canNavigate = Boolean(companyId);
 
-  const employeeNewUrl = useMemo(
-    () => (companyId ? hrLinks.employeeNew(companyId) : "/"),
-    [companyId]
-  );
-
-  const employeeDetailUrl = useCallback(
-    (employeeId: string) =>
-      companyId ? hrLinks.employeeDetail(companyId, employeeId) : "/",
-    [companyId]
+  const paths = useMemo(
+    () => ({
+      employeeNew: "hr/employees/new",
+      employeeDetail: (employeeId: string) => `hr/employees/${employeeId}`,
+      employeeEdit: (employeeId: string) => `hr/employees/${employeeId}/edit`,
+    }),
+    []
   );
 
   const load = useCallback(async () => {
@@ -67,8 +65,9 @@ export default function EmployeeListPage() {
         status: status ? (status as EmploymentStatus) : undefined,
       });
 
-      setItems(result);
+      setItems(Array.isArray(result) ? result : []);
     } catch (e) {
+      setItems([]);
       setError(getApiError(e, "Failed to load employees."));
     } finally {
       setLoading(false);
@@ -99,9 +98,10 @@ export default function EmployeeListPage() {
         </div>
 
         <button
+          type="button"
           className="btn btn-primary"
           disabled={!canNavigate}
-          onClick={() => nav(employeeNewUrl)}
+          onClick={() => nav(paths.employeeNew)}
         >
           + New Employee
         </button>
@@ -119,11 +119,11 @@ export default function EmployeeListPage() {
         className="kpi-grid"
         style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}
       >
-        {(["Active", "Probation", "OnLeave", "Terminated"] as EmploymentStatus[]).map(
-          (s) => (
-            <div className="kpi" key={s}>
-              <div className="kpi-label">{s}</div>
-              <div className="kpi-val">{counts[s as keyof typeof counts]}</div>
+        {(["Active", "Probation", "OnLeave", "Terminated"] as const).map(
+          (statusKey) => (
+            <div className="kpi" key={statusKey}>
+              <div className="kpi-label">{statusKey}</div>
+              <div className="kpi-val">{counts[statusKey]}</div>
               <div className="kpi-sub">employees</div>
             </div>
           )
@@ -161,15 +161,20 @@ export default function EmployeeListPage() {
             }}
           >
             <option value="">All</option>
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
+            {STATUS_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
               </option>
             ))}
           </select>
         </label>
 
-        <button className="btn" onClick={() => void load()} disabled={loading}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void load()}
+          disabled={loading}
+        >
           <i className="ti ti-refresh" /> {loading ? "Loading…" : "Refresh"}
         </button>
       </div>
@@ -220,7 +225,7 @@ export default function EmployeeListPage() {
                     type="button"
                     className="btn btn-sm"
                     disabled={!canNavigate}
-                    onClick={() => nav(employeeNewUrl)}
+                    onClick={() => nav(paths.employeeNew)}
                   >
                     Add one
                   </button>
@@ -232,7 +237,7 @@ export default function EmployeeListPage() {
                   key={emp.id}
                   style={{ cursor: canNavigate ? "pointer" : "default" }}
                   onClick={() => {
-                    if (canNavigate) nav(employeeDetailUrl(emp.id));
+                    if (canNavigate) nav(paths.employeeDetail(emp.id));
                   }}
                 >
                   <td
@@ -279,11 +284,12 @@ export default function EmployeeListPage() {
 
                   <td style={{ textAlign: "right" }}>
                     <button
+                      type="button"
                       className="btn btn-sm"
                       disabled={!canNavigate}
                       onClick={(e) => {
                         e.stopPropagation();
-                        nav(employeeDetailUrl(emp.id));
+                        nav(paths.employeeDetail(emp.id));
                       }}
                     >
                       Open →

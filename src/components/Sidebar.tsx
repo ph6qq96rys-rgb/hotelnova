@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Building2,
@@ -6,11 +6,15 @@ import {
   ChevronsUpDown,
   Circle,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   ShieldCheck,
   X,
 } from "lucide-react";
 
+import { useAuth } from "../auth/useAuth";
+import { useAppContext } from "../app/AppContext";
 import { useAppRoutes } from "../routes/routeDefConfig";
 import type { AppRoute } from "../routes/sales-cogsroute";
 
@@ -39,14 +43,8 @@ type SidebarItem = {
   icon?: React.ReactNode;
 };
 
-type StoredScope = {
-  companyId: string | null;
-  companyName: string;
-  branchName: string;
-  userName: string;
-};
-
-const STORAGE_COMPANY_KEYS = ["companyId", "selectedCompanyId", "activeCompanyId"] as const;
+const SIDEBAR_COLLAPSED_KEY = "hotelnova.sidebar.collapsed.v1";
+const SYSTEM_ADMIN_ROLES = ["SYSTEMADMIN", "SYSADMIN"];
 
 const SECTION_ORDER = [
   "System",
@@ -63,85 +61,12 @@ const SECTION_ORDER = [
   "General",
 ];
 
-function safeJsonParse<T>(value: string | null, fallback: T): T {
-  if (!value) return fallback;
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
+function readCollapsedPreference(): boolean {
+  return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
 }
 
-function readString(...values: unknown[]): string | null {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-
-  return null;
-}
-
-function getStoredRoles(): string[] {
-  const parsed = safeJsonParse<unknown>(localStorage.getItem("roles"), []);
-
-  if (!Array.isArray(parsed)) return [];
-
-  return parsed
-    .filter((role): role is string => typeof role === "string")
-    .map((role) => role.trim())
-    .filter(Boolean);
-}
-
-function getStoredScope(): StoredScope {
-  const appScope = safeJsonParse<Record<string, any> | null>(
-    localStorage.getItem("appScope") ?? sessionStorage.getItem("appScope"),
-    null,
-  );
-
-  let companyId = readString(
-    appScope?.companyId,
-    appScope?.company?.id,
-    appScope?.activeCompanyId,
-  );
-
-  for (const key of STORAGE_COMPANY_KEYS) {
-    companyId ??= readString(localStorage.getItem(key), sessionStorage.getItem(key));
-  }
-
-  const companyName =
-    readString(
-      appScope?.companyName,
-      appScope?.company?.legalName,
-      appScope?.company?.name,
-      localStorage.getItem("companyName"),
-      sessionStorage.getItem("companyName"),
-    ) ?? "No company selected";
-
-  const branchName =
-    readString(
-      appScope?.branchName,
-      appScope?.branch?.name,
-      localStorage.getItem("branchName"),
-      sessionStorage.getItem("branchName"),
-    ) ?? "No branch selected";
-
-  const userName =
-    readString(
-      appScope?.userName,
-      appScope?.user?.fullName,
-      appScope?.user?.name,
-      localStorage.getItem("userName"),
-      sessionStorage.getItem("userName"),
-    ) ?? "Admin User";
-
-  return {
-    companyId,
-    companyName,
-    branchName,
-    userName,
-  };
+function isSystemAdminRole(role: string): boolean {
+  return SYSTEM_ADMIN_ROLES.includes(role.trim().toUpperCase());
 }
 
 function isVisibleRoute(route: SidebarRoute): boolean {
@@ -160,7 +85,18 @@ function getRouteOrder(route: SidebarRoute): number {
   return route.menu?.order ?? route.order ?? 1000;
 }
 
-function resolveSidebarPath(route: SidebarRoute, companyId: string | null): string | null {
+function normalizePath(path: string): string | null {
+  const clean = path.trim();
+
+  if (!clean) return null;
+
+  return clean === "/" ? "/" : `/${clean.replace(/^\/+/, "")}`;
+}
+
+function resolveSidebarPath(
+  route: SidebarRoute,
+  companyId: string | null
+): string | null {
   if (route.getHref) {
     if (!companyId) return null;
     return normalizePath(route.getHref(companyId));
@@ -168,32 +104,31 @@ function resolveSidebarPath(route: SidebarRoute, companyId: string | null): stri
 
   if (!route.path) return null;
 
-  const path = route.path.trim();
-  if (!path || path.includes(":")) return null;
+  let path = route.path.trim();
+
+  if (!path) return null;
+
+  path = path.replace(/^\/+/, "");
+
+  if (path.startsWith("companies/:companyId/")) {
+    if (!companyId) return null;
+    path = path.replace("companies/:companyId/", `companies/${companyId}/`);
+  } else if (path === "companies/:companyId") {
+    if (!companyId) return null;
+    path = `companies/${companyId}`;
+  } else if (!path.startsWith("companies/") && companyId) {
+    path = `companies/${companyId}/${path}`;
+  }
+
+  if (path.includes(":")) return null;
 
   return normalizePath(path);
 }
 
-function normalizePath(path: string): string | null {
-  const clean = path.trim();
-  if (!clean) return null;
-
-  return clean === "/" ? "/" : `/${clean.replace(/^\/+/, "")}`;
-}
-
-function getInitials(name: string): string {
-  const initials = name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-
-  return initials || "U";
-}
-
-function buildSidebarItems(routes: SidebarRoute[], companyId: string | null): SidebarItem[] {
+function buildSidebarItems(
+  routes: SidebarRoute[],
+  companyId: string | null
+): SidebarItem[] {
   const items = new Map<string, SidebarItem>();
 
   for (const route of routes) {
@@ -220,8 +155,12 @@ function buildSidebarItems(routes: SidebarRoute[], companyId: string | null): Si
   }
 
   return [...items.values()].sort((a, b) => {
+    const aSection = SECTION_ORDER.indexOf(a.section);
+    const bSection = SECTION_ORDER.indexOf(b.section);
+
     const sectionSort =
-      SECTION_ORDER.indexOf(a.section) - SECTION_ORDER.indexOf(b.section);
+      (aSection === -1 ? 999 : aSection) -
+      (bSection === -1 ? 999 : bSection);
 
     if (sectionSort !== 0) return sectionSort;
     if (a.order !== b.order) return a.order - b.order;
@@ -237,42 +176,112 @@ function groupSidebarItems(items: SidebarItem[]): Record<string, SidebarItem[]> 
   }, {});
 }
 
-export default function Sidebar({ open = false, onClose, onSignOut }: SidebarProps) {
+function getInitials(name: string): string {
+  const initials = name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  return initials || "U";
+}
+
+export default function Sidebar({
+  open = false,
+  onClose,
+  onSignOut,
+}: SidebarProps) {
   const routes = useAppRoutes();
   const navigate = useNavigate();
+  const auth = useAuth();
+  const appScope = useAppContext();
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsedPreference);
 
-  const scope = useMemo(() => getStoredScope(), []);
-  const roles = useMemo(() => getStoredRoles(), []);
-  const isSystemAdmin = roles.includes("SystemAdmin");
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
+    document.documentElement.style.setProperty(
+      "--hnav-current-width",
+      collapsed ? "84px" : "292px"
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("hotelnova:sidebar-resize", {
+        detail: { collapsed },
+      })
+    );
+  }, [collapsed]);
+
+  const companyId = auth.companyId ?? appScope.companyId;
+
+  const companyName =
+    auth.auth?.companyName ??
+    appScope.companyName ??
+    "No company selected";
+
+  const branchName =
+    auth.auth?.branchName ??
+    appScope.branchName ??
+    "No branch selected";
+
+  const userName =
+    auth.user?.fullName ??
+    auth.user?.email ??
+    "Admin User";
+
+  const isSystemAdmin =
+    auth.isSystemAdmin ||
+    auth.roles.some(isSystemAdminRole);
+
+  const dashboardPath = companyId
+    ? `/companies/${companyId}/dashboard`
+    : isSystemAdmin
+      ? "/platform/tenants"
+      : "/login";
 
   const groupedRoutes = useMemo(() => {
-    const items = buildSidebarItems(routes as SidebarRoute[], scope.companyId);
+    const items = buildSidebarItems(routes as SidebarRoute[], companyId);
 
     if (isSystemAdmin) {
+      items.unshift({
+        key: "System:/platform/tenants",
+        label: "Tenant Workspaces",
+        section: "System",
+        to: "/platform/tenants",
+        order: 0,
+        icon: <Building2 size={16} strokeWidth={2} />,
+      });
+
       items.unshift({
         key: "System:/system-admin/companies",
         label: "Companies",
         section: "System",
         to: "/system-admin/companies",
-        order: 0,
-        icon: <Building2 size={16} strokeWidth={2} />,
+        order: 1,
+        icon: <ShieldCheck size={16} strokeWidth={2} />,
       });
     }
 
     return groupSidebarItems(items);
-  }, [routes, scope.companyId, isSystemAdmin]);
+  }, [routes, companyId, isSystemAdmin]);
 
   const sectionEntries = Object.entries(groupedRoutes);
-  const initials = getInitials(scope.userName);
+  const initials = getInitials(userName);
 
   function toggleSection(section: string) {
     setCollapsedSections((prev) => ({
       ...prev,
       [section]: !prev[section],
     }));
+  }
+
+  function toggleSidebar() {
+    setCollapsed((value) => !value);
+    setUserMenuOpen(false);
   }
 
   function handleNavigate(to: string) {
@@ -289,11 +298,7 @@ export default function Sidebar({ open = false, onClose, onSignOut }: SidebarPro
       return;
     }
 
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
-    sessionStorage.removeItem("accessToken");
-    sessionStorage.removeItem("refreshToken");
-    navigate("/login", { replace: true });
+    auth.logout();
   }
 
   return (
@@ -309,13 +314,17 @@ export default function Sidebar({ open = false, onClose, onSignOut }: SidebarPro
         />
       )}
 
-      <aside className={`hnav-root${open ? " hnav-open" : ""}`} aria-label="Main navigation">
+      <aside
+        className={`hnav-root${open ? " hnav-open" : ""}${collapsed ? " hnav-collapsed" : ""}`}
+        aria-label="Main navigation"
+      >
         <div className="hnav-brand">
           <button
             type="button"
             className="hnav-brand-lockup"
-            onClick={() => handleNavigate("/dashboard")}
+            onClick={() => handleNavigate(dashboardPath)}
             aria-label="Go to dashboard"
+            title="Go to dashboard"
           >
             <div className="hnav-brand-mark" aria-hidden="true">
               HN
@@ -327,14 +336,30 @@ export default function Sidebar({ open = false, onClose, onSignOut }: SidebarPro
             </div>
           </button>
 
-          <button
-            type="button"
-            className="hnav-icon-btn hnav-close-btn"
-            onClick={onClose}
-            aria-label="Close sidebar"
-          >
-            <X size={15} strokeWidth={2} />
-          </button>
+          <div className="hnav-brand-actions">
+            <button
+              type="button"
+              className="hnav-icon-btn hnav-collapse-btn"
+              onClick={toggleSidebar}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? (
+                <PanelLeftOpen size={15} strokeWidth={2} />
+              ) : (
+                <PanelLeftClose size={15} strokeWidth={2} />
+              )}
+            </button>
+
+            <button
+              type="button"
+              className="hnav-icon-btn hnav-close-btn"
+              onClick={onClose}
+              aria-label="Close sidebar"
+            >
+              <X size={15} strokeWidth={2} />
+            </button>
+          </div>
         </div>
 
         <div className="hnav-scope-card" aria-label="Current company scope">
@@ -343,20 +368,26 @@ export default function Sidebar({ open = false, onClose, onSignOut }: SidebarPro
           </div>
 
           <div className="hnav-scope-meta">
-            <span className="hnav-scope-label">Active company</span>
-            <span className="hnav-scope-name">{scope.companyName}</span>
-            <span className="hnav-scope-branch">{scope.branchName}</span>
+            <span className="hnav-scope-label">
+              {isSystemAdmin && !companyId ? "Platform mode" : "Active company"}
+            </span>
+            <span className="hnav-scope-name">{companyName}</span>
+            <span className="hnav-scope-branch">
+              {isSystemAdmin && !companyId ? "System Administrator" : branchName}
+            </span>
           </div>
         </div>
 
         <nav className="hnav-scroll" aria-label="Sidebar navigation">
           {sectionEntries.length === 0 ? (
             <div className="hnav-empty">
-              Select a company to load ERP modules.
+              {companyId
+                ? "No modules are available for your role."
+                : "Select a company to load ERP modules."}
             </div>
           ) : (
             sectionEntries.map(([section, items]) => {
-              const collapsed = Boolean(collapsedSections[section]);
+              const collapsedSection = Boolean(collapsedSections[section]);
 
               return (
                 <section className="hnav-section" key={section}>
@@ -364,22 +395,24 @@ export default function Sidebar({ open = false, onClose, onSignOut }: SidebarPro
                     type="button"
                     className="hnav-section-head"
                     onClick={() => toggleSection(section)}
-                    aria-expanded={!collapsed}
+                    aria-expanded={!collapsedSection}
+                    title={section}
                   >
                     <span className="hnav-section-label">{section}</span>
-                    <span className={`hnav-chevron${collapsed ? "" : " hnav-chevron-up"}`}>
+                    <span className={`hnav-chevron${collapsedSection ? "" : " hnav-chevron-up"}`}>
                       <ChevronDown size={12} strokeWidth={2.5} />
                     </span>
                   </button>
 
-                  {!collapsed && (
+                  {!collapsedSection && (
                     <ul className="hnav-items" role="list">
                       {items.map((item) => (
                         <li key={item.key} role="listitem">
                           <NavLink
                             to={item.to}
-                            end={item.to === "/dashboard"}
+                            end={item.to === dashboardPath}
                             onClick={onClose}
+                            title={collapsed ? item.label : undefined}
                             className={({ isActive }) =>
                               `hnav-item${isActive ? " hnav-item-active" : ""}`
                             }
@@ -409,9 +442,9 @@ export default function Sidebar({ open = false, onClose, onSignOut }: SidebarPro
             </div>
 
             <div className="hnav-user-meta">
-              <span className="hnav-user-name">{scope.userName}</span>
+              <span className="hnav-user-name">{userName}</span>
               <span className="hnav-user-branch">
-                {isSystemAdmin ? "System Administrator" : scope.branchName}
+                {isSystemAdmin ? "System Administrator" : branchName}
               </span>
             </div>
 
@@ -476,6 +509,8 @@ export default function Sidebar({ open = false, onClose, onSignOut }: SidebarPro
 const SIDEBAR_CSS = `
 :root {
   --hnav-width: 292px;
+  --hnav-collapsed-width: 84px;
+  --hnav-current-width: var(--hnav-width);
   --hnav-bg: #0f172a;
   --hnav-bg-2: #111827;
   --hnav-border: rgba(148, 163, 184, 0.18);
@@ -503,6 +538,11 @@ const SIDEBAR_CSS = `
     linear-gradient(180deg, var(--hnav-bg), var(--hnav-bg-2));
   color: var(--hnav-text);
   box-shadow: var(--hnav-shadow);
+  transition: width 180ms ease, transform 180ms ease;
+}
+
+.hnav-root.hnav-collapsed {
+  width: var(--hnav-collapsed-width);
 }
 
 .hnav-overlay {
@@ -521,6 +561,12 @@ const SIDEBAR_CSS = `
   gap: 12px;
   min-height: 76px;
   padding: 18px 18px 14px;
+}
+
+.hnav-brand-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .hnav-brand-lockup {
@@ -643,6 +689,7 @@ const SIDEBAR_CSS = `
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 4px 10px 14px;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
@@ -844,6 +891,75 @@ const SIDEBAR_CSS = `
   color: var(--hnav-danger);
 }
 
+.hnav-root.hnav-collapsed .hnav-brand {
+  justify-content: center;
+  padding-inline: 12px;
+}
+
+.hnav-root.hnav-collapsed .hnav-brand-lockup {
+  justify-content: center;
+}
+
+.hnav-root.hnav-collapsed .hnav-brand-text,
+.hnav-root.hnav-collapsed .hnav-scope-meta,
+.hnav-root.hnav-collapsed .hnav-section-label,
+.hnav-root.hnav-collapsed .hnav-chevron,
+.hnav-root.hnav-collapsed .hnav-item-label,
+.hnav-root.hnav-collapsed .hnav-user-meta,
+.hnav-root.hnav-collapsed .hnav-user-toggle {
+  display: none;
+}
+
+.hnav-root.hnav-collapsed .hnav-brand-actions {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hnav-root.hnav-collapsed .hnav-scope-card {
+  justify-content: center;
+  margin-inline: 10px;
+  padding: 10px;
+}
+
+.hnav-root.hnav-collapsed .hnav-scroll {
+  padding-inline: 10px;
+}
+
+.hnav-root.hnav-collapsed .hnav-section-head {
+  justify-content: center;
+  padding: 8px;
+}
+
+.hnav-root.hnav-collapsed .hnav-items {
+  gap: 6px;
+}
+
+.hnav-root.hnav-collapsed .hnav-item {
+  justify-content: center;
+  padding: 10px;
+}
+
+.hnav-root.hnav-collapsed .hnav-item-icon {
+  width: 22px;
+  flex: 0 0 22px;
+}
+
+.hnav-root.hnav-collapsed .hnav-footer {
+  padding-inline: 10px;
+}
+
+.hnav-root.hnav-collapsed .hnav-user-row {
+  justify-content: center;
+  padding: 10px;
+}
+
+.hnav-root.hnav-collapsed .hnav-user-menu {
+  left: 84px;
+  right: auto;
+  bottom: 16px;
+  width: 220px;
+}
+
 @media (max-width: 1024px) {
   .hnav-root {
     transform: translateX(-105%);
@@ -856,6 +972,10 @@ const SIDEBAR_CSS = `
 
   .hnav-close-btn {
     display: inline-grid;
+  }
+
+  .hnav-collapse-btn {
+    display: none;
   }
 }
 

@@ -6,22 +6,14 @@ import CompanySettingsPage from "../features/company/onboarding/CompanySettingsP
 
 export const companyRoutes = [
   {
-    path: "companies/onboarding",
-    element: <CompanyOnboardingModule />,
-    label: "Company Setup",
-    nav: true,
-    section: "Administration",
-  },
-
-  {
-    path: "companies/:companyId/onboarding",
+    path: "onboarding",
     element: <CompanyOnboardingModule />,
     nav: false,
     section: "Administration",
   },
 
   {
-    path: "companies/:companyId/settings",
+    path: "settings",
     element: <CompanySettingsPage />,
     label: "Company Settings",
     nav: true,
@@ -31,7 +23,7 @@ export const companyRoutes = [
   {
     path: "organizations",
     element: (
-      <RequirePermission permission="companies.view">
+      <RequirePermission permission="COMPANIES.VIEW">
         <OrgLocationsPage />
       </RequirePermission>
     ),

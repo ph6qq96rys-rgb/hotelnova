@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError } from "../auth/auth.api";
+import { loadAuth, saveAuth } from "../auth/auth.storage";
 import { safeReturnUrl } from "../auth/returnUrl";
-import "../styles/modules.identity.css"
+
+import "../styles/modules.identity.css";
 
 interface LocationState {
   from?: string | { pathname: string };
@@ -15,6 +18,47 @@ type LoginMode = "workspace" | "platform";
 
 const SYSTEM_ADMIN_EMAIL = "systemadmin@restaurantfnb.local";
 const PLATFORM_TENANTS_PATH = "/platform/tenants";
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeTenantSlug(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function clearTenantStorage(): void {
+  localStorage.removeItem("tenantSlug");
+  localStorage.removeItem("tenantId");
+  localStorage.removeItem("companyId");
+  localStorage.removeItem("branchId");
+
+  sessionStorage.removeItem("tenantSlug");
+  sessionStorage.removeItem("tenantId");
+  sessionStorage.removeItem("companyId");
+  sessionStorage.removeItem("branchId");
+}
+
+function getInitialTenantSlug(search: string): string {
+  const sp = new URLSearchParams(search);
+
+  return (
+    sp.get("tenantSlug") ||
+    sp.get("tenant") ||
+    localStorage.getItem("tenantSlug") ||
+    ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function getInitialLoginMode(): LoginMode {
+  const lastEmail = localStorage.getItem("lastLoginEmail");
+
+  return lastEmail?.toLowerCase() === SYSTEM_ADMIN_EMAIL
+    ? "platform"
+    : "workspace";
+}
 
 function IconGrid() {
   return (
@@ -45,58 +89,19 @@ function IconAlert() {
   );
 }
 
-function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function normalizeTenantSlug(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function clearTenantStorage(): void {
-  localStorage.removeItem("tenantSlug");
-  localStorage.removeItem("tenantId");
-  sessionStorage.removeItem("tenantSlug");
-  sessionStorage.removeItem("tenantId");
-}
-
-function getInitialTenantSlug(search: string): string {
-  const sp = new URLSearchParams(search);
-
-  return (
-    sp.get("tenantSlug") ||
-    sp.get("tenant") ||
-    localStorage.getItem("tenantSlug") ||
-    import.meta.env.VITE_TENANT_SLUG ||
-    ""
-  )
-    .trim()
-    .toLowerCase();
-}
-
-function getInitialLoginMode(): LoginMode {
-  const lastEmail = localStorage.getItem("lastLoginEmail");
-
-  return lastEmail?.toLowerCase() === SYSTEM_ADMIN_EMAIL
-    ? "platform"
-    : "workspace";
-}
-
 export default function LoginPage() {
   const { login, isAuthenticated, isReady } = useAuth();
 
   const nav = useNavigate();
   const location = useLocation();
 
-  const [mode, setMode] = useState<LoginMode>(() => getInitialLoginMode());
+  const initialMode = getInitialLoginMode();
+
+  const [mode, setMode] = useState<LoginMode>(initialMode);
   const [tenantSlug, setTenantSlug] = useState(() =>
-    getInitialLoginMode() === "platform" ? "" : getInitialTenantSlug(location.search)
+    initialMode === "platform" ? "" : getInitialTenantSlug(location.search)
   );
-
-  const [email, setEmail] = useState(() =>
-    localStorage.getItem("lastLoginEmail") ?? ""
-  );
-
+  const [email, setEmail] = useState(() => localStorage.getItem("lastLoginEmail") ?? "");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
@@ -111,7 +116,7 @@ export default function LoginPage() {
     const from = state?.from;
     const fromPath = typeof from === "string" ? from : from?.pathname;
 
-    return safeReturnUrl(raw ?? fromPath, PLATFORM_TENANTS_PATH);
+    return safeReturnUrl(raw ?? fromPath, "/");
   }, [location.search, location.state]);
 
   function switchMode(nextMode: LoginMode) {
@@ -155,7 +160,7 @@ export default function LoginPage() {
 
       if (mode === "workspace") {
         localStorage.setItem("tenantSlug", normalizedTenantSlug);
-        localStorage.removeItem("tenantId");
+        sessionStorage.setItem("tenantSlug", normalizedTenantSlug);
       } else {
         clearTenantStorage();
       }
@@ -168,13 +173,20 @@ export default function LoginPage() {
         },
         remember
       );
+          const auth = loadAuth();
 
-      const target =
-        mode === "platform"
-          ? PLATFORM_TENANTS_PATH
-          : redirectTo;
+          if (mode === "platform") {
+            nav(PLATFORM_TENANTS_PATH, { replace: true });
+            return;
+          }
 
-      nav(target, { replace: true });
+          if (!auth?.companyId) {
+            throw new Error("Login succeeded but company scope was not returned.");
+          }
+
+          nav(`/companies/${auth.companyId}/dashboard`, {
+            replace: true,
+          });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Sign in failed.");
       setBusy(false);
@@ -260,9 +272,7 @@ export default function LoginPage() {
                   />
                 </div>
 
-                <small className="auth-help">
-                  Example: ambassador, dako, kizen
-                </small>
+                <small className="auth-help">Example: ambassador, dako</small>
               </div>
             )}
 
@@ -279,11 +289,7 @@ export default function LoginPage() {
                   className="auth-input"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={
-                    mode === "platform"
-                      ? SYSTEM_ADMIN_EMAIL
-                      : "you@restaurant.com"
-                  }
+                  placeholder={mode === "platform" ? SYSTEM_ADMIN_EMAIL : "you@restaurant.com"}
                   autoComplete="email"
                   autoFocus
                   required
@@ -298,11 +304,7 @@ export default function LoginPage() {
                   Password
                 </label>
 
-                <Link
-                  to="/forgot-password"
-                  className="auth-link"
-                  tabIndex={busy ? -1 : 0}
-                >
+                <Link to="/forgot-password" className="auth-link" tabIndex={busy ? -1 : 0}>
                   Forgot password?
                 </Link>
               </div>
@@ -356,12 +358,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            <button
-              type="submit"
-              className="auth-btn"
-              disabled={!canSubmit}
-              aria-busy={busy}
-            >
+            <button type="submit" className="auth-btn" disabled={!canSubmit} aria-busy={busy}>
               {busy ? (
                 <>
                   <span className="auth-spinner" aria-hidden="true" />

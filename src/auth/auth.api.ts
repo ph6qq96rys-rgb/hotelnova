@@ -24,9 +24,7 @@ export class ApiError extends Error {
 }
 
 function clean(value: unknown): string | null {
-  return typeof value === "string" && value.trim()
-    ? value.trim()
-    : null;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function normalizeEmail(value: string): string {
@@ -40,34 +38,38 @@ function normalizeTenantSlug(value: unknown): string | null {
 function getStoredTenantSlug(): string | null {
   return normalizeTenantSlug(
     localStorage.getItem("tenantSlug") ??
-      sessionStorage.getItem("tenantSlug") ??
-      localStorage.getItem("tenantId") ??
-      sessionStorage.getItem("tenantId")
+      sessionStorage.getItem("tenantSlug")
   );
 }
 
 function rememberTenantSlug(tenantSlug: string | null): void {
-  if (!tenantSlug) return;
+  const cleanSlug = normalizeTenantSlug(tenantSlug);
 
-  localStorage.setItem("tenantSlug", tenantSlug);
+  if (!cleanSlug) return;
+
+  localStorage.setItem("tenantSlug", cleanSlug);
+  sessionStorage.setItem("tenantSlug", cleanSlug);
+
   localStorage.removeItem("tenantId");
+  sessionStorage.removeItem("tenantId");
 }
 
 function clearTenantScope(): void {
   localStorage.removeItem("tenantSlug");
   localStorage.removeItem("tenantId");
+  localStorage.removeItem("companyId");
+  localStorage.removeItem("branchId");
+
   sessionStorage.removeItem("tenantSlug");
   sessionStorage.removeItem("tenantId");
+  sessionStorage.removeItem("companyId");
+  sessionStorage.removeItem("branchId");
 }
 
 function tenantHeaders(
   tenantSlug: string | null
 ): Record<string, string> | undefined {
-  return tenantSlug
-    ? {
-        "X-Tenant-Id": tenantSlug,
-      }
-    : undefined;
+  return tenantSlug ? { "X-Tenant-Id": tenantSlug } : undefined;
 }
 
 function extractValidationErrors(errors: unknown): string | null {
@@ -117,11 +119,20 @@ function normalizeError(error: unknown): never {
     ? "Unable to reach the server. Please check your connection and try again."
     : error.message || "Request failed.";
 
-  throw new ApiError(
-    extractErrorMessage(data, fallback),
-    status,
-    data
-  );
+  throw new ApiError(extractErrorMessage(data, fallback), status, data);
+}
+
+function attachTenantSlug(
+  response: LoginResponse,
+  tenantSlug: string | null
+): LoginResponse {
+  const responseTenantSlug = normalizeTenantSlug(response.tenantSlug);
+  const finalTenantSlug = responseTenantSlug ?? tenantSlug;
+
+  return {
+    ...response,
+    tenantSlug: finalTenantSlug,
+  };
 }
 
 export const authApi = {
@@ -143,15 +154,12 @@ export const authApi = {
       );
 
       if (tenantSlug) {
-        rememberTenantSlug(
-          tenantSlug ??
-            normalizeTenantSlug(response.data.tenantSlug)
-        );
+        rememberTenantSlug(tenantSlug);
       } else {
         clearTenantScope();
       }
 
-      return response.data;
+      return attachTenantSlug(response.data, tenantSlug);
     } catch (error) {
       normalizeError(error);
     }
@@ -188,8 +196,7 @@ export const authApi = {
       const tenantSlug =
         typeof request === "string"
           ? getStoredTenantSlug()
-          : normalizeTenantSlug(request.tenantSlug) ??
-            getStoredTenantSlug();
+          : normalizeTenantSlug(request.tenantSlug) ?? getStoredTenantSlug();
 
       const email =
         typeof request === "string"
@@ -211,13 +218,10 @@ export const authApi = {
     }
   },
 
-  async resetPassword(
-    request: ResetPasswordRequest
-  ): Promise<void> {
+  async resetPassword(request: ResetPasswordRequest): Promise<void> {
     try {
       const tenantSlug =
-        normalizeTenantSlug(request.tenantSlug) ??
-        getStoredTenantSlug();
+        normalizeTenantSlug(request.tenantSlug) ?? getStoredTenantSlug();
 
       await http.post(
         "/auth/reset-password",

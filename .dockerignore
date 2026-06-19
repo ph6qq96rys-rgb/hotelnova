@@ -4,9 +4,11 @@ dist
 .gitignore
 
 .env
-.env.*
-.eve
-.eve.*
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
 
 *.log
 Dockerfile

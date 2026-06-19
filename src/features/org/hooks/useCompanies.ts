@@ -1,21 +1,50 @@
-﻿import { useCallback, useEffect, useState } from "react";
+﻿// src/features/organization/hooks/useCompanies.ts
+
+import { useCallback, useEffect, useState } from "react";
+
 import { orgApi } from "../api/orgApi";
 import type { CompanyDto } from "../types";
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  const e = error as {
+    response?: {
+      data?: {
+        message?: string;
+      };
+    };
+    message?: string;
+  };
+
+  return (
+    e?.response?.data?.message ??
+    e?.message ??
+    "Failed to load companies."
+  );
+}
 
 export function useCompanies() {
   const [items, setItems] = useState<CompanyDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<void> => {
     setLoading(true);
     setError(null);
+
     try {
-      const res = await orgApi.listCompanies({ page: 1, pageSize: 500 });
-      setItems(res.data.items ?? []);
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to load companies");
+      const response = await orgApi.listCompanies({
+        page: 1,
+        pageSize: 500,
+      });
+
+      setItems((response.data.items ?? []) as CompanyDto[]);
+    } catch (err) {
       setItems([]);
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -25,5 +54,10 @@ export function useCompanies() {
     void refresh();
   }, [refresh]);
 
-  return { items, loading, error, refresh };
+  return {
+    items,
+    loading,
+    error,
+    refresh,
+  };
 }

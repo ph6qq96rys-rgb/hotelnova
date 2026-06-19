@@ -63,6 +63,7 @@ export default function RequireCompany({
   if (companyId) {
     return children ? <>{children}</> : <Outlet />;
   }
+  
 
   if (isSystemAdmin) {
     const returnUrl = encodeURIComponent(

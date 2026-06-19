@@ -1,23 +1,51 @@
 import { useMemo, useState } from "react";
+
 import { useAppScope } from "../../../../app/useAppScope";
 import { useInventoryLedger } from "../hooks/useInventoryLedger";
 import LedgerTable from "../components/LedgerTable";
 import type { InventoryLedgerQuery } from "../api/inventoryLedgerApi";
 
+type LedgerMovementType =
+  | ""
+  | "Receipt"
+  | "Production"
+  | "Transfer"
+  | "Adjustment"
+  | "Sale"
+  | "Consumption";
+
+type LedgerFilters = {
+  locationId: string;
+  itemId: string;
+  movementType: LedgerMovementType;
+  fromDate: string;
+  toDate: string;
+};
+
+const initialFilters: LedgerFilters = {
+  locationId: "",
+  itemId: "",
+  movementType: "",
+  fromDate: "",
+  toDate: "",
+};
+
 export default function InventoryLedgerPage() {
   const { companyId } = useAppScope();
 
-  const [locationId, setLocationId] = useState("");
-  const [itemId, setItemId] = useState("");
+  const [filters, setFilters] = useState<LedgerFilters>(initialFilters);
 
   const query = useMemo<InventoryLedgerQuery>(
     () => ({
-      locationId: cleanOrNull(locationId),
-      itemId: cleanOrNull(itemId),
+      locationId: cleanOrNull(filters.locationId),
+      itemId: cleanOrNull(filters.itemId),
+      movementType: cleanOrNull(filters.movementType),
+      fromDate: cleanOrNull(filters.fromDate),
+      toDate: cleanOrNull(filters.toDate),
       page: 1,
       pageSize: 50,
     }),
-    [locationId, itemId]
+    [filters]
   );
 
   const { data, paging, loading, error } = useInventoryLedger(
@@ -27,19 +55,28 @@ export default function InventoryLedgerPage() {
 
   const items = data?.items ?? [];
 
-  const hasFilters = Boolean(locationId.trim() || itemId.trim());
+  const hasFilters = Object.values(filters).some((value) => value.trim());
+
+  function updateFilter<K extends keyof LedgerFilters>(
+    key: K,
+    value: LedgerFilters[K]
+  ) {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
 
   function clearFilters() {
-    setLocationId("");
-    setItemId("");
+    setFilters(initialFilters);
   }
 
   if (!companyId) {
     return (
-      <div style={pageStyle}>
-        <div style={emptyStateStyle}>
-          <div style={emptyTitleStyle}>Select Company</div>
-          <div style={mutedStyle}>
+      <div className="page">
+        <div className="card">
+          <div className="card-title">Select Company</div>
+          <div className="card-subtitle">
             Please select a company before viewing the inventory ledger.
           </div>
         </div>
@@ -48,65 +85,63 @@ export default function InventoryLedgerPage() {
   }
 
   return (
-    <div style={pageStyle}>
-      {/* Page Header */}
-      <section style={headerStyle}>
+    <div className="page">
+      <div className="page-header">
         <div>
-          <div style={eyebrowStyle}>Inventory Control</div>
-          <h1 style={titleStyle}>Inventory Ledger</h1>
-          <p style={mutedStyle}>
-            Review real-time stock movements, costing trail, FIFO impact, and
-            source document references.
-          </p>
+          <div className="page-kicker">Inventory Control</div>
+          <div className="page-title">Inventory Ledger</div>
+          <div className="page-sub">
+            Trace receipts, production, transfers, adjustments, sales,
+            consumption, costing, and FIFO impact.
+          </div>
         </div>
 
-        <div style={summaryBoxStyle}>
-          <div style={summaryLabelStyle}>Rows Loaded</div>
-          <div style={summaryValueStyle}>{items.length}</div>
+        <div className="kpi" style={{ minWidth: 140 }}>
+          <div className="kpi-label">Rows Loaded</div>
+          <div className="kpi-val">{items.length}</div>
+          <div className="kpi-sub">{paging?.totalCount ?? 0} total records</div>
         </div>
-      </section>
+      </div>
 
-      {/* Workflow Guide */}
-      <section style={cardStyle}>
-        <div style={sectionTitleStyle}>Ledger Workflow</div>
+      <div className="kpi-grid">
+        <KpiCard
+          label="Records"
+          value={paging?.totalCount ?? 0}
+          sub={`Page ${paging?.page ?? 1} of ${paging?.totalPages ?? 1}`}
+        />
 
-        <div style={workflowGridStyle}>
-          <WorkflowStep
-            number="1"
-            title="Select Scope"
-            text="The page reads the active company from AppScope."
-          />
-          <WorkflowStep
-            number="2"
-            title="Filter"
-            text="Use LocationId and ItemId to narrow movements."
-          />
-          <WorkflowStep
-            number="3"
-            title="Review Ledger"
-            text="Check movement type, quantity, cost, balance, and references."
-          />
-          <WorkflowStep
-            number="4"
-            title="Debug FIFO"
-            text="Use filtered views to trace GRN, SIV, sales, transfers, and adjustments."
-          />
-        </div>
-      </section>
+        <KpiCard
+          label="Rows Loaded"
+          value={items.length}
+          sub="Current page"
+        />
 
-      {/* Filters */}
-      <section style={cardStyle}>
-        <div style={cardHeaderStyle}>
+        <KpiCard
+          label="Scope"
+          value={filters.locationId ? "Filtered" : "All"}
+          sub={filters.locationId ? "Location selected" : "All locations"}
+        />
+
+        <KpiCard
+          label="Movement"
+          value={filters.movementType || "All"}
+          sub="Inventory flow type"
+        />
+      </div>
+
+      <div className="card">
+        <div className="card-header">
           <div>
-            <div style={sectionTitleStyle}>Filters</div>
-            <div style={mutedStyle}>
-              Paste IDs for now. Dropdowns can be wired later.
+            <div className="card-title">Ledger Filters</div>
+            <div className="card-subtitle">
+              Filter by location, item, movement type, and date range to
+              investigate inventory flow and FIFO costing.
             </div>
           </div>
 
           <button
             type="button"
-            style={secondaryBtnStyle(!hasFilters || loading)}
+            className="btn btn-sm"
             onClick={clearFilters}
             disabled={!hasFilters || loading}
           >
@@ -114,332 +149,217 @@ export default function InventoryLedgerPage() {
           </button>
         </div>
 
-        <div style={filterGridStyle}>
-          <Field
-            label="LocationId"
-            value={locationId}
-            onChange={setLocationId}
-            placeholder="Optional: paste warehouse / store / location id"
-            helpText="Leave blank to view all locations."
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+            marginTop: 14,
+          }}
+        >
+          <TextField
+            label="Location"
+            value={filters.locationId}
+            onChange={(value) => updateFilter("locationId", value)}
+            placeholder="Optional location id"
             disabled={loading}
           />
 
-          <Field
-            label="ItemId"
-            value={itemId}
-            onChange={setItemId}
-            placeholder="Optional: paste item id"
-            helpText="Leave blank to view all items."
+          <TextField
+            label="Item"
+            value={filters.itemId}
+            onChange={(value) => updateFilter("itemId", value)}
+            placeholder="Optional item id"
+            disabled={loading}
+          />
+
+          <SelectField
+            label="Movement Type"
+            value={filters.movementType}
+            onChange={(value) =>
+              updateFilter("movementType", value as LedgerMovementType)
+            }
+            disabled={loading}
+            options={[
+              { value: "", label: "All movements" },
+              { value: "Receipt", label: "Receipt" },
+              { value: "Production", label: "Production" },
+              { value: "Transfer", label: "Transfer" },
+              { value: "Adjustment", label: "Adjustment" },
+              { value: "Sale", label: "Sale" },
+              { value: "Consumption", label: "Consumption" },
+            ]}
+          />
+
+          <TextField
+            label="From Date"
+            type="date"
+            value={filters.fromDate}
+            onChange={(value) => updateFilter("fromDate", value)}
+            disabled={loading}
+          />
+
+          <TextField
+            label="To Date"
+            type="date"
+            value={filters.toDate}
+            onChange={(value) => updateFilter("toDate", value)}
             disabled={loading}
           />
         </div>
 
-        {loading && <div style={loadingStyle}>Loading ledger records…</div>}
+        {loading ? (
+          <div className="alert alert-info" style={{ marginTop: 12 }}>
+            Loading ledger records…
+          </div>
+        ) : null}
 
-        {error && (
-          <div style={alertDangerStyle}>
+        {error ? (
+          <div className="alert alert-danger" style={{ marginTop: 12 }}>
             <strong>Error:</strong> {String(error)}
           </div>
-        )}
-      </section>
+        ) : null}
+      </div>
 
-      {/* Ledger Table */}
-      <section style={cardStyle}>
-        <div style={cardHeaderStyle}>
+      <div className="card">
+        <div className="card-header">
           <div>
-            <div style={sectionTitleStyle}>Ledger Movements</div>
-            <div style={mutedStyle}>
-              Stock movement history, quantities, costing, and document trail.
+            <div className="card-title">Ledger Movements</div>
+            <div className="card-subtitle">
+              Stock movement history, quantities, costing, and source document
+              trail.
             </div>
           </div>
         </div>
 
-        <div style={tableWrapStyle}>
+        <div style={{ marginTop: 12, overflowX: "auto" }}>
           <LedgerTable items={items} />
         </div>
 
-        <footer style={pagingFooterStyle}>
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            fontSize: 12,
+            color: "var(--text-muted)",
+          }}
+        >
           <span>
             {paging?.totalCount ?? 0} records • Page {paging?.page ?? 1} /{" "}
             {paging?.totalPages ?? 1}
           </span>
-        </footer>
-      </section>
 
-      {/* Sticky Debug Bar */}
-      <div style={stickyBarStyle}>
-        <div style={mutedStyle}>
-          <strong>Debug Tip:</strong> Filter by both LocationId and ItemId to
-          quickly trace FIFO, GRN, SIV, sales, transfers, and adjustments.
+          <span>{items.length} rows loaded</span>
         </div>
+      </div>
 
-        <button
-          type="button"
-          style={secondaryBtnStyle(!hasFilters || loading)}
-          onClick={clearFilters}
-          disabled={!hasFilters || loading}
+      <div
+        className="card"
+        style={{
+          position: "sticky",
+          bottom: 0,
+          zIndex: 10,
+          backdropFilter: "blur(6px)",
+          background: "rgba(255,255,255,0.95)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
         >
-          Clear Filters
-        </button>
+          <div className="card-subtitle">
+            <strong>Debug Tip:</strong> Filter by item, location, movement type,
+            and date range to trace FIFO costing and inventory flow.
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={clearFilters}
+            disabled={!hasFilters || loading}
+          >
+            Clear Filters
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-/* -----------------------------
- * Small Components
- * ----------------------------- */
-
-function Field(props: {
+function TextField(props: {
   label: string;
   value: string;
-  placeholder: string;
-  helpText: string;
+  placeholder?: string;
+  type?: "text" | "date";
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
     <div>
-      <label style={labelStyle}>{props.label}</label>
+      <label className="form-label">{props.label}</label>
       <input
-        style={inputStyle}
+        className="form-control"
+        type={props.type ?? "text"}
         value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
+        onChange={(event) => props.onChange(event.target.value)}
         placeholder={props.placeholder}
         disabled={props.disabled}
       />
-      <div style={helpStyle}>{props.helpText}</div>
     </div>
   );
 }
 
-function WorkflowStep(props: { number: string; title: string; text: string }) {
+function SelectField(props: {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
   return (
-    <div style={workflowStepStyle}>
-      <div style={workflowNumberStyle}>{props.number}</div>
-      <div>
-        <div style={{ fontWeight: 800 }}>{props.title}</div>
-        <div style={mutedStyle}>{props.text}</div>
-      </div>
+    <div>
+      <label className="form-label">{props.label}</label>
+      <select
+        className="form-control"
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+        disabled={props.disabled}
+      >
+        {props.options.map((option) => (
+          <option key={option.value || "all"} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
 
-/* -----------------------------
- * Helpers
- * ----------------------------- */
+function KpiCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+}) {
+  return (
+    <div className="kpi">
+      <div className="kpi-label">{label}</div>
+      <div className="kpi-val">{value}</div>
+      {sub ? <div className="kpi-sub">{sub}</div> : null}
+    </div>
+  );
+}
 
 function cleanOrNull(value: string): string | null {
   const clean = value.trim();
   return clean ? clean : null;
-}
-
-/* -----------------------------
- * Inline Styles
- * ----------------------------- */
-
-const pageStyle: React.CSSProperties = {
-  padding: 16,
-  maxWidth: 1200,
-  margin: "0 auto",
-  color: "#0f172a",
-};
-
-const headerStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  gap: 16,
-  marginBottom: 14,
-};
-
-const eyebrowStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: 0.6,
-  opacity: 0.65,
-};
-
-const titleStyle: React.CSSProperties = {
-  fontSize: 28,
-  fontWeight: 900,
-  margin: "4px 0",
-};
-
-const mutedStyle: React.CSSProperties = {
-  fontSize: 13,
-  opacity: 0.72,
-  lineHeight: 1.45,
-};
-
-const summaryBoxStyle: React.CSSProperties = {
-  minWidth: 120,
-  border: "1px solid rgba(0,0,0,0.1)",
-  borderRadius: 12,
-  padding: 12,
-  background: "white",
-  textAlign: "right",
-};
-
-const summaryLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  opacity: 0.65,
-};
-
-const summaryValueStyle: React.CSSProperties = {
-  fontSize: 22,
-  fontWeight: 900,
-};
-
-const cardStyle: React.CSSProperties = {
-  marginTop: 14,
-  border: "1px solid rgba(0,0,0,0.1)",
-  borderRadius: 14,
-  padding: 14,
-  background: "white",
-};
-
-const cardHeaderStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "baseline",
-  gap: 12,
-};
-
-const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 16,
-  fontWeight: 900,
-};
-
-const workflowGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 12,
-  marginTop: 12,
-};
-
-const workflowStepStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 10,
-  padding: 12,
-  borderRadius: 12,
-  background: "rgba(15, 23, 42, 0.04)",
-};
-
-const workflowNumberStyle: React.CSSProperties = {
-  width: 28,
-  height: 28,
-  borderRadius: 999,
-  background: "#0f172a",
-  color: "white",
-  fontSize: 13,
-  fontWeight: 900,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  flex: "0 0 auto",
-};
-
-const filterGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-  gap: 12,
-  marginTop: 14,
-};
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 800,
-  opacity: 0.75,
-  marginBottom: 6,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid rgba(0,0,0,0.15)",
-  outline: "none",
-  background: "white",
-  color: "#0f172a",
-};
-
-const helpStyle: React.CSSProperties = {
-  fontSize: 12,
-  marginTop: 6,
-  opacity: 0.65,
-};
-
-const loadingStyle: React.CSSProperties = {
-  marginTop: 10,
-  fontSize: 13,
-  opacity: 0.75,
-};
-
-const alertDangerStyle: React.CSSProperties = {
-  marginTop: 10,
-  borderRadius: 12,
-  border: "1px solid rgba(220, 38, 38, 0.35)",
-  background: "rgba(220, 38, 38, 0.08)",
-  color: "rgb(220, 38, 38)",
-  padding: "10px 12px",
-};
-
-const tableWrapStyle: React.CSSProperties = {
-  marginTop: 12,
-  overflowX: "auto",
-};
-
-const pagingFooterStyle: React.CSSProperties = {
-  marginTop: 12,
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  fontSize: 12,
-  opacity: 0.75,
-};
-
-const stickyBarStyle: React.CSSProperties = {
-  position: "sticky",
-  bottom: 0,
-  zIndex: 10,
-  marginTop: 14,
-  padding: 12,
-  borderRadius: 12,
-  border: "1px solid rgba(0,0,0,0.12)",
-  background: "rgba(255,255,255,0.95)",
-  backdropFilter: "blur(6px)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-};
-
-const emptyStateStyle: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.1)",
-  borderRadius: 14,
-  padding: 20,
-  background: "white",
-};
-
-const emptyTitleStyle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 900,
-  marginBottom: 4,
-};
-
-function secondaryBtnStyle(disabled?: boolean): React.CSSProperties {
-  return {
-    padding: "10px 14px",
-    borderRadius: 10,
-    border: "1px solid rgba(0,0,0,0.15)",
-    background: disabled ? "rgba(15,23,42,0.04)" : "white",
-    color: "#0f172a",
-    fontWeight: 800,
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.55 : 1,
-  };
 }

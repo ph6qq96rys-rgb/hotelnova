@@ -1,105 +1,284 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import { useAppScope } from "../../../../app/useAppScope";
 import { stockTransfersApi } from "../api/stockTransfersApi";
-import  {STOCK_TRANSFER_STATUS, type StockTransferListDto } from "../types";
-import { DocHeader, KpiRow, Kpi, Card, StatusPill } from "../../../../shared/ui/DocUI";
+import {
+  STOCK_TRANSFER_STATUS,
+  type StockTransferListDto,
+} from "../types";
+
+import {
+  Card,
+  DocHeader,
+  Kpi,
+  KpiRow,
+  StatusPill,
+} from "../../../../shared/ui/DocUI";
+
+type PageState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "loaded" }
+  | { status: "error"; message: string };
+
+type ApprovalPaths = {
+  list: string;
+  detail: (id: string) => string;
+};
 
 export default function StockTransferApprovalsPage() {
-  const nav = useNavigate();
+  const navigate = useNavigate();
   const { companyId } = useAppScope();
 
   const [rows, setRows] = useState<StockTransferListDto[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [pageState, setPageState] = useState<PageState>({
+    status: "idle",
+  });
 
-  const load = async () => {
-    if (!companyId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await stockTransfersApi.list(companyId, STOCK_TRANSFER_STATUS.Submitted);
-      setRows(data);
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to load approval inbox");
-    } finally {
-      setLoading(false);
+  const requestIdRef = useRef(0);
+
+  const paths = useMemo<ApprovalPaths | null>(() => {
+    if (!companyId) return null;
+
+    const base =
+      `/companies/${companyId}/inventory/stock-transfers`;
+
+    return {
+      list: base,
+      detail: (id: string) => `${base}/${id}`,
+    };
+  }, [companyId]);
+
+  const go = useCallback(
+    (path: string) => {
+      navigate(path);
+    },
+    [navigate]
+  );
+
+  const load = useCallback(async () => {
+    if (!companyId) {
+      setRows([]);
+      setPageState({
+        status: "error",
+        message: "Company scope is required.",
+      });
+      return;
     }
-  };
 
-  useEffect(() => { load(); }, [companyId]);
+    const requestId = ++requestIdRef.current;
 
-  const stats = useMemo(() => ({
-    pending: rows.length,
-    totalQty: rows.reduce((a, r) => a + (r.totalQuantity ?? 0), 0),
-    totalValue: rows.reduce((a, r) => a + (r.totalValue ?? 0), 0),
-  }), [rows]);
+    setPageState({ status: "loading" });
+
+    try {
+      const data = await stockTransfersApi.list(
+        companyId,
+        STOCK_TRANSFER_STATUS.Submitted
+      );
+
+      if (requestId !== requestIdRef.current) return;
+
+      setRows(Array.isArray(data) ? data : []);
+      setPageState({ status: "loaded" });
+    } catch (error: any) {
+      if (requestId !== requestIdRef.current) return;
+
+      setRows([]);
+
+      setPageState({
+        status: "error",
+        message:
+          error?.message ??
+          "Failed to load approval inbox.",
+      });
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const loading =
+    pageState.status === "loading";
+
+  const errorMessage =
+    pageState.status === "error"
+      ? pageState.message
+      : null;
+
+  const stats = useMemo(
+    () => ({
+      pending: rows.length,
+      totalQty: rows.reduce(
+        (sum, row) =>
+          sum + Number(row.totalQuantity ?? 0),
+        0
+      ),
+      totalValue: rows.reduce(
+        (sum, row) =>
+          sum + Number(row.totalValue ?? 0),
+        0
+      ),
+    }),
+    [rows]
+  );
+
+  if (!companyId || !paths) {
+    return (
+      <div className="page">
+        Company scope is required.
+      </div>
+    );
+  }
 
   return (
     <div className="page space-y-4">
       <DocHeader
         title="Approval Inbox"
         subtitle="Submitted transfers awaiting approval."
-        right={<button className="btn btn-secondary" onClick={() => nav("/inventory/stock-transfers")}>Back</button>}
+        right={
+          <button
+            className="btn btn-secondary"
+            onClick={() => go(paths.list)}
+          >
+            Back
+          </button>
+        }
       />
 
       <KpiRow>
-        <Kpi label="Pending" value={stats.pending} />
-        <Kpi label="Total Qty" value={stats.totalQty} />
-        <Kpi label="Total Value" value={stats.totalValue.toFixed(2)} />
-        <Kpi label="Policy" value="HQ → Branch" />
-        <Kpi label="Action" value="Approve/Reject" />
+        <Kpi
+          label="Pending"
+          value={stats.pending}
+        />
+        <Kpi
+          label="Total Qty"
+          value={stats.totalQty}
+        />
+        <Kpi
+          label="Total Value"
+          value={stats.totalValue.toFixed(2)}
+        />
+        <Kpi
+          label="Policy"
+          value="HQ → Branch"
+        />
+        <Kpi
+          label="Action"
+          value="Approve / Reject"
+        />
       </KpiRow>
 
-      <Card title="Submitted Transfers" subtitle="Open a document to review and approve.">
-        {loading && <div className="text-sm text-slate-500">Loading…</div>}
-        {error && <div className="text-sm text-rose-600">{error}</div>}
+      <Card
+        title="Submitted Transfers"
+        subtitle="Review transfers awaiting approval."
+      >
+        {loading && (
+          <div className="text-sm text-slate-500">
+            Loading...
+          </div>
+        )}
 
-        {!loading && !error && (
+        {errorMessage && (
+          <div className="text-sm text-rose-600">
+            {errorMessage}
+          </div>
+        )}
+
+        {!loading && !errorMessage && (
           <div className="overflow-x-auto">
             <table className="table w-full">
               <thead>
-                <tr className="text-xs text-slate-500">
-                  <th className="text-left p-3">Transfer</th>
-                  <th className="text-left p-3">Route</th>
-                  <th className="text-left p-3">Date</th>
-                  <th className="text-left p-3">Status</th>
-                  <th className="text-right p-3">Qty</th>
-                  <th className="text-right p-3">Value</th>
-                  <th className="text-right p-3">Action</th>
+                <tr>
+                  <th>Transfer</th>
+                  <th>Route</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th className="text-right">
+                    Qty
+                  </th>
+                  <th className="text-right">
+                    Value
+                  </th>
+                  <th className="text-right">
+                    Action
+                  </th>
                 </tr>
               </thead>
+
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className="border-t border-slate-100">
-                    <td className="p-3">
-                      <div className="font-semibold text-slate-900">{r.transferNumber}</div>
-                      <div className="text-xs text-slate-500">{r.reference ?? "—"}</div>
-                    </td>
-                    <td className="p-3 text-sm text-slate-700">
-                      {r.fromLocationName} → {r.toLocationName}
-                    </td>
-                    <td className="p-3 text-sm text-slate-700">
-                      {new Date(r.transferDateUtc).toLocaleString()}
-                    </td>
-                    <td className="p-3">
-                      <StatusPill text={r.status} tone="bg-amber-100 text-amber-800" />
-                    </td>
-                    <td className="p-3 text-right font-semibold">{r.totalQuantity}</td>
-                    <td className="p-3 text-right">{r.totalValue?.toFixed(2) ?? "—"}</td>
-                    <td className="p-3 text-right">
-                      <button className="btn btn-primary" onClick={() => nav(`/inventory/stock-transfers/${r.id}`)}>
-                        Review
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {rows.length === 0 && (
+                {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-6 text-center text-sm text-slate-500">
+                    <td
+                      colSpan={7}
+                      className="text-center p-6"
+                    >
                       Nothing pending approval.
                     </td>
                   </tr>
+                ) : (
+                  rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      onClick={() =>
+                        go(paths.detail(row.id))
+                      }
+                      style={{
+                        cursor: "pointer",
+                      }}
+                    >
+                      <td>
+                        <div className="font-semibold">
+                          {row.transferNumber}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {row.reference ?? "—"}
+                        </div>
+                      </td>
+
+                      <td>
+                        {row.fromLocationName}
+                        {" → "}
+                        {row.toLocationName}
+                      </td>
+
+                      <td>
+                        {new Date(
+                          row.transferDateUtc
+                        ).toLocaleString()}
+                      </td>
+
+                      <td>
+                        <StatusPill
+                          text={row.status}
+                          tone="bg-amber-100 text-amber-800"
+                        />
+                      </td>
+
+                      <td className="text-right">
+                        {row.totalQuantity}
+                      </td>
+
+                      <td className="text-right">
+                        {row.totalValue?.toFixed(
+                          2
+                        ) ?? "—"}
+                      </td>
+
+                      <td className="text-right">
+                        <button
+                          className="btn btn-primary"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            go(paths.detail(row.id));
+                          }}
+                        >
+                          Review
+                        </button>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>

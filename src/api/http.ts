@@ -51,10 +51,12 @@ function clean(value: unknown): string | null {
 }
 
 export function resolveTenantSlug(): string | null {
+  const auth = loadAuth();
+
   const stored =
+    auth?.tenantSlug ??
     localStorage.getItem("tenantSlug") ??
     sessionStorage.getItem("tenantSlug") ??
-    (import.meta.env.VITE_TENANT_SLUG as string | undefined) ??
     null;
 
   return clean(stored)?.toLowerCase() ?? null;

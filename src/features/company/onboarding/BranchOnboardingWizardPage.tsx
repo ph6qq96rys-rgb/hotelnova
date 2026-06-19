@@ -1,10 +1,11 @@
 // src/modules/company/pages/BranchManagementDashboardPage.tsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { useAppContext } from "../../../app/AppContext";
 import { useAppScope } from "../../../app/useAppScope";
+import { useErpNavigate } from "../../../routes/useErpNavigation";
 
 import { branchesApi } from "../api/branchesApi";
 import { stockLocationsApi } from "../api/stockLocationsApi";
@@ -38,13 +39,13 @@ import "./company-onboarding.css";
 
 type TabKey = "overview" | "locations" | "stores" | "users" | "settings";
 
-function idOf(x: unknown): string {
-  const value = x as any;
-  return String(value?.id ?? value?.Id ?? value?.userId ?? "");
+function idOf(value: unknown): string {
+  const x = value as any;
+  return String(x?.id ?? x?.Id ?? x?.userId ?? "").trim();
 }
 
-function isActive(x: unknown): boolean {
-  return (x as any)?.isActive !== false;
+function isActive(value: unknown): boolean {
+  return (value as any)?.isActive !== false;
 }
 
 function normalize(value: unknown): string {
@@ -52,16 +53,12 @@ function normalize(value: unknown): string {
 }
 
 function locationTypeOf(location: StockLocation): string {
-  const raw = (location as any).locationType ?? (location as any).type;
-  return normalize(raw);
+  const x = location as any;
+  return normalize(x.locationType ?? x.type);
 }
 
 function isWarehouse(location: StockLocation): boolean {
   return locationTypeOf(location) === "warehouse";
-}
-
-function isTransit(location: StockLocation): boolean {
-  return locationTypeOf(location) === "transit";
 }
 
 function isIssueCapable(location: StockLocation): boolean {
@@ -73,8 +70,7 @@ function isReceiveCapable(location: StockLocation): boolean {
 }
 
 function belongsToBranch(location: StockLocation, branchId: string): boolean {
-  const assignedBranchId = String((location as any).branchId ?? "");
-  return assignedBranchId === branchId;
+  return String((location as any).branchId ?? "") === branchId;
 }
 
 function mappedIssueLocationId(store: StoreDto): string {
@@ -86,7 +82,7 @@ function mappedIssueLocationId(store: StoreDto): string {
       x.issueLocationId ??
       x.defaultStockLocationId ??
       x.issueLocation?.id ??
-      "",
+      ""
   );
 }
 
@@ -109,7 +105,7 @@ function rolesOf(user: any): string[] {
 
 function hasRole(user: unknown, roleName: string): boolean {
   return rolesOf(user).some(
-    (role) => role.toLowerCase() === roleName.toLowerCase(),
+    (role) => role.toLowerCase() === roleName.toLowerCase()
   );
 }
 
@@ -135,14 +131,14 @@ function initials(name: string): string {
 }
 
 export default function BranchManagementDashboardPage() {
-  const nav = useNavigate();
-  const params = useParams<{ companyId: string; branchId: string }>();
+  const nav = useErpNavigate();
+  const params = useParams<{ companyId?: string; branchId?: string }>();
 
-  const { companyId: ctxCompanyId, branchId: ctxBranchId } = useAppContext();
-  const { companyId: scopeCompanyId } = useAppScope();
+  const app = useAppContext();
+  const scope = useAppScope();
 
-  const companyId = params.companyId ?? ctxCompanyId ?? scopeCompanyId ?? "";
-  const branchId = params.branchId ?? ctxBranchId ?? "";
+  const companyId = params.companyId || scope.companyId || app.companyId || "";
+  const branchId = params.branchId || scope.branchId || app.branchId || "";
 
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [loading, setLoading] = useState(false);
@@ -157,12 +153,12 @@ export default function BranchManagementDashboardPage() {
 
   const branchLocations = useMemo(
     () => companyLocations.filter((x) => belongsToBranch(x, branchId)),
-    [companyLocations, branchId],
+    [companyLocations, branchId]
   );
 
   const unassignedLocations = useMemo(
     () => companyLocations.filter((x) => !(x as any).branchId),
-    [companyLocations],
+    [companyLocations]
   );
 
   const load = useCallback(async () => {
@@ -209,14 +205,15 @@ export default function BranchManagementDashboardPage() {
       activeStores.length > 0 &&
       activeStores.every((store) => {
         const mappedId = mappedIssueLocationId(store);
+
         return Boolean(
           mappedId &&
-            activeBranchLocations.some((location) => idOf(location) === mappedId),
+            activeBranchLocations.some((location) => idOf(location) === mappedId)
         );
       });
 
     const hasBranchAdmin = activeUsers.some((user) =>
-      hasRole(user, "BranchAdmin"),
+      hasRole(user, "BranchAdmin")
     );
 
     const readinessItems = [
@@ -255,13 +252,78 @@ export default function BranchManagementDashboardPage() {
     };
   }, [branchLocations, stores, users, companyLocations, unassignedLocations]);
 
+  const activePanel = useMemo(() => {
+    switch (activeTab) {
+      case "overview":
+        return (
+          <OverviewPanel
+            branch={branch}
+            metrics={metrics}
+            onGoLocations={() => setActiveTab("locations")}
+            onGoStores={() => setActiveTab("stores")}
+            onGoUsers={() => setActiveTab("users")}
+          />
+        );
+
+      case "locations":
+        return (
+          <LocationsPanel
+            companyId={companyId}
+            branchId={branchId}
+            branchLocations={branchLocations}
+            unassignedLocations={unassignedLocations}
+            onRefresh={load}
+            onNotice={setNotice}
+            onError={setError}
+          />
+        );
+
+      case "stores":
+        return <StoresPanel stores={stores} locations={branchLocations} />;
+
+      case "users":
+        return <UsersPanel users={users} />;
+
+      case "settings":
+        return branch ? (
+          <BranchSettingsPanel
+            companyId={companyId}
+            branchId={branchId}
+            branch={branch}
+            busy={busy}
+            setBusy={setBusy}
+            onUpdated={(updated) => {
+              setBranch(updated);
+              setNotice("Branch updated.");
+            }}
+            onError={setError}
+          />
+        ) : null;
+
+      default:
+        return null;
+    }
+  }, [
+    activeTab,
+    branch,
+    metrics,
+    companyId,
+    branchId,
+    branchLocations,
+    unassignedLocations,
+    stores,
+    users,
+    busy,
+    load,
+  ]);
+
   if (!companyId || !branchId) {
     return (
       <PageShell title="Branch management">
         <Alert
           tone="danger"
           title="Missing branch context"
-          message="Open this page from a valid company and branch."
+          message="Open this page from a valid company and branch route."
         />
       </PageShell>
     );
@@ -313,53 +375,7 @@ export default function BranchManagementDashboardPage() {
           </div>
 
           <div className="ob-card-body">
-            {activeTab === "overview" && (
-              <OverviewPanel
-                branch={branch}
-                metrics={metrics}
-                onGoLocations={() => setActiveTab("locations")}
-                onGoStores={() => setActiveTab("stores")}
-                onGoUsers={() => setActiveTab("users")}
-              />
-            )}
-
-            {activeTab === "locations" && (
-              <LocationsPanel
-                companyId={companyId}
-                branchId={branchId}
-                branchLocations={branchLocations}
-                unassignedLocations={unassignedLocations}
-                onRefresh={load}
-                onNotice={setNotice}
-                onError={setError}
-              />
-            )}
-
-            {activeTab === "stores" && (
-              <StoresPanel
-                stores={stores}
-                locations={branchLocations}
-              />
-            )}
-
-            {activeTab === "users" && (
-              <UsersPanel users={users} />
-            )}
-
-            {activeTab === "settings" && branch && (
-              <BranchSettingsPanel
-                companyId={companyId}
-                branchId={branchId}
-                branch={branch}
-                busy={busy}
-                setBusy={setBusy}
-                onUpdated={(updated) => {
-                  setBranch(updated);
-                  setNotice("Branch updated.");
-                }}
-                onError={setError}
-              />
-            )}
+            {activePanel}
 
             <div
               style={{
@@ -368,8 +384,8 @@ export default function BranchManagementDashboardPage() {
                 marginTop: 20,
               }}
             >
-              <Btn variant="ghost" onClick={() => nav(-1)}>
-                Back
+              <Btn variant="ghost" onClick={() => nav("org")}>
+                Back to locations
               </Btn>
 
               <Btn variant="primary" onClick={() => void load()} disabled={loading}>
@@ -733,18 +749,17 @@ function BranchSettingsPanel(props: {
     props.onError(null);
 
     try {
-    await branchesApi.update(props.companyId, props.branchId, {
-  code: form.code.trim().toUpperCase(),
-  name: form.name.trim(),
-  city: trimOrNull(form.city),
-  region: trimOrNull(form.region),
-  addressLine: trimOrNull(form.addressLine),
-  isMain: form.isMain,
-});
+      await branchesApi.update(props.companyId, props.branchId, {
+        code: form.code.trim().toUpperCase(),
+        name: form.name.trim(),
+        city: trimOrNull(form.city),
+        region: trimOrNull(form.region),
+        addressLine: trimOrNull(form.addressLine),
+        isMain: form.isMain,
+      });
 
-const updated = await branchesApi.get(props.companyId, props.branchId);
+      const updated = await branchesApi.get(props.companyId, props.branchId);
 
-props.onUpdated(updated);
       props.onUpdated(updated);
     } catch (err) {
       props.onError(extractApiError(err, "Failed to update branch."));
@@ -861,8 +876,8 @@ function KpiCard(props: {
           props.tone === "ok"
             ? "#f0fdf4"
             : props.tone === "warn"
-              ? "#fffbeb"
-              : "#fff",
+            ? "#fffbeb"
+            : "#fff",
         padding: 14,
       }}
     >

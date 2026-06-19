@@ -8,7 +8,7 @@ import type {
   SwitchCompanyContextDto,
 } from "../types/systemAdmin.types";
 
-const SYSTEM_ADMIN_BASE = "/api/system-admin";
+const SYSTEM_ADMIN_BASE = "/system-admin";
 
 const data = <T>(response: { data: T }): T => response.data;
 

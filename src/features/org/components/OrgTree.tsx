@@ -1,4 +1,6 @@
-﻿import type { OrganizationDto } from "../types";
+﻿// src/features/organization/components/OrgTree.tsx
+
+import type { OrganizationDto } from "../types";
 
 type Props = {
   companies: OrganizationDto[];
@@ -6,8 +8,10 @@ type Props = {
   stores: OrganizationDto[];
   selectedCompanyId: string | null;
   selectedBranchId: string | null;
+  selectedStoreId: string | null;
   onSelectCompany: (id: string) => void;
   onSelectBranch: (id: string) => void;
+  onSelectStore: (id: string) => void;
 };
 
 export default function OrgTree({
@@ -16,8 +20,10 @@ export default function OrgTree({
   stores,
   selectedCompanyId,
   selectedBranchId,
+  selectedStoreId,
   onSelectCompany,
   onSelectBranch,
+  onSelectStore,
 }: Props) {
   return (
     <div className="card">
@@ -30,46 +36,53 @@ export default function OrgTree({
           <div className="muted">No companies found.</div>
         ) : (
           <ul className="org-tree">
-            {companies.map(c => {
-              const activeCompany = c.id === selectedCompanyId;
+            {companies.map((company) => {
+              const activeCompany = company.id === selectedCompanyId;
+
               return (
-                <li key={c.id} className={`list-item ${activeCompany ? "active" : ""}`}>
-                  <button type="button" className="tree-btn" onClick={() => onSelectCompany(c.id)}>
-                    {c.name}
+                <li key={company.id} className={`list-item ${activeCompany ? "active" : ""}`}>
+                  <button type="button" className="tree-btn" onClick={() => onSelectCompany(company.id)}>
+                    {company.name}
                   </button>
 
-                  {activeCompany ? (
+                  {activeCompany && (
                     <ul className="org-tree sub">
                       {branches.length === 0 ? (
                         <li className="subitem muted">No branches.</li>
                       ) : (
-                        branches.map(b => {
-                          const activeBranch = b.id === selectedBranchId;
+                        branches.map((branch) => {
+                          const activeBranch = branch.id === selectedBranchId;
+
                           return (
-                            <li key={b.id} className={`subitem ${activeBranch ? "active" : ""}`}>
-                              <button type="button" className="tree-btn" onClick={() => onSelectBranch(b.id)}>
-                                {b.name}
+                            <li key={branch.id} className={`subitem ${activeBranch ? "active" : ""}`}>
+                              <button type="button" className="tree-btn" onClick={() => onSelectBranch(branch.id)}>
+                                {branch.name}
                               </button>
 
-                              {activeBranch ? (
+                              {activeBranch && (
                                 <ul className="org-tree sub">
                                   {stores.length === 0 ? (
                                     <li className="subitem muted">No stores.</li>
                                   ) : (
-                                    stores.map(s => (
-                                      <li key={s.id} className="subitem">
-                                        <span className="muted">{s.name}</span>
+                                    stores.map((store) => (
+                                      <li
+                                        key={store.id}
+                                        className={`subitem ${store.id === selectedStoreId ? "active" : ""}`}
+                                      >
+                                        <button type="button" className="tree-btn" onClick={() => onSelectStore(store.id)}>
+                                          {store.name}
+                                        </button>
                                       </li>
                                     ))
                                   )}
                                 </ul>
-                              ) : null}
+                              )}
                             </li>
                           );
                         })
                       )}
                     </ul>
-                  ) : null}
+                  )}
                 </li>
               );
             })}

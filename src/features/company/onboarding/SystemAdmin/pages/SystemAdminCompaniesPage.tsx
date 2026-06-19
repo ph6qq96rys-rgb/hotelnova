@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { systemAdminApi } from "../api/systemAdminApi";
-//import { platformTenantsApi } from "../api/platformTenantsApi";
 import type { CompanyListItemDto } from "../types/systemAdmin.types";
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -26,7 +25,15 @@ function emptyPage(page = 1, pageSize = DEFAULT_PAGE_SIZE): PageState {
 }
 
 function extractError(error: unknown, fallback: string): string {
-  const err = error as any;
+  const err = error as {
+    response?: {
+      data?: {
+        message?: string;
+        title?: string;
+      };
+    };
+    message?: string;
+  };
 
   return (
     err?.response?.data?.message ??
@@ -48,10 +55,10 @@ function statusClass(company: CompanyListItemDto): string {
 }
 
 function companyDisplayName(company: CompanyListItemDto): string {
-  return company.tradeName?.trim() || company.legalName;
+  return company.tradeName?.trim() || company.legalName || "Company";
 }
 
-function storeCompanyContext(context: {
+function persistCompanyContext(context: {
   companyId: string;
   companyName: string;
   tenantSlug?: string | null;
@@ -79,22 +86,21 @@ function storeCompanyContext(context: {
 export default function SystemAdminCompaniesPage() {
   const navigate = useNavigate();
 
-  const [pageState, setPageState] = useState<PageState>(() =>
-    emptyPage()
-  );
-
+  const [pageState, setPageState] = useState<PageState>(() => emptyPage());
   const [busy, setBusy] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const page = pageState.page;
-  const pageSize = pageState.pageSize;
-  const items = pageState.items;
-  const totalCount = pageState.totalCount;
+  const { items, totalCount, page, pageSize } = pageState;
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(totalCount / Math.max(1, pageSize))),
     [totalCount, pageSize]
+  );
+
+  const activeCount = useMemo(
+    () => items.filter((item) => item.isActive).length,
+    [items]
   );
 
   const canPrev = page > 1 && !busy;
@@ -117,16 +123,14 @@ export default function SystemAdminCompaniesPage() {
         setPageState({
           items: result.items ?? [],
           totalCount: result.totalCount ?? 0,
-          page: Number((result as any).page ?? page),
+          page: Number(result.page ?? page),
           pageSize: Number(result.pageSize ?? pageSize),
         });
       } catch (err) {
         if (signal?.aborted) return;
 
         setPageState(emptyPage(page, pageSize));
-        setError(
-          extractError(err, "Failed to load company workspaces.")
-        );
+        setError(extractError(err, "Failed to load company workspaces."));
       } finally {
         if (!signal?.aborted) {
           setBusy(false);
@@ -144,8 +148,8 @@ export default function SystemAdminCompaniesPage() {
     return () => controller.abort();
   }, [load]);
 
-  async function handleConfigure(company: CompanyListItemDto) {
-    if (!company.id || switchingId) return;
+  async function handleOpenWorkspace(company: CompanyListItemDto) {
+    if (!company.id || switchingId || !company.isActive) return;
 
     setSwitchingId(company.id);
     setError(null);
@@ -153,20 +157,36 @@ export default function SystemAdminCompaniesPage() {
     try {
       const context = await systemAdminApi.switchCompany(company.id);
 
-      storeCompanyContext({
-        companyId: context.companyId,
-        companyName: context.companyName || companyDisplayName(company),
+      const companyId = context.companyId || company.id;
+      const companyName =
+        context.companyName || companyDisplayName(company);
+
+      persistCompanyContext({
+        companyId,
+        companyName,
         tenantSlug: context.tenantSlug,
       });
 
-      navigate("/dashboard", { replace: true });
+      navigate(`/companies/${companyId}/dashboard`, { replace: true });
     } catch (err) {
-      setError(
-        extractError(err, "Failed to switch company context.")
-      );
+      setError(extractError(err, "Failed to switch company context."));
     } finally {
       setSwitchingId(null);
     }
+  }
+
+  function goPrev() {
+    setPageState((current) => ({
+      ...current,
+      page: Math.max(1, current.page - 1),
+    }));
+  }
+
+  function goNext() {
+    setPageState((current) => ({
+      ...current,
+      page: Math.min(totalPages, current.page + 1),
+    }));
   }
 
   return (
@@ -174,11 +194,11 @@ export default function SystemAdminCompaniesPage() {
       <div className="page-header">
         <div>
           <div className="page-kicker">Platform Administration</div>
-          <h1>Company Workspace Selector</h1>
-          <p>
+          <div className="page-title">Company Workspace Selector</div>
+          <div className="page-sub">
             Select a company context for onboarding, configuration, security,
             inventory, sales, and operations.
-          </p>
+          </div>
         </div>
 
         <button
@@ -187,12 +207,12 @@ export default function SystemAdminCompaniesPage() {
           disabled={busy}
           onClick={() => void load()}
         >
-          {busy ? "Refreshing..." : "Refresh"}
+          {busy ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
       {error && (
-        <div className="alert alert-error" role="alert">
+        <div className="alert alert-danger" role="alert">
           {error}
         </div>
       )}
@@ -201,13 +221,13 @@ export default function SystemAdminCompaniesPage() {
         <div className="kpi">
           <div className="kpi-label">Companies</div>
           <div className="kpi-val">{totalCount}</div>
-          <div className="kpi-sub">Available workspaces</div>
+          <div className="kpi-sub">available workspaces</div>
         </div>
 
         <div className="kpi">
           <div className="kpi-label">Shown</div>
           <div className="kpi-val">{items.length}</div>
-          <div className="kpi-sub">Current page</div>
+          <div className="kpi-sub">current page</div>
         </div>
 
         <div className="kpi">
@@ -215,15 +235,13 @@ export default function SystemAdminCompaniesPage() {
           <div className="kpi-val">
             {page} / {totalPages}
           </div>
-          <div className="kpi-sub">Page size {pageSize}</div>
+          <div className="kpi-sub">page size {pageSize}</div>
         </div>
 
         <div className="kpi">
           <div className="kpi-label">Active</div>
-          <div className="kpi-val">
-            {items.filter((item) => item.isActive).length}
-          </div>
-          <div className="kpi-sub">On this page</div>
+          <div className="kpi-val">{activeCount}</div>
+          <div className="kpi-sub">on this page</div>
         </div>
       </section>
 
@@ -255,13 +273,11 @@ export default function SystemAdminCompaniesPage() {
             <tbody>
               {busy ? (
                 <tr>
-                  <td colSpan={7}>Loading company workspaces...</td>
+                  <td colSpan={7}>Loading company workspaces…</td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={7}>
-                    No companies found.
-                  </td>
+                  <td colSpan={7}>No companies found.</td>
                 </tr>
               ) : (
                 items.map((company) => (
@@ -273,9 +289,9 @@ export default function SystemAdminCompaniesPage() {
                       </div>
                     </td>
 
-                    <td>{company.tradeName || "-"}</td>
-                    <td>{company.defaultCurrency || "-"}</td>
-                    <td>{company.timezone || "-"}</td>
+                    <td>{company.tradeName || "—"}</td>
+                    <td>{company.defaultCurrency || "—"}</td>
+                    <td>{company.timezone || "—"}</td>
 
                     <td>
                       <span className={statusClass(company)}>
@@ -290,13 +306,12 @@ export default function SystemAdminCompaniesPage() {
                         type="button"
                         className="btn btn-primary"
                         disabled={
-                          !company.isActive ||
-                          switchingId === company.id
+                          !company.isActive || switchingId === company.id
                         }
-                        onClick={() => void handleConfigure(company)}
+                        onClick={() => void handleOpenWorkspace(company)}
                       >
                         {switchingId === company.id
-                          ? "Opening..."
+                          ? "Opening…"
                           : "Open workspace"}
                       </button>
                     </td>
@@ -312,12 +327,7 @@ export default function SystemAdminCompaniesPage() {
             type="button"
             className="btn"
             disabled={!canPrev}
-            onClick={() =>
-              setPageState((current) => ({
-                ...current,
-                page: Math.max(1, current.page - 1),
-              }))
-            }
+            onClick={goPrev}
           >
             Previous
           </button>
@@ -330,12 +340,7 @@ export default function SystemAdminCompaniesPage() {
             type="button"
             className="btn"
             disabled={!canNext}
-            onClick={() =>
-              setPageState((current) => ({
-                ...current,
-                page: current.page + 1,
-              }))
-            }
+            onClick={goNext}
           >
             Next
           </button>

@@ -2,26 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import {
+  getTelegramInitData,
+  getTelegramWebApp,
+  initializeTelegramMiniApp,
+  notifyTelegram
+} from "../telegramWebApp";
 
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp?: {
-        initData: string;
-        ready: () => void;
-        expand: () => void;
-        closeScanQrPopup?: () => void;
-        showScanQrPopup?: (
-          params: { text?: string },
-          callback?: (qrText: string) => boolean
-        ) => void;
-        HapticFeedback?: {
-          notificationOccurred: (type: "success" | "error" | "warning") => void;
-        };
-      };
-    };
-  }
-}
+const tg = getTelegramWebApp();
+const initData = getTelegramInitData();
+
 
 type ClockResult = {
   success: boolean;
@@ -48,8 +38,7 @@ export default function TelegramAttendanceScannerPage() {
   );
 
   useEffect(() => {
-    tg?.ready();
-    tg?.expand();
+   initializeTelegramMiniApp();
   }, [tg]);
 
   async function submitQr(qrText: string) {
@@ -78,8 +67,7 @@ export default function TelegramAttendanceScannerPage() {
 
       setResult(res.data);
       setMessage(res.data.message);
-
-      tg?.HapticFeedback?.notificationOccurred("success");
+        notifyTelegram("success");
     } catch (error) {
       console.error("Attendance scan failed:", error);
 
@@ -88,7 +76,7 @@ export default function TelegramAttendanceScannerPage() {
         : null;
 
       setMessage(apiMessage ?? "Unable to process attendance QR.");
-      tg?.HapticFeedback?.notificationOccurred("error");
+         notifyTelegram("error");
     } finally {
       setLoading(false);
     }
@@ -100,13 +88,13 @@ export default function TelegramAttendanceScannerPage() {
       return;
     }
 
-    tg.showScanQrPopup(
-      { text: "Scan your branch attendance QR code" },
-      qrText => {
-        void submitQr(qrText);
-        return true;
-      }
-    );
+   tg.showScanQrPopup(
+  { text: "Scan your branch attendance QR code" },
+  (qrText: string) => {
+    void submitQr(qrText);
+    return true;
+  }
+);
   }
 
   return (

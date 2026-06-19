@@ -73,6 +73,8 @@ export interface LoginResponse {
 export interface AuthScope {
   companyId: string | null;
   companyName: string | null;
+  tenantSlug: string | null;
+
   branchId: string | null;
   branchName: string | null;
   departmentId: string | null;

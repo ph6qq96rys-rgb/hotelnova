@@ -1,16 +1,19 @@
 ﻿// src/routes/AppRoutes.tsx
 
 import type { ReactNode } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import RequireAuth from "../auth/RequireAuth";
 import RequireCompany from "../auth/RequireCompany";
+import { loadAuth } from "../auth/auth.storage";
+
 import AppShell from "../layouts/AppShell";
 
 import LoginPage from "../pages/LoginPage";
 import RegisterPage from "../pages/RegisterPage";
 import ForgotPasswordPage from "../pages/ForgotPasswordPage";
 import ResetPasswordPage from "../pages/ResetPasswordPage";
+import DashboardPage from "../pages/DashboardPage";
 
 import CompanyOnboardingModule from "../features/company/onboarding/CompanyOnboardingModule";
 import SystemAdminCompaniesPage from "../features/company/onboarding/SystemAdmin/pages/SystemAdminCompaniesPage";
@@ -18,10 +21,12 @@ import PlatformTenantsPage from "../pages/platform/PlatformTenantsPage";
 
 import { routeConfig } from "./routeConfig";
 import { companyRoutes } from "./companyRoutes";
+import { inventoryMasterRoutes } from "./inventoryMasterRoutes";
 import { useGrnRoutes } from "./grnroutes";
 import { useSalesRoutes } from "./sales-cogsroute";
 import { getHrRoutes } from "./hrRoutes";
 import { getPostRoutes } from "./posRoutes";
+import { organizationRoutes } from "./organizationRoutes";
 
 import type { AppRoute } from "./sales-cogsroute";
 
@@ -33,20 +38,31 @@ export default function AppRoutes() {
   const hrRoutes = getHrRoutes();
   const posRoutes = getPostRoutes();
 
-  const protectedCompanyRoutes = companyRoutes.filter(
-    (route) =>
-      normalizeRoutePath(route.path ?? "") !== COMPANY_ONBOARDING_PATH
-  ) as AppRoute[];
+  const protectedCompanyRoutes = companyRoutes.filter((route) => {
+    const path = normalizeRoutePath(route.path ?? "");
+    return path !== COMPANY_ONBOARDING_PATH && path !== "onboarding";
+  }) as AppRoute[];
+
+  const allCompanyRoutes = dedupeRoutes([
+    ...(routeConfig as AppRoute[]),
+    ...inventoryMasterRoutes,
+    ...protectedCompanyRoutes,
+    ...organizationRoutes,
+    ...grnRoutes,
+    ...salesRoutes,
+    ...(hrRoutes as AppRoute[]),
+    ...(posRoutes as AppRoute[]),
+  ]);
 
   return (
     <Routes>
-      {/* Public auth routes — must stay before protected wildcard */}
+      {/* Public */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-      {/* Platform routes — authenticated, but not company-scoped */}
+      {/* Platform workspace */}
       <Route
         path="/platform"
         element={
@@ -55,11 +71,11 @@ export default function AppRoutes() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="tenants" replace />} />
+        <Route index element={<Navigate to="/platform/tenants" replace />} />
         <Route path="tenants" element={<PlatformTenantsPage />} />
       </Route>
 
-      {/* System-admin routes — authenticated, but not company-scoped */}
+      {/* System admin workspace */}
       <Route
         path="/system-admin"
         element={
@@ -68,11 +84,11 @@ export default function AppRoutes() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="companies" replace />} />
+        <Route index element={<Navigate to="/system-admin/companies" replace />} />
         <Route path="companies" element={<SystemAdminCompaniesPage />} />
       </Route>
 
-      {/* Company onboarding — authenticated, but company may not exist yet */}
+      {/* Onboarding routes */}
       <Route
         path="/companies/onboarding"
         element={
@@ -84,9 +100,31 @@ export default function AppRoutes() {
         <Route index element={<CompanyOnboardingModule />} />
       </Route>
 
-      {/* Main ERP workspace — authenticated and company-scoped */}
       <Route
-        path="/*"
+        path="/companies/:companyId/onboarding"
+        element={
+          <RequireAuth>
+            <AppShell />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<CompanyOnboardingModule />} />
+      </Route>
+
+      <Route
+        path="/companies/:companyId/branches/:branchId/onboarding"
+        element={
+          <RequireAuth>
+            <AppShell />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<CompanyOnboardingModule />} />
+      </Route>
+
+      {/* Tenant company workspace */}
+      <Route
+        path="/companies/:companyId"
         element={
           <RequireAuth>
             <RequireCompany>
@@ -95,17 +133,83 @@ export default function AppRoutes() {
           </RequireAuth>
         }
       >
-        {renderRoutes(routeConfig as AppRoute[], "routeConfig")}
-        {renderRoutes(protectedCompanyRoutes, "companyRoutes")}
-        {renderRoutes(grnRoutes, "grnRoutes")}
-        {renderRoutes(salesRoutes, "salesRoutes")}
-        {renderRoutes(hrRoutes as AppRoute[], "hrRoutes")}
-        {renderRoutes(posRoutes as AppRoute[], "posRoutes")}
+        <Route index element={<CompanyDashboardRedirect />} />
+        <Route path="dashboard" element={<DashboardPage />} />
 
-        <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="*" element={<Navigate to="dashboard" replace />} />
+        {renderRoutes(allCompanyRoutes, "companyWorkspace")}
+
+        <Route path="*" element={<CompanyRouteNotFound />} />
       </Route>
+
+      <Route path="/" element={<GlobalRedirect />} />
+      <Route path="*" element={<GlobalRouteNotFound />} />
     </Routes>
+  );
+}
+
+function CompanyDashboardRedirect() {
+  const { companyId } = useParams();
+
+  if (!companyId) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Navigate to={`/companies/${companyId}/dashboard`} replace />;
+}
+
+function GlobalRedirect() {
+  const auth = loadAuth();
+
+  if (!auth?.accessToken) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (hasSystemAdminRole(auth.roles)) {
+    return <Navigate to="/platform/tenants" replace />;
+  }
+
+  if (auth.companyId) {
+    return <Navigate to={`/companies/${auth.companyId}/dashboard`} replace />;
+  }
+
+  return <Navigate to="/login" replace />;
+}
+
+function CompanyRouteNotFound() {
+  const { companyId } = useParams();
+
+  return (
+    <div style={{ padding: 24 }}>
+      <h2 style={{ margin: 0, fontSize: 20 }}>Company route not found</h2>
+      <p style={{ marginTop: 8, color: "#64748b" }}>
+        This page is not registered under the current company workspace.
+      </p>
+
+      {companyId ? (
+        <a href={`/companies/${companyId}/dashboard`}>Go to dashboard</a>
+      ) : (
+        <a href="/login">Go to login</a>
+      )}
+    </div>
+  );
+}
+
+function GlobalRouteNotFound() {
+  const auth = loadAuth();
+
+  const fallback = auth?.companyId
+    ? `/companies/${auth.companyId}/dashboard`
+    : "/login";
+
+  return (
+    <div style={{ padding: 24 }}>
+      <h2 style={{ margin: 0, fontSize: 20 }}>Route not found</h2>
+      <p style={{ marginTop: 8, color: "#64748b" }}>
+        The requested route is outside the registered ERP workspace.
+      </p>
+
+      <a href={fallback}>Go back</a>
+    </div>
   );
 }
 
@@ -116,13 +220,7 @@ function renderRoutes(
   depth = 0
 ): ReactNode {
   return routes.map((route, index) => {
-    const routeKey = buildRouteKey(
-      route,
-      namespace,
-      parentPath,
-      depth,
-      index
-    );
+    const routeKey = buildRouteKey(route, namespace, parentPath, depth, index);
 
     if (route.index === true) {
       return (
@@ -134,9 +232,11 @@ function renderRoutes(
       );
     }
 
-    if (!route.path) return null;
+    const path = normalizeCompanyChildPath(route.path);
 
-    const path = normalizeRoutePath(route.path);
+    if (!path || path === "dashboard") {
+      return null;
+    }
 
     return (
       <Route
@@ -152,8 +252,48 @@ function renderRoutes(
   });
 }
 
+function dedupeRoutes(routes: AppRoute[]): AppRoute[] {
+  const seen = new Set<string>();
+  const result: AppRoute[] = [];
+
+  for (const route of routes) {
+    const key = route.index
+      ? "index"
+      : normalizeCompanyChildPath(route.path) ?? "";
+
+    if (!key) {
+      result.push(route);
+      continue;
+    }
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(route);
+  }
+
+  return result;
+}
+
 function normalizeRoutePath(path: string): string {
-  return path.replace(/^\/+/, "");
+  return path.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+function normalizeCompanyChildPath(path?: string): string | null {
+  if (!path) return null;
+
+  let clean = normalizeRoutePath(path);
+
+  clean = clean.replace(/^companies\/:companyId\/?/, "");
+  clean = clean.replace(/^companies\/[^/]+\/?/, "");
+
+  if (!clean || clean === "companies") {
+    return null;
+  }
+
+  return clean;
 }
 
 function buildRouteKey(
@@ -172,4 +312,11 @@ function buildRouteKey(
     `d${depth}`,
     `i${index}`,
   ].join("__");
+}
+
+function hasSystemAdminRole(roles?: string[] | null): boolean {
+  return (roles ?? []).some((role) => {
+    const normalized = role.trim().toUpperCase();
+    return normalized === "SYSTEMADMIN" || normalized === "SYSADMIN";
+  });
 }

@@ -40,6 +40,7 @@ function normalizeState(raw: Partial<AuthState> | null): AuthState | null {
     permissions: normalizePermissions(raw.permissions),
     roles: normalizePermissions(raw.roles),
     companyId: safeStr(raw.companyId),
+    tenantSlug: safeStr((raw as any).tenantSlug),
     companyName: safeStr(raw.companyName),
     branchId: safeStr(raw.branchId),
     branchName: safeStr(raw.branchName),

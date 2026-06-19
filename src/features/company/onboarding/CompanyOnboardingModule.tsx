@@ -24,7 +24,9 @@ import { extractApiError, upsertById } from "./utils/onboarding.utils";
 
 import { Alert, WizardRail } from "./components/company.ui";
 import "./company-onboarding.css";
-
+import type {
+  CompanySettingsDto,
+} from "../types/company.types";
 function idOf(value: unknown): string {
   return String((value as any)?.id ?? (value as any)?.Id ?? "").trim();
 }
@@ -33,12 +35,12 @@ function companyIdOf(company: CompanyDto | null | undefined): string {
   return idOf(company);
 }
 
-function branchNameOf(branch: BranchDto | null | undefined): string | null {
-  return branch?.name ?? null;
-}
-
 function companyNameOf(company: CompanyDto | null | undefined): string | null {
   return company?.legalName ?? null;
+}
+
+function branchNameOf(branch: BranchDto | null | undefined): string | null {
+  return branch?.name ?? null;
 }
 
 function branchLabel(branch: BranchDto | null | undefined): string {
@@ -48,10 +50,22 @@ function branchLabel(branch: BranchDto | null | undefined): string {
   return `${branch.name ?? "Branch"}${code ? ` (${code})` : ""}`;
 }
 
+function companyOnboardingPath(companyId?: string | null): string {
+  return companyId ? `/companies/${companyId}/onboarding` : "/companies/onboarding";
+}
+
+function branchOnboardingPath(companyId: string, branchId: string): string {
+  return `/companies/${companyId}/branches/${branchId}/onboarding`;
+}
+
+function companyDashboardPath(companyId: string): string {
+  return `/companies/${companyId}/dashboard`;
+}
+
 function buildSnapshotPatch(
   snapshot: OnboardingSnapshotDto,
   companyId: string,
-  requestedBranchId?: string | null,
+  requestedBranchId?: string | null
 ) {
   const branches = snapshot.branches ?? [];
 
@@ -101,7 +115,7 @@ export default function CompanyOnboardingModule() {
 
   const [state, dispatch] = useReducer(
     onboardingReducer,
-    createInitialOnboardingState(initialCompanyId, initialCompanyId),
+    createInitialOnboardingState(initialCompanyId, initialCompanyId)
   );
 
   const [companies, setCompanies] = useState<CompanyDto[]>([]);
@@ -109,7 +123,7 @@ export default function CompanyOnboardingModule() {
 
   const activeIndex = Math.max(
     0,
-    ONBOARDING_STEPS.findIndex((step) => step.key === state.active),
+    ONBOARDING_STEPS.findIndex((step) => step.key === state.active)
   );
 
   const activeBranch = useMemo((): BranchDto | null => {
@@ -178,7 +192,7 @@ export default function CompanyOnboardingModule() {
         app.setBranch(null);
       }
     },
-    [app],
+    [app]
   );
 
   const loadCompanies = useCallback(async () => {
@@ -186,7 +200,12 @@ export default function CompanyOnboardingModule() {
 
     try {
       const result = await onboardingApi.listCompanies();
-      setCompanies(result);
+      setCompanies(Array.isArray(result) ? result : []);
+    } catch (err) {
+      dispatch({
+        type: "LOAD_ERROR",
+        error: extractApiError(err, "Failed to load companies."),
+      });
     } finally {
       setCompaniesLoading(false);
     }
@@ -195,7 +214,7 @@ export default function CompanyOnboardingModule() {
   const reloadSnapshot = useCallback(
     async (
       requestedCompanyId: string | null = state.companyId,
-      requestedBranchId: string | null = state.branchId,
+      requestedBranchId: string | null = state.branchId
     ) => {
       if (!requestedCompanyId) return;
 
@@ -204,13 +223,13 @@ export default function CompanyOnboardingModule() {
       try {
         const snapshot = await onboardingApi.getSnapshot(
           requestedCompanyId,
-          requestedBranchId,
+          requestedBranchId
         );
 
         const patch = buildSnapshotPatch(
           snapshot,
           requestedCompanyId,
-          requestedBranchId,
+          requestedBranchId
         );
 
         syncAppScope(patch);
@@ -226,7 +245,7 @@ export default function CompanyOnboardingModule() {
         });
       }
     },
-    [state.companyId, state.branchId, syncAppScope],
+    [state.companyId, state.branchId, syncAppScope]
   );
 
   useEffect(() => {
@@ -251,7 +270,6 @@ export default function CompanyOnboardingModule() {
       void reloadSnapshot(companyId, branchId);
     }
 
-    // Initial hydration only. User-driven refreshes call reloadSnapshot directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -293,7 +311,7 @@ export default function CompanyOnboardingModule() {
       step: "branch",
     });
 
-    navigate(`/companies/${companyId}/onboarding`, {
+    navigate(companyOnboardingPath(companyId), {
       replace: true,
     });
   }
@@ -325,12 +343,14 @@ export default function CompanyOnboardingModule() {
       notice: "Company created. Now select or create a branch.",
     });
 
-    navigate(`/companies/${companyId}/onboarding`, {
+    navigate(companyOnboardingPath(companyId), {
       replace: true,
     });
   }
 
-  async function onCompanySaved(settings: any) {
+  async function onCompanySaved(
+  settings: CompanySettingsDto
+) {
     await loadCompanies();
 
     dispatch({
@@ -362,7 +382,7 @@ export default function CompanyOnboardingModule() {
       step: "branch",
     });
 
-    navigate(`/companies/${state.companyId}/branches/${branchId}/onboarding`, {
+    navigate(branchOnboardingPath(state.companyId, branchId), {
       replace: true,
     });
   }
@@ -400,7 +420,7 @@ export default function CompanyOnboardingModule() {
       notice: "Branch created. Configure stock locations next.",
     });
 
-    navigate(`/companies/${state.companyId}/branches/${branchId}/onboarding`, {
+    navigate(branchOnboardingPath(state.companyId, branchId), {
       replace: true,
     });
   }
@@ -437,7 +457,7 @@ export default function CompanyOnboardingModule() {
         notice: "Onboarding completed.",
       });
 
-      navigate("/dashboard", {
+      navigate(companyDashboardPath(state.companyId), {
         replace: true,
       });
     } catch (err) {
@@ -449,8 +469,12 @@ export default function CompanyOnboardingModule() {
   }
 
   const progressPct = Math.round(
-    ((activeIndex + 1) / ONBOARDING_STEPS.length) * 100,
+    ((activeIndex + 1) / ONBOARDING_STEPS.length) * 100
   );
+
+  const dashboardHref = state.companyId
+    ? companyDashboardPath(state.companyId)
+    : "/platform/tenants";
 
   return (
     <div className="ob-page">
@@ -476,8 +500,8 @@ export default function CompanyOnboardingModule() {
             <RefreshCcw size={14} /> Refresh
           </button>
 
-          <Link className="ob-btn ob-btn--ghost" to="/companies">
-            Companies
+          <Link className="ob-btn ob-btn--ghost" to={dashboardHref}>
+            Dashboard
           </Link>
         </div>
       </div>

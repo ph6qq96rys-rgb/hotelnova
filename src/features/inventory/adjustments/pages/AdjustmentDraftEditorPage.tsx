@@ -1,7 +1,8 @@
 // src/features/inventory/adjustments/pages/AdjustmentDraftEditorPage.tsx
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+
 import { useAppScope } from "../../../../app/useAppScope";
 import { adjustmentApi, getApiError } from "../api/adjustmentApi";
 import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
@@ -9,137 +10,169 @@ import {
   inventoryControlSettingsApi,
   type InventoryControlSettingsDto,
 } from "../../settings/api/inventoryControlSettingsApi";
+
 import {
-  canApprove, canPost, canReject, canReverse, canSubmit,
-  normalizeAdjustmentStatus, STATUS_BADGE,
+  canApprove,
+  canPost,
+  canReject,
+  canReverse,
+  canSubmit,
+  normalizeAdjustmentStatus,
+  STATUS_BADGE,
 } from "../utils/adjustmentWorkflow";
 
 import type {
-  InventoryAdjustmentDto,
   AdjustmentCandidateDto,
+  InventoryAdjustmentDto,
   StockLocationOption,
 } from "../types";
 
 import "./adjustment-draft-editor.css";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function toNum(v: unknown, fallback = 0): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-const fmt3 = (v: unknown) => toNum(v).toFixed(3);
-const fmt2 = (v: unknown) => toNum(v).toFixed(2);
-
-function fmtDate(v?: string | null) {
-  if (!v) return "—";
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
-}
-
-// ── Line view-model ───────────────────────────────────────────────────────────
-
 type LineVm = {
-  vmId:              string;
-  fifoLotId:         string;
-  itemId:            string;
-  itemName:          string;
-  itemCode?:         string;
-  uomId:             string;
-  uomName:           string;
-  systemQty:         number;
-  countedQty:        number;
-  adjustmentQty:     number;
-  baseUomId:         string;
-  baseUomName:       string;
-  conversionFactor:  number;
-  isBaseUnit:        boolean;
-  systemQtyBase:     number;
-  countedQtyBase:    number;
+  vmId: string;
+  fifoLotId: string;
+  itemId: string;
+  itemName: string;
+  itemCode?: string;
+  uomId: string;
+  uomName: string;
+  systemQty: number;
+  countedQty: number;
+  adjustmentQty: number;
+  baseUomId: string;
+  baseUomName: string;
+  conversionFactor: number;
+  isBaseUnit: boolean;
+  systemQtyBase: number;
+  countedQtyBase: number;
   adjustmentQtyBase: number;
-  unitCost:          number;
-  unitCostDisplay:   number;
-  lineAmount:        number;
-  batchNo?:          string;
-  expiryDate?:       string;
-  notes:             string;
+  unitCost: number;
+  unitCostDisplay: number;
+  lineAmount: number;
+  batchNo?: string;
+  expiryDate?: string;
+  notes: string;
 };
-
-function candidateToLine(c: AdjustmentCandidateDto): LineVm {
-  // Backend returns toBaseFactor (types.ts) or conversionFactor (new service).
-  // Read both; whichever is present wins.
-  const factor = toNum((c as any).conversionFactor ?? c.toBaseFactor, 1) || 1;
-  return {
-    vmId:              `lot-${c.fifoLotId}`,
-    fifoLotId:         c.fifoLotId,
-    itemId:            c.itemId,
-    itemName:          c.itemName,
-    itemCode:          c.itemCode,
-    uomId:             c.uomId,
-    uomName:           c.uomName,
-    systemQty:         c.systemQty,
-    countedQty:        c.systemQty,
-    adjustmentQty:     0,
-    baseUomId:         c.baseUomId,
-    baseUomName:       c.baseUomName,
-    conversionFactor:  factor,
-    isBaseUnit:        c.uomId === c.baseUomId,
-    systemQtyBase:     c.systemQtyBase,
-    countedQtyBase:    c.systemQtyBase,
-    adjustmentQtyBase: 0,
-    unitCost:          c.unitCost,
-    unitCostDisplay:   c.unitCostDisplay,
-    lineAmount:        0,
-    batchNo:           c.batchNo,
-    expiryDate:        c.expiryDate?.toString(),
-    notes:             "",
-  };
-}
-
-function dtoLineToVm(l: InventoryAdjustmentDto["lines"][0]): LineVm {
-  return {
-    vmId:              `dto-${l.fifoLotId}-${l.itemId}`,
-    fifoLotId:         l.fifoLotId,
-    itemId:            l.itemId,
-    itemName:          l.itemName ?? l.itemId,
-    itemCode:          undefined,
-    uomId:             l.uomId,
-    uomName:           l.uomName ?? l.uomId,
-    systemQty:         l.systemQty,
-    countedQty:        l.countedQty,
-    adjustmentQty:     l.adjustmentQty,
-    baseUomId:         l.baseUomId,
-    baseUomName:       l.baseUomName ?? "",
-    conversionFactor:  l.conversionFactor,
-    isBaseUnit:        l.isBaseUnit,
-    systemQtyBase:     l.systemQtyBase,
-    countedQtyBase:    l.countedQtyBase,
-    adjustmentQtyBase: l.adjustmentQtyBase,
-    unitCost:          l.unitCost,
-    unitCostDisplay:   l.unitCostDisplay,
-    lineAmount:        l.lineAmount,
-    batchNo:           l.batchNo,
-    expiryDate:        l.expiryDate?.toString(),
-    notes:             l.notes ?? "",
-  };
-}
-
-function updateCounted(line: LineVm, rawValue: string): LineVm {
-  const countedQty      = Math.max(0, toNum(rawValue));
-  const adjustmentQty   = countedQty - line.systemQty;
-  const f               = line.conversionFactor || 1;
-  const countedQtyBase  = countedQty    * f;
-  const adjQtyBase      = adjustmentQty * f;
-  const lineAmount      = adjQtyBase * line.unitCost;
-  return { ...line, countedQty, adjustmentQty, countedQtyBase,
-    adjustmentQtyBase: adjQtyBase, lineAmount };
-}
 
 type VarianceLevel = "warning" | "high" | "critical" | null;
 
-function variancePct(line: LineVm): number {
-  if (line.systemQty === 0) return line.countedQty === 0 ? 0 : 100;
+const ADJUSTMENT_TYPES = [
+  { value: "StockCount", label: "Stock count" },
+  { value: "Waste", label: "Waste" },
+  { value: "Damage", label: "Damage" },
+  { value: "Variance", label: "Variance" },
+] as const;
+
+function toNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function fmt3(value: unknown): string {
+  return toNumber(value).toFixed(3);
+}
+
+function fmt2(value: unknown): string {
+  return toNumber(value).toFixed(2);
+}
+
+function fmtDate(value?: string | null): string {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function candidateToLine(candidate: AdjustmentCandidateDto): LineVm {
+  const conversionFactor =
+    toNumber((candidate as any).conversionFactor ?? candidate.toBaseFactor, 1) ||
+    1;
+
+  return {
+    vmId: `lot-${candidate.fifoLotId}`,
+    fifoLotId: candidate.fifoLotId,
+    itemId: candidate.itemId,
+    itemName: candidate.itemName,
+    itemCode: candidate.itemCode,
+    uomId: candidate.uomId,
+    uomName: candidate.uomName,
+    systemQty: candidate.systemQty,
+    countedQty: candidate.systemQty,
+    adjustmentQty: 0,
+    baseUomId: candidate.baseUomId,
+    baseUomName: candidate.baseUomName,
+    conversionFactor,
+    isBaseUnit: candidate.uomId === candidate.baseUomId,
+    systemQtyBase: candidate.systemQtyBase,
+    countedQtyBase: candidate.systemQtyBase,
+    adjustmentQtyBase: 0,
+    unitCost: candidate.unitCost,
+    unitCostDisplay: candidate.unitCostDisplay,
+    lineAmount: 0,
+    batchNo: candidate.batchNo,
+    expiryDate: candidate.expiryDate?.toString(),
+    notes: "",
+  };
+}
+
+function dtoLineToVm(line: InventoryAdjustmentDto["lines"][number]): LineVm {
+  return {
+    vmId: `dto-${line.fifoLotId}-${line.itemId}`,
+    fifoLotId: line.fifoLotId,
+    itemId: line.itemId,
+    itemName: line.itemName ?? line.itemId,
+    itemCode: undefined,
+    uomId: line.uomId,
+    uomName: line.uomName ?? line.uomId,
+    systemQty: line.systemQty,
+    countedQty: line.countedQty,
+    adjustmentQty: line.adjustmentQty,
+    baseUomId: line.baseUomId,
+    baseUomName: line.baseUomName ?? "",
+    conversionFactor: line.conversionFactor || 1,
+    isBaseUnit: line.isBaseUnit,
+    systemQtyBase: line.systemQtyBase,
+    countedQtyBase: line.countedQtyBase,
+    adjustmentQtyBase: line.adjustmentQtyBase,
+    unitCost: line.unitCost,
+    unitCostDisplay: line.unitCostDisplay,
+    lineAmount: line.lineAmount,
+    batchNo: line.batchNo,
+    expiryDate: line.expiryDate?.toString(),
+    notes: line.notes ?? "",
+  };
+}
+
+function updateCountedQuantity(line: LineVm, rawValue: string): LineVm {
+  const countedQty = Math.max(0, toNumber(rawValue));
+  const adjustmentQty = countedQty - line.systemQty;
+  const conversionFactor = line.conversionFactor || 1;
+  const countedQtyBase = countedQty * conversionFactor;
+  const adjustmentQtyBase = adjustmentQty * conversionFactor;
+  const lineAmount = adjustmentQtyBase * line.unitCost;
+
+  return {
+    ...line,
+    countedQty,
+    adjustmentQty,
+    countedQtyBase,
+    adjustmentQtyBase,
+    lineAmount,
+  };
+}
+
+function variancePercent(line: LineVm): number {
+  if (line.systemQty === 0) {
+    return line.countedQty === 0 ? 0 : 100;
+  }
+
   return Math.abs((line.adjustmentQty / line.systemQty) * 100);
 }
 
@@ -148,54 +181,101 @@ function getVarianceLevel(
   settings: InventoryControlSettingsDto | null
 ): VarianceLevel {
   if (!settings || line.adjustmentQty === 0) return null;
-  const pct = variancePct(line);
-  if (pct >= settings.criticalVariancePercent) return "critical";
-  if (pct >= settings.highVariancePercent)     return "high";
-  if (pct >= settings.warningVariancePercent)  return "warning";
+
+  const percent = variancePercent(line);
+
+  if (percent >= settings.criticalVariancePercent) return "critical";
+  if (percent >= settings.highVariancePercent) return "high";
+  if (percent >= settings.warningVariancePercent) return "warning";
+
   return null;
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const ADJ_TYPES = [
-  { value: "StockCount", label: "Stock count" },
-  { value: "Waste",      label: "Waste"        },
-  { value: "Damage",     label: "Damage"       },
-  { value: "Variance",   label: "Variance"     },
-];
-
-// ── Modal ─────────────────────────────────────────────────────────────────────
-// Uses inline normal-flow layout — no position:fixed (collapses iframes).
-
 function InlineModal({
-  title, body, placeholder, requireText, confirmLabel, danger, working,
-  onConfirm, onCancel,
+  title,
+  body,
+  placeholder,
+  requireText,
+  confirmLabel,
+  danger,
+  working,
+  onConfirm,
+  onCancel,
 }: {
-  title: string; body: string; placeholder: string; requireText: boolean;
-  confirmLabel: string; danger?: boolean; working: boolean;
-  onConfirm: (text: string) => void; onCancel: () => void;
+  title: string;
+  body: string;
+  placeholder: string;
+  requireText: boolean;
+  confirmLabel: string;
+  danger?: boolean;
+  working: boolean;
+  onConfirm: (text: string) => void;
+  onCancel: () => void;
 }) {
   const [text, setText] = useState("");
+
   return (
-    <div style={{ background: "rgba(0,0,0,.3)", padding: "40px 20px",
-      display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)",
-        borderRadius: "var(--r-lg)", padding: 24, width: "100%", maxWidth: 420 }}>
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>{title}</div>
-        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>{body}</div>
+    <div
+      style={{
+        background: "rgba(0,0,0,.3)",
+        padding: "40px 20px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--r-lg)",
+          padding: 24,
+          width: "100%",
+          maxWidth: 420,
+        }}
+      >
+        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>
+          {title}
+        </div>
+
+        <div
+          style={{
+            fontSize: 13,
+            color: "var(--text-muted)",
+            marginBottom: 14,
+          }}
+        >
+          {body}
+        </div>
+
         <textarea
-          style={{ width: "100%", minHeight: 80, fontSize: 13, padding: "8px 10px",
-            borderRadius: "var(--r)", border: "1px solid var(--border)",
-            background: "var(--surface-2)", color: "var(--text)", resize: "vertical",
-            marginBottom: 16, fontFamily: "inherit", boxSizing: "border-box" }}
+          style={{
+            width: "100%",
+            minHeight: 80,
+            fontSize: 13,
+            padding: "8px 10px",
+            borderRadius: "var(--r)",
+            border: "1px solid var(--border)",
+            background: "var(--surface-2)",
+            color: "var(--text)",
+            resize: "vertical",
+            marginBottom: 16,
+            fontFamily: "inherit",
+            boxSizing: "border-box",
+          }}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(event) => setText(event.target.value)}
           placeholder={placeholder}
           autoFocus
         />
+
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button className="btn" disabled={working} onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn" disabled={working} onClick={onCancel}>
+            Cancel
+          </button>
+
           <button
+            type="button"
             className={danger ? "btn btn-danger" : "btn btn-primary"}
             disabled={working || (requireText && !text.trim())}
             onClick={() => onConfirm(text.trim())}
@@ -208,270 +288,449 @@ function InlineModal({
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
-
 export default function AdjustmentDraftEditorPage() {
   const navigate = useNavigate();
   const { adjustmentId } = useParams<{ adjustmentId?: string }>();
   const { companyId, branchId } = useAppScope();
+
   const isEdit = Boolean(adjustmentId);
 
-  const [draft,        setDraft]        = useState<InventoryAdjustmentDto | null>(null);
-  const [lines,        setLines]        = useState<LineVm[]>([]);
-  const [locations,    setLocations]    = useState<StockLocationOption[]>([]);
-  const [candidates,   setCandidates]   = useState<AdjustmentCandidateDto[]>([]);
-  const [locationId,   setLocationId]   = useState("");
-  const [adjType,      setAdjType]      = useState("StockCount");
-  const [referenceNo,  setReferenceNo]  = useState("");
-  const [reason,       setReason]       = useState("");
-  const [remarks,      setRemarks]      = useState("");
-  const [search,       setSearch]       = useState("");
+  const adjustmentBasePath = companyId
+    ? `/companies/${companyId}/inventory/adjustments`
+    : "";
 
-  const [pageLoading,     setPageLoading]     = useState(false);
-  const [candLoading,     setCandLoading]     = useState(false);
-  const [saving,          setSaving]          = useState(false);
-  const [err,             setErr]             = useState<string | null>(null);
-  const [success,         setSuccess]         = useState<string | null>(null);
-  const [settings,        setSettings]        = useState<InventoryControlSettingsDto | null>(null);
+  const [draft, setDraft] = useState<InventoryAdjustmentDto | null>(null);
+  const [lines, setLines] = useState<LineVm[]>([]);
+  const [locations, setLocations] = useState<StockLocationOption[]>([]);
+  const [candidates, setCandidates] = useState<AdjustmentCandidateDto[]>([]);
+
+  const [locationId, setLocationId] = useState("");
+  const [adjustmentType, setAdjustmentType] = useState("StockCount");
+  const [referenceNo, setReferenceNo] = useState("");
+  const [reason, setReason] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [search, setSearch] = useState("");
+
+  const [pageLoading, setPageLoading] = useState(false);
+  const [candidateLoading, setCandidateLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
-  const [modal,           setModal]           = useState<"reject" | "reverse" | null>(null);
+
+  const [settings, setSettings] =
+    useState<InventoryControlSettingsDto | null>(null);
+  const [modal, setModal] = useState<"reject" | "reverse" | null>(null);
+
+  const [err, setErr] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Derived ──────────────────────────────────────────────────────────────
+  const status = normalizeAdjustmentStatus(draft?.docStatus);
+  const isLocked = status !== "Draft";
 
-  const status    = normalizeAdjustmentStatus(draft?.docStatus);
-  const isLocked  = status !== "Draft";
+  const usedLotIds = useMemo(
+    () => new Set(lines.map((line) => line.fifoLotId)),
+    [lines]
+  );
 
-  const usedLotIds    = useMemo(() => new Set(lines.map((l) => l.fifoLotId)), [lines]);
-  const totalSystem   = useMemo(() => lines.reduce((s, l) => s + l.systemQty,    0), [lines]);
-  const totalCounted  = useMemo(() => lines.reduce((s, l) => s + l.countedQty,   0), [lines]);
-  const totalVariance = useMemo(() => lines.reduce((s, l) => s + l.adjustmentQty,0), [lines]);
-  const totalAmount   = useMemo(() => lines.reduce((s, l) => s + l.lineAmount,   0), [lines]);
-  const hasVariance   = useMemo(() => lines.some((l) => l.adjustmentQty !== 0),       [lines]);
-  const hasCritical   = useMemo(
-    () => lines.some((l) => getVarianceLevel(l, settings) === "critical"),
+  const availableCandidates = useMemo(
+    () => candidates.filter((candidate) => !usedLotIds.has(candidate.fifoLotId)),
+    [candidates, usedLotIds]
+  );
+
+  const totals = useMemo(() => {
+    return {
+      system: lines.reduce((sum, line) => sum + line.systemQty, 0),
+      counted: lines.reduce((sum, line) => sum + line.countedQty, 0),
+      variance: lines.reduce((sum, line) => sum + line.adjustmentQty, 0),
+      amount: lines.reduce((sum, line) => sum + line.lineAmount, 0),
+    };
+  }, [lines]);
+
+  const hasVariance = useMemo(
+    () => lines.some((line) => line.adjustmentQty !== 0),
+    [lines]
+  );
+
+  const hasCriticalVariance = useMemo(
+    () => lines.some((line) => getVarianceLevel(line, settings) === "critical"),
     [lines, settings]
   );
 
-  // ── Bootstrap ────────────────────────────────────────────────────────────
+  const canUsePage = Boolean(companyId && branchId);
 
-  useEffect(() => {
+  const goBack = useCallback(() => {
+    if (!adjustmentBasePath) return;
+    navigate(adjustmentBasePath);
+  }, [adjustmentBasePath, navigate]);
+
+  const goToAdjustment = useCallback(
+    (id: string, replace = false) => {
+      if (!adjustmentBasePath) return;
+      navigate(`${adjustmentBasePath}/${id}`, { replace });
+    },
+    [adjustmentBasePath, navigate]
+  );
+
+  const loadLocations = useCallback(async () => {
     if (!companyId || !branchId) return;
-    if (isEdit && adjustmentId) loadExisting(adjustmentId);
-    else loadLocations();
-  }, [companyId, branchId, adjustmentId]);
 
-  useEffect(() => {
-    if (!companyId || !branchId || !locationId) { setSettings(null); return; }
-    let cancelled = false;
-    setSettingsLoading(true);
-    inventoryControlSettingsApi
-      .getEffective(companyId, { branchId, locationId })
-      .then((dto) => { if (!cancelled) setSettings(dto); })
-      .catch((e)  => { if (!cancelled) { setSettings(null);
-        setErr(getApiError(e, "Failed to load inventory control settings.")); } })
-      .finally(() => { if (!cancelled) setSettingsLoading(false); });
-    return () => { cancelled = true; };
-  }, [companyId, branchId, locationId]);
-
-  async function loadExisting(id: string) {
-    if (!companyId || !branchId) return;
-    setPageLoading(true);
     setErr(null);
-    try {
-      const d = await adjustmentApi.get(companyId, branchId, id);
-      setDraft(d);
-      setLocationId(d.locationId ?? "");
-      setAdjType(d.adjustmentType ?? "StockCount");
-      setReferenceNo(d.referenceNo ?? "");
-      setReason(d.reason ?? "");
-      setRemarks(d.remarks ?? "");
-      setLines((d.lines ?? []).map(dtoLineToVm));
-    } catch (e) {
-      setErr(getApiError(e, "Failed to load adjustment."));
-    } finally {
-      setPageLoading(false);
-    }
-  }
 
-  async function loadLocations() {
-    if (!companyId || !branchId) return;
     try {
       const rows = await stockLocationsApi.list(companyId, branchId);
       setLocations(Array.isArray(rows) ? rows : []);
-    } catch (e) {
-      setErr(getApiError(e, "Failed to load stock locations."));
+    } catch (error) {
+      setLocations([]);
+      setErr(getApiError(error, "Failed to load stock locations."));
     }
-  }
+  }, [companyId, branchId]);
 
-  // ── Candidates ────────────────────────────────────────────────────────────
+  const loadExisting = useCallback(
+    async (id: string) => {
+      if (!companyId || !branchId) return;
 
-  async function loadCandidates(locId: string, s: string) {
-    if (!companyId || !branchId || !locId) { setCandidates([]); return; }
-    setCandLoading(true);
-    try {
-      const rows = await adjustmentApi.candidates(companyId, branchId, locId,
-        { search: s || undefined });
-      setCandidates(Array.isArray(rows) ? rows : []);
-    } catch (e) {
-      setErr(getApiError(e, "Failed to load stock candidates."));
-    } finally {
-      setCandLoading(false);
+      setPageLoading(true);
+      setErr(null);
+      setSuccess(null);
+
+      try {
+        const dto = await adjustmentApi.get(companyId, branchId, id);
+
+        setDraft(dto);
+        setLocationId(dto.locationId ?? "");
+        setAdjustmentType(dto.adjustmentType ?? "StockCount");
+        setReferenceNo(dto.referenceNo ?? "");
+        setReason(dto.reason ?? "");
+        setRemarks(dto.remarks ?? "");
+        setLines((dto.lines ?? []).map(dtoLineToVm));
+      } catch (error) {
+        setErr(getApiError(error, "Failed to load adjustment."));
+      } finally {
+        setPageLoading(false);
+      }
+    },
+    [companyId, branchId]
+  );
+
+  const loadCandidates = useCallback(
+    async (stockLocationId: string, keyword: string) => {
+      if (!companyId || !branchId || !stockLocationId) {
+        setCandidates([]);
+        return;
+      }
+
+      setCandidateLoading(true);
+      setErr(null);
+
+      try {
+        const rows = await adjustmentApi.candidates(
+          companyId,
+          branchId,
+          stockLocationId,
+          {
+            search: keyword || undefined,
+          }
+        );
+
+        setCandidates(Array.isArray(rows) ? rows : []);
+      } catch (error) {
+        setCandidates([]);
+        setErr(getApiError(error, "Failed to load stock candidates."));
+      } finally {
+        setCandidateLoading(false);
+      }
+    },
+    [companyId, branchId]
+  );
+
+  useEffect(() => {
+    if (!canUsePage) return;
+
+    if (isEdit && adjustmentId) {
+      void loadExisting(adjustmentId);
+    } else {
+      void loadLocations();
     }
-  }
+  }, [
+    canUsePage,
+    isEdit,
+    adjustmentId,
+    loadExisting,
+    loadLocations,
+  ]);
 
-  function onLocationChange(locId: string) {
-    setLocationId(locId);
+  useEffect(() => {
+    if (!companyId || !branchId || !locationId) {
+      setSettings(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    setSettingsLoading(true);
+
+    inventoryControlSettingsApi
+      .getEffective(companyId, { branchId, locationId })
+      .then((dto) => {
+        if (!cancelled) setSettings(dto);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setSettings(null);
+          setErr(getApiError(error, "Failed to load inventory control settings."));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSettingsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, branchId, locationId]);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
+
+  function handleLocationChange(stockLocationId: string) {
+    setLocationId(stockLocationId);
     setLines([]);
     setCandidates([]);
     setSearch("");
-    if (locId) loadCandidates(locId, "");
+
+    if (stockLocationId) {
+      void loadCandidates(stockLocationId, "");
+    }
   }
 
-  function onSearchChange(value: string) {
+  function handleSearchChange(value: string) {
     setSearch(value);
+
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => loadCandidates(locationId, value), 300);
+
+    searchTimer.current = setTimeout(() => {
+      void loadCandidates(locationId, value);
+    }, 300);
   }
 
-  const addCandidate = (c: AdjustmentCandidateDto) => {
-    if (!usedLotIds.has(c.fifoLotId))
-      setLines((prev) => [...prev, candidateToLine(c)]);
-  };
+  function addCandidate(candidate: AdjustmentCandidateDto) {
+    if (usedLotIds.has(candidate.fifoLotId)) return;
 
-  const removeLine     = (idx: number) => setLines((p) => p.filter((_, i) => i !== idx));
-  const onCountedChange= (idx: number, v: string) =>
-    setLines((p) => p.map((l, i) => i === idx ? updateCounted(l, v) : l));
-  const onNotesChange  = (idx: number, v: string) =>
-    setLines((p) => p.map((l, i) => i === idx ? { ...l, notes: v } : l));
+    setLines((previous) => [...previous, candidateToLine(candidate)]);
+  }
 
-  // ── Validation ────────────────────────────────────────────────────────────
+  function removeLine(index: number) {
+    setLines((previous) => previous.filter((_, i) => i !== index));
+  }
+
+  function handleCountedChange(index: number, value: string) {
+    setLines((previous) =>
+      previous.map((line, i) =>
+        i === index ? updateCountedQuantity(line, value) : line
+      )
+    );
+  }
+
+  function handleNotesChange(index: number, value: string) {
+    setLines((previous) =>
+      previous.map((line, i) => (i === index ? { ...line, notes: value } : line))
+    );
+  }
 
   function validateBeforeSave(): string | null {
-    if (settings?.requireReasonOnVariance &&
-        lines.some((l) => l.adjustmentQty !== 0 && !l.notes.trim()))
-      return "A variance reason is required for every line with a non-zero variance.";
+    if (!locationId) return "Select a stock location.";
+    if (lines.length === 0) return "Add at least one line.";
+
+    if (
+      settings?.requireReasonOnVariance &&
+      lines.some((line) => line.adjustmentQty !== 0 && !line.notes.trim())
+    ) {
+      return "A variance reason is required for every line with non-zero variance.";
+    }
+
     return null;
   }
 
   function validateBeforePost(): string | null {
-    if (settings?.blockPostingOnCriticalVariance && hasCritical)
+    if (settings?.blockPostingOnCriticalVariance && hasCriticalVariance) {
       return "Posting blocked: one or more lines exceed the critical variance threshold.";
+    }
+
     return validateBeforeSave();
   }
 
-  // ── Build command lines (matches AdjustmentLineInputDto) ──────────────────
-
   function buildLines() {
-    return lines.map((l) => ({
-      fifoLotId:  l.fifoLotId,
-      itemId:     l.itemId,
-      uomId:      l.uomId,
-      systemQty:  l.systemQty,
-      countedQty: l.countedQty,
-      unitCost:   l.unitCost,
-      notes:      l.notes || undefined,
+    return lines.map((line) => ({
+      fifoLotId: line.fifoLotId,
+      itemId: line.itemId,
+      uomId: line.uomId,
+      systemQty: line.systemQty,
+      countedQty: line.countedQty,
+      unitCost: line.unitCost,
+      notes: line.notes || undefined,
     }));
   }
 
-  // ── Actions ───────────────────────────────────────────────────────────────
-
   async function saveDraft() {
     if (!companyId || !branchId) return;
-    if (!locationId) { setErr("Select a stock location."); return; }
-    if (lines.length === 0) { setErr("Add at least one line."); return; }
-    const policyErr = validateBeforeSave();
-    if (policyErr) { setErr(policyErr); return; }
 
-    setSaving(true); setErr(null); setSuccess(null);
+    const validationError = validateBeforeSave();
+
+    if (validationError) {
+      setErr(validationError);
+      setSuccess(null);
+      return;
+    }
+
+    setSaving(true);
+    setErr(null);
+    setSuccess(null);
+
     try {
       if (isEdit && adjustmentId) {
         await adjustmentApi.updateDraft(companyId, branchId, adjustmentId, {
-          locationId, adjustmentType: adjType as any,
+          locationId,
+          adjustmentType: adjustmentType as any,
           referenceNo: referenceNo || undefined,
           reason: reason || undefined,
           remarks: remarks || undefined,
           lines: buildLines(),
         });
-        setSuccess("Saved.");
+
+        setSuccess("Adjustment saved.");
         await loadExisting(adjustmentId);
       } else {
-        const { id } = await adjustmentApi.createDraft(companyId, branchId, {
-          locationId, adjustmentType: adjType as any,
+        const created = await adjustmentApi.createDraft(companyId, branchId, {
+          locationId,
+          adjustmentType: adjustmentType as any,
           adjustmentDate: new Date().toISOString(),
           referenceNo: referenceNo || undefined,
           reason: reason || undefined,
           remarks: remarks || undefined,
           lines: buildLines(),
         });
-        setSuccess("Created.");
-        navigate(`/inventory/adjustments/${id}`, { replace: true });
+
+        setSuccess("Adjustment draft created.");
+        goToAdjustment(created.id, true);
       }
-    } catch (e) {
-      setErr(getApiError(e, "Failed to save adjustment."));
+    } catch (error) {
+      setErr(getApiError(error, "Failed to save adjustment."));
     } finally {
       setSaving(false);
     }
   }
 
-  async function doAction(label: string, fn: () => Promise<void>) {
+  async function runWorkflowAction(label: string, action: () => Promise<void>) {
     if (!companyId || !branchId || !adjustmentId) return;
-    setSaving(true); setErr(null); setSuccess(null);
+
+    setSaving(true);
+    setErr(null);
+    setSuccess(null);
+
     try {
-      await fn();
+      await action();
       setSuccess(`${label} successful.`);
       await loadExisting(adjustmentId);
       setModal(null);
-    } catch (e) {
-      setErr(getApiError(e, `${label} failed.`));
+    } catch (error) {
+      setErr(getApiError(error, `${label} failed.`));
     } finally {
       setSaving(false);
     }
   }
 
-  const onSubmit  = () => doAction("Submit",  () =>
-    adjustmentApi.submit(companyId!, branchId!, adjustmentId!));
+  function submitAdjustment() {
+    void runWorkflowAction("Submit", () =>
+      adjustmentApi.submit(companyId!, branchId!, adjustmentId!)
+    );
+  }
 
-  const onApprove = () => doAction("Approve", () =>
-    adjustmentApi.approve(companyId!, branchId!, adjustmentId!));
+  function approveAdjustment() {
+    void runWorkflowAction("Approve", () =>
+      adjustmentApi.approve(companyId!, branchId!, adjustmentId!)
+    );
+  }
 
-  const onPost = () => {
-    const policyErr = validateBeforePost();
-    if (policyErr) { setErr(policyErr); return; }
-    doAction("Post", () => adjustmentApi.post(companyId!, branchId!, adjustmentId!));
-  };
+  function postAdjustment() {
+    const validationError = validateBeforePost();
 
-  // ── Guards ────────────────────────────────────────────────────────────────
+    if (validationError) {
+      setErr(validationError);
+      setSuccess(null);
+      return;
+    }
 
-  if (pageLoading) {
+    void runWorkflowAction("Post", () =>
+      adjustmentApi.post(companyId!, branchId!, adjustmentId!)
+    );
+  }
+
+  function rejectAdjustment(note: string) {
+    void runWorkflowAction("Reject", () =>
+      adjustmentApi.reject(companyId!, branchId!, adjustmentId!, note)
+    );
+  }
+
+  function reverseAdjustment(reverseReason: string) {
+    void runWorkflowAction("Reverse", () =>
+      adjustmentApi.reverse(companyId!, branchId!, adjustmentId!, reverseReason)
+    );
+  }
+
+  if (!companyId || !branchId) {
     return (
-      <div className="page">
-        <div style={{ padding: 48, textAlign: "center",
-          color: "var(--text-muted)", fontSize: 13 }}>Loading…</div>
+      <div className="adj-page page">
+        <div className="alert alert-warning">
+          Select a company and branch before opening inventory adjustments.
+        </div>
       </div>
     );
   }
 
-  // ── Modal screens (inline normal-flow, no fixed positioning) ─────────────
+  if (pageLoading) {
+    return (
+      <div className="adj-page page">
+        <div
+          style={{
+            padding: 48,
+            textAlign: "center",
+            color: "var(--text-muted)",
+            fontSize: 13,
+          }}
+        >
+          Loading adjustment…
+        </div>
+      </div>
+    );
+  }
 
   if (modal === "reject") {
     return (
       <div className="adj-page page">
         <InlineModal
           title="Reject adjustment"
-          body="Provide a reason — this will be visible to the submitter."
-          placeholder="Rejection reason (required)"
+          body="Provide a reason. This will be visible to the submitter."
+          placeholder="Rejection reason required"
           requireText
           confirmLabel="Confirm reject"
           danger
           working={saving}
-          onConfirm={(note) =>
-            doAction("Reject", () =>
-              adjustmentApi.reject(companyId!, branchId!, adjustmentId!, note))}
-          onCancel={() => { setModal(null); setErr(null); }}
+          onConfirm={rejectAdjustment}
+          onCancel={() => {
+            setModal(null);
+            setErr(null);
+          }}
         />
-        {err && <div className="alert alert-danger" style={{ margin: "0 20px" }}>{err}</div>}
+
+        {err && (
+          <div className="alert alert-danger" style={{ margin: "0 20px" }}>
+            {err}
+          </div>
+        )}
       </div>
     );
   }
@@ -481,42 +740,53 @@ export default function AdjustmentDraftEditorPage() {
       <div className="adj-page page">
         <InlineModal
           title="Reverse adjustment"
-          body="This writes counter-entries to FIFO and the inventory ledger. Cannot be undone."
-          placeholder="Reason for reversal (required)"
+          body="This writes counter-entries to FIFO and inventory ledger. This cannot be undone."
+          placeholder="Reason for reversal required"
           requireText
           confirmLabel="Confirm reverse"
           danger
           working={saving}
-          onConfirm={(reason) =>
-            doAction("Reverse", () =>
-              adjustmentApi.reverse(companyId!, branchId!, adjustmentId!, reason))}
-          onCancel={() => { setModal(null); setErr(null); }}
+          onConfirm={reverseAdjustment}
+          onCancel={() => {
+            setModal(null);
+            setErr(null);
+          }}
         />
-        {err && <div className="alert alert-danger" style={{ margin: "0 20px" }}>{err}</div>}
+
+        {err && (
+          <div className="alert alert-danger" style={{ margin: "0 20px" }}>
+            {err}
+          </div>
+        )}
       </div>
     );
   }
 
-  const availableCandidates = candidates.filter((c) => !usedLotIds.has(c.fifoLotId));
-
-  // ── Render ────────────────────────────────────────────────────────────────
-
   return (
     <div className="adj-page page">
-
       <div className="adj-header">
         <div className="adj-header-left">
           <div className="adj-kicker">
-            {isEdit ? `Adjustment · ${draft?.adjustmentNo ?? "…"}` : "New adjustment"}
+            {isEdit
+              ? `Adjustment · ${draft?.adjustmentNo ?? "…"}`
+              : "New adjustment"}
           </div>
+
           <h1>
-            {isEdit ? (draft?.adjustmentType ?? "Adjustment") : "Create adjustment draft"}
+            {isEdit
+              ? draft?.adjustmentType ?? "Adjustment"
+              : "Create adjustment draft"}
           </h1>
+
           <div className="adj-subtitle">
             {isEdit
-              ? `Created ${fmtDate(draft?.createdAt)}${draft?.submittedAt
-                  ? ` · Submitted ${fmtDate(draft.submittedAt)}` : ""}${draft?.postedAt
-                  ? ` · Posted ${fmtDate(draft.postedAt)}` : ""}`
+              ? `Created ${fmtDate(draft?.createdAt)}${
+                  draft?.submittedAt
+                    ? ` · Submitted ${fmtDate(draft.submittedAt)}`
+                    : ""
+                }${
+                  draft?.postedAt ? ` · Posted ${fmtDate(draft.postedAt)}` : ""
+                }`
               : "Select a stock location, then add FIFO lots to count."}
           </div>
         </div>
@@ -526,57 +796,90 @@ export default function AdjustmentDraftEditorPage() {
 
           {draft?.hasHighVariance && (
             <span className="adj-badge warn">
-              <i className="ti ti-alert-triangle" aria-hidden
-                style={{ fontSize: 11, marginRight: 4 }} />
+              <i
+                className="ti ti-alert-triangle"
+                aria-hidden
+                style={{ fontSize: 11, marginRight: 4 }}
+              />
               {draft.highestVariancePercent?.toFixed(1)}% variance
             </span>
           )}
 
           {canSubmit(status) && (
-            <button className="btn btn-primary" disabled={saving || lines.length === 0}
-              onClick={onSubmit}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={saving || lines.length === 0}
+              onClick={submitAdjustment}
+            >
               {saving ? "Submitting…" : "Submit for approval"}
             </button>
           )}
+
           {canApprove(status) && (
-            <button className="btn btn-success" disabled={saving} onClick={onApprove}>
+            <button
+              type="button"
+              className="btn btn-success"
+              disabled={saving}
+              onClick={approveAdjustment}
+            >
               {saving ? "Approving…" : "Approve"}
             </button>
           )}
+
           {canReject(status) && (
-            <button className="btn btn-danger" disabled={saving}
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={saving}
               onClick={() => setModal("reject")}
-              style={{ background: "transparent" }}>
+              style={{ background: "transparent" }}
+            >
               Reject
             </button>
           )}
+
           {canPost(status) && (
-            <button className="btn btn-primary" disabled={saving} onClick={onPost}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={saving}
+              onClick={postAdjustment}
+            >
               {saving ? "Posting…" : "Post to inventory"}
             </button>
           )}
+
           {canReverse(status) && (
-            <button className="btn btn-danger" disabled={saving}
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={saving}
               onClick={() => setModal("reverse")}
-              style={{ background: "transparent" }}>
+              style={{ background: "transparent" }}
+            >
               Reverse
             </button>
           )}
 
           {!isLocked && (
-            <button className="btn btn-primary" disabled={saving || lines.length === 0}
-              onClick={saveDraft}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={saving || lines.length === 0}
+              onClick={() => void saveDraft()}
+            >
               {saving ? "Saving…" : isEdit ? "Save changes" : "Create draft"}
             </button>
           )}
 
-          <button className="btn" onClick={() => navigate("/inventory/adjustments")}>
+          <button type="button" className="btn" onClick={goBack}>
             ← Back
           </button>
         </div>
       </div>
 
-      {err     && <div className="alert alert-danger">{err}</div>}
+      {err && <div className="alert alert-danger">{err}</div>}
       {success && <div className="alert alert-success">{success}</div>}
 
       {draft?.rejectionNote && (
@@ -584,165 +887,266 @@ export default function AdjustmentDraftEditorPage() {
           <strong>Rejected:</strong> {draft.rejectionNote}
         </div>
       )}
+
       {draft?.reverseReason && (
         <div className="alert alert-warn">
           <strong>Reversed:</strong> {draft.reverseReason}
         </div>
       )}
 
-      {/* Header card */}
       <div className="adj-card">
         <div className="adj-form-grid">
           {!isEdit && (
             <div className="adj-field">
-              <label>Stock location <span className="req">*</span></label>
-              <select value={locationId} onChange={(e) => onLocationChange(e.target.value)}
-                disabled={isLocked}>
+              <label>
+                Stock location <span className="req">*</span>
+              </label>
+
+              <select
+                value={locationId}
+                onChange={(event) => handleLocationChange(event.target.value)}
+                disabled={isLocked}
+              >
                 <option value="">— select location —</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
                 ))}
               </select>
             </div>
           )}
+
           {!isEdit && (
             <div className="adj-field">
-              <label>Adjustment type <span className="req">*</span></label>
-              <select value={adjType} onChange={(e) => setAdjType(e.target.value)}
-                disabled={isLocked}>
-                {ADJ_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
+              <label>
+                Adjustment type <span className="req">*</span>
+              </label>
+
+              <select
+                value={adjustmentType}
+                onChange={(event) => setAdjustmentType(event.target.value)}
+                disabled={isLocked}
+              >
+                {ADJUSTMENT_TYPES.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
                 ))}
               </select>
             </div>
           )}
+
           <div className="adj-field">
             <label>Reference no</label>
-            <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)}
-              disabled={isLocked} placeholder="Optional external ref" />
+            <input
+              value={referenceNo}
+              onChange={(event) => setReferenceNo(event.target.value)}
+              disabled={isLocked}
+              placeholder="Optional external ref"
+            />
           </div>
+
           <div className="adj-field">
             <label>Reason</label>
-            <input value={reason} onChange={(e) => setReason(e.target.value)}
-              disabled={isLocked} placeholder="Brief reason for adjustment" />
+            <input
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              disabled={isLocked}
+              placeholder="Brief reason for adjustment"
+            />
           </div>
+
           <div className="adj-field adj-remarks" style={{ gridColumn: "1 / -1" }}>
             <label>Remarks</label>
-            <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)}
-              disabled={isLocked} placeholder="Additional notes" />
+            <textarea
+              value={remarks}
+              onChange={(event) => setRemarks(event.target.value)}
+              disabled={isLocked}
+              placeholder="Additional notes"
+            />
           </div>
         </div>
       </div>
 
-      {/* Summary metrics */}
       {lines.length > 0 && (
         <div className="adj-metrics">
           <div className="adj-metric">
             <div className="adj-metric-label">Lines</div>
             <div className="adj-metric-value">{lines.length}</div>
           </div>
+
           <div className="adj-metric">
             <div className="adj-metric-label">System qty</div>
-            <div className="adj-metric-value">{fmt3(totalSystem)}</div>
+            <div className="adj-metric-value">{fmt3(totals.system)}</div>
           </div>
+
           <div className="adj-metric">
             <div className="adj-metric-label">Counted qty</div>
-            <div className="adj-metric-value">{fmt3(totalCounted)}</div>
+            <div className="adj-metric-value">{fmt3(totals.counted)}</div>
           </div>
+
           <div className="adj-metric">
             <div className="adj-metric-label">Net variance</div>
-            <div className="adj-metric-value"
-              data-sign={totalVariance < 0 ? "neg" : totalVariance > 0 ? "pos" : undefined}>
-              {totalVariance >= 0 ? "+" : ""}{fmt3(totalVariance)}
+            <div
+              className="adj-metric-value"
+              data-sign={
+                totals.variance < 0
+                  ? "neg"
+                  : totals.variance > 0
+                    ? "pos"
+                    : undefined
+              }
+            >
+              {totals.variance >= 0 ? "+" : ""}
+              {fmt3(totals.variance)}
             </div>
           </div>
         </div>
       )}
 
-      {/* Variance policy banner */}
       {locationId && (
         <div className="adj-policy-banner">
-          {settingsLoading ? "Loading inventory control policy…"
-            : settings ? (
-              <>
-                <strong>Variance policy</strong> · Warning {fmt2(settings.warningVariancePercent)}%
-                · High {fmt2(settings.highVariancePercent)}%
-                · Critical {fmt2(settings.criticalVariancePercent)}%
-                {settings.requireReasonOnVariance    && " · Reason required"}
-                {settings.blockPostingOnCriticalVariance && " · Critical posting blocked"}
-              </>
-            ) : "No inventory control policy loaded."}
+          {settingsLoading
+            ? "Loading inventory control policy…"
+            : settings
+              ? (
+                  <>
+                    <strong>Variance policy</strong> · Warning{" "}
+                    {fmt2(settings.warningVariancePercent)}% · High{" "}
+                    {fmt2(settings.highVariancePercent)}% · Critical{" "}
+                    {fmt2(settings.criticalVariancePercent)}%
+                    {settings.requireReasonOnVariance && " · Reason required"}
+                    {settings.blockPostingOnCriticalVariance &&
+                      " · Critical posting blocked"}
+                  </>
+                )
+              : "No inventory control policy loaded."}
         </div>
       )}
 
-      {/* Candidate picker */}
       {!isLocked && locationId && (
         <div className="adj-card">
           <div className="adj-section-head">
             <div>
               <h2>Add stock lots</h2>
               <p>
-                {candLoading
+                {candidateLoading
                   ? "Loading available lots…"
                   : `${availableCandidates.length} lot${
                       availableCandidates.length !== 1 ? "s" : ""
                     } available`}
               </p>
             </div>
-            <input value={search} onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search item / batch…" style={{ maxWidth: 240 }} />
+
+            <input
+              value={search}
+              onChange={(event) => handleSearchChange(event.target.value)}
+              placeholder="Search item / batch…"
+              style={{ maxWidth: 240 }}
+            />
           </div>
 
-          {availableCandidates.length === 0 && !candLoading ? (
-            <div style={{ fontSize: 13, color: "var(--text-soft)", padding: "12px 0" }}>
-              {search ? "No lots match your search." : "All available lots have been added."}
+          {availableCandidates.length === 0 && !candidateLoading ? (
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--text-soft)",
+                padding: "12px 0",
+              }}
+            >
+              {search
+                ? "No lots match your search."
+                : "All available lots have been added."}
             </div>
           ) : (
-            <div style={{ display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 8 }}>
-              {availableCandidates.map((c) => (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {availableCandidates.map((candidate) => (
                 <button
-                  key={c.fifoLotId}
-                  onClick={() => addCandidate(c)}
+                  type="button"
+                  key={candidate.fifoLotId}
+                  onClick={() => addCandidate(candidate)}
                   style={{
-                    textAlign: "left", padding: "10px 12px",
-                    border: "1px solid var(--border)", borderRadius: "var(--r-md)",
-                    background: "var(--surface)", cursor: "pointer",
+                    textAlign: "left",
+                    padding: "10px 12px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--r-md)",
+                    background: "var(--surface)",
+                    cursor: "pointer",
                     transition: "background .12s",
                   }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = "var(--surface-2)")}
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = "var(--surface)")}
                 >
-                  <div style={{ fontWeight: 500, fontSize: 13, color: "var(--text)" }}>
-                    {c.itemName}
-                    {c.itemCode && (
-                      <span style={{ fontWeight: 400, color: "var(--text-muted)",
-                        marginLeft: 4, fontSize: 11 }}>
-                        {c.itemCode}
+                  <div
+                    style={{
+                      fontWeight: 500,
+                      fontSize: 13,
+                      color: "var(--text)",
+                    }}
+                  >
+                    {candidate.itemName}
+                    {candidate.itemCode && (
+                      <span
+                        style={{
+                          fontWeight: 400,
+                          color: "var(--text-muted)",
+                          marginLeft: 4,
+                          fontSize: 11,
+                        }}
+                      >
+                        {candidate.itemCode}
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)",
-                    fontFamily: "var(--mono)", marginTop: 3 }}>
-                    {c.uomName}
-                    {c.uomId !== c.baseUomId && (
+
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      fontFamily: "var(--mono)",
+                      marginTop: 3,
+                    }}
+                  >
+                    {candidate.uomName}
+                    {candidate.uomId !== candidate.baseUomId && (
                       <span style={{ marginLeft: 6, color: "var(--text-soft)" }}>
-                        1 {c.uomName} = {c.toBaseFactor} {c.baseUomName}
+                        1 {candidate.uomName} = {candidate.toBaseFactor}{" "}
+                        {candidate.baseUomName}
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)",
-                    marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <span>On hand: <strong>{fmt3(c.systemQty)}</strong></span>
-                    {c.batchNo && <span>Batch: {c.batchNo}</span>}
-                    {c.expiryDate && (
-                      <span style={{
-                        color: new Date(c.expiryDate.toString()) < new Date()
-                          ? "var(--danger)" : "inherit",
-                      }}>
-                        Exp: {String(c.expiryDate).slice(0, 10)}
+
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginTop: 2,
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span>
+                      On hand: <strong>{fmt3(candidate.systemQty)}</strong>
+                    </span>
+
+                    {candidate.batchNo && <span>Batch: {candidate.batchNo}</span>}
+
+                    {candidate.expiryDate && (
+                      <span
+                        style={{
+                          color:
+                            new Date(candidate.expiryDate.toString()) < new Date()
+                              ? "var(--danger)"
+                              : "inherit",
+                        }}
+                      >
+                        Exp: {String(candidate.expiryDate).slice(0, 10)}
                       </span>
                     )}
                   </div>
@@ -753,7 +1157,6 @@ export default function AdjustmentDraftEditorPage() {
         </div>
       )}
 
-      {/* Lines table */}
       <div className="adj-card" style={{ padding: 0 }}>
         <div className="adj-section-head" style={{ padding: "14px 16px" }}>
           <div>
@@ -777,12 +1180,15 @@ export default function AdjustmentDraftEditorPage() {
                 <th className="num">System</th>
                 <th className="num">Counted</th>
                 <th className="num">Variance</th>
-                <th className="num" title="Per base unit">Cost/base</th>
+                <th className="num" title="Per base unit">
+                  Cost/base
+                </th>
                 <th className="num">Amount</th>
                 <th>Notes</th>
                 {!isLocked && <th />}
               </tr>
             </thead>
+
             <tbody>
               {lines.length === 0 ? (
                 <tr>
@@ -792,115 +1198,207 @@ export default function AdjustmentDraftEditorPage() {
                       : "Click a lot above to add it to the count."}
                   </td>
                 </tr>
-              ) : lines.map((line, idx) => {
-                const varSign      = line.adjustmentQty < 0 ? "neg"
-                                   : line.adjustmentQty > 0 ? "pos" : undefined;
-                const varianceLevel = getVarianceLevel(line, settings);
-                const pct          = variancePct(line);
-                const notesReq     = Boolean(
-                  settings?.requireReasonOnVariance &&
-                  line.adjustmentQty !== 0 &&
-                  !line.notes.trim()
-                );
+              ) : (
+                lines.map((line, index) => {
+                  const varianceSign =
+                    line.adjustmentQty < 0
+                      ? "neg"
+                      : line.adjustmentQty > 0
+                        ? "pos"
+                        : undefined;
 
-                return (
-                  <tr key={line.vmId}
-                    className={varianceLevel
-                      ? `adj-variance-row adj-variance-row--${varianceLevel}` : undefined}>
+                  const varianceLevel = getVarianceLevel(line, settings);
+                  const percent = variancePercent(line);
 
-                    <td className="adj-td-input">
-                      <input value={line.itemCode
-                        ? `${line.itemCode} — ${line.itemName}` : line.itemName}
-                        readOnly disabled />
-                    </td>
-                    <td className="adj-td-input">
-                      <input value={line.uomName} readOnly disabled />
-                    </td>
-                    <td className="adj-td-input">
-                      <input
-                        value={line.isBaseUnit
-                          ? line.baseUomName
-                          : `${line.baseUomName} (×${line.conversionFactor})`}
-                        readOnly disabled
-                        title={line.isBaseUnit
-                          ? "Counting in base unit"
-                          : `1 ${line.uomName} = ${line.conversionFactor} ${line.baseUomName}`}
-                      />
-                    </td>
-                    <td className="adj-td-input">
-                      <input value={line.batchNo ?? "—"} readOnly disabled />
-                    </td>
-                    <td className="adj-td-input">
-                      <input
-                        value={line.expiryDate?.slice(0, 10) ?? "—"}
-                        readOnly disabled
-                        style={line.expiryDate && new Date(line.expiryDate) < new Date()
-                          ? { color: "var(--danger)" } : undefined}
-                      />
-                    </td>
-                    <td className="num adj-td-input">
-                      <input value={fmt3(line.systemQty)} readOnly disabled
-                        title={`${fmt3(line.systemQtyBase)} ${line.baseUomName}`} />
-                    </td>
-                    <td className="num adj-td-input">
-                      <input type="number" min="0" step="0.001"
-                        value={line.countedQty} disabled={isLocked}
-                        onChange={(e) => onCountedChange(idx, e.target.value)}
-                        title={`${fmt3(line.countedQtyBase)} ${line.baseUomName}`} />
-                    </td>
-                    <td className="num adj-td-input">
-                      <input value={fmt3(line.adjustmentQty)} readOnly disabled
-                        data-sign={varSign}
-                        title={`${fmt3(line.adjustmentQtyBase)} ${line.baseUomName}`} />
-                      {varianceLevel && (
-                        <div className={`adj-variance-badge adj-variance-badge--${varianceLevel}`}>
-                          {varianceLevel.toUpperCase()} · {fmt2(pct)}%
-                        </div>
-                      )}
-                    </td>
-                    <td className="num adj-td-input">
-                      <input value={fmt2(line.unitCost)} readOnly disabled
-                        title={`$${fmt2(line.unitCostDisplay)} per ${line.uomName}`} />
-                    </td>
-                    <td className="num adj-td-input">
-                      <input value={fmt2(line.lineAmount)} readOnly disabled
-                        data-sign={varSign} />
-                    </td>
-                    <td className="adj-td-input">
-                      <input value={line.notes}
-                        placeholder={notesReq ? "Required ⚠" : "Optional"}
-                        disabled={isLocked}
-                        onChange={(e) => onNotesChange(idx, e.target.value)}
-                        data-required={notesReq ? "true" : undefined} />
-                    </td>
-                    {!isLocked && (
-                      <td style={{ textAlign: "center" }}>
-                        <button className="adj-remove-btn" onClick={() => removeLine(idx)}
-                          aria-label="Remove line">
-                          <i className="ti ti-x" aria-hidden />
-                        </button>
+                  const notesRequired = Boolean(
+                    settings?.requireReasonOnVariance &&
+                      line.adjustmentQty !== 0 &&
+                      !line.notes.trim()
+                  );
+
+                  return (
+                    <tr
+                      key={line.vmId}
+                      className={
+                        varianceLevel
+                          ? `adj-variance-row adj-variance-row--${varianceLevel}`
+                          : undefined
+                      }
+                    >
+                      <td className="adj-td-input">
+                        <input
+                          value={
+                            line.itemCode
+                              ? `${line.itemCode} — ${line.itemName}`
+                              : line.itemName
+                          }
+                          readOnly
+                          disabled
+                        />
                       </td>
-                    )}
-                  </tr>
-                );
-              })}
+
+                      <td className="adj-td-input">
+                        <input value={line.uomName} readOnly disabled />
+                      </td>
+
+                      <td className="adj-td-input">
+                        <input
+                          value={
+                            line.isBaseUnit
+                              ? line.baseUomName
+                              : `${line.baseUomName} (×${line.conversionFactor})`
+                          }
+                          readOnly
+                          disabled
+                          title={
+                            line.isBaseUnit
+                              ? "Counting in base unit"
+                              : `1 ${line.uomName} = ${line.conversionFactor} ${line.baseUomName}`
+                          }
+                        />
+                      </td>
+
+                      <td className="adj-td-input">
+                        <input value={line.batchNo ?? "—"} readOnly disabled />
+                      </td>
+
+                      <td className="adj-td-input">
+                        <input
+                          value={line.expiryDate?.slice(0, 10) ?? "—"}
+                          readOnly
+                          disabled
+                          style={
+                            line.expiryDate && new Date(line.expiryDate) < new Date()
+                              ? { color: "var(--danger)" }
+                              : undefined
+                          }
+                        />
+                      </td>
+
+                      <td className="num adj-td-input">
+                        <input
+                          value={fmt3(line.systemQty)}
+                          readOnly
+                          disabled
+                          title={`${fmt3(line.systemQtyBase)} ${line.baseUomName}`}
+                        />
+                      </td>
+
+                      <td className="num adj-td-input">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.001"
+                          value={line.countedQty}
+                          disabled={isLocked}
+                          onChange={(event) =>
+                            handleCountedChange(index, event.target.value)
+                          }
+                          title={`${fmt3(line.countedQtyBase)} ${line.baseUomName}`}
+                        />
+                      </td>
+
+                      <td className="num adj-td-input">
+                        <input
+                          value={fmt3(line.adjustmentQty)}
+                          readOnly
+                          disabled
+                          data-sign={varianceSign}
+                          title={`${fmt3(line.adjustmentQtyBase)} ${line.baseUomName}`}
+                        />
+
+                        {varianceLevel && (
+                          <div
+                            className={`adj-variance-badge adj-variance-badge--${varianceLevel}`}
+                          >
+                            {varianceLevel.toUpperCase()} · {fmt2(percent)}%
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="num adj-td-input">
+                        <input
+                          value={fmt2(line.unitCost)}
+                          readOnly
+                          disabled
+                          title={`$${fmt2(line.unitCostDisplay)} per ${
+                            line.uomName
+                          }`}
+                        />
+                      </td>
+
+                      <td className="num adj-td-input">
+                        <input
+                          value={fmt2(line.lineAmount)}
+                          readOnly
+                          disabled
+                          data-sign={varianceSign}
+                        />
+                      </td>
+
+                      <td className="adj-td-input">
+                        <input
+                          value={line.notes}
+                          placeholder={notesRequired ? "Required ⚠" : "Optional"}
+                          disabled={isLocked}
+                          onChange={(event) =>
+                            handleNotesChange(index, event.target.value)
+                          }
+                          data-required={notesRequired ? "true" : undefined}
+                        />
+                      </td>
+
+                      {!isLocked && (
+                        <td style={{ textAlign: "center" }}>
+                          <button
+                            type="button"
+                            className="adj-remove-btn"
+                            onClick={() => removeLine(index)}
+                            aria-label="Remove line"
+                          >
+                            <i className="ti ti-x" aria-hidden />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
+
             {lines.length > 0 && (
               <tfoot>
                 <tr>
-                  <td colSpan={5} style={{ fontWeight: 500 }}>Totals</td>
-                  <td className="num">{fmt3(totalSystem)}</td>
-                  <td className="num">{fmt3(totalCounted)}</td>
-                  <td className="num"
-                    data-sign={totalVariance < 0 ? "neg"
-                      : totalVariance > 0 ? "pos" : undefined}>
-                    {totalVariance >= 0 ? "+" : ""}{fmt3(totalVariance)}
+                  <td colSpan={5} style={{ fontWeight: 500 }}>
+                    Totals
+                  </td>
+                  <td className="num">{fmt3(totals.system)}</td>
+                  <td className="num">{fmt3(totals.counted)}</td>
+                  <td
+                    className="num"
+                    data-sign={
+                      totals.variance < 0
+                        ? "neg"
+                        : totals.variance > 0
+                          ? "pos"
+                          : undefined
+                    }
+                  >
+                    {totals.variance >= 0 ? "+" : ""}
+                    {fmt3(totals.variance)}
                   </td>
                   <td />
-                  <td className="num"
-                    data-sign={totalAmount < 0 ? "neg"
-                      : totalAmount > 0 ? "pos" : undefined}>
-                    ${fmt2(totalAmount)}
+                  <td
+                    className="num"
+                    data-sign={
+                      totals.amount < 0
+                        ? "neg"
+                        : totals.amount > 0
+                          ? "pos"
+                          : undefined
+                    }
+                  >
+                    ${fmt2(totals.amount)}
                   </td>
                   <td />
                   {!isLocked && <td />}

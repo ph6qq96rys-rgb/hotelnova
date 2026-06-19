@@ -1,25 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAppScope } from "../../../../app/useAppScope";
 
+import { useAppScope } from "../../../../app/useAppScope";
 import { stockTransfersApi } from "../api/stockTransfersApi";
 import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
 import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryItemsApi";
-
 import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
 
 import {
   cardStyle,
-  labelStyle,
-  inputStyle,
+  dangerBtn,
   errorStyle,
-  tableStyle,
-  thStyle,
-  tdStyle,
+  inputStyle,
+  labelStyle,
   primaryBtn,
   secondaryBtn,
-  dangerBtn,
   stickyBar,
+  tableStyle,
+  tdStyle,
+  thStyle,
 } from "../../../../shared/inventoryStyles";
 
 type SelectOption<T extends string = string> = {
@@ -27,33 +26,15 @@ type SelectOption<T extends string = string> = {
   label: string;
 };
 
-const clean = (value?: string | null) => (value ?? "").trim();
+type PageState =
+  | { status: "idle" }
+  | { status: "saving" }
+  | { status: "error"; message: string };
 
-const todayDateOnly = () => new Date().toISOString().slice(0, 10);
-
-function dateOnlyToUtcIso(dateOnly: string) {
-  const [year, month, day] = dateOnly.split("-").map(Number);
-
-  if (!year || !month || !day) {
-    return new Date().toISOString();
-  }
-
-  return new Date(Date.UTC(year, month - 1, day)).toISOString();
-}
-
-function getErrorMessage(error: any) {
-  const data = error?.response?.data;
-
-  if (typeof data === "string") return data;
-
-  return (
-    data?.detail ||
-    data?.title ||
-    data?.message ||
-    error?.message ||
-    "Request failed."
-  );
-}
+type StockTransferPaths = {
+  list: string;
+  edit: (id: string) => string;
+};
 
 type ItemUomVm = {
   uomId: string;
@@ -67,62 +48,6 @@ type ItemVm = {
   uoms: ItemUomVm[];
   defaultUomId: string;
 };
-
-function toItemVm(dto: InventoryItemDto): ItemVm {
-  const d: any = dto;
-
-  const id = clean(d.id);
-  const name = clean(d.name) || "Item";
-  const code = clean(d.code) || clean(d.sku);
-
-  const rawUoms: any[] = Array.isArray(d.uoms)
-    ? d.uoms
-    : Array.isArray(d.itemUoms)
-      ? d.itemUoms
-      : Array.isArray(d.allowedUoms)
-        ? d.allowedUoms
-        : [];
-
-  const uoms: ItemUomVm[] = rawUoms
-    .map((u) => {
-      const uomId = clean(u.uomId ?? u.id);
-      const uomName = clean(u.uomName ?? u.name ?? u.code ?? "UOM");
-
-      return {
-        uomId,
-        uomName,
-        isDefault:
-          !!u.isDefaultIssue ||
-          !!u.isDefaultPurchase ||
-          !!u.isDefault ||
-          !!u.isBase,
-      };
-    })
-    .filter((x) => !!x.uomId);
-
-  const baseUomId = clean(d.baseUomId);
-  const baseUomName = clean(
-    d.baseUomName ?? d.baseUomCode ?? d.baseUom?.name ?? d.baseUom?.code
-  );
-
-  if (!uoms.length && baseUomId) {
-    uoms.push({
-      uomId: baseUomId,
-      uomName: baseUomName || "Base UOM",
-      isDefault: true,
-    });
-  }
-
-  const defaultUomId =
-    uoms.find((x) => x.isDefault)?.uomId || baseUomId || uoms[0]?.uomId || "";
-
-  return {
-    id,
-    label: code ? `${code} — ${name}` : name,
-    uoms,
-    defaultUomId,
-  };
-}
 
 type TransferLineDraft = {
   itemId: string;
@@ -150,25 +75,180 @@ type FieldErrors = {
   >;
 };
 
+const emptyDraft = (): TransferDraft => ({
+  fromLocationId: "",
+  toLocationId: "",
+  transferDate: todayDateOnly(),
+  notes: "",
+  lines: [],
+});
+
+function clean(value?: string | null) {
+  return (value ?? "").trim();
+}
+
+function todayDateOnly() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function dateOnlyToUtcIso(dateOnly: string) {
+  const [year, month, day] = dateOnly.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return new Date().toISOString();
+  }
+
+  return new Date(Date.UTC(year, month - 1, day)).toISOString();
+}
+
+function getErrorMessage(error: any) {
+  const data = error?.response?.data;
+
+  if (typeof data === "string") return data;
+
+  return (
+    data?.detail ||
+    data?.title ||
+    data?.message ||
+    error?.message ||
+    "Request failed."
+  );
+}
+
+function toItemVm(dto: InventoryItemDto): ItemVm {
+  const raw = dto as any;
+
+  const id = clean(raw.id);
+  const name = clean(raw.name) || "Item";
+  const code = clean(raw.code) || clean(raw.sku);
+
+  const rawUoms: any[] = Array.isArray(raw.uoms)
+    ? raw.uoms
+    : Array.isArray(raw.itemUoms)
+    ? raw.itemUoms
+    : Array.isArray(raw.allowedUoms)
+    ? raw.allowedUoms
+    : [];
+
+  const uoms: ItemUomVm[] = rawUoms
+    .map((uom) => {
+      const uomId = clean(uom.uomId ?? uom.id);
+      const uomName = clean(uom.uomName ?? uom.name ?? uom.code ?? "UOM");
+
+      return {
+        uomId,
+        uomName,
+        isDefault:
+          Boolean(uom.isDefaultIssue) ||
+          Boolean(uom.isDefaultPurchase) ||
+          Boolean(uom.isDefault) ||
+          Boolean(uom.isBase),
+      };
+    })
+    .filter((uom) => Boolean(uom.uomId));
+
+  const baseUomId = clean(raw.baseUomId);
+  const baseUomName = clean(
+    raw.baseUomName ??
+      raw.baseUomCode ??
+      raw.baseUom?.name ??
+      raw.baseUom?.code
+  );
+
+  if (!uoms.length && baseUomId) {
+    uoms.push({
+      uomId: baseUomId,
+      uomName: baseUomName || "Base UOM",
+      isDefault: true,
+    });
+  }
+
+  const defaultUomId =
+    uoms.find((uom) => uom.isDefault)?.uomId ||
+    baseUomId ||
+    uoms[0]?.uomId ||
+    "";
+
+  return {
+    id,
+    label: code ? `${code} — ${name}` : name,
+    uoms,
+    defaultUomId,
+  };
+}
+
+function validateTransferDraft(draft: TransferDraft): FieldErrors {
+  const next: FieldErrors = {};
+  const lineErrors: NonNullable<FieldErrors["lineErrors"]> = {};
+
+  const fromLocationId = clean(draft.fromLocationId);
+  const toLocationId = clean(draft.toLocationId);
+
+  if (!fromLocationId) {
+    next.fromLocationId = "From location is required.";
+  }
+
+  if (!toLocationId) {
+    next.toLocationId = "To location is required.";
+  }
+
+  if (fromLocationId && toLocationId && fromLocationId === toLocationId) {
+    next.toLocationId = "To location must be different from From location.";
+  }
+
+  if (!clean(draft.transferDate)) {
+    next.transferDate = "Transfer date is required.";
+  }
+
+  if (!draft.lines.length) {
+    next.lines = "Add at least one transfer line.";
+  }
+
+  draft.lines.forEach((line, index) => {
+    const row: Partial<Record<keyof TransferLineDraft, string>> = {};
+
+    if (!clean(line.itemId)) row.itemId = "Item is required.";
+    if (!clean(line.unitId)) row.unitId = "Unit is required.";
+
+    if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
+      row.quantity = "Quantity must be greater than zero.";
+    }
+
+    if (Object.keys(row).length > 0) {
+      lineErrors[index] = row;
+    }
+  });
+
+  if (Object.keys(lineErrors).length > 0) {
+    next.lineErrors = lineErrors;
+  }
+
+  return next;
+}
+
+function hasErrors(errors: FieldErrors) {
+  return Boolean(
+    errors.fromLocationId ||
+      errors.toLocationId ||
+      errors.transferDate ||
+      errors.lines ||
+      (errors.lineErrors && Object.keys(errors.lineErrors).length)
+  );
+}
+
 export default function StockTransferCreatePage() {
   const navigate = useNavigate();
   const { companyId, branchId } = useAppScope();
 
-  const [form, setForm] = useState<TransferDraft>({
-    fromLocationId: "",
-    toLocationId: "",
-    transferDate: todayDateOnly(),
-    notes: "",
-    lines: [],
-  });
-
+  const [form, setForm] = useState<TransferDraft>(() => emptyDraft());
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [pageState, setPageState] = useState<PageState>({ status: "idle" });
 
   const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
-  const [locationLabelById, setLocationLabelById] = useState<Record<string, string>>({});
+  const [locationLabelById, setLocationLabelById] = useState<Record<string, string>>(
+    {}
+  );
   const fetchedLocationRef = useRef<Set<string>>(new Set());
 
   const [items, setItems] = useState<ItemVm[]>([]);
@@ -176,25 +256,110 @@ export default function StockTransferCreatePage() {
   const [itemLabelById, setItemLabelById] = useState<Record<string, string>>({});
   const [uomLabelById, setUomLabelById] = useState<Record<string, string>>({});
 
-  const itemById = useMemo(() => new Map(items.map((x) => [x.id, x])), [items]);
+  const busy = pageState.status === "saving";
+  const submitError = pageState.status === "error" ? pageState.message : null;
 
-  const itemOptions = useMemo<SelectOption[]>(
-    () => items.map((x) => ({ value: x.id, label: x.label })),
-    [items]
+  const paths = useMemo<StockTransferPaths | null>(() => {
+    if (!companyId) return null;
+
+    const base = `/companies/${companyId}/inventory/stock-transfers`;
+
+    return {
+      list: base,
+      edit: (id: string) => `${base}/${id}/edit`,
+    };
+  }, [companyId]);
+
+  const go = useCallback(
+    (path: string) => {
+      navigate(path);
+    },
+    [navigate]
   );
 
-  const setHeader = (patch: Partial<TransferDraft>) => {
-    setForm((prev) => ({ ...prev, ...patch }));
-  };
+  const itemById = useMemo(() => {
+    return new Map(items.map((item) => [item.id, item]));
+  }, [items]);
 
-  const updateLine = (index: number, patch: Partial<TransferLineDraft>) => {
+  const itemOptions = useMemo<SelectOption[]>(() => {
+    return items.map((item) => ({
+      value: item.id,
+      label: item.label,
+    }));
+  }, [items]);
+
+  const summary = useMemo(() => {
+    const totalQuantity = form.lines.reduce((sum, line) => {
+      return sum + (Number.isFinite(line.quantity) ? Number(line.quantity) : 0);
+    }, 0);
+
+    const distinctItems = new Set(
+      form.lines.map((line) => clean(line.itemId)).filter(Boolean)
+    ).size;
+
+    return {
+      lines: form.lines.length,
+      totalQuantity,
+      distinctItems,
+    };
+  }, [form.lines]);
+
+  const setHeader = useCallback((patch: Partial<TransferDraft>) => {
+    setForm((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const updateLine = useCallback(
+    (index: number, patch: Partial<TransferLineDraft>) => {
+      setForm((prev) => ({
+        ...prev,
+        lines: prev.lines.map((line, lineIndex) =>
+          lineIndex === index ? { ...line, ...patch } : line
+        ),
+      }));
+    },
+    []
+  );
+
+  const addLine = useCallback(() => {
     setForm((prev) => ({
       ...prev,
-      lines: prev.lines.map((line, i) =>
-        i === index ? { ...line, ...patch } : line
-      ),
+      lines: [
+        ...prev.lines,
+        {
+          itemId: "",
+          unitId: "",
+          quantity: 1,
+          notes: "",
+        },
+      ],
     }));
-  };
+  }, []);
+
+  const removeLine = useCallback((index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      lines: prev.lines.filter((_, lineIndex) => lineIndex !== index),
+    }));
+
+    setErrors((prev) => {
+      if (!prev.lineErrors) return prev;
+
+      const remapped: NonNullable<FieldErrors["lineErrors"]> = {};
+
+      Object.entries(prev.lineErrors).forEach(([key, value]) => {
+        const lineIndex = Number(key);
+
+        if (!Number.isFinite(lineIndex)) return;
+        if (lineIndex < index) remapped[lineIndex] = value;
+        if (lineIndex > index) remapped[lineIndex - 1] = value;
+      });
+
+      return {
+        ...prev,
+        lineErrors: remapped,
+      };
+    });
+  }, []);
 
   useEffect(() => {
     if (!companyId || !branchId) {
@@ -208,23 +373,23 @@ export default function StockTransferCreatePage() {
       setLocationsLoading(true);
 
       try {
-        const rows = await stockLocationsApi.list(companyId, branchId);
+        const rows = await stockLocationsApi.list(companyId!, branchId!);
 
         if (!alive) return;
 
         const options = (rows ?? [])
-          .map((x: any) => ({
-            value: clean(x.id),
-            label: clean(x.name) || clean(x.code) || "Location",
+          .map((row: any) => ({
+            value: clean(row.id),
+            label: clean(row.name) || clean(row.code) || "Location",
           }))
-          .filter((x) => !!x.value);
+          .filter((option) => Boolean(option.value));
 
         setLocationOptions(options);
 
         setLocationLabelById((prev) => {
           const next = { ...prev };
-          options.forEach((x) => {
-            next[x.value] = x.label;
+          options.forEach((option) => {
+            next[option.value] = option.label;
           });
           return next;
         });
@@ -235,7 +400,7 @@ export default function StockTransferCreatePage() {
       }
     }
 
-    loadLocations();
+    void loadLocations();
 
     return () => {
       alive = false;
@@ -245,17 +410,22 @@ export default function StockTransferCreatePage() {
   useEffect(() => {
     if (!companyId || !branchId) return;
 
-    const ids = [clean(form.fromLocationId), clean(form.toLocationId)].filter(Boolean);
+    const ids = [clean(form.fromLocationId), clean(form.toLocationId)].filter(
+      Boolean
+    );
 
     ids.forEach((id) => {
       if (locationLabelById[id]) return;
       if (fetchedLocationRef.current.has(id)) return;
 
-      const api: any = stockLocationsApi;
+      const api = stockLocationsApi as any;
 
       if (typeof api.getById !== "function") {
         fetchedLocationRef.current.add(id);
-        setLocationLabelById((prev) => ({ ...prev, [id]: "Saved location" }));
+        setLocationLabelById((prev) => ({
+          ...prev,
+          [id]: "Saved location",
+        }));
         return;
       }
 
@@ -263,14 +433,20 @@ export default function StockTransferCreatePage() {
 
       api
         .getById(companyId, branchId, id)
-        .then((loc: any) => {
+        .then((location: any) => {
           setLocationLabelById((prev) => ({
             ...prev,
-            [id]: clean(loc?.name) || clean(loc?.code) || "Saved location",
+            [id]:
+              clean(location?.name) ||
+              clean(location?.code) ||
+              "Saved location",
           }));
         })
         .catch(() => {
-          setLocationLabelById((prev) => ({ ...prev, [id]: "Saved location" }));
+          setLocationLabelById((prev) => ({
+            ...prev,
+            [id]: "Saved location",
+          }));
         });
     });
   }, [
@@ -293,25 +469,25 @@ export default function StockTransferCreatePage() {
       setItemsLoading(true);
 
       try {
-        const result = await inventoryItemsApi.list(companyId);
+        const result = await inventoryItemsApi.list(companyId!);
         const rows: InventoryItemDto[] = Array.isArray(result) ? result : result ?? [];
-        const vms = rows.map(toItemVm).filter((x) => !!x.id);
+        const viewModels = rows.map(toItemVm).filter((item) => Boolean(item.id));
 
         if (!alive) return;
 
-        setItems(vms);
+        setItems(viewModels);
 
         setItemLabelById((prev) => {
           const next = { ...prev };
-          vms.forEach((x) => {
-            next[x.id] = x.label;
+          viewModels.forEach((item) => {
+            next[item.id] = item.label;
           });
           return next;
         });
 
         setUomLabelById((prev) => {
           const next = { ...prev };
-          vms.forEach((item) => {
+          viewModels.forEach((item) => {
             item.uoms.forEach((uom) => {
               next[uom.uomId] = uom.uomName;
             });
@@ -325,121 +501,25 @@ export default function StockTransferCreatePage() {
       }
     }
 
-    loadItems();
+    void loadItems();
 
     return () => {
       alive = false;
     };
   }, [companyId]);
 
-  const validate = (draft: TransferDraft): FieldErrors => {
-    const next: FieldErrors = {};
-    const lineErrors: NonNullable<FieldErrors["lineErrors"]> = {};
+  const submit = useCallback(async () => {
+    setPageState({ status: "idle" });
 
-    const fromLocationId = clean(draft.fromLocationId);
-    const toLocationId = clean(draft.toLocationId);
-
-    if (!fromLocationId) {
-      next.fromLocationId = "From location is required.";
-    }
-
-    if (!toLocationId) {
-      next.toLocationId = "To location is required.";
-    }
-
-    if (fromLocationId && toLocationId && fromLocationId === toLocationId) {
-      next.toLocationId = "To location must be different from From location.";
-    }
-
-    if (!clean(draft.transferDate)) {
-      next.transferDate = "Transfer date is required.";
-    }
-
-    if (!draft.lines.length) {
-      next.lines = "Add at least one transfer line.";
-    }
-
-    draft.lines.forEach((line, index) => {
-      const row: Partial<Record<keyof TransferLineDraft, string>> = {};
-
-      if (!clean(line.itemId)) row.itemId = "Item is required.";
-      if (!clean(line.unitId)) row.unitId = "Unit is required.";
-
-      if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
-        row.quantity = "Quantity must be greater than zero.";
-      }
-
-      if (Object.keys(row).length > 0) {
-        lineErrors[index] = row;
-      }
-    });
-
-    if (Object.keys(lineErrors).length > 0) {
-      next.lineErrors = lineErrors;
-    }
-
-    return next;
-  };
-
-  const hasErrors = (e: FieldErrors) =>
-    !!(
-      e.fromLocationId ||
-      e.toLocationId ||
-      e.transferDate ||
-      e.lines ||
-      (e.lineErrors && Object.keys(e.lineErrors).length)
-    );
-
-  const addLine = () => {
-    setForm((prev) => ({
-      ...prev,
-      lines: [
-        ...prev.lines,
-        {
-          itemId: "",
-          unitId: "",
-          quantity: 1,
-          notes: "",
-        },
-      ],
-    }));
-  };
-
-  const removeLine = (index: number) => {
-    setForm((prev) => ({
-      ...prev,
-      lines: prev.lines.filter((_, i) => i !== index),
-    }));
-
-    setErrors((prev) => {
-      if (!prev.lineErrors) return prev;
-
-      const remapped: NonNullable<FieldErrors["lineErrors"]> = {};
-
-      Object.entries(prev.lineErrors).forEach(([key, value]) => {
-        const i = Number(key);
-        if (!Number.isFinite(i)) return;
-
-        if (i < index) remapped[i] = value;
-        if (i > index) remapped[i - 1] = value;
+    if (!companyId || !branchId || !paths) {
+      setPageState({
+        status: "error",
+        message: "Company and branch scope are required.",
       });
-
-      return {
-        ...prev,
-        lineErrors: remapped,
-      };
-    });
-  };
-
-  const submit = async () => {
-    setSubmitError(null);
-
-    if (!companyId || !branchId) {
-      setSubmitError("Company and branch scope are required.");
       return;
     }
 
-    const nextErrors = validate(form);
+    const nextErrors = validateTransferDraft(form);
     setErrors(nextErrors);
 
     if (hasErrors(nextErrors)) return;
@@ -458,17 +538,18 @@ export default function StockTransferCreatePage() {
       })),
     };
 
-    setBusy(true);
+    setPageState({ status: "saving" });
 
     try {
       const id = await stockTransfersApi.create(companyId, branchId, payload);
-      navigate(`/inventory/stock-transfers/${id}/edit`);
+      go(paths.edit(id));
     } catch (error: any) {
-      setSubmitError(getErrorMessage(error));
-    } finally {
-      setBusy(false);
+      setPageState({
+        status: "error",
+        message: getErrorMessage(error),
+      });
     }
-  };
+  }, [companyId, branchId, paths, form, go]);
 
   if (!companyId) {
     return <div style={{ padding: 16 }}>Select a company first.</div>;
@@ -478,371 +559,548 @@ export default function StockTransferCreatePage() {
     return <div style={{ padding: 16 }}>Select a branch first.</div>;
   }
 
+  if (!paths) {
+    return <div style={{ padding: 16 }}>Company path could not be resolved.</div>;
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
+      <PageHeader submitError={submitError} />
+
+      <SummaryCard
+        lines={summary.lines}
+        totalQuantity={summary.totalQuantity}
+        distinctItems={summary.distinctItems}
+      />
+
+      <HeaderCard
+        form={form}
+        errors={errors}
+        busy={busy}
+        locationsLoading={locationsLoading}
+        locationOptions={locationOptions}
+        locationLabelById={locationLabelById}
+        onChange={setHeader}
+      />
+
+      <LinesCard
+        form={form}
+        errors={errors}
+        busy={busy}
+        itemsLoading={itemsLoading}
+        itemById={itemById}
+        itemOptions={itemOptions}
+        itemLabelById={itemLabelById}
+        uomLabelById={uomLabelById}
+        onAddLine={addLine}
+        onRemoveLine={removeLine}
+        onUpdateLine={updateLine}
+      />
+
+      <FooterActions
+        busy={busy}
+        onBack={() => go(paths.list)}
+        onSubmit={() => void submit()}
+      />
+    </div>
+  );
+}
+
+function PageHeader({ submitError }: { submitError: string | null }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        gap: 12,
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 22, fontWeight: 800 }}>
+          Create Stock Transfer
+        </div>
+        <div style={{ opacity: 0.75, marginTop: 6 }}>
+          Transfer stock between branch locations with controlled line items.
+        </div>
+
+        {submitError ? (
+          <div style={{ marginTop: 10, ...errorStyle }}>{submitError}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({
+  lines,
+  totalQuantity,
+  distinctItems,
+}: {
+  lines: number;
+  totalQuantity: number;
+  distinctItems: number;
+}) {
+  return (
+    <div style={cardStyle}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: 12,
+        }}
+      >
+        <Kpi label="Lines" value={lines} />
+        <Kpi label="Total Qty" value={totalQuantity} />
+        <Kpi label="Distinct Items" value={distinctItems} />
+      </div>
+    </div>
+  );
+}
+
+function HeaderCard({
+  form,
+  errors,
+  busy,
+  locationsLoading,
+  locationOptions,
+  locationLabelById,
+  onChange,
+}: {
+  form: TransferDraft;
+  errors: FieldErrors;
+  busy: boolean;
+  locationsLoading: boolean;
+  locationOptions: SelectOption[];
+  locationLabelById: Record<string, string>;
+  onChange: (patch: Partial<TransferDraft>) => void;
+}) {
   const fromId = clean(form.fromLocationId);
   const toId = clean(form.toLocationId);
 
   const fromExists = fromId
-    ? locationOptions.some((x) => x.value === fromId)
+    ? locationOptions.some((option) => option.value === fromId)
     : false;
 
   const toExists = toId
-    ? locationOptions.some((x) => x.value === toId)
+    ? locationOptions.some((option) => option.value === toId)
     : false;
 
   const fromLabel = locationLabelById[fromId] || "Saved location";
   const toLabel = locationLabelById[toId] || "Saved location";
 
   return (
-    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
+    <div style={cardStyle}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(12, 1fr)",
+          gap: 12,
+        }}
+      >
+        <div style={{ gridColumn: "span 4" }}>
+          <label style={labelStyle}>From Location *</label>
+          <select
+            style={inputStyle(Boolean(errors.fromLocationId))}
+            value={fromId}
+            disabled={locationsLoading || busy}
+            onChange={(event) => {
+              const value = event.target.value;
+
+              onChange({
+                fromLocationId: value,
+                toLocationId: value === toId ? "" : form.toLocationId,
+              });
+            }}
+          >
+            {!fromId ? (
+              <option value="">
+                {locationsLoading ? "Loading locations..." : "Select from location…"}
+              </option>
+            ) : null}
+
+            {!fromExists && fromId ? (
+              <option value={fromId}>{fromLabel}</option>
+            ) : null}
+
+            {locationOptions
+              .filter((option) => option.value !== toId)
+              .map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+          </select>
+
+          {errors.fromLocationId ? (
+            <div style={errorStyle}>{errors.fromLocationId}</div>
+          ) : null}
+        </div>
+
+        <div style={{ gridColumn: "span 4" }}>
+          <label style={labelStyle}>To Location *</label>
+          <select
+            style={inputStyle(Boolean(errors.toLocationId))}
+            value={toId}
+            disabled={locationsLoading || busy}
+            onChange={(event) => {
+              const value = event.target.value;
+
+              onChange({
+                toLocationId: value,
+                fromLocationId: value === fromId ? "" : form.fromLocationId,
+              });
+            }}
+          >
+            {!toId ? (
+              <option value="">
+                {locationsLoading ? "Loading locations..." : "Select to location…"}
+              </option>
+            ) : null}
+
+            {!toExists && toId ? <option value={toId}>{toLabel}</option> : null}
+
+            {locationOptions
+              .filter((option) => option.value !== fromId)
+              .map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+          </select>
+
+          {errors.toLocationId ? (
+            <div style={errorStyle}>{errors.toLocationId}</div>
+          ) : null}
+        </div>
+
+        <div style={{ gridColumn: "span 4" }}>
+          <label style={labelStyle}>Transfer Date *</label>
+          <input
+            style={inputStyle(Boolean(errors.transferDate))}
+            type="date"
+            value={form.transferDate}
+            disabled={busy}
+            onChange={(event) => onChange({ transferDate: event.target.value })}
+          />
+
+          {errors.transferDate ? (
+            <div style={errorStyle}>{errors.transferDate}</div>
+          ) : null}
+        </div>
+
+        <div style={{ gridColumn: "span 12" }}>
+          <label style={labelStyle}>Notes</label>
+          <input
+            style={inputStyle(false)}
+            value={form.notes}
+            disabled={busy}
+            onChange={(event) => onChange({ notes: event.target.value })}
+            placeholder="Optional transfer notes…"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LinesCard({
+  form,
+  errors,
+  busy,
+  itemsLoading,
+  itemById,
+  itemOptions,
+  itemLabelById,
+  uomLabelById,
+  onAddLine,
+  onRemoveLine,
+  onUpdateLine,
+}: {
+  form: TransferDraft;
+  errors: FieldErrors;
+  busy: boolean;
+  itemsLoading: boolean;
+  itemById: Map<string, ItemVm>;
+  itemOptions: SelectOption[];
+  itemLabelById: Record<string, string>;
+  uomLabelById: Record<string, string>;
+  onAddLine: () => void;
+  onRemoveLine: (index: number) => void;
+  onUpdateLine: (index: number, patch: Partial<TransferLineDraft>) => void;
+}) {
+  return (
+    <div style={cardStyle}>
       <div
         style={{
           display: "flex",
-          alignItems: "baseline",
           justifyContent: "space-between",
+          alignItems: "center",
           gap: 12,
         }}
       >
         <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>
-            Create Stock Transfer
+          <div style={{ fontSize: 16, fontWeight: 800 }}>Line Items</div>
+          <div style={{ opacity: 0.75, marginTop: 4 }}>
+            Select inventory items, quantity, and UOM for each transfer line.
           </div>
-          <div style={{ opacity: 0.75, marginTop: 6 }}>
-            Transfer stock between branch locations with controlled line items.
-          </div>
-
-          {submitError && (
-            <div style={{ marginTop: 10, ...errorStyle }}>{submitError}</div>
-          )}
         </div>
+
+        <button type="button" style={primaryBtn} onClick={onAddLine} disabled={busy}>
+          + Add Line
+        </button>
       </div>
 
-      <div style={cardStyle}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(12, 1fr)",
-            gap: 12,
-          }}
-        >
-          <div style={{ gridColumn: "span 4" }}>
-            <label style={labelStyle}>From Location *</label>
-            <select
-              style={inputStyle(!!errors.fromLocationId)}
-              value={fromId}
-              disabled={locationsLoading || busy}
-              onChange={(e) => {
-                const value = e.target.value;
-                setHeader({
-                  fromLocationId: value,
-                  toLocationId: value === toId ? "" : form.toLocationId,
-                });
-              }}
-            >
-              {!fromId && (
-                <option value="">
-                  {locationsLoading ? "Loading locations..." : "Select from location…"}
-                </option>
-              )}
+      {errors.lines ? (
+        <div style={{ ...errorStyle, marginTop: 10 }}>{errors.lines}</div>
+      ) : null}
 
-              {!fromExists && fromId && (
-                <option value={fromId}>{fromLabel}</option>
-              )}
+      <div style={{ marginTop: 14, overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>#</th>
+              <th style={thStyle}>Item *</th>
+              <th style={thStyle}>Qty *</th>
+              <th style={thStyle}>Unit *</th>
+              <th style={thStyle}>Notes</th>
+              <th style={{ ...thStyle, textAlign: "right" }} />
+            </tr>
+          </thead>
 
-              {locationOptions
-                .filter((x) => x.value !== toId)
-                .map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-            </select>
-            {errors.fromLocationId && (
-              <div style={errorStyle}>{errors.fromLocationId}</div>
-            )}
-          </div>
-
-          <div style={{ gridColumn: "span 4" }}>
-            <label style={labelStyle}>To Location *</label>
-            <select
-              style={inputStyle(!!errors.toLocationId)}
-              value={toId}
-              disabled={locationsLoading || busy}
-              onChange={(e) => {
-                const value = e.target.value;
-                setHeader({
-                  toLocationId: value,
-                  fromLocationId: value === fromId ? "" : form.fromLocationId,
-                });
-              }}
-            >
-              {!toId && (
-                <option value="">
-                  {locationsLoading ? "Loading locations..." : "Select to location…"}
-                </option>
-              )}
-
-              {!toExists && toId && <option value={toId}>{toLabel}</option>}
-
-              {locationOptions
-                .filter((x) => x.value !== fromId)
-                .map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-            </select>
-            {errors.toLocationId && (
-              <div style={errorStyle}>{errors.toLocationId}</div>
-            )}
-          </div>
-
-          <div style={{ gridColumn: "span 4" }}>
-            <label style={labelStyle}>Transfer Date *</label>
-            <input
-              style={inputStyle(!!errors.transferDate)}
-              type="date"
-              value={form.transferDate}
-              disabled={busy}
-              onChange={(e) => setHeader({ transferDate: e.target.value })}
-            />
-            {errors.transferDate && (
-              <div style={errorStyle}>{errors.transferDate}</div>
-            )}
-          </div>
-
-          <div style={{ gridColumn: "span 12" }}>
-            <label style={labelStyle}>Notes</label>
-            <input
-              style={inputStyle(false)}
-              value={form.notes}
-              disabled={busy}
-              onChange={(e) => setHeader({ notes: e.target.value })}
-              placeholder="Optional transfer notes…"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div style={cardStyle}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>Line Items</div>
-            <div style={{ opacity: 0.75, marginTop: 4 }}>
-              Select inventory items, quantity, and UOM for each transfer line.
-            </div>
-          </div>
-
-          <button type="button" style={primaryBtn} onClick={addLine} disabled={busy}>
-            + Add Line
-          </button>
-        </div>
-
-        {errors.lines && (
-          <div style={{ ...errorStyle, marginTop: 10 }}>{errors.lines}</div>
-        )}
-
-        <div style={{ marginTop: 14, overflowX: "auto" }}>
-          <table style={tableStyle}>
-            <thead>
+          <tbody>
+            {form.lines.length === 0 ? (
               <tr>
-                <th style={thStyle}>#</th>
-                <th style={thStyle}>Item *</th>
-                <th style={thStyle}>Qty *</th>
-                <th style={thStyle}>Unit *</th>
-                <th style={thStyle}>Notes</th>
-                <th style={{ ...thStyle, textAlign: "right" }} />
+                <td colSpan={6} style={{ padding: 18, opacity: 0.75 }}>
+                  No lines yet. Click <b>Add Line</b>.
+                </td>
               </tr>
-            </thead>
+            ) : (
+              form.lines.map((line, index) => (
+                <TransferLineRow
+                  key={`${index}-${line.itemId || "new"}`}
+                  line={line}
+                  index={index}
+                  lineError={errors.lineErrors?.[index] ?? {}}
+                  busy={busy}
+                  itemsLoading={itemsLoading}
+                  itemById={itemById}
+                  itemOptions={itemOptions}
+                  itemLabelById={itemLabelById}
+                  uomLabelById={uomLabelById}
+                  onRemove={() => onRemoveLine(index)}
+                  onUpdate={(patch) => onUpdateLine(index, patch)}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
-            <tbody>
-              {form.lines.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: 18, opacity: 0.75 }}>
-                    No lines yet. Click <b>Add Line</b>.
-                  </td>
-                </tr>
-              ) : (
-                form.lines.map((line, index) => {
-                  const lineError = errors.lineErrors?.[index] ?? {};
+function TransferLineRow({
+  line,
+  index,
+  lineError,
+  busy,
+  itemsLoading,
+  itemById,
+  itemOptions,
+  itemLabelById,
+  uomLabelById,
+  onRemove,
+  onUpdate,
+}: {
+  line: TransferLineDraft;
+  index: number;
+  lineError: Partial<Record<keyof TransferLineDraft, string>>;
+  busy: boolean;
+  itemsLoading: boolean;
+  itemById: Map<string, ItemVm>;
+  itemOptions: SelectOption[];
+  itemLabelById: Record<string, string>;
+  uomLabelById: Record<string, string>;
+  onRemove: () => void;
+  onUpdate: (patch: Partial<TransferLineDraft>) => void;
+}) {
+  const itemId = clean(line.itemId);
+  const unitId = clean(line.unitId);
 
-                  const itemId = clean(line.itemId);
-                  const unitId = clean(line.unitId);
+  const selectedItem = itemId ? itemById.get(itemId) : undefined;
 
-                  const selectedItem = itemId ? itemById.get(itemId) : undefined;
+  const uomOptions: SelectOption[] =
+    selectedItem?.uoms.map((uom) => ({
+      value: uom.uomId,
+      label: uom.uomName,
+    })) ?? [];
 
-                  const uomOptions: SelectOption[] =
-                    selectedItem?.uoms.map((u) => ({
-                      value: u.uomId,
-                      label: u.uomName,
-                    })) ?? [];
+  const itemExists = itemId ? itemById.has(itemId) : false;
+  const uomExists = unitId
+    ? uomOptions.some((option) => option.value === unitId)
+    : false;
 
-                  const itemExists = itemId ? itemById.has(itemId) : false;
-                  const uomExists = unitId
-                    ? uomOptions.some((x) => x.value === unitId)
-                    : false;
+  const savedItemLabel = itemLabelById[itemId] || (itemId ? "Saved item" : "");
+  const savedUomLabel = uomLabelById[unitId] || (unitId ? "Saved unit" : "");
 
-                  const savedItemLabel =
-                    itemLabelById[itemId] || (itemId ? "Saved item" : "");
+  return (
+    <tr>
+      <td style={tdStyle}>{index + 1}</td>
 
-                  const savedUomLabel =
-                    uomLabelById[unitId] || (unitId ? "Saved unit" : "");
+      <td style={tdStyle}>
+        <select
+          style={inputStyle(Boolean(lineError.itemId))}
+          value={itemId}
+          disabled={itemsLoading || busy}
+          onChange={(event) => {
+            const selectedItemId = event.target.value;
+            const item = selectedItemId ? itemById.get(selectedItemId) : undefined;
 
-                  return (
-                    <tr key={`${index}-${itemId || "new"}`}>
-                      <td style={tdStyle}>{index + 1}</td>
+            onUpdate({
+              itemId: selectedItemId,
+              unitId: item?.defaultUomId ?? "",
+            });
+          }}
+        >
+          {!itemId ? (
+            <option value="">
+              {itemsLoading ? "Loading items..." : "Select item…"}
+            </option>
+          ) : null}
 
-                      <td style={tdStyle}>
-                        <select
-                          style={inputStyle(!!lineError.itemId)}
-                          value={itemId}
-                          disabled={itemsLoading || busy}
-                          onChange={(e) => {
-                            const selectedItemId = e.target.value;
-                            const item = selectedItemId
-                              ? itemById.get(selectedItemId)
-                              : undefined;
+          {!itemExists && itemId ? (
+            <option value={itemId}>{savedItemLabel}</option>
+          ) : null}
 
-                            updateLine(index, {
-                              itemId: selectedItemId,
-                              unitId: item?.defaultUomId ?? "",
-                            });
-                          }}
-                        >
-                          {!itemId && (
-                            <option value="">
-                              {itemsLoading ? "Loading items..." : "Select item…"}
-                            </option>
-                          )}
+          {itemOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
 
-                          {!itemExists && itemId && (
-                            <option value={itemId}>{savedItemLabel}</option>
-                          )}
+        {lineError.itemId ? <div style={errorStyle}>{lineError.itemId}</div> : null}
+      </td>
 
-                          {itemOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
+      <td style={tdStyle}>
+        <input
+          style={inputStyle(Boolean(lineError.quantity))}
+          type="number"
+          min={0}
+          step={0.01}
+          value={Number.isFinite(line.quantity) ? line.quantity : 0}
+          disabled={busy}
+          onChange={(event) =>
+            onUpdate({
+              quantity: Number(event.target.value),
+            })
+          }
+        />
 
-                        {lineError.itemId && (
-                          <div style={errorStyle}>{lineError.itemId}</div>
-                        )}
-                      </td>
+        {lineError.quantity ? (
+          <div style={errorStyle}>{lineError.quantity}</div>
+        ) : null}
+      </td>
 
-                      <td style={tdStyle}>
-                        <input
-                          style={inputStyle(!!lineError.quantity)}
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={Number.isFinite(line.quantity) ? line.quantity : 0}
-                          disabled={busy}
-                          onChange={(e) =>
-                            updateLine(index, {
-                              quantity: Number(e.target.value),
-                            })
-                          }
-                        />
+      <td style={tdStyle}>
+        <select
+          style={inputStyle(Boolean(lineError.unitId))}
+          value={unitId}
+          disabled={!itemId || busy}
+          onChange={(event) =>
+            onUpdate({
+              unitId: event.target.value,
+            })
+          }
+        >
+          {!unitId ? (
+            <option value="">
+              {!itemId
+                ? "Select item first…"
+                : uomOptions.length === 0
+                ? "No UOM configured"
+                : "Select unit…"}
+            </option>
+          ) : null}
 
-                        {lineError.quantity && (
-                          <div style={errorStyle}>{lineError.quantity}</div>
-                        )}
-                      </td>
+          {!uomExists && unitId ? (
+            <option value={unitId}>{savedUomLabel}</option>
+          ) : null}
 
-                      <td style={tdStyle}>
-                        <select
-                          style={inputStyle(!!lineError.unitId)}
-                          value={unitId}
-                          disabled={!itemId || busy}
-                          onChange={(e) =>
-                            updateLine(index, { unitId: e.target.value })
-                          }
-                        >
-                          {!unitId && (
-                            <option value="">
-                              {!itemId
-                                ? "Select item first…"
-                                : uomOptions.length === 0
-                                  ? "No UOM configured"
-                                  : "Select unit…"}
-                            </option>
-                          )}
+          {uomOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
 
-                          {!uomExists && unitId && (
-                            <option value={unitId}>{savedUomLabel}</option>
-                          )}
+        {lineError.unitId ? <div style={errorStyle}>{lineError.unitId}</div> : null}
+      </td>
 
-                          {uomOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
+      <td style={tdStyle}>
+        <input
+          style={inputStyle(false)}
+          value={line.notes}
+          disabled={busy}
+          onChange={(event) =>
+            onUpdate({
+              notes: event.target.value,
+            })
+          }
+          placeholder="Optional"
+        />
+      </td>
 
-                        {lineError.unitId && (
-                          <div style={errorStyle}>{lineError.unitId}</div>
-                        )}
-                      </td>
+      <td style={{ ...tdStyle, textAlign: "right" }}>
+        <button type="button" style={dangerBtn} onClick={onRemove} disabled={busy}>
+          Remove
+        </button>
+      </td>
+    </tr>
+  );
+}
 
-                      <td style={tdStyle}>
-                        <input
-                          style={inputStyle(false)}
-                          value={line.notes}
-                          disabled={busy}
-                          onChange={(e) =>
-                            updateLine(index, { notes: e.target.value })
-                          }
-                          placeholder="Optional"
-                        />
-                      </td>
-
-                      <td style={{ ...tdStyle, textAlign: "right" }}>
-                        <button
-                          type="button"
-                          style={dangerBtn}
-                          onClick={() => removeLine(index)}
-                          disabled={busy}
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+function FooterActions({
+  busy,
+  onBack,
+  onSubmit,
+}: {
+  busy: boolean;
+  onBack: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div style={stickyBar}>
+      <div style={{ opacity: 0.85 }}>
+        <b>Tip:</b> Create the transfer draft, then continue to review and submit.
       </div>
 
-      <div style={stickyBar}>
-        <div style={{ opacity: 0.85 }}>
-          <b>Tip:</b> Create the transfer draft, then continue to review and submit.
-        </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button type="button" style={secondaryBtn} onClick={onBack} disabled={busy}>
+          Transfers
+        </button>
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            type="button"
-            style={secondaryBtn}
-            onClick={() => navigate("/inventory/stock-transfers")}
-            disabled={busy}
-          >
-            Transfers
-          </button>
-
-          <button type="button" style={primaryBtn} onClick={submit} disabled={busy}>
-            {busy ? "Creating..." : "Create Draft & Continue"}
-          </button>
-        </div>
+        <button type="button" style={primaryBtn} onClick={onSubmit} disabled={busy}>
+          {busy ? "Creating..." : "Create Draft & Continue"}
+        </button>
       </div>
+    </div>
+  );
+}
+
+function Kpi({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 12,
+        background: "rgba(0,0,0,.03)",
+        border: "1px solid rgba(0,0,0,.08)",
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.7 }}>{label}</div>
+      <div style={{ marginTop: 6, fontSize: 22, fontWeight: 800 }}>{value}</div>
     </div>
   );
 }

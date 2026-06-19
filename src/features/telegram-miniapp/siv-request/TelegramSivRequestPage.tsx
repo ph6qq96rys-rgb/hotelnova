@@ -2,6 +2,16 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import {
+  closeTelegramMiniApp,
+  getTelegramInitData,
+  getTelegramTheme,
+  initializeTelegramMiniApp
+} from "../telegramWebApp";
+
+const initData = getTelegramInitData();
+const theme = getTelegramTheme();
+
 
 type AuthResult = {
   success: boolean;
@@ -42,20 +52,6 @@ type SivLine = {
   requestUomCode?: string;
   requestUomName?: string;
 };
-
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp?: {
-        initData: string;
-        themeParams?: Record<string, string>;
-        ready: () => void;
-        expand: () => void;
-        close: () => void;
-      };
-    };
-  }
-}
 
 export default function TelegramSivRequestPage() {
   const tg = window.Telegram?.WebApp;
@@ -138,8 +134,7 @@ export default function TelegramSivRequestPage() {
   };
 
   useEffect(() => {
-    tg?.ready();
-    tg?.expand();
+    initializeTelegramMiniApp();
   }, [tg]);
 
   useEffect(() => {
@@ -345,7 +340,7 @@ export default function TelegramSivRequestPage() {
       setLines([]);
 
       setTimeout(() => {
-        tg?.close();
+        closeTelegramMiniApp();
       }, 1200);
     } catch (error) {
       if (axios.isAxiosError(error)) {

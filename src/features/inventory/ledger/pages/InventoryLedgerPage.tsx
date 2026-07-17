@@ -1,365 +1,203 @@
-import { useMemo, useState } from "react";
-
+import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { useAppScope } from "../../../../app/useAppScope";
-import { useInventoryLedger } from "../hooks/useInventoryLedger";
+import { type InventoryLedgerMovementType, type InventoryLedgerQuery } from "../api/inventoryLedgerApi";
 import LedgerTable from "../components/LedgerTable";
-import type { InventoryLedgerQuery } from "../api/inventoryLedgerApi";
+import { useInventoryLedger } from "../hooks/useInventoryLedger";
+import "./InventoryLedgerPage.css";
 
-type LedgerMovementType =
-  | ""
-  | "Receipt"
-  | "Production"
-  | "Transfer"
-  | "Adjustment"
-  | "Sale"
-  | "Consumption";
+const PAGE_SIZE = 50;
 
-type LedgerFilters = {
-  locationId: string;
-  itemId: string;
-  movementType: LedgerMovementType;
+const MOVEMENTS: readonly { value: InventoryLedgerMovementType | ""; label: string }[] = [
+  { value: "", label: "All stock activity" },
+  { value: "GRN", label: "Goods received" },
+  { value: "SALE_COGS", label: "Sales consumption / COGS" },
+  { value: "SIV_TRANSFER_OUT", label: "SIV transfer out" },
+  { value: "SIV_TRANSFER_IN", label: "SIV transfer in" },
+  { value: "STOCK_TRANSFER_OUT", label: "Stock transfer out" },
+  { value: "STOCK_TRANSFER_IN", label: "Stock transfer in" },
+  { value: "ADJUSTMENT_IN", label: "Adjustment increase" },
+  { value: "ADJUSTMENT_OUT", label: "Adjustment decrease" },
+  { value: "PRODUCTION_INPUT", label: "Production input" },
+  { value: "PRODUCTION_OUTPUT", label: "Production output" },
+];
+
+const PERIODS = [
+  { id: "today", label: "Today", days: 0 },
+  { id: "7d", label: "Last 7 days", days: 6 },
+  { id: "30d", label: "Last 30 days", days: 29 },
+  { id: "90d", label: "Last 90 days", days: 89 },
+] as const;
+
+type Filters = {
+  item: string;
+  location: string;
+  referenceNo: string;
+  movementType: InventoryLedgerMovementType | "";
   fromDate: string;
   toDate: string;
 };
 
-const initialFilters: LedgerFilters = {
-  locationId: "",
-  itemId: "",
-  movementType: "",
-  fromDate: "",
-  toDate: "",
+const EMPTY_FILTERS: Filters = {
+  item: "", location: "", referenceNo: "", movementType: "", fromDate: "", toDate: "",
 };
 
 export default function InventoryLedgerPage() {
-  const { companyId } = useAppScope();
+  const { companyId, branchId } = useAppScope();
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [page, setPage] = useState(1);
 
-  const [filters, setFilters] = useState<LedgerFilters>(initialFilters);
+  const dateError = filters.fromDate && filters.toDate && filters.fromDate > filters.toDate
+    ? "Start date cannot be later than end date."
+    : null;
 
-  const query = useMemo<InventoryLedgerQuery>(
-    () => ({
-      locationId: cleanOrNull(filters.locationId),
-      itemId: cleanOrNull(filters.itemId),
-      movementType: cleanOrNull(filters.movementType),
-      fromDate: cleanOrNull(filters.fromDate),
-      toDate: cleanOrNull(filters.toDate),
-      page: 1,
-      pageSize: 50,
-    }),
-    [filters]
-  );
+  const hasFilters = Object.values(filters).some((value) => value.trim().length > 0);
+
+  const query = useMemo<InventoryLedgerQuery>(() => ({
+    item: cleanOrNull(filters.item),
+    location: cleanOrNull(filters.location),
+    referenceNo: cleanOrNull(filters.referenceNo),
+    movementType: cleanOrNull(filters.movementType),
+    fromUtc: toUtcStart(filters.fromDate),
+    toUtc: toUtcExclusiveEnd(filters.toDate),
+    page,
+    pageSize: PAGE_SIZE,
+  }), [filters, page]);
 
   const { data, paging, loading, error } = useInventoryLedger(
-    companyId ?? null,
-    query
+    companyId && !dateError ? companyId : null,
+    branchId && !dateError ? branchId : null,
+    query,
   );
 
   const items = data?.items ?? [];
+  const totalCount = paging.totalCount;
+  const totalPages = Math.max(paging.totalPages, 1);
+  const currentPage = paging.page;
+  const fromRow = totalCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const toRow = Math.min(fromRow + items.length - 1, totalCount);
 
-  const hasFilters = Object.values(filters).some((value) => value.trim());
+  const updateFilter = useCallback(<K extends keyof Filters>(key: K, value: Filters[K]) => {
+    setFilters((previous) => ({ ...previous, [key]: value }));
+    setPage(1);
+  }, []);
 
-  function updateFilter<K extends keyof LedgerFilters>(
-    key: K,
-    value: LedgerFilters[K]
-  ) {
-    setFilters((prev) => ({
-      ...prev,
-      [key]: value,
+  const reset = useCallback(() => {
+    setFilters(EMPTY_FILTERS);
+    setPage(1);
+  }, []);
+
+  const applyPeriod = useCallback((days: number) => {
+    const today = new Date();
+    const from = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    from.setDate(from.getDate() - days);
+    setFilters((previous) => ({
+      ...previous,
+      fromDate: localDate(from),
+      toDate: localDate(today),
     }));
-  }
+    setPage(1);
+  }, []);
 
-  function clearFilters() {
-    setFilters(initialFilters);
-  }
-
-  if (!companyId) {
-    return (
-      <div className="page">
-        <div className="card">
-          <div className="card-title">Select Company</div>
-          <div className="card-subtitle">
-            Please select a company before viewing the inventory ledger.
-          </div>
-        </div>
-      </div>
-    );
+  if (!companyId || !branchId) {
+    return <ScopeRequired missingBranch={!branchId} />;
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-kicker">Inventory Control</div>
-          <div className="page-title">Inventory Ledger</div>
-          <div className="page-sub">
-            Trace receipts, production, transfers, adjustments, sales,
-            consumption, costing, and FIFO impact.
-          </div>
-        </div>
-
-        <div className="kpi" style={{ minWidth: 140 }}>
-          <div className="kpi-label">Rows Loaded</div>
-          <div className="kpi-val">{items.length}</div>
-          <div className="kpi-sub">{paging?.totalCount ?? 0} total records</div>
-        </div>
-      </div>
-
-      <div className="kpi-grid">
-        <KpiCard
-          label="Records"
-          value={paging?.totalCount ?? 0}
-          sub={`Page ${paging?.page ?? 1} of ${paging?.totalPages ?? 1}`}
-        />
-
-        <KpiCard
-          label="Rows Loaded"
-          value={items.length}
-          sub="Current page"
-        />
-
-        <KpiCard
-          label="Scope"
-          value={filters.locationId ? "Filtered" : "All"}
-          sub={filters.locationId ? "Location selected" : "All locations"}
-        />
-
-        <KpiCard
-          label="Movement"
-          value={filters.movementType || "All"}
-          sub="Inventory flow type"
-        />
-      </div>
-
-      <div className="card">
-        <div className="card-header">
+    <main className="page inventory-ledger-page">
+      <div className="inventory-ledger-fixed-header">
+        <header className="page-header inventory-ledger-page-header">
           <div>
-            <div className="card-title">Ledger Filters</div>
-            <div className="card-subtitle">
-              Filter by location, item, movement type, and date range to
-              investigate inventory flow and FIFO costing.
+            <div className="page-kicker">Inventory control</div>
+            <h1 className="page-title">Inventory ledger</h1>
+            <div className="page-sub">Branch-scoped source of truth for stock quantity and value movements.</div>
+          </div>
+          <Kpi label="Loaded on page" value={items.length} sub={`${formatInt(totalCount)} total movements`} />
+        </header>
+
+        <section className="kpi-grid inventory-ledger-kpi-grid" aria-label="Ledger summary">
+          <Kpi label="Total activity" value={formatInt(totalCount)} sub="Movements found" />
+          <Kpi label="Showing" value={items.length ? `${fromRow}-${toRow}` : "0"} sub={`Page ${currentPage} of ${totalPages}`} />
+          <Kpi label="Scope" value="Selected branch" sub="Company and branch isolated" />
+          <Kpi label="Activity type" value={MOVEMENTS.find((x) => x.value === filters.movementType)?.label ?? "All"} sub="How inventory moved" />
+        </section>
+      </div>
+
+      <div className="inventory-ledger-content">
+        <section className="card inventory-ledger-search-card" aria-labelledby="ledger-filters-title">
+          <CardHeader id="ledger-filters-title" title="Find stock activity" subtitle="Search by item, location, document, activity, or posting date." action={
+            <button type="button" className="btn btn-sm" onClick={reset} disabled={!hasFilters || loading}>Reset</button>
+          } />
+
+          <div className="inventory-ledger-filter-panel">
+            <Field id="ledger-item" label="Item" value={filters.item} onChange={(value) => updateFilter("item", value)} placeholder="Item name" disabled={loading} />
+            <Field id="ledger-location" label="Location" value={filters.location} onChange={(value) => updateFilter("location", value)} placeholder="Warehouse, kitchen, bar..." disabled={loading} />
+            <Field id="ledger-reference" label="Document" value={filters.referenceNo} onChange={(value) => updateFilter("referenceNo", value)} placeholder="GRN, SIV, sale..." disabled={loading} />
+            <Select id="ledger-movement" label="Activity" value={filters.movementType} onChange={(value) => updateFilter("movementType", value)} options={MOVEMENTS} disabled={loading} />
+            <Field id="ledger-from" label="From" type="date" value={filters.fromDate} onChange={(value) => updateFilter("fromDate", value)} disabled={loading} />
+            <Field id="ledger-to" label="To" type="date" value={filters.toDate} onChange={(value) => updateFilter("toDate", value)} disabled={loading} />
+          </div>
+
+          <div className="inventory-ledger-quick-actions" aria-label="Common periods">
+            {PERIODS.map((period) => (
+              <button key={period.id} type="button" className="btn btn-sm" onClick={() => applyPeriod(period.days)} disabled={loading}>{period.label}</button>
+            ))}
+          </div>
+
+          {dateError ? <Alert tone="danger"><strong>Check the dates:</strong> {dateError}</Alert> : null}
+          {loading ? <Alert tone="info">Loading inventory movements…</Alert> : null}
+          {error ? <Alert tone="danger"><strong>Unable to load inventory movements:</strong> {error}</Alert> : null}
+        </section>
+
+        <section className="card" aria-labelledby="ledger-movements-title">
+          <CardHeader id="ledger-movements-title" title="Inventory movements" subtitle="Immutable stock-card activity with quantities, balances, and FIFO value." />
+          {!loading && items.length === 0
+            ? <EmptyState hasFilters={hasFilters} onReset={reset} />
+            : <div className="inventory-ledger-table-wrap"><LedgerTable items={items} /></div>}
+
+          <footer className="inventory-ledger-footer">
+            <span>{formatInt(totalCount)} movement{totalCount === 1 ? "" : "s"} • Page {currentPage} of {totalPages}</span>
+            <div className="inventory-ledger-footer-actions">
+              <span>{formatInt(items.length)} shown</span>
+              <button type="button" className="btn btn-sm" onClick={() => setPage((x) => Math.max(1, x - 1))} disabled={loading || currentPage <= 1}>Previous</button>
+              <button type="button" className="btn btn-sm" onClick={() => setPage((x) => Math.min(totalPages, x + 1))} disabled={loading || currentPage >= totalPages}>Next</button>
             </div>
-          </div>
-
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={clearFilters}
-            disabled={!hasFilters || loading}
-          >
-            Clear
-          </button>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-            marginTop: 14,
-          }}
-        >
-          <TextField
-            label="Location"
-            value={filters.locationId}
-            onChange={(value) => updateFilter("locationId", value)}
-            placeholder="Optional location id"
-            disabled={loading}
-          />
-
-          <TextField
-            label="Item"
-            value={filters.itemId}
-            onChange={(value) => updateFilter("itemId", value)}
-            placeholder="Optional item id"
-            disabled={loading}
-          />
-
-          <SelectField
-            label="Movement Type"
-            value={filters.movementType}
-            onChange={(value) =>
-              updateFilter("movementType", value as LedgerMovementType)
-            }
-            disabled={loading}
-            options={[
-              { value: "", label: "All movements" },
-              { value: "Receipt", label: "Receipt" },
-              { value: "Production", label: "Production" },
-              { value: "Transfer", label: "Transfer" },
-              { value: "Adjustment", label: "Adjustment" },
-              { value: "Sale", label: "Sale" },
-              { value: "Consumption", label: "Consumption" },
-            ]}
-          />
-
-          <TextField
-            label="From Date"
-            type="date"
-            value={filters.fromDate}
-            onChange={(value) => updateFilter("fromDate", value)}
-            disabled={loading}
-          />
-
-          <TextField
-            label="To Date"
-            type="date"
-            value={filters.toDate}
-            onChange={(value) => updateFilter("toDate", value)}
-            disabled={loading}
-          />
-        </div>
-
-        {loading ? (
-          <div className="alert alert-info" style={{ marginTop: 12 }}>
-            Loading ledger records…
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="alert alert-danger" style={{ marginTop: 12 }}>
-            <strong>Error:</strong> {String(error)}
-          </div>
-        ) : null}
+          </footer>
+        </section>
       </div>
-
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <div className="card-title">Ledger Movements</div>
-            <div className="card-subtitle">
-              Stock movement history, quantities, costing, and source document
-              trail.
-            </div>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12, overflowX: "auto" }}>
-          <LedgerTable items={items} />
-        </div>
-
-        <div
-          style={{
-            marginTop: 12,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            fontSize: 12,
-            color: "var(--text-muted)",
-          }}
-        >
-          <span>
-            {paging?.totalCount ?? 0} records • Page {paging?.page ?? 1} /{" "}
-            {paging?.totalPages ?? 1}
-          </span>
-
-          <span>{items.length} rows loaded</span>
-        </div>
-      </div>
-
-      <div
-        className="card"
-        style={{
-          position: "sticky",
-          bottom: 0,
-          zIndex: 10,
-          backdropFilter: "blur(6px)",
-          background: "rgba(255,255,255,0.95)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-          }}
-        >
-          <div className="card-subtitle">
-            <strong>Debug Tip:</strong> Filter by item, location, movement type,
-            and date range to trace FIFO costing and inventory flow.
-          </div>
-
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={clearFilters}
-            disabled={!hasFilters || loading}
-          >
-            Clear Filters
-          </button>
-        </div>
-      </div>
-    </div>
+    </main>
   );
 }
 
-function TextField(props: {
-  label: string;
-  value: string;
-  placeholder?: string;
-  type?: "text" | "date";
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="form-label">{props.label}</label>
-      <input
-        className="form-control"
-        type={props.type ?? "text"}
-        value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
-        placeholder={props.placeholder}
-        disabled={props.disabled}
-      />
-    </div>
-  );
+function ScopeRequired({ missingBranch }: { missingBranch: boolean }) {
+  return <main className="page inventory-ledger-page"><section className="card inventory-ledger-empty-state"><div className="card-title">{missingBranch ? "Choose a branch first" : "Choose a company first"}</div><div className="card-subtitle">Inventory activity is isolated by company and branch.</div></section></main>;
 }
 
-function SelectField(props: {
-  label: string;
-  value: string;
-  disabled?: boolean;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="form-label">{props.label}</label>
-      <select
-        className="form-control"
-        value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
-        disabled={props.disabled}
-      >
-        {props.options.map((option) => (
-          <option key={option.value || "all"} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
+function EmptyState({ hasFilters, onReset }: { hasFilters: boolean; onReset: () => void }) {
+  return <div className="inventory-ledger-empty-state" role="status"><div className="card-title">No inventory movements found</div><div className="card-subtitle">{hasFilters ? "No movements match the selected filters." : "Movements appear after receipts, transfers, adjustments, production, or sales are posted."}</div>{hasFilters ? <button type="button" className="btn btn-sm" onClick={onReset}>Reset filters</button> : null}</div>;
 }
 
-function KpiCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-}) {
-  return (
-    <div className="kpi">
-      <div className="kpi-label">{label}</div>
-      <div className="kpi-val">{value}</div>
-      {sub ? <div className="kpi-sub">{sub}</div> : null}
-    </div>
-  );
+const CardHeader = memo(function CardHeader({ id, title, subtitle, action }: { id: string; title: string; subtitle: string; action?: ReactNode }) {
+  return <div className="card-header"><div><div id={id} className="card-title">{title}</div><div className="card-subtitle">{subtitle}</div></div>{action ? <div className="inventory-ledger-card-action">{action}</div> : null}</div>;
+});
+
+function Field({ id, label, value, onChange, placeholder, type = "text", disabled }: { id: string; label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: "text" | "date"; disabled?: boolean }) {
+  return <div className="form-field"><label className="form-label" htmlFor={id}>{label}</label><input id={id} className="form-control" type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} autoComplete="off" /></div>;
 }
 
-function cleanOrNull(value: string): string | null {
-  const clean = value.trim();
-  return clean ? clean : null;
+function Select<T extends string>({ id, label, value, onChange, options, disabled }: { id: string; label: string; value: T; onChange: (value: T) => void; options: readonly { value: T; label: string }[]; disabled?: boolean }) {
+  return <div className="form-field"><label className="form-label" htmlFor={id}>{label}</label><select id={id} className="form-control" value={value} onChange={(e) => onChange(e.target.value as T)} disabled={disabled}>{options.map((option) => <option key={option.value || "all"} value={option.value}>{option.label}</option>)}</select></div>;
 }
+
+const Kpi = memo(function Kpi({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+  return <div className="kpi"><div className="kpi-label">{label}</div><div className="kpi-val">{value}</div>{sub ? <div className="kpi-sub">{sub}</div> : null}</div>;
+});
+
+function Alert({ tone, children }: { tone: "info" | "danger"; children: ReactNode }) {
+  return <div className={`alert alert-${tone} inventory-ledger-alert`} role="alert">{children}</div>;
+}
+
+function cleanOrNull<T extends string>(value: T): T | null { return value.trim() ? value.trim() as T : null; }
+function toUtcStart(value: string): string | null { return value ? new Date(`${value}T00:00:00`).toISOString() : null; }
+function toUtcExclusiveEnd(value: string): string | null { if (!value) return null; const date = new Date(`${value}T00:00:00`); date.setDate(date.getDate() + 1); return date.toISOString(); }
+function localDate(value: Date): string { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`; }
+function formatInt(value: number): string { return new Intl.NumberFormat().format(value); }

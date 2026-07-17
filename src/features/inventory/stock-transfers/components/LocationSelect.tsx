@@ -1,93 +1,76 @@
-import { useEffect, useMemo, useState } from "react";
-import { locationsApi, type LocationLiteDto } from "../api/locationsApi";
-import { useAppContext } from "../../../../app/AppContext";
+// src/features/inventory/stockTransfers/utils/apiUtils.ts
 
-type Props = {
-  label: string;
-  value: string | null;
-  onChange: (id: string | null) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  excludeId?: string | null; // prevent selecting same as the other dropdown
+export type PagedResult<T> = {
+  items: T[];
+  page?: number;
+  pageSize?: number;
+  totalCount?: number;
+  totalPages?: number;
 };
 
-export default function LocationSelect({
-  label,
-  value,
-  onChange,
-  placeholder = "Select…",
-  disabled,
-  excludeId,
-}: Props) {
-  const { companyId,branchId } = useAppContext();
+export function unwrapData<T>(responseOrData: unknown): T {
+  const value = responseOrData as Record<string, unknown>;
 
-  const [items, setItems] = useState<LocationLiteDto[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  if (value?.data !== undefined) return value.data as T;
+  if (value?.result !== undefined) return value.result as T;
+  if (value?.items !== undefined) return value.items as T;
 
-  useEffect(() => {
-    let alive = true;
-    const run = async () => {
-      if (!companyId) return;
-      setLoading(true);
-      setErr(null);
-      try {
-        const data = await locationsApi.listLocations(companyId,branchId);
-        if (!alive) return;
-        setItems(data ?? []);
-      } catch (e: any) {
-        if (!alive) return;
-        setErr(e?.message ?? "Failed to load locations");
-      } finally {
-        if (alive) setLoading(false);
-      }
-    };
-    run();
-    return () => {
-      alive = false;
-    };
-  }, [companyId]);
+  return responseOrData as T;
+}
 
-  const options = useMemo(() => {
-    const filtered = excludeId ? items.filter((x) => x.id !== excludeId) : items;
-    return filtered;
-  }, [items, excludeId]);
+export function unwrapArray<T>(responseOrData: unknown): T[] {
+  const raw = unwrapData<PagedResult<T> | T[]>(responseOrData);
+  if (Array.isArray(raw)) return raw;
+  if (raw && Array.isArray((raw as PagedResult<T>).items)) {
+    return (raw as PagedResult<T>).items;
+  }
 
-  return (
-    <div>
-      <label className="label">{label}</label>
+  return [];
+}
 
-      <div className="relative">
-        <select
-          className="input pr-10"
-          value={value ?? ""}
-          disabled={disabled || loading || !companyId}
-          onChange={(e) => onChange(e.target.value ? e.target.value : null)}
-        >
-          <option value="">
-            {loading ? "Loading…" : placeholder}
-          </option>
+export function toQuery(params: Record<string, unknown>): string {
+  const query = new URLSearchParams();
 
-          {options.map((x) => (
-            <option key={x.id} value={x.id}>
-              {x.name}
-              {x.code ? ` (${x.code})` : ""}
-              {x.branchName ? ` — ${x.branchName}` : ""}
-            </option>
-          ))}
-        </select>
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    query.set(key, String(value));
+  });
 
-        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-          ▾
-        </div>
-      </div>
+  const text = query.toString();
+  return text ? `?${text}` : "";
+}
 
-      {err && <div className="mt-1 text-xs text-rose-600">{err}</div>}
-      {!err && (
-        <div className="hint">
-          {loading ? "Fetching available locations…" : "Only active locations are shown."}
-        </div>
-      )}
-    </div>
-  );
+export function getApiError(error: unknown, fallback = "Request failed."): string {
+  const err = error as any;
+  const data = err?.response?.data;
+
+  if (typeof data === "string") return data;
+
+  if (data && typeof data === "object") {
+    const title = data.title || data.error || data.message || fallback;
+    const detail = data.detail && data.detail !== title ? ` — ${data.detail}` : "";
+    const traceId = data.traceId ? ` (traceId: ${data.traceId})` : "";
+
+    const validation =
+      data.errors && typeof data.errors === "object"
+        ? " " +
+          Object.entries(data.errors)
+            .map(([key, value]) =>
+              `${key}: ${Array.isArray(value) ? value.join(", ") : String(value)}`
+            )
+            .join(" | ")
+        : "";
+
+    return `${title}${traceId}${detail}${validation}`;
+  }
+
+  return err?.message ?? fallback;
+}
+
+export function clean(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+export function hasValue(value: unknown): value is string {
+  return clean(value).length > 0;
 }

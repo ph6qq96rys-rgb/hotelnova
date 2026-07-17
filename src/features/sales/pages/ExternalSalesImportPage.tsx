@@ -1,12 +1,32 @@
-// src/modules/sales/pages/ExternalSalesImportPage.tsx
+// src/features/sales/pages/ExternalSalesImportPage.tsx
 
 import { useEffect, useMemo, useState } from "react";
 import type React from "react";
-import { AlertCircle, CheckCircle, FileSpreadsheet, Upload } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle,
+  FileSpreadsheet,
+  RefreshCcw,
+  Upload,
+} from "lucide-react";
+
 import { useAppScope } from "../../../app/useAppScope";
 import { salesApi } from "../api/salesApi";
-import type { ImportExternalSalesResultDto, StockLocationDto } from "../api/salesTypes";
-import { Alert, Btn, Card, Field, PageShell, Spinner } from "../../company/onboarding/components/company.ui";
+import {
+  posApi,
+  tryGetStoreId,
+  type PosStoreDto,
+} from "../../pos/api/posApi";
+import { usePosSession } from "../../pos/hooks/usePosSession";
+import type { ImportExternalSalesResultDto } from "../api/salesTypes";
+import {
+  Alert,
+  Btn,
+  Card,
+  Field,
+  PageShell,
+  Spinner,
+} from "../../company/onboarding/components/company.ui";
 
 const PLATFORM_OPTIONS = [
   { value: "CNET", label: "CNET" },
@@ -14,22 +34,20 @@ const PLATFORM_OPTIONS = [
   { value: "OTHER_POS", label: "Other POS" },
 ];
 
-function unwrapArray<T>(raw: unknown): T[] {
-  const value = (raw as any)?.data ?? raw;
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value.items)) return value.items;
-  if (Array.isArray(value.data)) return value.data;
-  if (Array.isArray(value.results)) return value.results;
-  return [];
-}
+const EMPTY_GUID = "00000000-0000-0000-0000-000000000000";
 
 function extractApiError(err: unknown, fallback = "Request failed."): string {
   const e = err as any;
   const data = e?.response?.data;
+
   if (!data) return e?.message ?? fallback;
   if (typeof data === "string") return data;
+
   return data?.detail ?? data?.error ?? data?.message ?? data?.title ?? fallback;
+}
+
+function isValidGuid(value?: string | null): boolean {
+  return Boolean(value && value.trim() && value !== EMPTY_GUID);
 }
 
 function formatMoney(value: number) {
@@ -39,83 +57,222 @@ function formatMoney(value: number) {
   }).format(value || 0);
 }
 
+function storeLabel(store: PosStoreDto): string {
+  return store.code ? `${store.name} (${store.code})` : store.name;
+}
+
+function getIssueStockLocationId(store: PosStoreDto | null): string {
+  const raw =
+    (store as any)?.issueStockLocationId ??
+    (store as any)?.IssueStockLocationId ??
+    "";
+
+  return String(raw || "");
+}
+
+function getIssueStockLocationLabel(store: PosStoreDto | null): string {
+  const label =
+    (store as any)?.issueStockLocationName ??
+    (store as any)?.IssueStockLocationName ??
+    (store as any)?.issueLocationName ??
+    (store as any)?.IssueLocationName ??
+    "";
+
+  return String(label || "").trim() || "Not configured";
+}
+
 export default function ExternalSalesImportPage() {
   const { companyId, branchId } = useAppScope();
+  const scope = useMemo(
+  () => ({
+    companyId,
+    branchId,
+  }),
+  [companyId, branchId],
+);
+  const {
+    loading: sessionLoading,
+    isOpen: isSessionOpen,
+    refresh: refreshSession,
+  } = usePosSession(scope);
 
-  const [locations, setLocations] = useState<StockLocationDto[]>([]);
-  const [locationsLoading, setLocationsLoading] = useState(false);
-  const [locationId, setLocationId] = useState("");
+  const [stores, setStores] = useState<PosStoreDto[]>([]);
+  const [storesLoading, setStoresLoading] = useState(false);
+  const [storeId, setStoreId] = useState(() => tryGetStoreId() ?? "");
 
-  const [salesDate, setSalesDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [salesDate, setSalesDate] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  );
   const [sourcePlatform, setSourcePlatform] = useState("CNET");
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<ImportExternalSalesResultDto | null>(null);
+  const [result, setResult] = useState<ImportExternalSalesResultDto | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
 
+  const selectedStore = useMemo(
+    () => stores.find((x) => x.id === storeId) ?? null,
+    [stores, storeId]
+  );
+
+  const locationId = useMemo(
+    () => getIssueStockLocationId(selectedStore),
+    [selectedStore]
+  );
+
   const missingScope = !companyId || !branchId;
+  const missingSession = !sessionLoading && !isSessionOpen;
+  const missingStore = !storesLoading && !isValidGuid(storeId);
+  const missingIssueLocation =
+    Boolean(selectedStore) && !isValidGuid(locationId);
 
   const canImport = useMemo(
-    () => Boolean(companyId && branchId && locationId && file && !busy && !locationsLoading),
-    [companyId, branchId, locationId, file, busy, locationsLoading]
+    () =>
+      Boolean(
+        companyId &&
+          branchId &&
+          isSessionOpen &&
+          isValidGuid(storeId) &&
+          isValidGuid(locationId) &&
+          salesDate &&
+          file &&
+          !busy &&
+          !sessionLoading &&
+          !storesLoading
+      ),
+    [
+      companyId,
+      branchId,
+      isSessionOpen,
+      storeId,
+      locationId,
+      salesDate,
+      file,
+      busy,
+      sessionLoading,
+      storesLoading,
+    ]
   );
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadLocations() {
+    async function loadStores() {
+      setStoresLoading(true);
       setError(null);
-      setLocations([]);
-      setLocationId("");
-
-      if (!companyId || !branchId) return;
-
-      setLocationsLoading(true);
 
       try {
-        const rows = await salesApi.listStockLocations(companyId,{branchId});
+        const rows: PosStoreDto[] = await posApi.stores(scope);
+
         if (cancelled) return;
 
-        const active = unwrapArray<StockLocationDto>(rows)
+        const activeStores = rows
           .filter((x) => x.isActive !== false)
           .sort((a, b) => a.name.localeCompare(b.name));
 
-        setLocations(active);
+        setStores(activeStores);
 
-        const defaultLocation =
-          active.find((x: any) => x.isDefaultIssue || x.isDefault || x.canSell) ?? active[0];
+        const activeStoreId = tryGetStoreId() ?? "";
 
-        if (defaultLocation) setLocationId(defaultLocation.id);
+        if (activeStoreId) {
+          setStoreId(activeStoreId);
+        }
       } catch (e) {
-        if (!cancelled) setError(extractApiError(e, "Unable to load stock locations."));
+        if (!cancelled) {
+          setError(extractApiError(e, "Unable to load POS stores."));
+        }
       } finally {
-        if (!cancelled) setLocationsLoading(false);
+        if (!cancelled) setStoresLoading(false);
       }
     }
 
-    void loadLocations();
+    void loadStores();
 
     return () => {
       cancelled = true;
     };
-  }, [companyId, branchId]);
+  }, []);
+
+  useEffect(() => {
+    setStoreId(tryGetStoreId() ?? "");
+  }, [isSessionOpen]);
+
+  async function refreshPageState() {
+    setError(null);
+    setResult(null);
+    setStoreId(tryGetStoreId() ?? "");
+
+    await refreshSession();
+
+    try {
+      setStoresLoading(true);
+      const rows: PosStoreDto[] = await posApi.stores(scope);
+      setStores(
+        rows
+          .filter((x) => x.isActive !== false)
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+    } catch (e) {
+      setError(extractApiError(e, "Unable to refresh POS stores."));
+    } finally {
+      setStoresLoading(false);
+    }
+  }
 
   async function submit() {
     setError(null);
     setResult(null);
 
-    if (!companyId) return setError("Company scope is missing. Please select a company.");
-    if (!branchId) return setError("Branch scope is missing. Please select a branch.");
-    if (!locationId) return setError("Select the external sales source location.");
-    if (!file) return setError("Select an Excel workbook (.xlsx / .xls).");
+    const activeStoreId = tryGetStoreId() ?? storeId;
+    const activeStore =
+      stores.find((x) => x.id === activeStoreId) ?? selectedStore;
+    const issueLocationId = getIssueStockLocationId(activeStore);
+
+    setStoreId(activeStoreId);
+
+    if (!companyId) {
+      return setError("Company scope is missing. Please select a company.");
+    }
+
+    if (!branchId) {
+      return setError("Branch scope is missing. Please select a branch.");
+    }
+
+    if (!isSessionOpen) {
+      return setError("Please open an active POS session first.");
+    }
+
+    if (!isValidGuid(activeStoreId)) {
+      return setError("POS/store is missing. Please select a POS/store first.");
+    }
+
+    if (!activeStore) {
+      return setError("The selected POS/store could not be found. Refresh and try again.");
+    }
+
+    if (!isValidGuid(issueLocationId)) {
+      return setError(
+        "The selected POS/store does not have an issue stock location configured."
+      );
+    }
+
+    if (!salesDate) {
+      return setError("Sales date is required.");
+    }
+
+    if (!file) {
+      return setError("Select an Excel or CSV sales file.");
+    }
 
     setBusy(true);
 
     try {
       const response = await salesApi.importExternalSales(companyId, branchId, {
-        locationId,
+        storeId: activeStoreId,
+        locationId: issueLocationId,
         salesDate,
         sourcePlatform,
         file,
@@ -133,11 +290,14 @@ export default function ExternalSalesImportPage() {
   return (
     <PageShell
       title="External Sales Import"
-      subtitle="Import CNET or third-party POS sales. Backend creates sales and handles COGS automatically or marks inventory as pending."
+      subtitle="Import CNET or third-party POS sales using the active POS/store issue location."
     >
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 380px", minWidth: 0 }}>
-          <Card title="Import Settings" subtitle="Configure source, date, location, and workbook.">
+        <div style={{ flex: "1 1 420px", minWidth: 0 }}>
+          <Card
+            title="Import Settings"
+            subtitle="Store and consumption location are locked to the active POS session."
+          >
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {missingScope && (
                 <Alert
@@ -146,6 +306,57 @@ export default function ExternalSalesImportPage() {
                   message="Please select a company and branch before importing sales."
                 />
               )}
+
+              {sessionLoading && (
+                <Alert
+                  tone="info"
+                  title="Checking POS session"
+                  message="Loading active POS session."
+                />
+              )}
+
+              {missingSession && (
+                <Alert
+                  tone="danger"
+                  title="No active POS session"
+                  message="Please open a POS session before importing external sales."
+                />
+              )}
+
+              {missingStore && (
+                <Alert
+                  tone="danger"
+                  title="Missing POS/store"
+                  message="Please select a POS/store from POS Session Control first."
+                />
+              )}
+
+              {missingIssueLocation && (
+                <Alert
+                  tone="danger"
+                  title="Missing issue location"
+                  message="The selected POS/store does not have an issue stock location configured."
+                />
+              )}
+
+              <Field label="Active POS/store">
+                <input
+                  value={selectedStore ? storeLabel(selectedStore) : "No POS/store selected"}
+                  disabled
+                  style={selectStyle}
+                />
+              </Field>
+
+              <Field
+                label="Sales consumption location"
+                hint="Automatically uses the selected store issue stock location to prevent ERP mismatch."
+              >
+                <input
+                  value={selectedStore ? getIssueStockLocationLabel(selectedStore) : "No store selected"}
+                  disabled
+                  style={selectStyle}
+                />
+              </Field>
 
               <Field label="Source platform">
                 <select
@@ -172,38 +383,7 @@ export default function ExternalSalesImportPage() {
                 />
               </Field>
 
-              <Field
-                label="External source location"
-                hint="Used as the external sale source/import location. Recipe consumption still resolves from Menu Item or Category configuration."
-              >
-                {locationsLoading ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
-                    <Spinner />
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                      Loading locations…
-                    </span>
-                  </div>
-                ) : (
-                  <select
-                    value={locationId}
-                    onChange={(e) => setLocationId(e.target.value)}
-                    disabled={busy || locations.length === 0 || missingScope}
-                    style={selectStyle}
-                  >
-                    {locations.length === 0 ? (
-                      <option value="">No stock locations found</option>
-                    ) : (
-                      locations.map((location) => (
-                        <option key={location.id} value={location.id}>
-                          {location.code ? `${location.name} (${location.code})` : location.name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                )}
-              </Field>
-
-              <Field label="Excel workbook" hint="Accepted formats: .xlsx, .xls">
+              <Field label="Sales file" hint="Accepted formats: .xlsx, .xls, .csv">
                 <label style={uploadBoxStyle(file)}>
                   <FileSpreadsheet
                     size={20}
@@ -225,7 +405,7 @@ export default function ExternalSalesImportPage() {
 
                   <input
                     type="file"
-                    accept=".xlsx,.xls"
+                    accept=".xlsx,.xls,.csv"
                     style={{ display: "none" }}
                     disabled={busy}
                     onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -247,37 +427,49 @@ export default function ExternalSalesImportPage() {
                     Replace existing import
                   </div>
                   <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                    Re-import records for the same platform, branch, and sales date.
+                    Re-import records for the same platform, store, branch, and sales date.
                   </div>
                 </div>
               </label>
 
               {error && <Alert tone="danger" title="Import error" message={error} />}
 
-              <Btn
-                variant="primary"
-                onClick={submit}
-                disabled={!canImport}
-                style={{ width: "100%", justifyContent: "center", gap: 8 }}
-              >
-                {busy ? (
-                  <>
-                    <Spinner /> Processing…
-                  </>
-                ) : (
-                  <>
-                    <Upload size={15} /> Import External Sales
-                  </>
-                )}
-              </Btn>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn
+                  variant="soft"
+                  onClick={refreshPageState}
+                  disabled={busy || sessionLoading || storesLoading}
+                  style={{ flex: "0 0 auto", gap: 8 }}
+                >
+                  <RefreshCcw size={15} />
+                  Refresh
+                </Btn>
+
+                <Btn
+                  variant="primary"
+                  onClick={submit}
+                  disabled={!canImport}
+                  style={{ flex: 1, justifyContent: "center", gap: 8 }}
+                >
+                  {busy ? (
+                    <>
+                      <Spinner /> Processing…
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={15} /> Import External Sales
+                    </>
+                  )}
+                </Btn>
+              </div>
             </div>
           </Card>
         </div>
 
-        <div style={{ flex: "1 1 380px", minWidth: 0 }}>
+        <div style={{ flex: "1 1 420px", minWidth: 0 }}>
           <Card
             title="Import Result"
-            subtitle="COGS is now backend-owned. Failed inventory posting appears as Inventory Pending in Sales Register."
+            subtitle="COGS is backend-owned. Inventory issues appear as pending if posting cannot complete."
           >
             {!result ? (
               <EmptyState />
@@ -298,7 +490,7 @@ export default function ExternalSalesImportPage() {
                   <Alert
                     tone="success"
                     title="Import complete"
-                    message="Sales were imported. Inventory/COGS posting is handled by backend workflow; review Sales Register for any inventory-pending records."
+                    message="Sales were imported using the active POS/store issue location."
                   />
                 )}
               </div>
@@ -327,7 +519,7 @@ function EmptyState() {
       <FileSpreadsheet size={40} strokeWidth={1.2} />
       <div style={{ fontSize: 14, fontWeight: 500 }}>No results yet</div>
       <div style={{ fontSize: 12 }}>
-        Configure import settings and upload a workbook to see results here.
+        Configure import settings and upload a sales file to see results here.
       </div>
     </div>
   );
@@ -353,7 +545,13 @@ function ResultBanner({ result }: { result: ImportExternalSalesResultDto }) {
       )}
 
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: result.succeeded ? "#15803d" : "#b91c1c" }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: result.succeeded ? "#15803d" : "#b91c1c",
+          }}
+        >
           {result.succeeded ? "Import successful" : "Import failed"}
         </div>
 

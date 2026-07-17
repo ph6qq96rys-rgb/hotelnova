@@ -63,3 +63,99 @@
     flex-direction: column;
   }
 }
+
+/* ERP hardening: consistent action states, badges, alerts, and table polish */
+.grn-btn {
+  appearance: none;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 10px;
+  padding: 9px 13px;
+  font-weight: 750;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.grn-btn:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
+.grn-btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.grn-btn--primary { background: #2563eb; border-color: #2563eb; color: #ffffff; }
+.grn-btn--primary:hover:not(:disabled) { background: #1d4ed8; border-color: #1d4ed8; }
+.grn-btn--danger { background: #dc2626; border-color: #dc2626; color: #ffffff; }
+.grn-btn--danger:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; }
+.grn-btn--sm { padding: 7px 10px; font-size: 12px; }
+
+.grn-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+}
+.grn-status--draft { background: #f8fafc; border-color: #cbd5e1; color: #334155; }
+.grn-status--posted { background: #ecfdf5; border-color: #86efac; color: #166534; }
+.grn-status--approved { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+.grn-status--reversed, .grn-status--cancelled { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.grn-alert--success { border-color: #86efac; background: #ecfdf5; color: #166534; }
+.grn-alert--warning { border-color: #fde68a; background: #fffbeb; color: #78350f; }
+.grn-align-right, .grn-num { text-align: right; }
+
+.grn-field input, .grn-field select, .grn-field textarea, .grn-modal-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 11px;
+  font: inherit;
+}
+.grn-field label, .grn-modal-field span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 850;
+  color: #475569;
+  text-transform: uppercase;
+}
+.grn-kicker { color: #64748b; font-size: 12px; font-weight: 850; letter-spacing: 0.06em; text-transform: uppercase; }
+.grn-card-header { display: flex; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+.grn-card-header h3 { margin: 0; }
+.grn-card-header p { margin: 4px 0 0; color: #64748b; }
+.grn-empty-row { color: #64748b; text-align: center; }
+.grn-modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, 0.45); }
+.grn-modal { width: min(520px, 100%); background: #ffffff; border-radius: 18px; padding: 20px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.25); }
+.grn-modal-actions { justify-content: flex-end; margin-top: 14px; }
+/* Add these to GrnPages.erp.css for the improved GRN register table. */
+.erp-grn-table tbody tr {
+  cursor: default;
+}
+
+.erp-grn-table tbody tr:hover {
+  background: rgba(15, 23, 42, 0.025);
+}
+
+.erp-skeleton {
+  display: inline-block;
+  width: 100%;
+  max-width: 160px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #eef2f7 25%, #f8fafc 50%, #eef2f7 75%);
+  background-size: 220% 100%;
+  animation: erpSkeletonPulse 1.25s ease-in-out infinite;
+}
+
+.erp-skeleton--short { max-width: 96px; }
+.erp-skeleton--tiny { max-width: 40px; }
+.erp-skeleton--badge { max-width: 82px; height: 26px; }
+.erp-skeleton--button { max-width: 56px; height: 30px; border-radius: 10px; }
+
+@keyframes erpSkeletonPulse {
+  0% { background-position: 220% 0; }
+  100% { background-position: -220% 0; }
+}
+

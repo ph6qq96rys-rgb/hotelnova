@@ -10,159 +10,31 @@
 //   • All workflow action modals wired to real API
 
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams }            from "react-router-dom";
+import { useParams }                         from "react-router-dom";
+import { useErpNavigate }                       from "../../../../routes/useErpNavigation";
 import { useAppScope }                       from "../../../../app/useAppScope";
 import { sivApi }                            from "../api/sivApi";
-import type { ApproveSivLineRequest, IssueSivLineRequest, SivLineFifoPreviewDto } from "../api/sivApi";
+import type { IssueSivLineRequest, SivLineFifoPreviewDto } from "../api/sivApi";
 import SivWorkflowBar                        from "../components/SivWorkflowBar";
 import {
   normalizeStatus, STATUS_BADGE, resolvePermissions,
-  mapToVm, fmtDate, fmtDateTime, fmtQty, fmt$, getApiError,
+  mapToVm, fmtDate, fmtDateTime, fmtQty, getApiError,
   type SivVm, type SivLineVm,
 }                                            from "../types/sivTypes";
 import "./siv-draft.css";
-
-// ── Approve modal — per-line quantity overrides ───────────────────────────────
-
-function ApproveModal({
-  lines,  busy,
-  onConfirm, onCancel,
-}: {
-  lines:      SivLineVm[];
-  rowVersion: string | null;
-  busy:       boolean;
-  onConfirm:  (lines: ApproveSivLineRequest[], remarks: string) => void;
-  onCancel:   () => void;
-}) {
-  const [qtys,    setQtys]    = useState<Record<string, string>>({});
-  const [remarks, setRemarks] = useState("");
-  const [errors,  setErrors]  = useState<Record<string, string>>({});
-
-  const validate = () => {
-    const e: Record<string, string> = {};
-    lines.forEach((l) => {
-      const v = qtys[l.id] !== undefined ? parseFloat(qtys[l.id]) : l.qty;
-      if (isNaN(v) || v < 0) e[l.id] = "Cannot be negative";
-      else if (v > l.qty) e[l.id] = `Max: ${fmtQty(l.qty)}`;
-    });
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleConfirm = () => {
-    if (!validate()) return;
-    const lineReqs: ApproveSivLineRequest[] = lines.map((l) => ({
-      lineId:      l.id,
-      approvedQty: qtys[l.id] !== undefined ? parseFloat(qtys[l.id]) : l.qty,
-    }));
-    onConfirm(lineReqs, remarks);
-  };
-
-  const partials = lines.filter(
-    (l) => qtys[l.id] !== undefined && parseFloat(qtys[l.id]) < l.qty
-  ).length;
-
-  return (
-    <div
-      style={{
-        position:"fixed",inset:0,background:"rgba(0,0,0,.45)",
-        display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,
-      }}
-    >
-      <div
-        style={{
-          background:"var(--surface)",borderRadius:"var(--r-lg)",
-          padding:24,width:580,maxHeight:"90vh",overflowY:"auto",
-          border:"1px solid var(--border)",boxShadow:"var(--shadow-lg)",
-        }}
-      >
-        <div style={{fontWeight:600,fontSize:15,marginBottom:4}}>Approve SIV</div>
-        <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:16}}>
-          Review quantities. Leave unchanged to approve at the full requested amount.
-        </div>
-
-        {partials > 0 && (
-          <div className="alert alert-warn" style={{marginBottom:14}}>
-            ⚠ {partials} line{partials > 1 ? "s" : ""} will be partially approved.
-          </div>
-        )}
-
-        <table className="table" style={{marginBottom:14}}>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>UOM</th>
-              <th style={{textAlign:"right"}}>Requested</th>
-              <th style={{textAlign:"right",width:130}}>Approved Qty</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((l) => {
-              const cur     = qtys[l.id] !== undefined ? qtys[l.id] : String(l.qty);
-              const partial = parseFloat(cur) < l.qty;
-              return (
-                <tr key={l.id} style={{background:partial?"var(--warn-bg-light)":"transparent"}}>
-                  <td>
-                    <div style={{fontWeight:500}}>{l.itemName || "—"}</div>
-                    <div style={{fontSize:10,color:"var(--text-muted)",fontFamily:"var(--mono)"}}>{l.itemCode}</div>
-                  </td>
-                  <td style={{fontFamily:"var(--mono)",fontSize:12}}>{l.uomCode}</td>
-                  <td style={{textAlign:"right",fontFamily:"var(--mono)",fontWeight:500}}>
-                    {fmtQty(l.qty)}
-                  </td>
-                  <td style={{padding:"6px 12px"}}>
-                    <input
-                      type="number" min={0} max={l.qty} step="0.001"
-                      className="input"
-                      value={cur}
-                      onChange={(e) => setQtys((p) => ({ ...p, [l.id]: e.target.value }))}
-                      style={{
-                        height:32,fontSize:12,
-                        borderColor:errors[l.id]?"var(--danger)":partial?"var(--warn)":undefined,
-                      }}
-                    />
-                    {errors[l.id] && (
-                      <div style={{fontSize:10,color:"var(--danger)",marginTop:2}}>
-                        {errors[l.id]}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-
-        <div className="field" style={{marginBottom:16}}>
-          <label className="field-label">Approval notes (optional)</label>
-          <textarea
-            className="input"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Notes for the warehouse…"
-            style={{minHeight:64}}
-          />
-        </div>
-
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button className="btn btn-success" onClick={handleConfirm} disabled={busy}>
-            {busy ? "Approving…" : "Approve SIV"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+import {
+  getSivWorkspace,
+  getSivWorkspacePath,
+  sivPrintPath,
+} from "../utils/sivWorkflowRoutes";
 
 // ── Issue modal — per-line issued quantities ───────────────────────────────────
 
 function IssueModal({
-  lines, rowVersion, busy,
+  lines, busy,
   onConfirm, onCancel,
 }: {
   lines:      SivLineVm[];
-  rowVersion: string | null;
   busy:       boolean;
   onConfirm:  (lines: IssueSivLineRequest[], remarks: string) => void;
   onCancel:   () => void;
@@ -442,7 +314,7 @@ function FifoPreviewPanel({
     setLoading(true); setErr(""); setPreview(null);
     try {
       const data = await sivApi.getFifoPreview(companyId, sivId, lineId);
-      setPreview(data.data);
+      setPreview(data);
     } catch (e) {
       setErr(getApiError(e, "Failed to load FIFO preview."));
     } finally {
@@ -557,15 +429,28 @@ function FifoPreviewPanel({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type ModalType = "none"|"approve"|"reject"|"requestChanges"|"issue"|"post"|"reverse"|"submit";
+type ModalType = "none" | "issue" | "post" | "reverse";
 
 export default function SivDetailsPage() {
-  const nav = useNavigate();
-  const { companyId: routeCompanyId, sivId = "" } = useParams<{
-    companyId?: string; sivId?: string;
+  const nav = useErpNavigate();
+  const {
+    companyId: routeCompanyId,
+    branchId: routeBranchId,
+    sivId: routeSivId,
+    id: routeId,
+  } = useParams<{
+    companyId?: string;
+    branchId?: string;
+    sivId?: string;
+    id?: string;
   }>();
-  const { companyId: scopeCompanyId } = useAppScope();
+  const {
+    companyId: scopeCompanyId,
+    branchId: scopeBranchId,
+  } = useAppScope();
   const companyId = routeCompanyId || scopeCompanyId || "";
+  const branchId = routeBranchId || scopeBranchId || null;
+  const sivId = routeSivId || routeId || "";
 
   const [doc,     setDoc]     = useState<SivVm | null>(null);
   const [loading, setLoading] = useState(false);
@@ -582,13 +467,23 @@ export default function SivDetailsPage() {
     setLoading(true); setErr(null);
     try {
       const raw = await sivApi.getById(companyId, sivId);
-      setDoc(mapToVm(raw.data));
+      const vm = mapToVm(raw);
+      const workspace = getSivWorkspace(vm.docStatus);
+
+      if (workspace === "draft" || workspace === "approval") {
+        nav(getSivWorkspacePath(companyId, sivId, vm.docStatus, branchId), {
+          replace: true,
+        });
+        return;
+      }
+
+      setDoc(vm);
     } catch (e) {
       setErr(getApiError(e, "Failed to load SIV."));
     } finally {
       setLoading(false);
     }
-  }, [companyId, sivId]);
+  }, [branchId, companyId, nav, sivId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -681,36 +576,6 @@ export default function SivDetailsPage() {
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <span className={STATUS_BADGE[status]}>{status}</span>
 
-          {p.canEdit && (
-            <button className="btn"
-              onClick={() => nav(`/companies/${companyId}/siv/drafts/${doc.id}/edit`)}>
-              ✎ Edit
-            </button>
-          )}
-          {p.canSubmit && (
-            <button className="btn btn-primary" disabled={busy}
-              onClick={() => setModal("submit")}>
-              ↗ Submit for Approval
-            </button>
-          )}
-          {p.canApprove && (
-            <button className="btn btn-success" disabled={busy}
-              onClick={() => setModal("approve")}>
-              ✓ Approve
-            </button>
-          )}
-          {p.canRequestChanges && (
-            <button className="btn" disabled={busy}
-              onClick={() => setModal("requestChanges")}>
-              ↩ Request Changes
-            </button>
-          )}
-          {p.canReject && (
-            <button className="btn btn-danger" disabled={busy}
-              onClick={() => setModal("reject")}>
-              ✕ Reject
-            </button>
-          )}
           {p.canIssue && (
             <button className="btn btn-primary" disabled={busy}
               onClick={() => setModal("issue")}>
@@ -731,7 +596,7 @@ export default function SivDetailsPage() {
           )}
           {p.canPrint && (
             <button className="btn"
-              onClick={() => nav(`/companies/${companyId}/siv/${doc.id}/print`)}>
+              onClick={() => nav(sivPrintPath(companyId, doc.id))}>
               ⎙ Print
             </button>
           )}
@@ -971,74 +836,9 @@ export default function SivDetailsPage() {
 
       {/* ── Modals ── */}
 
-      {modal==="submit" && (
-        <RemarksModal
-          title="Submit for Approval"
-          subtitle="The F&B Controller will be notified to review this SIV."
-          fieldLabel="Submission notes"
-          confirmLabel="Submit"
-          confirmClass="btn-primary"
-          required={false}
-          busy={busy}
-          onConfirm={(remarks) => run("Submit", () =>
-            sivApi.submit(companyId, sivId, { rowVersion:doc.rowVersion, remarks })
-              .then(()=>undefined)
-          )}
-          onCancel={() => setModal("none")}
-        />
-      )}
-
-      {modal==="approve" && (
-        <ApproveModal
-          lines={doc.lines}
-          rowVersion={doc.rowVersion}
-          busy={busy}
-          onConfirm={(lines, remarks) => run("Approve", () =>
-            sivApi.approve(companyId, sivId, { rowVersion:doc.rowVersion, remarks, lines })
-              .then(()=>undefined)
-          )}
-          onCancel={() => setModal("none")}
-        />
-      )}
-
-      {modal==="reject" && (
-        <RemarksModal
-          title="Reject SIV"
-          subtitle="Provide a reason — this will be visible to the submitter."
-          fieldLabel="Rejection reason"
-          confirmLabel="Confirm Reject"
-          confirmClass="btn-danger"
-          required={true}
-          busy={busy}
-          onConfirm={(remarks) => run("Reject", () =>
-            sivApi.reject(companyId, sivId, { rowVersion:doc.rowVersion, remarks })
-              .then(()=>undefined)
-          )}
-          onCancel={() => setModal("none")}
-        />
-      )}
-
-      {modal==="requestChanges" && (
-        <RemarksModal
-          title="Request Changes"
-          subtitle="The SIV is returned to the requester for amendment and resubmission."
-          fieldLabel="Feedback for requester"
-          confirmLabel="Send Back"
-          confirmClass="btn-primary"
-          required={true}
-          busy={busy}
-          onConfirm={(remarks) => run("Request Changes", () =>
-            sivApi.requestChanges(companyId, sivId, { rowVersion:doc.rowVersion, remarks })
-              .then(()=>undefined)
-          )}
-          onCancel={() => setModal("none")}
-        />
-      )}
-
       {modal==="issue" && (
         <IssueModal
           lines={doc.lines}
-          rowVersion={doc.rowVersion}
           busy={busy}
           onConfirm={(lines, remarks) => run("Issue", () =>
             sivApi.issue(companyId, sivId, { rowVersion:doc.rowVersion, remarks, lines })
@@ -1053,8 +853,7 @@ export default function SivDetailsPage() {
           doc={doc}
           busy={busy}
           onConfirm={() => run("Post", () =>
-            sivApi.post(companyId, sivId)
-              .then((r) => { if (r?.data?.message != null) throw new Error(r.data.message); })
+            sivApi.post(companyId, sivId).then(() => undefined)
           )}
           onCancel={() => setModal("none")}
         />

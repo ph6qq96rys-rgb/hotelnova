@@ -16,6 +16,7 @@ import SaleDetailPage from "../features/sales/pages/SaleDetailPage";
 import SalesReportsPage from "../features/sales/pages/SalesReportsPage";
 import ExternalSalesImportPage from "../features/sales/pages/ExternalSalesImportPage";
 import OperationsDashboardPage from "../features/operations/pages/OperationsDashboardPage";
+import DigitalMenuPage from "../shared/DigitalMenuPage";
 
 export type AppRoute = Omit<RouteObject, "children" | "element"> & {
   label?: string;
@@ -49,7 +50,7 @@ export const salesRoutes: AppRoute[] = [
     label: "Sales Register",
     element: <SalesListPage />,
     icon: <ShoppingCart size={18} />,
-    nav: true,
+    nav: false,
     section: "Sales",
     order: 20,
   },
@@ -63,6 +64,13 @@ export const salesRoutes: AppRoute[] = [
     order: 25,
   },
   {
+  path: "digital-menu",
+  element: <DigitalMenuPage />,
+  nav: false,
+  label: "Digital Menu",
+  section: "general",
+},
+  {
     path: "sales/details/:saleId",
     label: "Sale Detail",
     element: <SaleDetailPage />,
@@ -74,7 +82,7 @@ export const salesRoutes: AppRoute[] = [
     label: "Sales Reports",
     element: <SalesReportsPage />,
     icon: <BarChart3 size={18} />,
-    nav: true,
+    nav: false,
     section: "Reports",
     order: 30,
   },
@@ -83,7 +91,7 @@ export const salesRoutes: AppRoute[] = [
     label: "External Sales Import",
     element: <ExternalSalesImportPage />,
     icon: <Upload size={18} />,
-    nav: true,
+    nav: false,
     section: "Sales",
     order: 40,
   },
@@ -92,7 +100,7 @@ export const salesRoutes: AppRoute[] = [
     label: "Operations Dashboard",
     element: <OperationsDashboardPage />,
     icon: <ClipboardList size={18} />,
-    nav: true,
+    nav: false,
     section: "Operations",
     order: 50,
   },

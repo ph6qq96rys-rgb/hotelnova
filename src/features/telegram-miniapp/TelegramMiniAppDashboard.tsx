@@ -1,76 +1,150 @@
-// src/features/telegram-miniapp/TelegramMiniAppDashboard.tsx
+import { useCallback, useMemo, useState } from "react";
 
-import { useEffect, useState } from "react";
-import TelegramAttendanceScannerPage from "./attendance/TelegramAttendanceScannerPage";
-import TelegramSivRequestPage from "./siv-request/TelegramSivRequestPage";
-import TelegramMiniAppShell from "./shared/TelegramMiniAppShell";
-import TelegramTabBar, { type TelegramTabKey } from "./shared/TelegramTabBar";
-import { getTelegramInitData, initializeTelegramMiniApp } from "./telegramWebApp";
+import TelegramMiniAppShell from "./TelegramMiniAppShell";
+import TelegramTabBar, { type TelegramTabKey } from "./TelegramTabBar";
+import TelegramMiniAppContent from "./TelegramMiniAppContent";
+import TelegramBrowserPreviewNotice from "./TelegramBrowserPreviewNotice";
+import TelegramEmployeeLinkPage from "./TelegramEmployeeLinkPage";
+
+import { useTelegramMiniAppSession } from "./useTelegramMiniAppSession";
+import { getTelegramPageMeta } from "./telegramMiniAppMenu";
+
+import "./telegram-miniapp-dashboard.css";
+
+const DEFAULT_TAB: TelegramTabKey = "workspace";
+const STORAGE_KEY = "hotelnova.telegram.activeTab";
+
+function readSavedTab(): TelegramTabKey {
+  if (typeof window === "undefined") return DEFAULT_TAB;
+
+  const saved = window.localStorage.getItem(STORAGE_KEY);
+
+  if (
+    saved === "workspace" ||
+    saved === "attendance" ||
+    saved === "inventory" ||
+    saved === "requests" ||
+    saved === "approvals" ||
+    saved === "profile"
+  ) {
+    return saved;
+  }
+
+  return DEFAULT_TAB;
+}
 
 export default function TelegramMiniAppDashboard() {
-  const [activeTab, setActiveTab] = useState<TelegramTabKey>("home");
-  const initData = getTelegramInitData();
-  const isTelegram = Boolean(initData);
+  const [activeTab, setActiveTab] = useState<TelegramTabKey>(readSavedTab);
+  const { runtime, session, refresh, linkEmployee } = useTelegramMiniAppSession();
 
-  useEffect(() => {
-    initializeTelegramMiniApp();
+  const handleTabChange = useCallback((tab: TelegramTabKey) => {
+    window.localStorage.setItem(STORAGE_KEY, tab);
+    setActiveTab(tab);
   }, []);
+
+  const pageMeta = useMemo(() => {
+    if (session.state === "needs-link") {
+      return {
+        title: "Link Employee",
+        subtitle: "Connect Telegram to your ERP profile.",
+      };
+    }
+
+    if (session.state !== "ready") {
+      return {
+        title: "Telegram Mini App",
+        subtitle: "HotelNova ERP mobile workspace",
+      };
+    }
+
+    return getTelegramPageMeta(activeTab);
+  }, [activeTab, session.state]);
 
   return (
     <TelegramMiniAppShell
-      title={getTitle(activeTab)}
-      subtitle={getSubtitle(activeTab)}
-      footer={<TelegramTabBar activeTab={activeTab} onChange={setActiveTab} />}
+      title={pageMeta.title}
+      subtitle={pageMeta.subtitle}
+      footer={
+        session.state === "ready" ? (
+          <TelegramTabBar activeTab={activeTab} onChange={handleTabChange} />
+        ) : undefined
+      }
     >
-      {!isTelegram && (
-        <div style={{ padding: 12, marginBottom: 12, border: "1px solid #ddd", borderRadius: 12 }}>
-          Browser preview mode. Telegram-only features may not work until opened inside Telegram.
-        </div>
-      )}
+      <main className="tg-mini-page">
+        {session.state === "browser-preview" && <TelegramBrowserPreviewNotice />}
 
-      {activeTab === "home" && <HomeDashboard onOpenTab={setActiveTab} />}
-      {activeTab === "attendance" && <TelegramAttendanceScannerPage />}
-      {activeTab === "siv" && <TelegramSivRequestPage />}
-      {activeTab === "inventory" && <ComingSoon title="Inventory lookup" />}
-      {activeTab === "requests" && <ComingSoon title="My requests" />}
-      {activeTab === "profile" && <ComingSoon title="My profile" />}
+        {session.state === "missing-init-data" && (
+          <StateCard
+            icon="⚠️"
+            title="Telegram authentication data is missing"
+            message={
+              session.message ??
+              "Please open this Mini App from the bot menu or Telegram WebApp button."
+            }
+            actionLabel="Try again"
+            onAction={refresh}
+          />
+        )}
+
+        {session.state === "loading" && (
+          <StateCard
+            icon="⏳"
+            title="Preparing workspace"
+            message={session.message ?? "Please wait..."}
+          />
+        )}
+
+        {session.state === "error" && (
+          <StateCard
+            icon="❌"
+            title="Unable to open workspace"
+            message={session.message}
+            actionLabel="Try again"
+            onAction={refresh}
+          />
+        )}
+
+        {session.state === "needs-link" && (
+          <TelegramEmployeeLinkPage auth={session.auth} onLink={linkEmployee} />
+        )}
+
+        {session.state === "ready" && (
+          <TelegramMiniAppContent
+            activeTab={activeTab}
+            onOpenTab={handleTabChange}
+            auth={session.auth}
+            runtime={runtime}
+          />
+        )}
+      </main>
     </TelegramMiniAppShell>
   );
 }
 
-function HomeDashboard({ onOpenTab }: { onOpenTab: (tab: TelegramTabKey) => void }) {
+function StateCard({
+  icon,
+  title,
+  message,
+  actionLabel,
+  onAction,
+}: {
+  icon: string;
+  title: string;
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
-    <section style={{ display: "grid", gap: 12 }}>
-      <button type="button" onClick={() => onOpenTab("attendance")}>📷 Attendance Scanner</button>
-      <button type="button" onClick={() => onOpenTab("siv")}>📝 Store Request</button>
-      <button type="button" onClick={() => onOpenTab("inventory")}>📦 Inventory</button>
-      <button type="button" onClick={() => onOpenTab("profile")}>👤 My Profile</button>
+    <section className="tg-mini-empty">
+      <div className="tg-mini-empty__icon">{icon}</div>
+      <h2>{title}</h2>
+      <p>{message}</p>
+
+      {actionLabel && onAction ? (
+        <button type="button" className="tg-mini-primary" onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
     </section>
   );
-}
-
-function ComingSoon({ title }: { title: string }) {
-  return <div>{title} will be available here.</div>;
-}
-
-function getTitle(tab: TelegramTabKey) {
-  switch (tab) {
-    case "attendance": return "Attendance";
-    case "siv": return "Store Request";
-    case "inventory": return "Inventory";
-    case "requests": return "My Requests";
-    case "profile": return "My Profile";
-    default: return "RestaurantFNB Mini App";
-  }
-}
-
-function getSubtitle(tab: TelegramTabKey) {
-  switch (tab) {
-    case "attendance": return "Scan your branch QR code.";
-    case "siv": return "Request stock from your location.";
-    case "inventory": return "View available stock.";
-    case "requests": return "Track submitted requests.";
-    case "profile": return "View your employee profile.";
-    default: return "Select what you want to do.";
-  }
 }

@@ -1,433 +1,1204 @@
-// src/features/inventory/siv/pages/SivApprovalPage.tsx
-//
-// F&B Controller approval workspace.
-// Shows the submitted SIV with per-line ApprovedQty inputs,
-// then wires Approve / Request Changes / Reject to the real API.
-// Redirects away if the SIV is not in Submitted status.
-
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams }            from "react-router-dom";
-import { useAppScope }                       from "../../../../app/useAppScope";
-import { sivApi }                            from "../api/sivApi";
-import type { ApproveSivLineRequest }        from "../api/sivApi";
-import SivWorkflowBar                        from "../components/SivWorkflowBar";
 import {
-  normalizeStatus, STATUS_BADGE,
-  mapToVm, fmtDate, fmtQty, getApiError,
-  type SivVm, type SivLineVm,
-}                                            from "../types/sivTypes";
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { useParams } from "react-router-dom";
+import { useAppScope } from "../../../../app/useAppScope";
+import { useErpNavigate } from "../../../../routes/useErpNavigation";
+import { sivApi } from "../api/sivApi";
+import type { ApproveSivLineRequest } from "../api/sivApi";
+import { SivRecommendationCard } from "../components/SivRecommendationCard";
+import SivWorkflowBar from "../components/SivWorkflowBar";
+import type {
+  SivApprovalLineInput,
+  SivLineRecommendation,
+  SivRecommendationResult,
+} from "../types/sivRecommendation";
+import {
+  fmtDate,
+  fmtQty,
+  getApiError,
+  mapToVm,
+  normalizeStatus,
+  STATUS_BADGE,
+  type SivVm,
+} from "../types/sivTypes";
+import {
+  getSivWorkspacePath,
+  sivDetailsPath,
+  sivDraftPath,
+} from "../utils/sivWorkflowRoutes";
+import "./siv-approval-copilot.css";
 import "./siv-draft.css";
 
+type RouteParams = {
+  companyId?: string;
+  branchId?: string;
+  sivId?: string;
+  id?: string;
+};
+
+type DialogMode = "reject" | "requestChanges" | null;
+
+function firstNonEmpty(
+  ...values: Array<string | null | undefined>
+): string {
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (normalized) return normalized;
+  }
+
+  return "";
+}
+
+function isExpiredDate(value?: string | null): boolean {
+  if (!value) return false;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+
+  return date < endOfToday;
+}
+
+function parseApprovedQty(
+  value: string | undefined,
+  fallback: number,
+): number {
+  if (value === undefined || value.trim() === "") {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
 export default function SivApprovalPage() {
-  const nav = useNavigate();
-  const { companyId: routeCompanyId, sivId = "" } = useParams<{
-    companyId?: string; sivId?: string;
-  }>();
-  const { companyId: scopeCompanyId } = useAppScope();
-  const companyId = routeCompanyId || scopeCompanyId || "";
+  const navigate = useErpNavigate();
 
-  const [doc,         setDoc]         = useState<SivVm | null>(null);
-  const [loading,     setLoading]     = useState(false);
-  const [busy,        setBusy]        = useState(false);
-  const [err,         setErr]         = useState<string | null>(null);
-  const [success,     setSuccess]     = useState<string | null>(null);
+  const {
+    companyId: routeCompanyId,
+    branchId: routeBranchId,
+    sivId: routeSivId,
+    id: routeId,
+  } = useParams<RouteParams>();
 
-  // Per-line approved quantity overrides
+  const {
+    companyId: scopeCompanyId,
+    branchId: scopeBranchId,
+  } = useAppScope();
+
+  const companyId = firstNonEmpty(
+    routeCompanyId,
+    scopeCompanyId,
+  );
+
+  const routeBranchIdResolved = firstNonEmpty(
+    routeBranchId,
+    scopeBranchId,
+  );
+
+  const sivId = firstNonEmpty(
+    routeSivId,
+    routeId,
+  );
+
+  const [document, setDocument] = useState<SivVm | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
   const [approvedQtys, setApprovedQtys] = useState<Record<string, string>>({});
-  const [lineErrors,   setLineErrors]   = useState<Record<string, string>>({});
+  const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
 
-  // Remarks modal state
-  const [rejectNote,  setRejectNote]  = useState("");
-  const [changeNote,  setChangeNote]  = useState("");
-  const [showReject,  setShowReject]  = useState(false);
-  const [showChange,  setShowChange]  = useState(false);
+  const [recommendation, setRecommendation] =
+    useState<SivRecommendationResult | null>(null);
 
-  // ── Load ──────────────────────────────────────────────────────────────────
+  const [overrideReason, setOverrideReason] = useState("");
+  const [dialogMode, setDialogMode] = useState<DialogMode>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [changeRequestReason, setChangeRequestReason] = useState("");
 
-  const load = useCallback(async () => {
-    if (!companyId || !sivId) return;
-    setLoading(true); setErr(null);
-    try {
-      const raw = await sivApi.getById(companyId, sivId);
-      const vm  = mapToVm(raw.data);
-      const s   = normalizeStatus(vm.docStatus);
-      if (s !== "Submitted") {
-        nav(`/companies/${companyId}/siv/${sivId}`, { replace: true });
+  const effectiveBranchId = firstNonEmpty(
+    document?.branchId,
+    routeBranchIdResolved,
+  );
+
+  const clearMessages = useCallback(() => {
+    setPageError("");
+    setSuccessMessage("");
+  }, []);
+
+  const loadDocument = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!companyId || !sivId) {
+        setDocument(null);
+        setPageError(
+          "Company and SIV route parameters are required.",
+        );
+        setLoading(false);
         return;
       }
-      setDoc(vm);
-    } catch (e) {
-      setErr(getApiError(e, "Failed to load SIV."));
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId, sivId, nav]);
 
-  useEffect(() => { void load(); }, [load]);
+      setLoading(true);
+      setPageError("");
 
-  // ── Actions ───────────────────────────────────────────────────────────────
+      try {
+        const raw = await sivApi.getById(companyId, sivId);
 
-  async function doAction(label: string, fn: () => Promise<void>) {
-    setBusy(true); setErr(null); setSuccess(null);
-    try {
-      await fn();
-      setSuccess(`${label} successful.`);
-      await load();
-    } catch (e) {
-      setErr(getApiError(e, `${label} failed.`));
-    } finally {
-      setBusy(false);
-    }
-  }
+        if (signal?.aborted) return;
 
-  function validateLineQtys(): boolean {
-    const e: Record<string, string> = {};
-    (doc?.lines ?? []).forEach((l) => {
-      const raw = approvedQtys[l.id];
-      const v   = raw !== undefined ? parseFloat(raw) : l.qty;
-      if (isNaN(v) || v < 0) e[l.id] = "Cannot be negative";
-      else if (v > l.qty)    e[l.id] = `Max: ${fmtQty(l.qty)}`;
-    });
-    setLineErrors(e);
-    return Object.keys(e).length === 0;
-  }
+        const vm = mapToVm(raw);
+        const status = normalizeStatus(vm.docStatus);
 
-  const onApprove = () => {
-    if (!validateLineQtys()) return;
-    const lines: ApproveSivLineRequest[] = (doc?.lines ?? []).map((l) => ({
-      lineId:      l.id,
-      approvedQty: approvedQtys[l.id] !== undefined
-        ? parseFloat(approvedQtys[l.id])
-        : l.qty,
-    }));
-    doAction("Approve", () =>
-      sivApi
-        .approve(companyId, sivId, { rowVersion: doc?.rowVersion ?? null, lines })
-        .then(() => undefined)
+        if (status !== "Submitted") {
+          navigate(
+            getSivWorkspacePath(
+              companyId,
+              sivId,
+              status,
+              firstNonEmpty(vm.branchId, routeBranchIdResolved) || null,
+            ),
+            { replace: true },
+          );
+          return;
+        }
+
+        setDocument(vm);
+
+        setApprovedQtys((current) => {
+          const next: Record<string, string> = {};
+
+          for (const line of vm.lines) {
+            next[line.id] =
+              current[line.id] ?? String(line.qty);
+          }
+
+          return next;
+        });
+      } catch (error) {
+        if (signal?.aborted) return;
+
+        setDocument(null);
+        setPageError(
+          getApiError(error, "Failed to load SIV."),
+        );
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [
+      companyId,
+      navigate,
+      routeBranchIdResolved,
+      sivId,
+    ],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void loadDocument(controller.signal);
+
+    return () => controller.abort();
+  }, [loadDocument]);
+
+  const recommendationByLine = useMemo(
+    () =>
+      new Map(
+        (recommendation?.lines ?? []).map((line) => [
+          line.sivLineId,
+          line,
+        ]),
+      ),
+    [recommendation],
+  );
+
+  const getApprovedQty = useCallback(
+    (lineId: string, requestedQty: number): number =>
+      parseApprovedQty(
+        approvedQtys[lineId],
+        requestedQty,
+      ),
+    [approvedQtys],
+  );
+
+  const totals = useMemo(() => {
+    const lines = document?.lines ?? [];
+
+    return lines.reduce(
+      (accumulator, line) => {
+        const approvedQty = getApprovedQty(
+          line.id,
+          line.qty,
+        );
+
+        accumulator.requested += line.qty;
+
+        if (Number.isFinite(approvedQty)) {
+          accumulator.approved += approvedQty;
+
+          if (approvedQty < line.qty) {
+            accumulator.partialCount += 1;
+          }
+        }
+
+        return accumulator;
+      },
+      {
+        requested: 0,
+        approved: 0,
+        partialCount: 0,
+      },
     );
-  };
+  }, [document?.lines, getApprovedQty]);
 
-  const onReject = () => {
-    if (!rejectNote.trim()) { setErr("Rejection reason is required."); return; }
-    doAction("Reject", () =>
-      sivApi
-        .reject(companyId, sivId, { rowVersion: doc?.rowVersion ?? null, remarks: rejectNote.trim() })
-        .then(() => undefined)
-    ).then(() => { setShowReject(false); setRejectNote(""); });
-  };
+  const linesAboveRecommendation = useMemo(() => {
+    if (!document || !recommendation) return [];
 
-  const onRequestChange = () => {
-    if (!changeNote.trim()) { setErr("Feedback is required."); return; }
-    doAction("Request Changes", () =>
-      sivApi
-        .requestChanges(companyId, sivId, { rowVersion: doc?.rowVersion ?? null, remarks: changeNote.trim() })
-        .then(() => undefined)
-    ).then(() => { setShowChange(false); setChangeNote(""); });
-  };
+    return document.lines.filter((line) => {
+      const lineRecommendation =
+        recommendationByLine.get(line.id);
 
-  // ── Guards ────────────────────────────────────────────────────────────────
+      if (!lineRecommendation) return false;
+
+      const approvedQty = getApprovedQty(
+        line.id,
+        line.qty,
+      );
+
+      return (
+        Number.isFinite(approvedQty) &&
+        approvedQty > lineRecommendation.recommendedQty
+      );
+    });
+  }, [
+    document,
+    getApprovedQty,
+    recommendation,
+    recommendationByLine,
+  ]);
+
+  const validateApprovedQuantities = useCallback(() => {
+    const nextErrors: Record<string, string> = {};
+
+    for (const line of document?.lines ?? []) {
+      const approvedQty = getApprovedQty(
+        line.id,
+        line.qty,
+      );
+
+      if (!Number.isFinite(approvedQty)) {
+        nextErrors[line.id] = "Enter a valid quantity.";
+      } else if (approvedQty < 0) {
+        nextErrors[line.id] = "Quantity cannot be negative.";
+      } else if (approvedQty > line.qty) {
+        nextErrors[line.id] =
+          `Maximum allowed: ${fmtQty(line.qty)}.`;
+      }
+    }
+
+    setLineErrors(nextErrors);
+
+    return Object.keys(nextErrors).length === 0;
+  }, [document?.lines, getApprovedQty]);
+
+  const applyRecommendations = useCallback(
+    (lines: SivApprovalLineInput[]) => {
+      setApprovedQtys((current) => ({
+        ...current,
+        ...Object.fromEntries(
+          lines.map((line) => [
+            line.lineId,
+            String(line.approvedQty),
+          ]),
+        ),
+      }));
+
+      setLineErrors((current) => {
+        const next = { ...current };
+
+        for (const line of lines) {
+          delete next[line.lineId];
+        }
+
+        return next;
+      });
+    },
+    [],
+  );
+
+  const applyLineRecommendation = useCallback(
+    (line: SivLineRecommendation) => {
+      applyRecommendations([
+        {
+          lineId: line.sivLineId,
+          approvedQty: line.recommendedQty,
+        },
+      ]);
+    },
+    [applyRecommendations],
+  );
+
+  const runAction = useCallback(
+    async (
+      successText: string,
+      action: () => Promise<void>,
+    ) => {
+      if (actionBusy) return;
+
+      setActionBusy(true);
+      clearMessages();
+
+      try {
+        await action();
+        setSuccessMessage(successText);
+      } catch (error) {
+        setPageError(
+          getApiError(error, `${successText} failed.`),
+        );
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [actionBusy, clearMessages],
+  );
+
+  const handleApprove = useCallback(() => {
+    if (!document) return;
+
+    if (document.lines.length === 0) {
+      setPageError(
+        "Cannot approve an SIV with no line items.",
+      );
+      return;
+    }
+
+    if (!validateApprovedQuantities()) return;
+
+    if (
+      linesAboveRecommendation.length > 0 &&
+      !overrideReason.trim()
+    ) {
+      setPageError(
+        "An override reason is required because one or more approved quantities exceed the latest recommendation.",
+      );
+      return;
+    }
+
+    const lines: ApproveSivLineRequest[] =
+      document.lines.map((line) => ({
+        lineId: line.id,
+        approvedQty: getApprovedQty(
+          line.id,
+          line.qty,
+        ),
+      }));
+
+    void runAction(
+      "SIV approved successfully.",
+      async () => {
+        await sivApi.approve(companyId, sivId, {
+          rowVersion: document.rowVersion ?? null,
+          lines,
+          overrideReason:
+            overrideReason.trim() || null,
+          recommendationEvaluatedAtUtc:
+            recommendation?.evaluatedAtUtc ?? null,
+        });
+
+        navigate(
+          sivDetailsPath(companyId, sivId),
+          { replace: true },
+        );
+      },
+    );
+  }, [
+    companyId,
+    document,
+    getApprovedQty,
+    linesAboveRecommendation.length,
+    navigate,
+    overrideReason,
+    recommendation?.evaluatedAtUtc,
+    runAction,
+    sivId,
+    validateApprovedQuantities,
+  ]);
+
+  const handleReject = useCallback(() => {
+    if (!document) return;
+
+    const remarks = rejectReason.trim();
+
+    if (!remarks) {
+      setPageError("Rejection reason is required.");
+      return;
+    }
+
+    void runAction(
+      "SIV rejected successfully.",
+      async () => {
+        await sivApi.reject(companyId, sivId, {
+          rowVersion: document.rowVersion ?? null,
+          remarks,
+        });
+
+        navigate(
+          sivDetailsPath(companyId, sivId),
+          { replace: true },
+        );
+      },
+    );
+  }, [
+    companyId,
+    document,
+    navigate,
+    rejectReason,
+    runAction,
+    sivId,
+  ]);
+
+  const handleRequestChanges = useCallback(() => {
+    if (!document) return;
+
+    const remarks = changeRequestReason.trim();
+
+    if (!remarks) {
+      setPageError(
+        "Feedback is required before requesting changes.",
+      );
+      return;
+    }
+
+    if (!effectiveBranchId) {
+      setPageError(
+        "Branch context is required to return this SIV to draft editing.",
+      );
+      return;
+    }
+
+    void runAction(
+      "Change request sent successfully.",
+      async () => {
+        await sivApi.requestChanges(
+          companyId,
+          sivId,
+          {
+            rowVersion:
+              document.rowVersion ?? null,
+            remarks,
+          },
+        );
+
+        navigate(
+          sivDraftPath(
+            companyId,
+            effectiveBranchId,
+            sivId,
+          ),
+          { replace: true },
+        );
+      },
+    );
+  }, [
+    changeRequestReason,
+    companyId,
+    document,
+    effectiveBranchId,
+    navigate,
+    runAction,
+    sivId,
+  ]);
+
+  const closeDialog = useCallback(() => {
+    setDialogMode(null);
+    setRejectReason("");
+    setChangeRequestReason("");
+    setPageError("");
+  }, []);
 
   if (loading) {
     return (
       <div className="page">
-        <div style={{padding:48,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>
-          Loading SIV…
+        <div
+          className="siv-approval-loading"
+          aria-busy="true"
+        >
+          Loading SIV approval workspace…
         </div>
       </div>
     );
   }
 
-  if (!doc) {
+  if (!document) {
     return (
       <div className="page">
-        {err && <div className="alert alert-danger">{err}</div>}
+        <div
+          className="alert alert-danger"
+          role="alert"
+        >
+          {pageError || "SIV could not be loaded."}
+        </div>
       </div>
     );
   }
 
-  const status        = normalizeStatus(doc.docStatus);
-  const totalReq      = doc.lines.reduce((s, l) => s + l.qty, 0);
-  const totalApproved = doc.lines.reduce((s, l) => {
-    const v = approvedQtys[l.id] !== undefined ? parseFloat(approvedQtys[l.id]) : l.qty;
-    return s + (isNaN(v) ? l.qty : v);
-  }, 0);
-  const partialCount = doc.lines.filter((l) => {
-    const v = approvedQtys[l.id] !== undefined ? parseFloat(approvedQtys[l.id]) : l.qty;
-    return !isNaN(v) && v < l.qty;
-  }).length;
+  if (!sivId) {
+    return (
+      <div className="page">
+        <div className="alert alert-danger" role="alert">
+          Missing SIV route identifier. Open this page through the canonical
+          approval route: /siv/approval/:sivId.
+        </div>
+      </div>
+    );
+  }
+
+  const status = normalizeStatus(
+    document.docStatus,
+  );
 
   return (
-    <div className="page">
+    <div className="page siv-approval-page">
+      <SivWorkflowBar status={status} />
 
-      {/* Workflow bar */}
-      <SivWorkflowBar status={status}/>
-
-      {/* Header */}
-      <div className="page-header" style={{marginTop:16}}>
+      <header className="siv-approval-page-header">
         <div>
-          <div className="page-kicker">Inventory · SIV · F&B Controller Approval</div>
-          <div className="page-title" style={{fontFamily:"var(--mono)",fontSize:20}}>
-            {doc.number || doc.id}
+          <div className="page-kicker">
+            Inventory · SIV · F&amp;B Controller Approval
           </div>
+
+          <div className="page-title siv-approval-document-number">
+            {document.number || document.id}
+          </div>
+
           <div className="page-sub">
-            Review the submitted voucher and take an approval action.
+            Review the request, inspect inventory evidence,
+            and record a controlled approval decision.
           </div>
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          <span className={STATUS_BADGE[status]}>{status}</span>
-          <button className="btn btn-success" disabled={busy} onClick={onApprove}>
-            ✓ Approve
+
+        <div className="siv-approval-header-actions">
+          <span className={STATUS_BADGE[status]}>
+            {status}
+          </span>
+
+          <button
+            type="button"
+            className="btn btn-success"
+            disabled={
+              actionBusy ||
+              document.lines.length === 0
+            }
+            onClick={handleApprove}
+          >
+            {actionBusy ? "Working…" : "✓ Approve"}
           </button>
-          <button className="btn" disabled={busy} onClick={() => setShowChange(true)}>
+
+          <button
+            type="button"
+            className="btn"
+            disabled={actionBusy}
+            onClick={() =>
+              setDialogMode("requestChanges")
+            }
+          >
             ↩ Request Changes
           </button>
-          <button className="btn btn-danger" disabled={busy} onClick={() => setShowReject(true)}>
+
+          <button
+            type="button"
+            className="btn btn-danger"
+            disabled={actionBusy}
+            onClick={() => setDialogMode("reject")}
+          >
             ✕ Reject
           </button>
-          <button className="btn" onClick={() => nav(-1)}>← Back</button>
+
+          <button
+            type="button"
+            className="btn"
+            disabled={actionBusy}
+            onClick={() => navigate(-1)}
+          >
+            ← Back
+          </button>
         </div>
-      </div>
+      </header>
 
-      {/* Alerts */}
-      {err     && <div className="alert alert-danger">{err}</div>}
-      {success && <div className="alert alert-success">{success}</div>}
-
-      {partialCount > 0 && (
-        <div className="alert alert-warn" style={{marginBottom:14}}>
-          ⚠ {partialCount} line{partialCount > 1 ? "s" : ""} will be partially approved.
-          Total approved: {fmtQty(totalApproved)} of {fmtQty(totalReq)} requested.
+      {pageError && (
+        <div
+          className="alert alert-danger"
+          role="alert"
+        >
+          {pageError}
         </div>
       )}
 
-      {/* Document summary */}
-      <div className="card" style={{marginBottom:14}}>
-        <div className="card-header">
-          <div className="card-title">Document Summary</div>
+      {successMessage && (
+        <div
+          className="alert alert-success"
+          role="status"
+        >
+          {successMessage}
         </div>
-        <div className="card-body" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
-          {[
-            {label:"Issue Date",    value:fmtDate(doc.issueDate)},
-            {label:"From Location", value:doc.fromLocationName||"—"},
-            {label:"To Location",   value:doc.toLocationName||"—"},
-            {label:"Department",    value:doc.departmentName||"—"},
-            {label:"Remarks",       value:doc.remarks||"—"},
-          ].map(({label,value})=>(
-            <div key={label}>
-              <div style={{
-                fontSize:10,fontWeight:600,textTransform:"uppercase",
-                letterSpacing:"0.08em",color:"var(--text-muted)",
-                fontFamily:"var(--mono)",marginBottom:4,
-              }}>
-                {label}
+      )}
+
+      {totals.partialCount > 0 && (
+        <div className="alert alert-warn siv-approval-summary-alert">
+          <strong>
+            {totals.partialCount} line
+            {totals.partialCount === 1 ? "" : "s"} will be
+            partially approved.
+          </strong>
+
+          <span>
+            Total approved: {fmtQty(totals.approved)} of{" "}
+            {fmtQty(totals.requested)} requested.
+          </span>
+        </div>
+      )}
+
+      <div className="siv-approval-workspace">
+        <main className="siv-approval-main">
+          <section className="card siv-approval-summary-card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">
+                  Document Summary
+                </div>
+
+                <div className="card-subtitle">
+                  Request context and destination details
+                </div>
               </div>
-              <div style={{fontSize:13,color:"var(--text)"}}>{value}</div>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Lines — with editable ApprovedQty */}
-      <div className="card" style={{padding:0}}>
-        <div className="card-header">
-          <div>
-            <div className="card-title">Line Items — Set Approved Quantities</div>
-            <div className="card-subtitle">
-              Leave a field unchanged to approve at the full requested amount.
-            </div>
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <span className="badge badge-neutral">{doc.lines.length} lines</span>
-            <span className="badge badge-neutral">
-              Requested: {fmtQty(totalReq)}
-            </span>
-            {partialCount > 0 && (
-              <span className="badge badge-warn">
-                Approved: {fmtQty(totalApproved)}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {doc.lines.length === 0 ? (
-          <div style={{padding:40,textAlign:"center",color:"var(--text-soft)",fontSize:13}}>
-            No lines on this voucher.
-          </div>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{width:42}}>#</th>
-                <th>Item</th>
-                <th>UOM</th>
-                <th style={{textAlign:"right"}}>Requested</th>
-                <th style={{textAlign:"right",width:150}}>Approved Qty ▼</th>
-                <th>Batch</th>
-                <th>Expiry</th>
-                <th>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {doc.lines.map((line, i) => {
-                const curVal    = approvedQtys[line.id] !== undefined
-                  ? approvedQtys[line.id]
-                  : String(line.qty);
-                const curNum    = parseFloat(curVal);
-                const partial   = !isNaN(curNum) && curNum < line.qty;
-                const expired   = line.expiryDate && new Date(line.expiryDate) < new Date();
-                return (
-                  <tr
-                    key={line.id || i}
-                    style={{background:partial?"var(--warn-bg-light)":"transparent"}}
-                  >
-                    <td style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--text-muted)"}}>
-                      {String(line.lineNo || i+1).padStart(2,"0")}
-                    </td>
-                    <td>
-                      <div style={{fontWeight:500,fontSize:13}}>
-                        {line.itemName || "—"}
-                      </div>
-                      <div style={{fontSize:10,color:"var(--text-muted)",fontFamily:"var(--mono)",marginTop:1}}>
-                        {line.itemCode}
-                      </div>
-                    </td>
-                    <td style={{fontSize:12,fontFamily:"var(--mono)"}}>{line.uomCode||"—"}</td>
-                    <td
-                      style={{
-                        textAlign:"right",fontFamily:"var(--mono)",
-                        fontSize:13,fontWeight:500,
-                      }}
-                    >
-                      {fmtQty(line.qty)}
-                    </td>
-                    <td style={{padding:"8px 14px",width:150}}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={line.qty}
-                        step="0.001"
-                        className="input"
-                        value={curVal}
-                        onChange={(e) => {
-                          setApprovedQtys((p) => ({ ...p, [line.id]: e.target.value }));
-                          setLineErrors((p) => { const n={...p}; delete n[line.id]; return n; });
-                        }}
-                        style={{
-                          height:     32,
-                          fontSize:   12,
-                          fontFamily: "var(--mono)",
-                          borderColor:lineErrors[line.id]
-                            ? "var(--danger)"
-                            : partial
-                            ? "var(--warn)"
-                            : undefined,
-                          textAlign:  "right",
-                        }}
-                      />
-                      {lineErrors[line.id] && (
-                        <div style={{fontSize:10,color:"var(--danger)",marginTop:2}}>
-                          {lineErrors[line.id]}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{fontSize:12}}>{line.batchNo || "—"}</td>
-                    <td
-                      style={{
-                        fontSize:12,
-                        color:expired ? "var(--danger)" : "var(--text)",
-                      }}
-                    >
-                      {line.expiryDate ? fmtDate(line.expiryDate) : "—"}
-                    </td>
-                    <td style={{fontSize:12,color:"var(--text-muted)"}}>
-                      {line.remarks || "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr style={{background:"var(--surface-2)",fontWeight:600}}>
-                <td colSpan={3} style={{padding:"8px 14px",fontSize:11,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text-muted)"}}>
-                  Totals
-                </td>
-                <td style={{textAlign:"right",fontFamily:"var(--mono)",padding:"8px 14px"}}>
-                  {fmtQty(totalReq)}
-                </td>
-                <td
-                  style={{
-                    textAlign:  "right",
-                    fontFamily: "var(--mono)",
-                    padding:    "8px 14px",
-                    color:      partialCount > 0 ? "var(--warn)" : "inherit",
-                  }}
+            <div className="card-body siv-document-summary-grid">
+              {[
+                {
+                  label: "Issue Date",
+                  value: fmtDate(document.issueDate),
+                },
+                {
+                  label: "From Location",
+                  value:
+                    document.fromLocationName || "—",
+                },
+                {
+                  label: "To Location",
+                  value:
+                    document.toLocationName || "—",
+                },
+                {
+                  label: "Department",
+                  value:
+                    document.departmentName || "—",
+                },
+                {
+                  label: "Remarks",
+                  value: document.remarks || "—",
+                },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  className="siv-summary-field"
                 >
-                  {fmtQty(totalApproved)}
-                </td>
-                <td colSpan={3}/>
-              </tr>
-            </tfoot>
-          </table>
-        )}
+                  <div className="siv-summary-label">
+                    {label}
+                  </div>
+
+                  <div className="siv-summary-value">
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="card siv-lines-card">
+            <div className="card-header siv-lines-card-header">
+              <div>
+                <div className="card-title">
+                  Line Items — Set Approved Quantities
+                </div>
+
+                <div className="card-subtitle">
+                  Recommendations are advisory. The controller
+                  remains accountable for the final decision.
+                </div>
+              </div>
+
+              <div className="siv-line-summary-badges">
+                <span className="badge badge-neutral">
+                  {document.lines.length} lines
+                </span>
+
+                <span className="badge badge-neutral">
+                  Requested: {fmtQty(totals.requested)}
+                </span>
+
+                <span
+                  className={
+                    totals.partialCount > 0
+                      ? "badge badge-warn"
+                      : "badge badge-neutral"
+                  }
+                >
+                  Approved: {fmtQty(totals.approved)}
+                </span>
+              </div>
+            </div>
+
+            {document.lines.length === 0 ? (
+              <div className="siv-empty-lines">
+                No lines are available on this voucher.
+              </div>
+            ) : (
+              <div className="siv-table-scroll">
+                <table className="table siv-approval-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 42 }}>#</th>
+                      <th>Item</th>
+                      <th>UOM</th>
+                      <th className="siv-number-cell">
+                        Requested
+                      </th>
+                      <th className="siv-number-cell">
+                        Recommended
+                      </th>
+                      <th
+                        className="siv-number-cell"
+                        style={{ width: 155 }}
+                      >
+                        Approved Qty
+                      </th>
+                      <th>Inventory Status</th>
+                      <th>Batch</th>
+                      <th>Expiry</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {document.lines.map(
+                      (line, index) => {
+                        const currentValue =
+                          approvedQtys[line.id] ??
+                          String(line.qty);
+
+                        const currentNumber =
+                          Number(currentValue);
+
+                        const partial =
+                          Number.isFinite(currentNumber) &&
+                          currentNumber < line.qty;
+
+                        const lineRecommendation =
+                          recommendationByLine.get(
+                            line.id,
+                          );
+
+                        const aboveRecommendation =
+                          Boolean(lineRecommendation) &&
+                          Number.isFinite(currentNumber) &&
+                          currentNumber >
+                            lineRecommendation!.recommendedQty;
+
+                        const expired = isExpiredDate(
+                          line.expiryDate,
+                        );
+
+                        return (
+                          <tr
+                            key={line.id}
+                            className={[
+                              partial
+                                ? "is-partial"
+                                : "",
+                              aboveRecommendation
+                                ? "is-above-recommendation"
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                          >
+                            <td className="siv-line-number">
+                              {String(
+                                line.lineNo ||
+                                  index + 1,
+                              ).padStart(2, "0")}
+                            </td>
+
+                            <td>
+                              <div className="siv-item-link">
+                                {line.itemName || "—"}
+                              </div>
+
+                              <div className="siv-item-code">
+                                {line.itemCode || "—"}
+                              </div>
+                            </td>
+
+                            <td className="siv-mono-cell">
+                              {line.uomCode || "—"}
+                            </td>
+
+                            <td className="siv-number-cell">
+                              {fmtQty(line.qty)}
+                            </td>
+
+                            <td className="siv-number-cell">
+                              {lineRecommendation ? (
+                                <button
+                                  type="button"
+                                  className="siv-recommended-qty-button"
+                                  title="Apply this recommended quantity"
+                                  onClick={() =>
+                                    applyLineRecommendation(
+                                      lineRecommendation,
+                                    )
+                                  }
+                                >
+                                  {fmtQty(
+                                    lineRecommendation.recommendedQty,
+                                  )}
+                                </button>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+
+                            <td className="siv-approval-qty-cell">
+                              <input
+                                type="number"
+                                min={0}
+                                max={line.qty}
+                                step="0.001"
+                                className="input"
+                                value={currentValue}
+                                disabled={actionBusy}
+                                onChange={(event) => {
+                                  const value =
+                                    event.target.value;
+
+                                  setApprovedQtys(
+                                    (current) => ({
+                                      ...current,
+                                      [line.id]: value,
+                                    }),
+                                  );
+
+                                  setLineErrors(
+                                    (current) => {
+                                      const next = {
+                                        ...current,
+                                      };
+
+                                      delete next[line.id];
+                                      return next;
+                                    },
+                                  );
+                                }}
+                                aria-label={`Approved quantity for ${
+                                  line.itemName ||
+                                  `line ${line.lineNo}`
+                                }`}
+                              />
+
+                              {lineErrors[line.id] && (
+                                <div className="siv-field-error">
+                                  {lineErrors[line.id]}
+                                </div>
+                              )}
+
+                              {aboveRecommendation && (
+                                <div className="siv-field-warning">
+                                  Above recommendation
+                                </div>
+                              )}
+                            </td>
+
+                            <td>
+                              {lineRecommendation ? (
+                                <span
+                                  className="siv-risk-button"
+                                  data-risk={
+                                    lineRecommendation.riskLevel
+                                  }
+                                >
+                                  {
+                                    lineRecommendation.riskLevel
+                                  }
+
+                                  <span>
+                                    {
+                                      lineRecommendation.riskScore
+                                    }
+                                    /100
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="siv-muted">
+                                  Unavailable
+                                </span>
+                              )}
+                            </td>
+
+                            <td>
+                              {line.batchNo || "—"}
+                            </td>
+
+                            <td
+                              className={
+                                expired
+                                  ? "siv-expired"
+                                  : undefined
+                              }
+                            >
+                              {line.expiryDate
+                                ? fmtDate(
+                                    line.expiryDate,
+                                  )
+                                : "—"}
+                            </td>
+                          </tr>
+                        );
+                      },
+                    )}
+                  </tbody>
+
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3}>Totals</td>
+
+                      <td className="siv-number-cell">
+                        {fmtQty(totals.requested)}
+                      </td>
+
+                      <td />
+
+                      <td className="siv-number-cell">
+                        {fmtQty(totals.approved)}
+                      </td>
+
+                      <td colSpan={3} />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {linesAboveRecommendation.length > 0 && (
+            <section className="card siv-override-card">
+              <div className="card-header">
+                <div>
+                  <div className="card-title">
+                    Recommendation Override
+                  </div>
+
+                  <div className="card-subtitle">
+                    Required because{" "}
+                    {linesAboveRecommendation.length} approval
+                    {linesAboveRecommendation.length === 1
+                      ? ""
+                      : "s"}{" "}
+                    exceed the latest recommendation.
+                  </div>
+                </div>
+              </div>
+
+              <div className="card-body">
+                <label className="field">
+                  <span className="field-label">
+                    Override reason
+                    <span className="siv-required">
+                      *
+                    </span>
+                  </span>
+
+                  <textarea
+                    className="input"
+                    value={overrideReason}
+                    disabled={actionBusy}
+                    onChange={(event) =>
+                      setOverrideReason(
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Explain why the business should approve more than the recommendation."
+                    rows={4}
+                  />
+                </label>
+              </div>
+            </section>
+          )}
+        </main>
+
+        <aside className="siv-copilot-panel">
+          {effectiveBranchId ? (
+            <SivRecommendationCard
+              companyId={companyId}
+              branchId={effectiveBranchId}
+              sivId={sivId}
+              onApplyRecommendations={
+                applyRecommendations
+              }
+              onRecommendationChange={
+                setRecommendation
+              }
+            />
+          ) : (
+            <div
+              className="alert alert-danger"
+              role="alert"
+            >
+              A branch is required to load inventory
+              recommendations.
+            </div>
+          )}
+        </aside>
       </div>
 
-      {/* ── Reject modal ── */}
-      {showReject && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50}}>
-          <div style={{background:"var(--surface)",borderRadius:"var(--r-lg)",padding:24,width:440,border:"1px solid var(--border)",boxShadow:"var(--shadow-lg)"}}>
-            <div style={{fontWeight:600,fontSize:15,marginBottom:6}}>Reject SIV</div>
-            <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:14}}>
-              Provide a reason — this will be visible to the submitter.
+      {dialogMode === "reject" && (
+        <div className="siv-modal-backdrop">
+          <div
+            className="siv-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reject-siv-title"
+          >
+            <div
+              id="reject-siv-title"
+              className="siv-modal-title"
+            >
+              Reject SIV
             </div>
-            <div className="field" style={{marginBottom:16}}>
-              <label className="field-label">Rejection reason <span style={{color:"var(--danger)"}}>*</span></label>
+
+            <div className="siv-modal-copy">
+              Provide a reason. It will be visible to the
+              requester.
+            </div>
+
+            <label className="field siv-modal-field">
+              <span className="field-label">
+                Rejection reason
+                <span className="siv-required">*</span>
+              </span>
+
               <textarea
                 className="input"
-                value={rejectNote}
-                onChange={(e) => setRejectNote(e.target.value)}
+                value={rejectReason}
+                disabled={actionBusy}
+                onChange={(event) =>
+                  setRejectReason(event.target.value)
+                }
                 placeholder="Required"
-                style={{minHeight:80}}
+                rows={4}
                 autoFocus
               />
-            </div>
-            {err && <div className="alert alert-danger" style={{marginBottom:12}}>{err}</div>}
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-              <button className="btn" onClick={() => { setShowReject(false); setRejectNote(""); setErr(null); }}>
+            </label>
+
+            <div className="siv-modal-actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={actionBusy}
+                onClick={closeDialog}
+              >
                 Cancel
               </button>
-              <button className="btn btn-danger" onClick={onReject} disabled={busy || !rejectNote.trim()}>
-                {busy ? "Rejecting…" : "Confirm Reject"}
+
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={
+                  actionBusy ||
+                  !rejectReason.trim()
+                }
+                onClick={handleReject}
+              >
+                {actionBusy
+                  ? "Rejecting…"
+                  : "Confirm Reject"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Request changes modal ── */}
-      {showChange && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50}}>
-          <div style={{background:"var(--surface)",borderRadius:"var(--r-lg)",padding:24,width:440,border:"1px solid var(--border)",boxShadow:"var(--shadow-lg)"}}>
-            <div style={{fontWeight:600,fontSize:15,marginBottom:6}}>Request Changes</div>
-            <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:14}}>
-              The SIV will be returned to the requester for amendment.
+      {dialogMode === "requestChanges" && (
+        <div className="siv-modal-backdrop">
+          <div
+            className="siv-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="request-changes-title"
+          >
+            <div
+              id="request-changes-title"
+              className="siv-modal-title"
+            >
+              Request Changes
             </div>
-            <div className="field" style={{marginBottom:16}}>
-              <label className="field-label">Feedback for requester <span style={{color:"var(--danger)"}}>*</span></label>
+
+            <div className="siv-modal-copy">
+              The SIV will return to the requester for
+              amendment.
+            </div>
+
+            <label className="field siv-modal-field">
+              <span className="field-label">
+                Feedback for requester
+                <span className="siv-required">*</span>
+              </span>
+
               <textarea
                 className="input"
-                value={changeNote}
-                onChange={(e) => setChangeNote(e.target.value)}
+                value={changeRequestReason}
+                disabled={actionBusy}
+                onChange={(event) =>
+                  setChangeRequestReason(
+                    event.target.value,
+                  )
+                }
                 placeholder="Describe what needs to change"
-                style={{minHeight:80}}
+                rows={4}
                 autoFocus
               />
-            </div>
-            {err && <div className="alert alert-danger" style={{marginBottom:12}}>{err}</div>}
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-              <button className="btn" onClick={() => { setShowChange(false); setChangeNote(""); setErr(null); }}>
+            </label>
+
+            <div className="siv-modal-actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={actionBusy}
+                onClick={closeDialog}
+              >
                 Cancel
               </button>
-              <button className="btn btn-primary" onClick={onRequestChange} disabled={busy || !changeNote.trim()}>
-                {busy ? "Sending…" : "Send Request"}
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={
+                  actionBusy ||
+                  !changeRequestReason.trim()
+                }
+                onClick={handleRequestChanges}
+              >
+                {actionBusy
+                  ? "Sending…"
+                  : "Send Request"}
               </button>
             </div>
           </div>

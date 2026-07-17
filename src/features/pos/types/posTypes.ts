@@ -11,6 +11,8 @@ export interface PosSessionDto {
   id: Guid;
   companyId: Guid;
   branchId: Guid;
+  storeId?: Guid | null;
+  storeName?: string | null;
   cashierId?: Guid | null;
   cashierName?: string | null;
   terminal?: string | null;
@@ -27,6 +29,7 @@ export interface OpenSessionRequest {
   cashierName: string;
   openingFloat: number;
   terminal?: string | null;
+  storeId?: Guid | null;
 }
 
 export interface CloseSessionRequest {
@@ -93,10 +96,26 @@ export interface SalePaymentRequest {
 export interface CreateSaleRequest {
   companyId: Guid;
   branchId: Guid;
+  storeId: Guid;
+  customerId?: Guid | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  sourceType?: number;
   discountAmount: number;
   taxAmount: number;
   serviceChargeAmount: number;
   lines: SaleLineRequest[];
+
+  /**
+   * New backend-compatible payment shape.
+   * SalesService reads dto.Payments.
+   */
+  payments?: SalePaymentRequest[] | null;
+
+  /**
+   * Kept temporarily for older UI code.
+   * posApi should normalize this into payments before sending.
+   */
   payment?: SalePaymentRequest | null;
 }
 
@@ -123,6 +142,7 @@ export interface SaleDto {
   saleNo?: string;
   companyId: Guid;
   branchId: Guid;
+  storeId?: Guid | null;
   posSessionId?: Guid | null;
   soldAtUtc?: string;
   subTotal: number;
@@ -143,6 +163,7 @@ export interface BulkPostCogsResultDto {
   failed: number;
   errors?: string[];
   warnings?: string[];
+  totalCogsAmount?: number;
 }
 
 export interface CartItem {
@@ -157,6 +178,7 @@ export interface CartItem {
   isAvailableForSale?: boolean;
   code?: string | null;
 }
+
 export interface SaleInventoryConsumptionDto {
   id: Guid;
 

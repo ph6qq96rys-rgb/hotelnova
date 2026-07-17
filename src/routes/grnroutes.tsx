@@ -2,10 +2,8 @@ import type { ReactNode } from "react";
 import type { RouteObject } from "react-router-dom";
 
 import GrnListPage from "../features/inventory/grn/pages/GrnListPage";
-import GrnDraftListPage from "../features/inventory/grn/pages/GrnDraftListPage";
 import GrnDraftEditorPage from "../features/inventory/grn/pages/GrnDraftEditorPage";
 import GrnDetailPage from "../features/inventory/grn/pages/GrnDetailPage";
-import GrnReversePage from "../features/inventory/grn/pages/GrnReversePage";
 
 import SivListPage from "../features/inventory/siv/pages/SivListPage";
 import SivDraftEditorPage from "../features/inventory/siv/pages/SivDraftEditorPage";
@@ -30,7 +28,7 @@ function visibleRoute(
   path: string,
   label: string,
   element: ReactNode,
-  order: number
+  order: number,
 ): AppRoute {
   return {
     path,
@@ -45,7 +43,7 @@ function visibleRoute(
 function hiddenRoute(
   path: string,
   element: ReactNode,
-  label?: string
+  label?: string,
 ): AppRoute {
   return {
     path,
@@ -57,42 +55,138 @@ function hiddenRoute(
 }
 
 function grnRoutes(prefix: string, visible: boolean): AppRoute[] {
+  const listPath = `${prefix}/grns`;
+
   return [
     visible
-      ? visibleRoute(`${prefix}/grns`, "GRNs", <GrnListPage />, 70)
-      : hiddenRoute(`${prefix}/grns`, <GrnListPage />, "GRNs"),
+      ? visibleRoute(
+          listPath,
+          "Goods Receipts",
+          <GrnListPage />,
+          70,
+        )
+      : hiddenRoute(
+          listPath,
+          <GrnListPage />,
+          "Goods Receipts",
+        ),
 
-    hiddenRoute(`${prefix}/grns/drafts`, <GrnDraftListPage />, "GRN Drafts"),
-    hiddenRoute(`${prefix}/grns/drafts/new`, <GrnDraftEditorPage />, "New GRN Draft"),
-    hiddenRoute(`${prefix}/grns/drafts/:draftId`, <GrnDraftEditorPage />, "Edit GRN Draft"),
-    hiddenRoute(`${prefix}/grns/reverse`, <GrnReversePage />, "Reverse GRN"),
-    hiddenRoute(`${prefix}/grns/:grnId`, <GrnDetailPage />, "GRN Detail"),
+    hiddenRoute(
+      `${prefix}/grns/new`,
+      <GrnDraftEditorPage />,
+      "New Goods Receipt",
+    ),
+
+    hiddenRoute(
+      `${prefix}/grns/:grnId/edit`,
+      <GrnDraftEditorPage />,
+      "Edit Goods Receipt",
+    ),
+
+    hiddenRoute(
+      `${prefix}/grns/:grnId`,
+      <GrnDetailPage />,
+      "Goods Receipt Detail",
+    ),
   ];
 }
 
-function sivRoutes(prefix: string, visible: boolean): AppRoute[] {
+/**
+ * Company-scoped SIV routes.
+ *
+ * Mounted beneath:
+ * /companies/:companyId
+ */
+function companySivRoutes(
+  prefix: string,
+  visible: boolean,
+): AppRoute[] {
+  const listPath = `${prefix}/siv`;
+
   return [
     visible
-      ? visibleRoute(`${prefix}/siv`, "SIVs", <SivListPage />, 80)
-      : hiddenRoute(`${prefix}/siv`, <SivListPage />, "SIVs"),
+      ? visibleRoute(
+          listPath,
+          "SIVs",
+          <SivListPage />,
+          80,
+        )
+      : hiddenRoute(
+          listPath,
+          <SivListPage />,
+          "SIVs",
+        ),
 
-    hiddenRoute(`${prefix}/siv/drafts/new`, <SivDraftEditorPage mode="create" />, "New SIV Draft"),
-    hiddenRoute(`${prefix}/siv/drafts/:draftId/edit`, <SivDraftEditorPage mode="edit" />, "Edit SIV Draft"),
-    hiddenRoute(`${prefix}/siv/drafts/:draftId`, <SivDraftEditorPage mode="edit" />, "Edit SIV Draft"),
-    hiddenRoute(`${prefix}/siv/approval/:sivId`, <SivApprovalPage />, "SIV Approval"),
-    hiddenRoute(`${prefix}/siv/open/:id`, <SivOpenRedirectPage />, "Open SIV Redirect"),
-    hiddenRoute(`${prefix}/siv/open/:sivId/details`, <SivDetailsPage />, "Open SIV"),
-    hiddenRoute(`${prefix}/siv/:sivId/print`, <SivIssuedPrintPage />, "Print SIV"),
-    hiddenRoute(`${prefix}/siv/:sivId`, <SivDetailsPage />, "SIV Detail"),
+    hiddenRoute(
+      `${prefix}/siv/approval/:sivId`,
+      <SivApprovalPage />,
+      "SIV Approval",
+    ),
+
+    hiddenRoute(
+      `${prefix}/siv/open/:id`,
+      <SivOpenRedirectPage />,
+      "Open SIV Redirect",
+    ),
+
+    hiddenRoute(
+      `${prefix}/siv/:sivId/details`,
+      <SivDetailsPage />,
+      "SIV Detail",
+    ),
+
+    hiddenRoute(
+      `${prefix}/siv/:sivId/print`,
+      <SivIssuedPrintPage />,
+      "Print SIV",
+    ),
+
+    hiddenRoute(
+      `${prefix}/siv/:sivId`,
+      <SivOpenRedirectPage />,
+      "Open SIV",
+    ),
+  ];
+}
+
+/**
+ * Branch-scoped SIV draft routes.
+ *
+ * Mounted beneath:
+ * /companies/:companyId/branches/:branchId
+ */
+function branchSivDraftRoutes(
+  prefix: string,
+): AppRoute[] {
+  return [
+    hiddenRoute(
+      `${prefix}/siv/drafts/new`,
+      <SivDraftEditorPage mode="create" />,
+      "New SIV Draft",
+    ),
+
+    hiddenRoute(
+      `${prefix}/siv/drafts/:draftId/edit`,
+      <SivDraftEditorPage mode="edit" />,
+      "Edit SIV Draft",
+    ),
+
+    // Optional compatibility route.
+    hiddenRoute(
+      `${prefix}/siv/drafts/:draftId`,
+      <SivDraftEditorPage mode="edit" />,
+      "Edit SIV Draft",
+    ),
   ];
 }
 
 export function useGrnRoutes(): AppRoute[] {
   return [
+    // Mounted below /companies/:companyId
     ...grnRoutes("", true),
-    ...sivRoutes("", true),
+    ...companySivRoutes("", true),
 
-    ...grnRoutes("branches/:branchId", false),
-    ...sivRoutes("branches/:branchId", false),
+    // These paths include the nested branch segment.
+    ...branchSivDraftRoutes("/branches/:branchId"),
   ];
 }

@@ -1,76 +1,85 @@
-import { useEffect, useMemo, useState } from "react";
-import { inventoryLedgerApi } from "../api/inventoryLedgerApi";
-import type { InventoryLedgerQuery, InventoryLedgerDto, PagedResult } from "../types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { inventoryLedgerApi, type InventoryLedgerQuery } from "../api/inventoryLedgerApi";
+import type { InventoryLedgerDto, PagedResult } from "../types";
 
-export function useInventoryLedger(companyId: string | null, query: InventoryLedgerQuery) {
-  const [data, setData] = useState<PagedResult<InventoryLedgerDto> | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 50;
 
-  const stableQuery = useMemo(
-    () => ({
-      ...query,
-      page: query.page ?? 1,
-      pageSize: query.pageSize ?? 50,
-    }),
-    [
-      query.fromUtc,
-      query.toUtc,
-      query.itemId,
-      query.locationId,
-      query.item,
-      query.location,
-      query.referenceNo,
-      query.page,
-      query.pageSize,
-    ]
-  );
+type State = {
+  data: PagedResult<InventoryLedgerDto> | null;
+  loading: boolean;
+  error: string | null;
+};
+
+export function useInventoryLedger(
+  companyId: string | null,
+  branchId: string | null,
+  query: InventoryLedgerQuery,
+) {
+  const requestId = useRef(0);
+  const [state, setState] = useState<State>({ data: null, loading: false, error: null });
+
+  const stableQuery = useMemo<InventoryLedgerQuery>(() => ({
+    fromUtc: query.fromUtc ?? null,
+    toUtc: query.toUtc ?? null,
+    itemId: query.itemId ?? null,
+    locationId: query.locationId ?? null,
+    item: query.item ?? null,
+    location: query.location ?? null,
+    referenceNo: query.referenceNo ?? null,
+    movementType: query.movementType ?? null,
+    batchNo: query.batchNo ?? null,
+    page: query.page ?? DEFAULT_PAGE,
+    pageSize: query.pageSize ?? DEFAULT_PAGE_SIZE,
+  }), [
+    query.fromUtc, query.toUtc, query.itemId, query.locationId,
+    query.item, query.location, query.referenceNo, query.movementType,
+    query.batchNo, query.page, query.pageSize,
+  ]);
 
   useEffect(() => {
-    if (!companyId) return;
+    if (!companyId || !branchId) {
+      setState({ data: null, loading: false, error: null });
+      return;
+    }
 
-    let cancelled = false;
+    const currentId = ++requestId.current;
+    const controller = new AbortController();
 
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    setState((previous) => ({ ...previous, loading: true, error: null }));
 
-        const res = await inventoryLedgerApi.list(companyId, stableQuery);
-        if (!cancelled) setData(res);
-      } catch (e: any) {
-        const msg =
-          e?.response?.data?.message ||
-          e?.message ||
-          "Failed to load inventory ledger.";
+    void inventoryLedgerApi.list(companyId, branchId, stableQuery, controller.signal)
+      .then((data) => {
+        if (requestId.current !== currentId) return;
+        setState({ data, loading: false, error: null });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || requestId.current !== currentId) return;
+        setState((previous) => ({ ...previous, loading: false, error: getErrorMessage(error) }));
+      });
 
-        if (!cancelled) setError(msg);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    // ✅ cleanup function
-    return () => {
-      cancelled = true;
-    };
-  }, [companyId, stableQuery]);
+    return () => controller.abort();
+  }, [companyId, branchId, stableQuery]);
 
   const paging = useMemo(() => {
-    const page = data?.page ?? stableQuery.page ?? 1;
-    const pageSize = data?.pageSize ?? stableQuery.pageSize ?? 50;
-    const totalPages = data?.totalPages ?? 1;
-    const totalCount = data?.totalCount ?? 0;
+    const page = state.data?.page ?? stableQuery.page ?? DEFAULT_PAGE;
+    const pageSize = state.data?.pageSize ?? stableQuery.pageSize ?? DEFAULT_PAGE_SIZE;
+    const totalPages = Math.max(state.data?.totalPages ?? 1, 1);
+    const totalCount = state.data?.totalCount ?? 0;
+    return { page, pageSize, totalPages, totalCount, canPrev: page > 1, canNext: page < totalPages };
+  }, [state.data, stableQuery.page, stableQuery.pageSize]);
 
-    return {
-      page,
-      pageSize,
-      totalPages,
-      totalCount,
-      canPrev: page > 1,
-      canNext: page < totalPages,
-    };
-  }, [data, stableQuery.page, stableQuery.pageSize]);
+  return { ...state, paging };
+}
 
-  return { data, paging, loading, error };
+function getErrorMessage(error: unknown): string {
+  const apiError = error as {
+    message?: string;
+    response?: { data?: { detail?: string; message?: string; title?: string } };
+  };
+  return apiError.response?.data?.detail
+    ?? apiError.response?.data?.message
+    ?? apiError.response?.data?.title
+    ?? apiError.message
+    ?? "Failed to load inventory ledger.";
 }

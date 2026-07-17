@@ -1,12 +1,12 @@
 import type {
   GrnDetailDto,
   GrnDraft,
-  GrnFieldErrors,
   GrnLineDraft,
   GrnListDto,
   ItemVm,
   SelectOption,
 } from "../types/grn.types";
+ import type { GrnFieldErrors } from "../helpers/grn.validation";
 
 import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
 

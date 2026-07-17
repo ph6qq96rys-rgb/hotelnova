@@ -1,568 +1,265 @@
 // src/modules/security/pages/UsersPage.tsx
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { securityApi } from "../api/securityApi";
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
+import { useAppScope } from "../../../app/useAppScope";
+import { useAuth } from "../../../auth/AuthProvider";
+import { useErpNavigate } from "../../../routes/useErpNavigation";
+import "../../../styles/modules.identity.css";
+
 import type {
   CreateSecurityUserRequest,
-  EmployeeOption,
-  PagedResult,
   UpdateSecurityUserRequest,
   UserDto,
 } from "../api/securityApi";
 import UserForm from "../components/UserForm";
 import UsersTable from "../components/UsersTable";
-import { useAppScope } from "../../../app/useAppScope";
-import { useAuth } from "../../../auth/AuthProvider";
-import { extractSecurityError } from "../utils/security.utils";
-import "../../../styles/modules.identity.css";
+import { LinkEmployeeDialog } from "../components/LinkEmployeeDialog";
+import { ResetPasswordDialog } from "../components/ResetPasswordDialog";
+import { UserKpis } from "../components/UserKpis";
+import { UsersFilters } from "../components/UsersFilters";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useEmployeeSearch } from "../hooks/useEmployeeSearch";
+import { useUserActions } from "../hooks/useUserActions";
+import { useUsersQuery } from "../hooks/useUsersQuery";
+import type { AuthUserLike, UserFilter, UserModal } from "../types/userManagement.types";
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  canCreateUsers,
+  canManageTargetUser,
+  clamp,
+  employeeIdOf,
+  includesProtectedRole,
+  isCompanyAdmin,
+  isSystemAdmin,
+  protectedActionMessage,
+  roleValuesFromRequest,
+} from "../utils/userManagement.utils";
 
-type Modal =
-  | { kind: "none" }
-  | { kind: "create" }
-  | { kind: "edit"; user: UserDto }
-  | { kind: "resetPassword"; user: UserDto }
-  | { kind: "linkEmployee"; user: UserDto };
-
-type UserFilter = {
-  q?: string;
-  page: number;
-  pageSize: number;
+type AuthContextValue = {
+  user?: AuthUserLike | null;
+  hasPermission?: (permission: string) => boolean;
 };
 
-type AccessScopeRequest = CreateSecurityUserRequest | UpdateSecurityUserRequest;
-
-const DEFAULT_PAGE_SIZE = 10;
-const MAX_PAGE_SIZE = 100;
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [value, delayMs]);
-
-  return debounced;
-}
-
-function emptyPage(filter: UserFilter): PagedResult<UserDto> {
-  return {
-    items: [],
-    total: 0,
-    page: filter.page,
-    pageSize: filter.pageSize,
-  };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function distinctClean(values: Array<string | null | undefined>): string[] {
-  return [...new Set(values.filter(Boolean).map(String).map((x) => x.trim()).filter(Boolean))];
-}
-
-function userRoles(user: UserDto): string[] {
-  return (((user as any).roles ?? (user as any).roleNames ?? []) as string[])
-    .filter(Boolean)
-    .map(String);
-}
-
-function isSystemAdmin(user: UserDto): boolean {
-  return userRoles(user).some((role) => role.toLowerCase() === "systemadmin");
-}
-
-function displayUser(user: UserDto): string {
-  return user.fullName || user.userName || user.email || user.id;
-}
-
-function isStrongPassword(password: string): boolean {
-  return (
-    password.length >= 8 &&
-    /[A-Z]/.test(password) &&
-    /[a-z]/.test(password) &&
-    /\d/.test(password)
-  );
-}
-
-function roleNamesFromRequest(
-  request: CreateSecurityUserRequest | UpdateSecurityUserRequest
-): string[] {
-  return distinctClean([...(request.roleNames ?? []), ...(request.roles ?? [])]);
-}
-
-function normalizeBranchIds(
-  request: AccessScopeRequest,
-  fallbackBranchId?: string | null
-): string[] {
-  return distinctClean([
-    ...(request.branchIds ?? []),
-    request.branchId,
-    fallbackBranchId,
-  ]);
-}
-
-function normalizeStockLocationIds(request: AccessScopeRequest): string[] {
-  return distinctClean([
-    ...(request.allowedStockLocationIds ?? []),
-    request.stockLocationId,
-  ]);
-}
-
-function resolveDefaultId(
-  preferredId: string | null | undefined,
-  candidates: string[]
-): string | null {
-  if (preferredId && candidates.includes(preferredId)) return preferredId;
-  return candidates[0] ?? null;
-}
-
-function toBoolean(value: unknown, fallback: boolean): boolean {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function KpiCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="lux-kpi">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
 export default function UsersPage() {
-  const { companyId, branchId } = useAppScope();
-  const { hasPermission, user } = useAuth() as any;
-
-  const loggedInRoles = (((user?.roles ?? user?.roleNames ?? []) as string[]) || [])
-    .filter(Boolean)
-    .map(String);
-
-  const loggedInIsSystemAdmin = loggedInRoles.some(
-    (role) => role.toLowerCase() === "systemadmin"
-  );
-
-  const canManageUsers =
-    loggedInIsSystemAdmin ||
-    hasPermission?.("users.manage") ||
-    hasPermission?.("security.manage");
+  const navigate = useErpNavigate();
+  const { companyId: routeCompanyId } = useParams<{ companyId: string }>();
+  const scope = useAppScope();
+  const companyId = routeCompanyId ?? scope.companyId;
+  const branchId = scope.branchId;
+  const { user: currentUser, hasPermission } = useAuth() as AuthContextValue;
 
   const [filter, setFilter] = useState<UserFilter>({
     page: 1,
     pageSize: DEFAULT_PAGE_SIZE,
   });
-
-  const [data, setData] = useState<PagedResult<UserDto>>(() =>
-    emptyPage({ page: 1, pageSize: DEFAULT_PAGE_SIZE })
-  );
-
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const [modal, setModal] = useState<Modal>({ kind: "none" });
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-
   const [searchText, setSearchText] = useState("");
-  const debouncedSearch = useDebouncedValue(searchText, 350);
-
-  const [newPassword, setNewPassword] = useState("");
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const passwordInputRef = useRef<HTMLInputElement | null>(null);
-
-  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [modal, setModal] = useState<UserModal>({ kind: "none" });
+  const [notice, setNotice] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [employeeSearch, setEmployeeSearch] = useState("");
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
-  const [employeesLoading, setEmployeesLoading] = useState(false);
+
+  const debouncedSearch = useDebouncedValue(searchText, 350);
   const debouncedEmployeeSearch = useDebouncedValue(employeeSearch, 300);
 
   const effectiveFilter = useMemo<UserFilter>(
     () => ({
       ...filter,
       q: debouncedSearch || undefined,
+      role: filter.role || undefined,
+      branchId: filter.branchId || undefined,
+      storeId: filter.storeId || undefined,
+      stockLocationId: filter.stockLocationId || undefined,
       pageSize: clamp(filter.pageSize, 1, MAX_PAGE_SIZE),
     }),
-    [filter, debouncedSearch]
+    [debouncedSearch, filter],
   );
 
-  const refresh = () => setRefreshKey((current) => current + 1);
+  const usersQuery = useUsersQuery(companyId, effectiveFilter, refreshKey);
+  const actions = useUserActions(companyId, branchId);
+  const employeeQuery = useEmployeeSearch(
+    modal.kind === "linkEmployee",
+    companyId,
+    debouncedEmployeeSearch,
+  );
 
-  const closeModal = () => {
-    if (!busy) {
-      setActionError(null);
-      setPasswordError(null);
-      setModal({ kind: "none" });
-    }
-  };
-
-  useEffect(() => {
-    setFilter((current) => ({
-      ...current,
-      page: 1,
-    }));
-  }, [debouncedSearch]);
+  const loggedInIsSystemAdmin = isSystemAdmin(currentUser);
+  const canCreate = canCreateUsers(currentUser, hasPermission);
+  const busy = actions.busy;
+  const usersListPath = companyId ? `/companies/${companyId}/users` : "/";
 
   useEffect(() => {
-    if (!companyId) {
-      setData(emptyPage(effectiveFilter));
-      return;
-    }
-
-    const controller = new AbortController();
-
-    async function loadUsers() {
-      try {
-        setLoading(true);
-        setLoadError(null);
-
-        const result = await securityApi.listUsersPage(
-          companyId,
-          {
-            ...effectiveFilter,
-            branchId: branchId || undefined,
-          },
-          controller.signal
-        );
-
-        setData(result);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setLoadError(extractSecurityError(error, "Failed to load users."));
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadUsers();
-
-    return () => controller.abort();
-  }, [companyId, branchId, effectiveFilter, refreshKey]);
+    setFilter((current) => ({ ...current, page: 1 }));
+  }, [
+    debouncedSearch,
+    filter.role,
+    filter.branchId,
+    filter.storeId,
+    filter.stockLocationId,
+    filter.isActive,
+  ]);
 
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && modal.kind !== "none" && !busy) {
-        closeModal();
-      }
-
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape" && modal.kind !== "none" && !busy) closeModal();
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         document.getElementById("users-search")?.focus();
         event.preventDefault();
       }
     }
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [modal.kind, busy]);
+  }, [busy, modal.kind]);
 
-  useEffect(() => {
-    if (modal.kind === "resetPassword") {
-      setNewPassword("");
-      setPasswordError(null);
-      setActionError(null);
-      window.setTimeout(() => passwordInputRef.current?.focus(), 0);
-    }
-  }, [modal.kind]);
+  function refresh(): void {
+    setRefreshKey((current) => current + 1);
+  }
 
-  useEffect(() => {
-    if (modal.kind !== "linkEmployee") return;
+  function resetFilters(): void {
+    setSearchText("");
+    setFilter({ page: 1, pageSize: DEFAULT_PAGE_SIZE });
+  }
 
+  function clearMessages(): void {
+    setNotice(null);
+    setLocalError(null);
+    actions.setError(null);
+  }
+
+  function closeModal(): void {
+    if (busy) return;
+    clearMessages();
     setEmployeeSearch("");
-    setSelectedEmployeeId((modal.user as any).employeeId ?? "");
-    setActionError(null);
-  }, [modal]);
-
-  useEffect(() => {
-    if (modal.kind !== "linkEmployee" || !companyId) return;
-
-    const controller = new AbortController();
-
-    async function loadEmployees() {
-      try {
-        setEmployeesLoading(true);
-
-        const rows = await securityApi.searchEmployees(
-          companyId,
-          {
-            branchId: branchId || undefined,
-            q: debouncedEmployeeSearch || undefined,
-            page: 1,
-            pageSize: 30,
-          },
-          controller.signal
-        );
-
-        setEmployeeOptions(rows);
-      } catch {
-        if (!controller.signal.aborted) {
-          setEmployeeOptions([]);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setEmployeesLoading(false);
-        }
-      }
-    }
-
-    void loadEmployees();
-
-    return () => controller.abort();
-  }, [modal.kind, companyId, branchId, debouncedEmployeeSearch]);
-
-  async function persistUserSecurityProfile(
-    userId: string,
-    request: AccessScopeRequest,
-    roleNames: string[]
-  ): Promise<void> {
-    if (!companyId) throw new Error("Company context is missing.");
-
-    await securityApi.setUserRoles(companyId, {
-      userId,
-      roleNames,
-    });
-
-    const branchIds = normalizeBranchIds(request, branchId);
-    const defaultBranchId = resolveDefaultId(request.branchId ?? branchId, branchIds);
-
-    if (branchIds.length > 0) {
-      await securityApi.assignUserBranches(companyId, userId, {
-        branchIds,
-        defaultBranchId,
-      });
-    }
-
-    const stockLocationIds = normalizeStockLocationIds(request);
-    const defaultStockLocationId = resolveDefaultId(
-      request.stockLocationId,
-      stockLocationIds
-    );
-
-    if (stockLocationIds.length > 0) {
-      await securityApi.assignUserStockLocations(companyId, userId, {
-        stockLocationIds,
-        defaultStockLocationId,
-        canReceive: toBoolean(request.canSubmitWarehouseRequests, true),
-        canIssue: toBoolean(request.canIssueStock, true),
-        canTransfer: true,
-        canSell: true,
-        canAdjust: false,
-      });
-    }
+    setModal({ kind: "none" });
   }
 
-  async function onCreate(
-    dto: CreateSecurityUserRequest | UpdateSecurityUserRequest
-  ) {
-    if (!companyId) {
-      setActionError("Company context is missing.");
+  function completeMutation(message: string): void {
+    setModal({ kind: "none" });
+    setEmployeeSearch("");
+    setLocalError(null);
+    setNotice(message);
+    refresh();
+    navigate(usersListPath, { replace: true });
+  }
+
+  function guardManage(user: UserDto): boolean {
+    if (canManageTargetUser(currentUser, user, hasPermission)) return true;
+    setLocalError(protectedActionMessage(currentUser, user));
+    return false;
+  }
+
+  function guardRoles(request: CreateSecurityUserRequest | UpdateSecurityUserRequest): boolean {
+    if (loggedInIsSystemAdmin) return true;
+    if (!includesProtectedRole(roleValuesFromRequest(request))) return true;
+    setLocalError("Only SystemAdmin can assign SystemAdmin or CompanyAdmin roles.");
+    return false;
+  }
+
+  async function onCreate(dto: CreateSecurityUserRequest | UpdateSecurityUserRequest): Promise<void> {
+    if (!canCreate) {
+      setLocalError("You do not have permission to create users.");
       return;
     }
-
-    if (!canManageUsers) {
-      setActionError("You do not have permission to create users.");
-      return;
-    }
-
     const request = dto as CreateSecurityUserRequest;
-    const roleNames = roleNamesFromRequest(request);
-    const branchIds = normalizeBranchIds(request, branchId);
+    if (!guardRoles(request)) return;
 
+    clearMessages();
     try {
-      setBusy(true);
-      setActionError(null);
-
-      const payload: CreateSecurityUserRequest = {
-        ...request,
-        branchId: resolveDefaultId(request.branchId ?? branchId, branchIds),
-        branchIds,
-        roleNames,
-        roles: roleNames,
-        isActive: request.isActive ?? true,
-      };
-
-      const created = await securityApi.createUser(companyId, payload);
-
-      if (!created?.id) {
-        throw new Error("User was created, but the API did not return a user id.");
-      }
-
-      await persistUserSecurityProfile(created.id, payload, roleNames);
-
-      setModal({ kind: "none" });
-      refresh();
-    } catch (error) {
-      setActionError(extractSecurityError(error, "Failed to create user."));
-    } finally {
-      setBusy(false);
+      await actions.create(request);
+      completeMutation("User created successfully.");
+    } catch {
+      // Error is exposed by useUserActions.
     }
   }
 
-  async function onEditSubmit(
-    dto: CreateSecurityUserRequest | UpdateSecurityUserRequest
-  ) {
-    if (!companyId) {
-      setActionError("Company context is missing.");
-      return;
-    }
-
-    if (modal.kind !== "edit") {
-      setActionError("No user is selected for editing.");
-      return;
-    }
-
-    if (!canManageUsers) {
-      setActionError("You do not have permission to update users.");
-      return;
-    }
-
+  async function onEdit(dto: CreateSecurityUserRequest | UpdateSecurityUserRequest): Promise<void> {
+    if (modal.kind !== "edit") return;
+    if (!guardManage(modal.user)) return;
     const request = dto as UpdateSecurityUserRequest;
-    const roleNames = roleNamesFromRequest(request);
-    const branchIds = normalizeBranchIds(request, branchId);
+    if (!guardRoles(request)) return;
 
+    clearMessages();
     try {
-      setBusy(true);
-      setActionError(null);
-
-      const payload: UpdateSecurityUserRequest = {
-        ...request,
-        branchId: resolveDefaultId(request.branchId ?? branchId, branchIds),
-        branchIds,
-        roleNames,
-        roles: roleNames,
-      };
-
-      await securityApi.updateUser(companyId, modal.user.id, payload);
-      await persistUserSecurityProfile(modal.user.id, payload, roleNames);
-
-      setModal({ kind: "none" });
-      refresh();
-    } catch (error) {
-      setActionError(extractSecurityError(error, "Failed to update user."));
-    } finally {
-      setBusy(false);
+      await actions.update(modal.user.id, request);
+      completeMutation("User updated successfully.");
+    } catch {
+      // Error is exposed by useUserActions.
     }
   }
 
-  async function onToggleActive(selectedUser: UserDto) {
-    if (!companyId || !canManageUsers || isSystemAdmin(selectedUser)) return;
-
+  async function toggleActive(user: UserDto): Promise<void> {
+    if (!guardManage(user)) return;
+    clearMessages();
     try {
-      setBusy(true);
-      setActionError(null);
-
-      await securityApi.setUserActive(
-        companyId,
-        selectedUser.id,
-        !selectedUser.isActive
-      );
-
+      await actions.setActive(user);
+      setNotice(user.isActive ? "User deactivated." : "User activated.");
       refresh();
-    } catch (error) {
-      setActionError(
-        extractSecurityError(error, "Failed to update user status.")
-      );
-    } finally {
-      setBusy(false);
+    } catch {
+      // Error is exposed by useUserActions.
     }
   }
 
-  async function submitResetPassword() {
-    if (!companyId || modal.kind !== "resetPassword" || !canManageUsers) return;
+  async function resetPassword(password: string): Promise<void> {
+    if (modal.kind !== "resetPassword" || !guardManage(modal.user)) return;
+    clearMessages();
+    try {
+      await actions.resetPassword(modal.user.id, password);
+      completeMutation("Password reset successfully.");
+    } catch {
+      // Error is exposed by useUserActions.
+    }
+  }
 
-    const password = newPassword.trim();
-
-    if (!isStrongPassword(password)) {
-      setPasswordError(
-        "Password must be at least 8 characters and include uppercase, lowercase, and a number."
-      );
+  async function linkEmployee(employeeId: string): Promise<void> {
+    if (modal.kind !== "linkEmployee" || !guardManage(modal.user)) return;
+    if (!employeeId) {
+      setLocalError("Select an employee before linking.");
       return;
     }
 
-    try {
-      setBusy(true);
-      setActionError(null);
-
-      await securityApi.resetUserPassword(companyId, modal.user.id, password);
-
-      setModal({ kind: "none" });
-    } catch (error) {
-      setActionError(extractSecurityError(error, "Failed to reset password."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitEmployeeLink() {
-    if (
-      !companyId ||
-      modal.kind !== "linkEmployee" ||
-      !selectedEmployeeId ||
-      !canManageUsers
-    ) {
-      return;
-    }
-
-    if (isSystemAdmin(modal.user)) return;
-
-    if ((modal.user as any).employeeId) {
+    if (employeeIdOf(modal.user)) {
       const confirmed = window.confirm(
-        "This user is already linked to an employee. Replace the employee link?"
+        "This user is already linked to an employee. Replace the employee link?",
       );
-
       if (!confirmed) return;
     }
 
+    clearMessages();
     try {
-      setBusy(true);
-      setActionError(null);
-
-      await securityApi.linkUserEmployee(
-        companyId,
-        modal.user.id,
-        selectedEmployeeId
-      );
-
-      setModal({ kind: "none" });
-      refresh();
-    } catch (error) {
-      setActionError(extractSecurityError(error, "Failed to link employee."));
-    } finally {
-      setBusy(false);
+      await actions.linkEmployee(modal.user.id, employeeId);
+      completeMutation("Employee linked successfully.");
+    } catch {
+      // Error is exposed by useUserActions.
     }
   }
 
-  const items = data.items ?? [];
-  const total = data.total ?? 0;
-  const page = data.page ?? filter.page;
-  const pageSize = data.pageSize ?? filter.pageSize;
+  const items = usersQuery.data.items ?? [];
+  const total = usersQuery.data.total ?? 0;
+  const page = usersQuery.data.page ?? filter.page;
+  const pageSize = usersQuery.data.pageSize ?? filter.pageSize;
   const pageCount = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
   const pageSafe = clamp(page, 1, pageCount);
+  const loading = usersQuery.loading;
+  const error = usersQuery.error || actions.error || localError;
+  const shownCountText = loading ? "Loading…" : `${items.length} shown • ${total} total`;
 
-  const canPrev = pageSafe > 1;
-  const canNext = pageSafe < pageCount;
-
-  const activeUsers = items.filter((item) => item.isActive).length;
-  const disabledUsers = items.filter((item) => !item.isActive).length;
-  const systemAdmins = items.filter(isSystemAdmin).length;
-  const linkedEmployees = items.filter((item) => Boolean((item as any).employeeId)).length;
-
-  const shownCountText = loading
-    ? "Loading…"
-    : `${items.length} shown • ${total} total`;
-
-  const showEmpty = !loading && !loadError && items.length === 0;
+  const hasActiveFilters =
+    Boolean(searchText) ||
+    Boolean(filter.role) ||
+    Boolean(filter.branchId) ||
+    Boolean(filter.storeId) ||
+    Boolean(filter.stockLocationId) ||
+    filter.isActive !== undefined ||
+    filter.pageSize !== DEFAULT_PAGE_SIZE;
 
   if (!companyId) {
     return (
       <div className="lux-page">
         <div className="lux-empty">
           <div className="lux-empty__title">No company selected</div>
-          <div className="lux-empty__hint">
-            Select a company workspace before managing users.
-          </div>
+          <div className="lux-empty__hint">Select a company workspace before managing users.</div>
         </div>
       </div>
     );
@@ -570,29 +267,19 @@ export default function UsersPage() {
 
   return (
     <div className="lux-page">
-      <div className="lux-hero">
+      <header className="lux-hero">
         <div className="lux-hero__bg" />
-
         <div className="lux-hero__content">
           <div>
             <div className="lux-kicker">Identity</div>
             <h1 className="lux-title">ERP User Management</h1>
             <p className="lux-subtitle">
-              Create employee-linked login accounts with branch, role, and
-              stock-location access.
+              Company-scoped security portal for roles, branch access, employee links, and stock-location access.
             </p>
-
             <div className="lux-ribbon" role="status" aria-live="polite">
-              <span className="lux-chip">
-                <span className="lux-dot" />
-                {shownCountText}
-              </span>
-              <span className="lux-chip">
-                Page <strong>{pageSafe}</strong> / <strong>{pageCount}</strong>
-              </span>
-              <span className="lux-chip">
-                Page size <strong>{pageSize}</strong>
-              </span>
+              <span className="lux-chip"><span className="lux-dot" />{shownCountText}</span>
+              <span className="lux-chip">Page <strong>{pageSafe}</strong> / <strong>{pageCount}</strong></span>
+              <span className="lux-chip">Scope <strong>Company</strong></span>
             </div>
           </div>
 
@@ -602,31 +289,21 @@ export default function UsersPage() {
               <input
                 id="users-search"
                 className="lux-input lux-input--search"
-                placeholder="Search users by name or email…"
+                placeholder="Search users by name, email, phone, or employee code…"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
                 disabled={busy}
               />
               <span className="lux-kbd">⌘K</span>
-
               {searchText && (
-                <button
-                  className="lux-iconBtn"
-                  type="button"
-                  onClick={() => setSearchText("")}
-                  disabled={busy}
-                  aria-label="Clear search"
-                >
-                  ×
-                </button>
+                <button className="lux-iconBtn" type="button" onClick={() => setSearchText("")} disabled={busy} aria-label="Clear search">×</button>
               )}
             </div>
-
-            {canManageUsers && (
+            {canCreate && (
               <button
                 className="lux-btn lux-btn--primary"
                 onClick={() => {
-                  setActionError(null);
+                  clearMessages();
                   setModal({ kind: "create" });
                 }}
                 disabled={busy}
@@ -637,27 +314,20 @@ export default function UsersPage() {
             )}
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="lux-kpis">
-        <KpiCard label="Users" value={total} />
-        <KpiCard label="Active" value={activeUsers} />
-        <KpiCard label="Disabled" value={disabledUsers} />
-        <KpiCard label="System Admins" value={systemAdmins} />
-        <KpiCard label="Employee Linked" value={linkedEmployees} />
-      </div>
+      <UserKpis items={items} total={total} showSystemAdmins={loggedInIsSystemAdmin} />
 
-      {(loadError || actionError) && (
+      {notice && <div className="lux-alert lux-alert--success" role="status">{notice}</div>}
+      {error && (
         <div className="lux-alert lux-alert--danger" role="alert">
           <div className="lux-alert__row">
-            <div>
-              <strong>Error:</strong> {loadError || actionError}
-            </div>
-
+            <div><strong>Error:</strong> {error}</div>
             <button
               className="lux-btn lux-btn--soft"
               onClick={() => {
-                setActionError(null);
+                clearMessages();
+                usersQuery.setError(null);
                 refresh();
               }}
               disabled={busy}
@@ -669,318 +339,83 @@ export default function UsersPage() {
         </div>
       )}
 
-      <div className="lux-card">
+      <UsersFilters
+        filter={filter}
+        setFilter={setFilter}
+        disabled={busy || loading}
+        hasActiveFilters={hasActiveFilters}
+        onReset={resetFilters}
+      />
+
+      <section className="lux-card">
         <div className="lux-card__header">
           <div>
             <div className="lux-card__title">Users</div>
             <div className="lux-card__hint">{shownCountText}</div>
           </div>
-
           <div className="lux-row">
-            {canManageUsers && (
-              <button
-                className="lux-btn lux-btn--primary"
-                onClick={() => {
-                  setActionError(null);
-                  setModal({ kind: "create" });
-                }}
-                disabled={busy}
-                type="button"
-              >
-                + New User
-              </button>
+            {canCreate && (
+              <button className="lux-btn lux-btn--primary" onClick={() => setModal({ kind: "create" })} disabled={busy} type="button">+ New User</button>
             )}
-
-            <button
-              className="lux-btn lux-btn--soft"
-              disabled={busy}
-              onClick={refresh}
-              type="button"
-            >
-              Refresh
-            </button>
+            <button className="lux-btn lux-btn--soft" disabled={busy || loading} onClick={refresh} type="button">Refresh</button>
           </div>
         </div>
 
         <div className="lux-tableWrap">
-          <div
-            className="lux-tableSurface"
-            aria-busy={loading ? "true" : "false"}
-          >
-            {showEmpty ? (
+          <div className="lux-tableSurface" aria-busy={loading}>
+            {!loading && !usersQuery.error && items.length === 0 ? (
               <div className="lux-empty">
                 <div className="lux-empty__title">No users found</div>
-                <div className="lux-empty__hint">
-                  Try a different search, or create a new user.
-                </div>
-
+                <div className="lux-empty__hint">Try a different filter, or create a new user.</div>
                 <div className="lux-empty__actions">
-                  {canManageUsers && (
-                    <button
-                      className="lux-btn lux-btn--primary"
-                      onClick={() => {
-                        setActionError(null);
-                        setModal({ kind: "create" });
-                      }}
-                      disabled={busy}
-                      type="button"
-                    >
-                      + New User
-                    </button>
-                  )}
-
-                  <button
-                    className="lux-btn"
-                    onClick={() => {
-                      setSearchText("");
-                      setFilter((current) => ({
-                        ...current,
-                        q: undefined,
-                        page: 1,
-                      }));
-                    }}
-                    disabled={busy}
-                    type="button"
-                  >
-                    Clear filters
-                  </button>
+                  {canCreate && <button className="lux-btn lux-btn--primary" onClick={() => setModal({ kind: "create" })} type="button">+ New User</button>}
+                  <button className="lux-btn" onClick={resetFilters} type="button">Clear filters</button>
                 </div>
               </div>
             ) : (
               <UsersTable
                 items={items}
-                onEdit={(selectedUser) => {
-                  setActionError(null);
-                  setModal({ kind: "edit", user: selectedUser });
-                }}
-                onToggleActive={onToggleActive}
-                onResetPassword={(selectedUser) => {
-                  setActionError(null);
-                  setModal({ kind: "resetPassword", user: selectedUser });
-                }}
-                onLinkEmployee={(selectedUser) =>
-                  !isSystemAdmin(selectedUser) &&
-                  setModal({ kind: "linkEmployee", user: selectedUser })
-                }
+                onEdit={(user) => guardManage(user) && setModal({ kind: "edit", user })}
+                onToggleActive={toggleActive}
+                onResetPassword={(user) => guardManage(user) && setModal({ kind: "resetPassword", user })}
+                onLinkEmployee={(user) => guardManage(user) && setModal({ kind: "linkEmployee", user })}
                 busy={busy}
               />
             )}
-
-            {loading && (
-              <div className="lux-veil">
-                <div className="lux-spinner" />
-                <div className="lux-muted">Loading users…</div>
-              </div>
-            )}
+            {loading && <div className="lux-veil"><div className="lux-spinner" /><div className="lux-muted">Loading users…</div></div>}
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="lux-pager" aria-label="Pagination">
-        <button
-          className="lux-btn"
-          disabled={!canPrev || busy || loading}
-          onClick={() =>
-            setFilter((current) => ({
-              ...current,
-              page: Math.max(1, current.page - 1),
-            }))
-          }
-          type="button"
-        >
-          Prev
-        </button>
-
-        <span className="lux-muted">
-          Page <strong>{pageSafe}</strong> / <strong>{pageCount}</strong>
-        </span>
-
-        <button
-          className="lux-btn"
-          disabled={!canNext || busy || loading}
-          onClick={() =>
-            setFilter((current) => ({
-              ...current,
-              page: current.page + 1,
-            }))
-          }
-          type="button"
-        >
-          Next
-        </button>
-      </div>
+      <nav className="lux-pager" aria-label="Pagination">
+        <button className="lux-btn" disabled={pageSafe <= 1 || busy || loading} onClick={() => setFilter((current) => ({ ...current, page: Math.max(1, current.page - 1) }))} type="button">Prev</button>
+        <span className="lux-muted">Page <strong>{pageSafe}</strong> / <strong>{pageCount}</strong></span>
+        <button className="lux-btn" disabled={pageSafe >= pageCount || busy || loading} onClick={() => setFilter((current) => ({ ...current, page: current.page + 1 }))} type="button">Next</button>
+      </nav>
 
       {modal.kind !== "none" && (
-        <div
-          className="lux-modalOverlay"
-          onClick={closeModal}
-          role="dialog"
-          aria-modal="true"
-        >
+        <div className="lux-modalOverlay" onClick={closeModal} role="dialog" aria-modal="true">
           <div
-            className={
-              modal.kind === "create" || modal.kind === "edit"
-                ? "lux-modal lux-modal--xl"
-                : "lux-modal lux-modal--md"
-            }
+            className={modal.kind === "create" || modal.kind === "edit" ? "lux-modal lux-modal--xl" : "lux-modal lux-modal--md"}
             onClick={(event) => event.stopPropagation()}
           >
             {busy && <div className="lux-modalBusy" />}
-
-            {actionError && (
-              <div className="lux-alert lux-alert--danger" role="alert">
-                {actionError}
-              </div>
-            )}
-
-            {modal.kind === "create" && (
-              <UserForm
-                mode="create"
-                onSubmit={onCreate}
-                onCancel={closeModal}
-                busy={busy}
-              />
-            )}
-
-            {modal.kind === "edit" && (
-              <UserForm
-                mode="edit"
-                initial={modal.user}
-                onSubmit={onEditSubmit}
-                onCancel={closeModal}
-                busy={busy}
-              />
-            )}
-
+            {modal.kind === "create" && <UserForm mode="create" onSubmit={onCreate} onCancel={closeModal} busy={busy} />}
+            {modal.kind === "edit" && <UserForm mode="edit" initial={modal.user} onSubmit={onEdit} onCancel={closeModal} busy={busy} />}
             {modal.kind === "resetPassword" && (
-              <div className="lux-resetPw">
-                <div className="lux-resetPw__title">Reset password</div>
-                <div className="lux-resetPw__subtitle">
-                  For <strong>{displayUser(modal.user)}</strong>
-                </div>
-
-                <label className="lux-label">
-                  New password
-                  <input
-                    ref={passwordInputRef}
-                    className="lux-input"
-                    type="password"
-                    value={newPassword}
-                    onChange={(event) => {
-                      setNewPassword(event.target.value);
-                      setPasswordError(null);
-                    }}
-                    placeholder="Minimum 8 characters, uppercase, lowercase, number…"
-                    disabled={busy}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !busy) {
-                        void submitResetPassword();
-                      }
-                    }}
-                  />
-                </label>
-
-                {passwordError && (
-                  <div className="lux-alert lux-alert--danger">
-                    {passwordError}
-                  </div>
-                )}
-
-                <div className="lux-row">
-                  <button
-                    className="lux-btn"
-                    onClick={closeModal}
-                    disabled={busy}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    className="lux-btn lux-btn--primary"
-                    onClick={submitResetPassword}
-                    disabled={busy || !isStrongPassword(newPassword.trim())}
-                    type="button"
-                  >
-                    Update password
-                  </button>
-                </div>
-              </div>
+              <ResetPasswordDialog user={modal.user} busy={busy} error={actions.error || localError} onCancel={closeModal} onSubmit={resetPassword} />
             )}
-
             {modal.kind === "linkEmployee" && (
-              <div className="lux-resetPw">
-                <div className="lux-resetPw__title">Link user to employee</div>
-                <div className="lux-resetPw__subtitle">
-                  User: <strong>{displayUser(modal.user)}</strong>
-                </div>
-
-                <label className="lux-label">
-                  Search employee
-                  <input
-                    className="lux-input"
-                    value={employeeSearch}
-                    onChange={(event) => setEmployeeSearch(event.target.value)}
-                    placeholder="Search by employee name or code…"
-                    disabled={busy}
-                  />
-                </label>
-
-                <label className="lux-label">
-                  Employee
-                  <select
-                    className="lux-input"
-                    value={selectedEmployeeId}
-                    onChange={(event) =>
-                      setSelectedEmployeeId(event.target.value)
-                    }
-                    disabled={busy || employeesLoading}
-                  >
-                    <option value="">
-                      {employeesLoading
-                        ? "Loading employees…"
-                        : "— Select employee —"}
-                    </option>
-
-                    {employeeOptions.map((employee) => (
-                      <option key={employee.id} value={employee.id}>
-                        {employee.employeeCode
-                          ? `${employee.employeeCode} · `
-                          : ""}
-                        {employee.fullName}
-                        {employee.departmentName
-                          ? ` · ${employee.departmentName}`
-                          : ""}
-                        {employee.branchName ? ` · ${employee.branchName}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="lux-row">
-                  <button
-                    className="lux-btn"
-                    onClick={closeModal}
-                    disabled={busy}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    className="lux-btn lux-btn--primary"
-                    onClick={submitEmployeeLink}
-                    disabled={busy || !selectedEmployeeId}
-                    type="button"
-                  >
-                    Link employee
-                  </button>
-                </div>
-
-                <div className="lux-hint">
-                  SystemAdmin users cannot be linked to employees from this screen.
-                </div>
-              </div>
+              <LinkEmployeeDialog
+                user={modal.user}
+                options={employeeQuery.items}
+                loading={employeeQuery.loading}
+                busy={busy}
+                error={actions.error || localError}
+                onSearch={setEmployeeSearch}
+                onCancel={closeModal}
+                onSubmit={linkEmployee}
+              />
             )}
           </div>
         </div>

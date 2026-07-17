@@ -1,5 +1,5 @@
 import type { MenuItemDto } from "../types/posTypes";
-import { Button, Card, Spinner } from "./posUi";
+import { Button, Card, money, Spinner } from "./posUi";
 
 function badge(
   text: string,
@@ -225,7 +225,7 @@ export function MenuGrid({
                     fontSize: 16,
                   }}
                 >
-                  ${item.sellingPrice.toFixed(2)}
+                  {money(item.sellingPrice)}
                 </strong>
 
                 <Button

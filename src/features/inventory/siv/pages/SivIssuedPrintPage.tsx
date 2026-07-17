@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { sivApi } from "../api/sivApi";
-import { mapToVm, fmtDate, fmtQty, getApiError, type SivVm } from "../types/sivTypes";
+import {
+  mapToVm,
+  normalizeStatus,
+  fmtDate,
+  fmtQty,
+  getApiError,
+  type SivVm,
+} from "../types/sivTypes";
 
 export default function SivIssuedPrintPage() {
   const { companyId = "", sivId = "", id = "" } = useParams();
@@ -20,7 +27,16 @@ export default function SivIssuedPrintPage() {
         setLoading(true); setErr("");
         const raw = await sivApi.getById(companyId, documentId);
         if (!active) return;
-        setDoc(mapToVm(raw.data));
+        const vm = mapToVm(raw);
+        const status = normalizeStatus(vm.docStatus);
+
+        if (status !== "Issued" && status !== "Posted") {
+          setErr("The SIV can only be printed after stock has been issued.");
+          setDoc(null);
+          return;
+        }
+
+        setDoc(vm);
       } catch (e) {
         if (active) setErr(getApiError(e, "Failed to load SIV."));
       } finally {
@@ -32,8 +48,13 @@ export default function SivIssuedPrintPage() {
   }, [companyId, documentId]);
 
   const totalQty = useMemo(
-    () => (doc?.lines ?? []).reduce((s, l) => s + l.qty, 0),
-    [doc]
+    () =>
+      (doc?.lines ?? []).reduce(
+        (sum, line) =>
+          sum + (line.issuedQty > 0 ? line.issuedQty : line.approvedQty ?? 0),
+        0,
+      ),
+    [doc],
   );
 
   if (loading) {
@@ -183,7 +204,7 @@ export default function SivIssuedPrintPage() {
               <th style={{ width: 40 }}>#</th>
               <th>Item</th>
               <th style={{ width: 80 }}>UOM</th>
-              <th style={{ width: 80 }} className="num">Qty</th>
+              <th style={{ width: 90 }} className="num">Issued Qty</th>
               <th style={{ width: 110 }}>Batch</th>
               <th style={{ width: 100 }}>Expiry</th>
               <th>Remarks</th>
@@ -203,7 +224,11 @@ export default function SivIssuedPrintPage() {
                 <td style={{ fontWeight: 600 }}>{line.itemName || "—"}</td>
                 <td>{line.uomCode || line.uomName || "—"}</td>
                 <td className="num" style={{ fontWeight: 600 }}>
-                  {fmtQty(line.qty)}
+                  {fmtQty(
+                    line.issuedQty > 0
+                      ? line.issuedQty
+                      : line.approvedQty ?? 0,
+                  )}
                 </td>
                 <td>{line.batchNo || "—"}</td>
                 <td>{line.expiryDate ? fmtDate(line.expiryDate) : "—"}</td>

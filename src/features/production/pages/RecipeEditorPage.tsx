@@ -10,7 +10,7 @@ import type { InventoryItemLite, UomLite } from "../api/lookups";
 import type { MenuItemLite, RecipeDto, UpsertRecipeRequest } from "../types";
 import ProductionWorkflowBar from "../components/ProductionWorkflowBar";
 import { RecipeCostingPanel } from "../components/RecipeCostingPanel";
-import "../production.css";
+import "../layout/production.css";
 
 type RecipeMode = "directSale" | "production";
 
@@ -267,7 +267,7 @@ export default function RecipeEditorPage() {
   }, [companyId, branchId, ingredientSearch]);
 
   useEffect(() => {
-    if (!companyId || !effectiveMenuItemId) return;
+    if (!companyId || !branchId || !effectiveMenuItemId) return;
     let cancelled = false;
 
     setError(null);
@@ -320,6 +320,7 @@ export default function RecipeEditorPage() {
   };
 
   function validate(): string | null {
+    if (!branchId) return "Branch is required before editing recipes.";
     if (!effectiveMenuItemId) return "Menu item is required.";
 
     if (recipeMode === "production") {
@@ -327,12 +328,14 @@ export default function RecipeEditorPage() {
       if (!outputUomId) return "Output UOM is required for production recipes.";
     }
 
-    if (!rows.length) return "Add at least one ingredient line.";
+    const activeRows = rows.filter((x) => x.isActive);
+    if (!activeRows.length) return "Add at least one active ingredient line.";
 
     const seen = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      if (!row.isActive) continue;
       const label = `Ingredient line ${i + 1}`;
 
       if (!row.itemId) return `${label}: ingredient is required.`;
@@ -389,7 +392,7 @@ export default function RecipeEditorPage() {
           qtyPerMenuUnit: Number(row.qtyStr),
           wastePct: Number(row.wastePctStr),
           isActive: row.isActive,
-          notes: row.notes ?? null,
+          notes: row.notes?.trim() || null,
         })),
       };
 
@@ -415,6 +418,11 @@ export default function RecipeEditorPage() {
   function goToBatch() {
     if (!effectiveMenuItemId) {
       setError("Select or save a menu item first.");
+      return;
+    }
+
+    if (!branchId) {
+      setError("Select a branch before creating production batches.");
       return;
     }
 

@@ -1,18 +1,32 @@
-﻿import { useCallback, useEffect, useState } from "react";
+// src/features/organization/hooks/useStores.ts
+
+import { useCallback, useEffect, useState } from "react";
+
 import { orgApi } from "../api/orgApi";
 import type { StoreDto } from "../types";
 
-export function useStores(
-  companyId: string | null,
-  branchId?: string | null
-) {
+function getErrorMessage(error: unknown, fallback = "Failed to load stores."): string {
+  if (error instanceof Error && error.message) return error.message;
+
+  const e = error as {
+    response?: { data?: { message?: string; title?: string } | string };
+    message?: string;
+  };
+
+  if (typeof e?.response?.data === "string") return e.response.data;
+
+  return e?.response?.data?.message ?? e?.response?.data?.title ?? e?.message ?? fallback;
+}
+
+export function useStores(companyId: string | null, branchId?: string | null) {
   const [items, setItems] = useState<StoreDto[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<void> => {
     if (!companyId) {
       setItems([]);
+      setError(null);
       return;
     }
 
@@ -20,19 +34,14 @@ export function useStores(
     setError(null);
 
     try {
-      const res = await orgApi.listStores(
-        companyId,
-        branchId,
-        {
-          page: 1,
-          pageSize: 500,
-        }
-      );
-
-      setItems((res.data.items ?? []) as StoreDto[]);
+      const response = await orgApi.listStores(companyId, branchId, {
+        page: 1,
+        pageSize: 500,
+      });
+      setItems((response.data.items ?? []) as StoreDto[]);
     } catch (err) {
-      setError(err);
       setItems([]);
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -42,10 +51,5 @@ export function useStores(
     void refresh();
   }, [refresh]);
 
-  return {
-    items,
-    loading,
-    error,
-    refresh,
-  };
+  return { items, loading, error, refresh };
 }

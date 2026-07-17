@@ -1,12 +1,9 @@
 // src/modules/company/onboarding/steps/CompanyStep.tsx
-//
 // ERP-grade company onboarding step.
-// Fixes:
-// - After registering a new company, the new company is selected immediately.
-// - Parent wizard receives the created company after local selection is completed.
-// - Save state is always closed with SAVE_SUCCESS or SAVE_ERROR.
-// - Prevents branch step from receiving an empty companyId.
-// - Keeps existing companies configurable inline.
+// Security rules:
+// - SystemAdmin only: create/switch companies.
+// - CompanyAdmin/SystemAdmin: edit selected company profile/settings according to granular permissions.
+// - Branch-level users: read-only company context only.
 
 import { useEffect, useMemo, useState } from "react";
 import type React from "react";
@@ -16,7 +13,6 @@ import type {
   CompanySettingsDto,
   CreateCompanyDto,
 } from "../../types/company.types";
-
 import { onboardingApi } from "../api/onboardingApi";
 import {
   COSTING_OPTIONS,
@@ -24,15 +20,8 @@ import {
   DEFAULT_SETTINGS,
   TIMEZONE_OPTIONS,
 } from "../state/onboarding.constants";
-import type {
-  FieldErrors,
-  OnboardingAction,
-} from "../state/onboarding.types";
-import {
-  extractApiError,
-  trimOrNull,
-} from "../utils/onboarding.utils";
-
+import type { FieldErrors, OnboardingAction } from "../state/onboarding.types";
+import { extractApiError, trimOrNull } from "../utils/onboarding.utils";
 import {
   Alert,
   Btn,
@@ -44,7 +33,30 @@ import {
   Toggle,
 } from "../components/company.ui";
 
-interface CompanyFormData {
+type CompanyStepAccess = {
+  /** Platform-only. Tenant users should normally receive false. */
+  canCreateCompany: boolean;
+  /** Platform-only. Tenant users should normally receive false. */
+  canSwitchCompany: boolean;
+  /** Company profile fields: legal name, TIN, address, contact. */
+  canEditCompanyProfile: boolean;
+  /** Fiscal/default settings: currency, timezone, costing, stock policy. */
+  canEditCompanySettings: boolean;
+};
+
+type Props = {
+  companies: CompanyDto[];
+  existing: CompanyDto | null;
+  defaultSettings: CompanySettingsDto;
+  saving: boolean;
+  access: CompanyStepAccess;
+  onSelected: (companyId: string) => void;
+  onCreated: (company: CompanyDto) => Promise<void> | void;
+  onSaved: (settings: CompanySettingsDto) => void;
+  dispatch: React.Dispatch<OnboardingAction>;
+};
+
+type CompanyFormData = {
   legalName: string;
   tradeName: string;
   tinNumber: string;
@@ -57,7 +69,7 @@ interface CompanyFormData {
   addressLine: string;
   defaultCurrency: string;
   timezone: string;
-}
+};
 
 const EMPTY_FORM: CompanyFormData = {
   legalName: "",
@@ -74,31 +86,29 @@ const EMPTY_FORM: CompanyFormData = {
   timezone: "Africa/Addis_Ababa",
 };
 
-function getCompanyId(company: Partial<CompanyDto> | null | undefined): string {
-  const value = company as any;
+function idOf(value: any): string {
   return String(value?.id ?? value?.companyId ?? value?.Id ?? "").trim();
 }
 
 function dtoToForm(company: CompanyDto): CompanyFormData {
-  const value = company as any;
-
+  const x = company as any;
   return {
-    legalName: value.legalName ?? "",
-    tradeName: value.tradeName ?? "",
-    tinNumber: value.tinNumber ?? "",
-    businessRegistrationNumber: value.businessRegistrationNumber ?? "",
-    vatNumber: value.vatNumber ?? "",
-    phone: value.phone ?? "",
-    email: value.email ?? "",
-    country: value.country ?? "Ethiopia",
-    city: value.city ?? "Addis Ababa",
-    addressLine: value.addressLine ?? "",
-    defaultCurrency: value.defaultCurrency ?? "ETB",
-    timezone: value.timezone ?? "Africa/Addis_Ababa",
+    legalName: String(x.legalName ?? x.name ?? ""),
+    tradeName: String(x.tradeName ?? ""),
+    tinNumber: String(x.tinNumber ?? ""),
+    businessRegistrationNumber: String(x.businessRegistrationNumber ?? ""),
+    vatNumber: String(x.vatNumber ?? ""),
+    phone: String(x.phone ?? ""),
+    email: String(x.email ?? ""),
+    country: String(x.country ?? "Ethiopia"),
+    city: String(x.city ?? "Addis Ababa"),
+    addressLine: String(x.addressLine ?? ""),
+    defaultCurrency: String(x.defaultCurrency ?? "ETB"),
+    timezone: String(x.timezone ?? "Africa/Addis_Ababa"),
   };
 }
 
-function formToPayload(form: CompanyFormData): CreateCompanyDto {
+function toPayload(form: CompanyFormData): CreateCompanyDto {
   return {
     legalName: form.legalName.trim(),
     tradeName: trimOrNull(form.tradeName),
@@ -115,781 +125,282 @@ function formToPayload(form: CompanyFormData): CreateCompanyDto {
   } as CreateCompanyDto;
 }
 
-function validateCompanyForm(
-  form: CompanyFormData,
-  setErrors: (errors: FieldErrors) => void,
-): boolean {
+function validateProfile(form: CompanyFormData, setErrors: (e: FieldErrors) => void) {
   const errors: FieldErrors = {};
-
-  if (!form.legalName.trim()) {
-    errors.legalName = "Legal name is required.";
-  }
-
-  if (!form.defaultCurrency.trim()) {
-    errors.defaultCurrency = "Currency is required.";
-  }
-
-  if (!form.timezone.trim()) {
-    errors.timezone = "Timezone is required.";
-  }
-
+  if (!form.legalName.trim()) errors.legalName = "Legal name is required.";
+  if (!form.defaultCurrency.trim()) errors.defaultCurrency = "Default currency is required.";
+  if (!form.timezone.trim()) errors.timezone = "Timezone is required.";
   setErrors(errors);
   return Object.keys(errors).length === 0;
 }
 
-function statusBadge(status?: string | null) {
-  switch (String(status ?? "").toLowerCase()) {
-    case "active":
-      return {
-        label: "Active",
-        cls: "ob-badge ob-badge--success",
-      };
-
-    case "pending":
-      return {
-        label: "Pending",
-        cls: "ob-badge ob-badge--warn",
-      };
-
-    case "draft":
-      return {
-        label: "Draft",
-        cls: "ob-badge ob-badge--warn",
-      };
-
-    default:
-      return {
-        label: status || "—",
-        cls: "ob-badge",
-      };
-  }
+function badgeFor(status: unknown) {
+  const value = String(status ?? "").toLowerCase();
+  if (value === "active") return "ob-badge ob-badge--success";
+  if (value === "draft" || value === "pending") return "ob-badge ob-badge--warn";
+  return "ob-badge";
 }
 
-export function CompanyStep(props: {
-  companies: CompanyDto[];
-  existing: CompanyDto | null;
-  defaultSettings: CompanySettingsDto;
-  saving: boolean;
-  onSelected: (companyId: string) => void;
-  onCreated: (company: CompanyDto) => Promise<void> | void;
-  onSaved: (settings: CompanySettingsDto) => void;
-  dispatch: React.Dispatch<OnboardingAction>;
-}) {
-  const activeId = useMemo(
-    () => getCompanyId(props.existing),
-    [props.existing],
+function ReadonlyRow(props: { label: string; value?: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <span style={{ color: "#94a3b8", fontSize: 12 }}>{props.label}</span>
+      <strong style={{ color: "#334155", fontSize: 13 }}>{props.value || "—"}</strong>
+    </div>
   );
+}
+
+function SettingsEditor(props2: { value: CompanySettingsDto; onChange: (next: CompanySettingsDto) => void; disabled?: boolean }) {
+  const s = props2.value as any;
+  const change = (patch: Partial<CompanySettingsDto>) => props2.onChange({ ...props2.value, ...patch });
+  return (
+    <>
+      <SectionTitle title="Fiscal and costing defaults" subtitle="These defaults are used by inventory, POS posting, and reports." />
+      <div className="ob-grid-2">
+        <Field label="Default currency">
+          <SelectInput value={String(s.defaultCurrency ?? "ETB")} onChange={(v) => change({ defaultCurrency: v } as any)} options={CURRENCY_OPTIONS as any} disabled={props2.disabled as any} />
+        </Field>
+        <Field label="Timezone">
+          <SelectInput value={String(s.timezone ?? "Africa/Addis_Ababa")} onChange={(v) => change({ timezone: v } as any)} options={TIMEZONE_OPTIONS as any} disabled={props2.disabled as any} />
+        </Field>
+        <Field label="Costing method">
+          <SelectInput value={String(s.costingMethod ?? "FIFO")} onChange={(v) => change({ costingMethod: v } as any)} options={COSTING_OPTIONS as any} disabled={props2.disabled as any} />
+        </Field>
+        <Field label="Allow negative stock">
+          <Toggle checked={Boolean(s.allowNegativeStock)} onChange={(v) => change({ allowNegativeStock: v } as any)} disabled={props2.disabled as any} />
+        </Field>
+      </div>
+    </>
+  );
+}
+
+function CompanyFields(props2: { value: CompanyFormData; errors: FieldErrors; onChange: (next: CompanyFormData) => void; disabled?: boolean }) {
+  const f = props2.value;
+  const set = (patch: Partial<CompanyFormData>) => props2.onChange({ ...f, ...patch });
+  return (
+    <div className="ob-grid-2">
+      <Field label="Legal name" required error={props2.errors.legalName}><Input value={f.legalName} onChange={(v) => set({ legalName: v })} placeholder="Company legal name" disabled={props2.disabled as any} /></Field>
+      <Field label="Trade name"><Input value={f.tradeName} onChange={(v) => set({ tradeName: v })} placeholder="Brand / trade name" disabled={props2.disabled as any} /></Field>
+      <Field label="TIN"><Input value={f.tinNumber} onChange={(v) => set({ tinNumber: v })} disabled={props2.disabled as any} /></Field>
+      <Field label="Business registration no."><Input value={f.businessRegistrationNumber} onChange={(v) => set({ businessRegistrationNumber: v })} disabled={props2.disabled as any} /></Field>
+      <Field label="VAT no."><Input value={f.vatNumber} onChange={(v) => set({ vatNumber: v })} disabled={props2.disabled as any} /></Field>
+      <Field label="Phone"><Input value={f.phone} onChange={(v) => set({ phone: v })} disabled={props2.disabled as any} /></Field>
+      <Field label="Email"><Input value={f.email} onChange={(v) => set({ email: v })} disabled={props2.disabled as any} /></Field>
+      <Field label="Country"><Input value={f.country} onChange={(v) => set({ country: v })} disabled={props2.disabled as any} /></Field>
+      <Field label="City"><Input value={f.city} onChange={(v) => set({ city: v })} disabled={props2.disabled as any} /></Field>
+      <Field label="Address"><Input value={f.addressLine} onChange={(v) => set({ addressLine: v })} disabled={props2.disabled as any} /></Field>
+    </div>
+  );
+}
+
+function CompanyReadonly(props2: { company: CompanyDto; defaultSettings: CompanySettingsDto }) {
+  const x = props2.company as any;
+  return (
+    <div className="ob-inner-card-body" style={{ borderTop: "1px solid #e2e8f0" }}>
+      <SectionTitle title="Company information" subtitle="Read-only tenant context for your current ERP session." />
+      <div className="ob-grid-2">
+        <ReadonlyRow label="Legal name" value={x.legalName ?? x.name} />
+        <ReadonlyRow label="Trade name" value={x.tradeName} />
+        <ReadonlyRow label="TIN" value={x.tinNumber} />
+        <ReadonlyRow label="VAT no." value={x.vatNumber} />
+        <ReadonlyRow label="Phone" value={x.phone} />
+        <ReadonlyRow label="Email" value={x.email} />
+        <ReadonlyRow label="City" value={x.city} />
+        <ReadonlyRow label="Currency" value={x.defaultCurrency ?? (props2.defaultSettings as any)?.defaultCurrency ?? "ETB"} />
+      </div>
+    </div>
+  );
+}
+
+export function CompanyStep(props: Props) {
+  const activeId = useMemo(() => idOf(props.existing), [props.existing]);
+  const canEditAnything = props.access.canEditCompanyProfile || props.access.canEditCompanySettings;
+
+  const visibleCompanies = useMemo(() => {
+    if (props.access.canSwitchCompany) return props.companies;
+    return props.companies.filter((company) => idOf(company) === activeId);
+  }, [activeId, props.access.canSwitchCompany, props.companies]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
   const [editForm, setEditForm] = useState<CompanyFormData>({ ...EMPTY_FORM });
-  const [editSettings, setEditSettings] = useState<CompanySettingsDto>({
-    ...props.defaultSettings,
-  });
+  const [editSettings, setEditSettings] = useState<CompanySettingsDto>({ ...props.defaultSettings });
   const [editErrors, setEditErrors] = useState<FieldErrors>({});
   const [editSaving, setEditSaving] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState<CompanyFormData>({
-    ...EMPTY_FORM,
-  });
-  const [createSettings, setCreateSettings] = useState<CompanySettingsDto>({
-    ...DEFAULT_SETTINGS,
-  });
+  const [createForm, setCreateForm] = useState<CompanyFormData>({ ...EMPTY_FORM });
+  const [createSettings, setCreateSettings] = useState<CompanySettingsDto>({ ...DEFAULT_SETTINGS });
   const [createErrors, setCreateErrors] = useState<FieldErrors>({});
   const [createSaving, setCreateSaving] = useState(false);
 
   useEffect(() => {
-    if (props.companies.length === 0) {
-      setShowCreate(true);
-    }
-  }, [props.companies.length]);
+    if (props.access.canCreateCompany && props.companies.length === 0) setShowCreate(true);
+    if (!props.access.canCreateCompany) setShowCreate(false);
+  }, [props.access.canCreateCompany, props.companies.length]);
+
+  useEffect(() => {
+    setEditSettings({ ...props.defaultSettings });
+  }, [props.defaultSettings]);
 
   function openEdit(company: CompanyDto) {
-    setExpandedId(getCompanyId(company));
+    if (!canEditAnything) return;
+    setExpandedId(idOf(company));
     setEditForm(dtoToForm(company));
     setEditSettings({ ...props.defaultSettings });
     setEditErrors({});
   }
 
-  function closeEdit() {
-    setExpandedId(null);
-    setEditErrors({});
-  }
-
-  async function selectCompany(companyId: string) {
-    if (!companyId) {
-      props.dispatch({
-        type: "SAVE_ERROR",
-        error: "Company was saved, but the server did not return a valid company id.",
-      });
-      return;
-    }
-
-    props.onSelected(companyId);
-  }
-
   async function saveEdit(companyId: string) {
-    if (!companyId) {
-      props.dispatch({
-        type: "SAVE_ERROR",
-        error: "Invalid company selection.",
-      });
+    if (!canEditAnything) {
+      props.dispatch({ type: "SAVE_ERROR", error: "You are not authorized to configure this company." });
       return;
     }
 
-    if (!validateCompanyForm(editForm, setEditErrors)) {
-      return;
-    }
+    if (!companyId) return;
+    if (props.access.canEditCompanyProfile && !validateProfile(editForm, setEditErrors)) return;
 
     setEditSaving(true);
     props.dispatch({ type: "SAVE_START" });
 
     try {
-      await onboardingApi.updateCompany(companyId, formToPayload(editForm) as any);
+      let savedSettings: CompanySettingsDto | null = null;
 
-      const savedSettings = await onboardingApi.upsertCompanySettings(
-        companyId,
-        editSettings,
-      );
+      if (props.access.canEditCompanyProfile) {
+        await onboardingApi.updateCompany(companyId, toPayload(editForm) as any);
+      }
 
-      closeEdit();
-      props.onSaved(savedSettings);
+      if (props.access.canEditCompanySettings) {
+        savedSettings = await onboardingApi.upsertCompanySettings(companyId, editSettings);
+        props.onSaved(savedSettings);
+      }
+
+      setExpandedId(null);
       props.dispatch({
         type: "SAVE_SUCCESS",
-        notice: "Company updated successfully.",
+        notice: savedSettings ? "Company profile and settings updated." : "Company profile updated.",
       });
     } catch (err) {
-      props.dispatch({
-        type: "SAVE_ERROR",
-        error: extractApiError(err, "Failed to update company."),
-      });
+      props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to update company.") });
     } finally {
       setEditSaving(false);
     }
   }
 
   async function createCompany() {
-    if (!validateCompanyForm(createForm, setCreateErrors)) {
+    if (!props.access.canCreateCompany) {
+      props.dispatch({ type: "SAVE_ERROR", error: "Only a SystemAdmin can register a new company." });
       return;
     }
+
+    if (!validateProfile(createForm, setCreateErrors)) return;
 
     setCreateSaving(true);
     props.dispatch({ type: "SAVE_START" });
 
     try {
-      const created = (await onboardingApi.createCompany(
-        formToPayload(createForm),
-      )) as CompanyDto;
+      const created = await onboardingApi.createCompany(toPayload(createForm));
+      const companyId = idOf(created);
+      if (!companyId) throw new Error("Company was created but the API did not return a company id.");
 
-      const companyId = getCompanyId(created);
+      const savedSettings = await onboardingApi.upsertCompanySettings(companyId, createSettings).catch(() => null);
 
-      if (!companyId) {
-        throw new Error("Company was created, but the API response did not include company id.");
-      }
-
-      const savedSettings = await onboardingApi
-        .upsertCompanySettings(companyId, createSettings)
-        .catch(() => null);
-
-      // Critical fix:
-      // Select the company first so Branch step receives a non-empty companyId.
-      await selectCompany(companyId);
-
-      if (savedSettings) {
-        props.onSaved(savedSettings);
-      }
+      props.onSelected(companyId);
+      if (savedSettings) props.onSaved(savedSettings);
+      await props.onCreated(created as CompanyDto);
 
       setCreateForm({ ...EMPTY_FORM });
       setCreateSettings({ ...DEFAULT_SETTINGS });
       setCreateErrors({});
       setShowCreate(false);
-      setExpandedId(null);
-
-      await props.onCreated(created);
-
-      props.dispatch({
-        type: "SAVE_SUCCESS",
-        notice: "Company registered successfully. Continue with branch setup.",
-      });
+      props.dispatch({ type: "SAVE_SUCCESS", notice: "Company registered. Continue with branch setup." });
     } catch (err) {
-      props.dispatch({
-        type: "SAVE_ERROR",
-        error: extractApiError(err, "Failed to create company."),
-      });
+      props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to create company.") });
     } finally {
       setCreateSaving(false);
     }
   }
 
+  function selectCompany(companyId: string) {
+    if (!props.access.canSwitchCompany) {
+      props.dispatch({ type: "SAVE_ERROR", error: "Your role cannot switch companies." });
+      return;
+    }
+    props.onSelected(companyId);
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {props.companies.length === 0 && !showCreate && (
-        <EmptyState
-          title="No companies found"
-          sub="Use the form below to register the first company."
-        />
+      {!canEditAnything && (
+        <Alert tone="warn" title="Company administration is locked" message="Your role can operate inside assigned branches only. Company registration, switching, and configuration are restricted." />
       )}
 
-      {props.companies.map((company) => {
-        const companyId = getCompanyId(company);
-        const value = company as any;
-        const isActive = companyId === activeId;
-        const isExpanded = expandedId === companyId;
-        const badge = statusBadge(value.status);
+      {visibleCompanies.length === 0 && !showCreate && (
+        <EmptyState title="No company available" sub={props.access.canCreateCompany ? "Register the company before branch setup." : "Your account is not assigned to a company in this tenant."} />
+      )}
 
+      {visibleCompanies.map((company) => {
+        const companyId = idOf(company);
+        const x = company as any;
+        const active = companyId === activeId;
+        const expanded = expandedId === companyId;
         return (
-          <div
-            key={companyId}
-            style={{
-              border: isActive ? "1.5px solid #6366f1" : "1px solid #e2e8f0",
-              borderRadius: 12,
-              background: isActive ? "#f5f3ff" : "#fff",
-              overflow: "hidden",
-              transition: "border-color 0.15s",
-            }}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "auto 1fr auto",
-                alignItems: "center",
-                gap: 12,
-                padding: "12px 16px",
-              }}
-            >
-              <div
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  flexShrink: 0,
-                  background: isActive ? "#6366f1" : "#e2e8f0",
-                  border: isActive
-                    ? "2px solid #a5b4fc"
-                    : "2px solid #e2e8f0",
-                }}
-              />
-
-              <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: "#0f172a",
-                    }}
-                  >
-                    {company.legalName}
-                  </span>
-
-                  {value.tradeName && (
-                    <span style={{ fontSize: 11, color: "#64748b" }}>
-                      ({value.tradeName})
-                    </span>
-                  )}
-
-                  <span className={badge.cls}>{badge.label}</span>
-
-                  {isActive && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: "#6366f1",
-                        background: "#ede9fe",
-                        padding: "1px 7px",
-                        borderRadius: 999,
-                        border: "1px solid #c4b5fd",
-                      }}
-                    >
-                      Active
-                    </span>
-                  )}
+          <div key={companyId} className="ob-inner-card" style={{ borderColor: active ? "#6366f1" : undefined }}>
+            <div className="ob-inner-card-body" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 12, alignItems: "center" }}>
+              <div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <strong>{x.legalName ?? x.name}</strong>
+                  {x.tradeName && <span style={{ color: "#64748b", fontSize: 12 }}>({x.tradeName})</span>}
+                  <span className={badgeFor(x.status)}>{x.status ?? (x.isActive === false ? "Inactive" : "Active")}</span>
+                  {active && <span className="ob-badge ob-badge--success">Selected</span>}
                 </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 14,
-                    marginTop: 4,
-                    flexWrap: "wrap",
-                    fontSize: 11,
-                    color: "#94a3b8",
-                  }}
-                >
-                  {value.defaultCurrency && <span>{value.defaultCurrency}</span>}
-                  {value.city && <span>{value.city}</span>}
-                  {value.tinNumber && <span>TIN: {value.tinNumber}</span>}
-                  {value.businessRegistrationNumber && (
-                    <span>Reg: {value.businessRegistrationNumber}</span>
-                  )}
-                </div>
+                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>{x.city ?? "—"} · {x.defaultCurrency ?? (props.defaultSettings as any)?.defaultCurrency ?? "ETB"}</div>
               </div>
 
-              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                {!isActive && (
-                  <Btn
-                    variant="primary"
-                    onClick={() => void selectCompany(companyId)}
-                    disabled={props.saving || editSaving || createSaving}
-                    style={{ padding: "5px 12px", fontSize: 12, minHeight: 30 }}
-                  >
-                    Select
-                  </Btn>
-                )}
+              {props.access.canSwitchCompany ? (
+                <Btn variant="ghost" onClick={() => selectCompany(companyId)} disabled={!companyId || active}>Use company</Btn>
+              ) : (
+                <span className="ob-badge">Company locked</span>
+              )}
 
-                <Btn
-                  variant="ghost"
-                  onClick={() => (isExpanded ? closeEdit() : openEdit(company))}
-                  disabled={editSaving || createSaving}
-                  style={{ padding: "5px 12px", fontSize: 12, minHeight: 30 }}
-                >
-                  {isExpanded ? "Close" : "Configure"}
-                </Btn>
-              </div>
+              {canEditAnything ? (
+                <Btn variant="ghost" onClick={() => (expanded ? setExpandedId(null) : openEdit(company))}>{expanded ? "Close" : "Configure"}</Btn>
+              ) : null}
             </div>
 
-            {isExpanded && (
-              <div
-                style={{
-                  borderTop: "1px solid #e2e8f0",
-                  background: "#f8fafc",
-                  padding: "20px 16px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 20,
-                }}
-              >
-                {Object.values(editErrors)
-                  .filter(Boolean)
-                  .map((message, index) => (
-                    <Alert
-                      key={index}
-                      tone="danger"
-                      title="Validation"
-                      message={message!}
-                    />
-                  ))}
-
-                <IdentityFields
-                  form={editForm}
-                  onChange={setEditForm}
-                  errors={editErrors}
-                />
-                <ContactFields form={editForm} onChange={setEditForm} />
-                <FiscalFields
-                  form={editForm}
-                  onChange={setEditForm}
-                  errors={editErrors}
-                />
-
-                <SectionTitle
-                  title="Operational settings"
-                  subtitle="VAT and inventory costing applied across all branches"
-                />
-
-                <SettingsFields
-                  settings={editSettings}
-                  onChange={setEditSettings}
-                />
-
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    paddingTop: 4,
-                  }}
-                >
-                  <Btn variant="ghost" onClick={closeEdit} disabled={editSaving}>
-                    Discard
-                  </Btn>
-
-                  <Btn
-                    variant="primary"
-                    onClick={() => void saveEdit(companyId)}
-                    disabled={editSaving}
-                  >
-                    {editSaving ? "Saving…" : "Save changes"}
-                  </Btn>
+            {expanded && canEditAnything && (
+              <div className="ob-inner-card-body" style={{ borderTop: "1px solid #e2e8f0", display: "flex", flexDirection: "column", gap: 16 }}>
+                {Object.values(editErrors).filter(Boolean).map((m) => <Alert key={m} tone="danger" title="Validation" message={m!} />)}
+                <CompanyFields value={editForm} errors={editErrors} onChange={setEditForm} disabled={!props.access.canEditCompanyProfile} />
+                <SettingsEditor value={editSettings} onChange={setEditSettings} disabled={!props.access.canEditCompanySettings} />
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <Btn variant="primary" onClick={() => void saveEdit(companyId)} disabled={editSaving || props.saving}>{editSaving ? "Saving…" : "Save company"}</Btn>
                 </div>
               </div>
             )}
+
+            {!canEditAnything && active && <CompanyReadonly company={company} defaultSettings={props.defaultSettings} />}
           </div>
         );
       })}
 
-      <div
-        style={{
-          border: "1px dashed #cbd5e1",
-          borderRadius: 12,
-          overflow: "hidden",
-          background: "#fff",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setShowCreate((current) => !current)}
-          disabled={createSaving}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 16px",
-            background: "none",
-            border: "none",
-            cursor: createSaving ? "not-allowed" : "pointer",
-            borderBottom: showCreate ? "1px solid #e2e8f0" : "none",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                background: "#f0fdf4",
-                border: "1px solid #bbf7d0",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 16,
-                color: "#16a34a",
-                flexShrink: 0,
-              }}
-            >
-              +
-            </span>
-
-            <div style={{ textAlign: "left" }}>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: "#0f172a",
-                }}
-              >
-                Register new company
-              </div>
-
-              <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>
-                Create a new tenant with its own branches, inventory, and users
+      {props.access.canCreateCompany && (
+        <div className="ob-inner-card">
+          <button type="button" onClick={() => setShowCreate((x) => !x)} style={{ width: "100%", padding: 14, border: "none", background: "transparent", textAlign: "left", cursor: "pointer" }}>
+            <strong>{showCreate ? "Close company form" : "+ Register company"}</strong>
+            <div style={{ color: "#64748b", fontSize: 12, marginTop: 3 }}>Platform-only tenant identity, fiscal defaults, and ERP baseline settings.</div>
+          </button>
+          {showCreate && (
+            <div className="ob-inner-card-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {Object.values(createErrors).filter(Boolean).map((m) => <Alert key={m} tone="danger" title="Validation" message={m!} />)}
+              <CompanyFields value={createForm} errors={createErrors} onChange={setCreateForm} />
+              <SettingsEditor value={createSettings} onChange={setCreateSettings} />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <Btn variant="primary" onClick={() => void createCompany()} disabled={createSaving || props.saving}>{createSaving ? "Registering…" : "Register company"}</Btn>
               </div>
             </div>
-          </div>
-
-          <span style={{ fontSize: 12, color: "#94a3b8" }}>
-            {showCreate ? "▲" : "▼"}
-          </span>
-        </button>
-
-        {showCreate && (
-          <div
-            style={{
-              padding: "20px 16px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 20,
-            }}
-          >
-            {Object.values(createErrors)
-              .filter(Boolean)
-              .map((message, index) => (
-                <Alert
-                  key={index}
-                  tone="danger"
-                  title="Validation"
-                  message={message!}
-                />
-              ))}
-
-            <IdentityFields
-              form={createForm}
-              onChange={setCreateForm}
-              errors={createErrors}
-            />
-            <ContactFields form={createForm} onChange={setCreateForm} />
-            <FiscalFields
-              form={createForm}
-              onChange={setCreateForm}
-              errors={createErrors}
-            />
-
-            <SectionTitle
-              title="Operational settings"
-              subtitle="VAT and inventory costing applied across all branches"
-            />
-
-            <SettingsFields
-              settings={createSettings}
-              onChange={setCreateSettings}
-            />
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                paddingTop: 4,
-              }}
-            >
-              <Btn
-                variant="primary"
-                onClick={() => void createCompany()}
-                disabled={props.saving || createSaving}
-              >
-                {props.saving || createSaving
-                  ? "Registering…"
-                  : "Register company"}
-              </Btn>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function IdentityFields(props: {
-  form: CompanyFormData;
-  onChange: React.Dispatch<React.SetStateAction<CompanyFormData>>;
-  errors: FieldErrors;
-}) {
-  const set = (patch: Partial<CompanyFormData>) =>
-    props.onChange((current) => ({ ...current, ...patch }));
-
-  return (
-    <div>
-      <SectionTitle
-        title="Company identity"
-        subtitle="Legal registration and tax details"
-      />
-
-      <div className="ob-grid-2" style={{ marginTop: 12 }}>
-        <Field label="Legal name" required hint={props.errors.legalName}>
-          <Input
-            value={props.form.legalName}
-            onChange={(value) => set({ legalName: value })}
-            placeholder="e.g. Dako Restaurant PLC"
-          />
-        </Field>
-
-        <Field
-          label="Trade / brand name"
-          hint="Operating name if different from legal name"
-        >
-          <Input
-            value={props.form.tradeName}
-            onChange={(value) => set({ tradeName: value })}
-            placeholder="e.g. Dako Restaurant"
-          />
-        </Field>
-
-        <Field label="TIN" hint="Tax Identification Number">
-          <Input
-            value={props.form.tinNumber}
-            onChange={(value) => set({ tinNumber: value })}
-            placeholder="e.g. 0012345678"
-          />
-        </Field>
-
-        <Field label="Business Registration No." hint="From the trade bureau">
-          <Input
-            value={props.form.businessRegistrationNumber}
-            onChange={(value) =>
-              set({ businessRegistrationNumber: value })
-            }
-            placeholder="e.g. AA/BN/12345/2023"
-          />
-        </Field>
-
-        <Field label="VAT Registration No." hint="Leave blank if not VAT-registered">
-          <Input
-            value={props.form.vatNumber}
-            onChange={(value) => set({ vatNumber: value })}
-            placeholder="e.g. ETH-VAT-00001"
-          />
-        </Field>
-      </div>
-    </div>
-  );
-}
-
-function ContactFields(props: {
-  form: CompanyFormData;
-  onChange: React.Dispatch<React.SetStateAction<CompanyFormData>>;
-}) {
-  const set = (patch: Partial<CompanyFormData>) =>
-    props.onChange((current) => ({ ...current, ...patch }));
-
-  return (
-    <div>
-      <SectionTitle
-        title="Contact & location"
-        subtitle="Registered address and contact details"
-      />
-
-      <div className="ob-grid-2" style={{ marginTop: 12 }}>
-        <Field label="Country">
-          <Input
-            value={props.form.country}
-            onChange={(value) => set({ country: value })}
-            placeholder="Ethiopia"
-          />
-        </Field>
-
-        <Field label="City">
-          <Input
-            value={props.form.city}
-            onChange={(value) => set({ city: value })}
-            placeholder="Addis Ababa"
-          />
-        </Field>
-
-        <Field label="Phone">
-          <Input
-            value={props.form.phone}
-            onChange={(value) => set({ phone: value })}
-            placeholder="+251 911 000 000"
-            type="tel"
-          />
-        </Field>
-
-        <Field label="Email">
-          <Input
-            value={props.form.email}
-            onChange={(value) => set({ email: value })}
-            placeholder="info@company.com"
-            type="email"
-          />
-        </Field>
-      </div>
-
-      <div style={{ marginTop: 12 }}>
-        <Field label="Address line">
-          <Input
-            value={props.form.addressLine}
-            onChange={(value) => set({ addressLine: value })}
-            placeholder="Street / Building / Sub-city / Woreda"
-          />
-        </Field>
-      </div>
-    </div>
-  );
-}
-
-function FiscalFields(props: {
-  form: CompanyFormData;
-  onChange: React.Dispatch<React.SetStateAction<CompanyFormData>>;
-  errors: FieldErrors;
-}) {
-  const set = (patch: Partial<CompanyFormData>) =>
-    props.onChange((current) => ({ ...current, ...patch }));
-
-  return (
-    <div>
-      <SectionTitle
-        title="Fiscal configuration"
-        subtitle="Currency and timezone affect all reports and documents"
-      />
-
-      <div className="ob-grid-2" style={{ marginTop: 12 }}>
-        <Field
-          label="Default currency"
-          required
-          hint={props.errors.defaultCurrency}
-        >
-          <SelectInput
-            value={props.form.defaultCurrency}
-            onChange={(value) =>
-              set({ defaultCurrency: value.toUpperCase() })
-            }
-            options={CURRENCY_OPTIONS}
-          />
-        </Field>
-
-        <Field label="Timezone" required hint={props.errors.timezone}>
-          <SelectInput
-            value={props.form.timezone}
-            onChange={(value) => set({ timezone: value })}
-            options={TIMEZONE_OPTIONS}
-          />
-        </Field>
-      </div>
-    </div>
-  );
-}
-
-function SettingsFields(props: {
-  settings: CompanySettingsDto;
-  onChange: (settings: CompanySettingsDto) => void;
-}) {
-  const settings = props.settings as any;
-
-  const set = (patch: Partial<CompanySettingsDto>) =>
-    props.onChange({
-      ...props.settings,
-      ...patch,
-    });
-
-  return (
-    <div className="ob-inner-card">
-      <div
-        className="ob-inner-card-body"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-        }}
-      >
-        <div className="ob-toggle-row">
-          <div>
-            <div className="ob-toggle-row__title">VAT enabled</div>
-            <div className="ob-toggle-row__sub">
-              Apply VAT to sales and invoices
-            </div>
-          </div>
-
-          <Toggle
-            checked={Boolean(settings.vatEnabled)}
-            onChange={(value) => set({ vatEnabled: value } as any)}
-          />
+          )}
         </div>
-
-        <div className="ob-grid-2">
-          <Field label="VAT rate (%)" hint="e.g. 15 for 15%">
-            <Input
-              type="number"
-              value={String(
-                settings.vatRate != null
-                  ? Math.round(Number(settings.vatRate) * 100)
-                  : 0,
-              )}
-              onChange={(value) =>
-                set({
-                  vatRate: (Number.parseFloat(value) || 0) / 100,
-                } as any)
-              }
-              placeholder="15"
-            />
-          </Field>
-
-          <Field label="Costing method">
-            <SelectInput
-              value={String(settings.costingMethod ?? "FIFO")}
-              onChange={(value) => set({ costingMethod: value } as any)}
-              options={COSTING_OPTIONS}
-            />
-          </Field>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

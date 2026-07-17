@@ -1,6 +1,7 @@
 // src/modules/security/hooks/useUsers.ts
 
 import { useCallback, useEffect, useState } from "react";
+
 import { securityApi } from "../api/securityApi";
 import {
   extractSecurityError,
@@ -8,7 +9,37 @@ import {
   toUserDetail,
   toUserRow,
 } from "../utils/security.utils";
+
 import type { UserDetailDto, UserRowDto } from "../types/security.types";
+
+function normalizeRoleValue(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeUserRoles<T extends any>(user: T): T {
+  const rawRoles = (user as any)?.roles ?? [];
+
+  if (!Array.isArray(rawRoles)) return user;
+
+  return {
+    ...(user as any),
+    roles: rawRoles
+      .map((role) => {
+        if (typeof role === "string") return normalizeRoleValue(role);
+
+        return {
+          ...role,
+          value: normalizeRoleValue(
+            role.value ?? role.normalizedName ?? role.name
+          ),
+          normalizedName: normalizeRoleValue(
+            role.normalizedName ?? role.value ?? role.name
+          ),
+        };
+      })
+      .filter(Boolean),
+  };
+}
 
 export function useUsers(companyId?: string | null) {
   const [users, setUsers] = useState<UserRowDto[]>([]);
@@ -20,6 +51,7 @@ export function useUsers(companyId?: string | null) {
       if (!companyId) {
         setUsers([]);
         setError(null);
+        setLoading(false);
         return;
       }
 
@@ -31,7 +63,7 @@ export function useUsers(companyId?: string | null) {
 
         if (signal?.aborted) return;
 
-        setUsers(rows.map(toUserRow));
+        setUsers(rows.map(normalizeUserRoles).map(toUserRow));
       } catch (e) {
         if (signal?.aborted || isCancelled(e)) return;
 
@@ -54,11 +86,16 @@ export function useUsers(companyId?: string | null) {
     return () => controller.abort();
   }, [load]);
 
+  const refresh = useCallback(() => {
+    void load();
+  }, [load]);
+
   return {
     users,
     loading,
     error,
-    refresh: () => load(),
+    refresh,
+    reload: refresh,
   };
 }
 
@@ -72,6 +109,7 @@ export function useUser(companyId?: string | null, userId?: string | null) {
       if (!companyId || !userId) {
         setUser(null);
         setError(null);
+        setLoading(false);
         return;
       }
 
@@ -79,15 +117,11 @@ export function useUser(companyId?: string | null, userId?: string | null) {
       setError(null);
 
       try {
-        const data = await securityApi.getUserById(
-          companyId,
-          userId,
-          signal
-        );
+        const data = await securityApi.getUserById(companyId, userId, signal);
 
         if (signal?.aborted) return;
 
-        setUser(toUserDetail(data));
+        setUser(toUserDetail(normalizeUserRoles(data)));
       } catch (e) {
         if (signal?.aborted || isCancelled(e)) return;
 
@@ -110,10 +144,15 @@ export function useUser(companyId?: string | null, userId?: string | null) {
     return () => controller.abort();
   }, [load]);
 
+  const refresh = useCallback(() => {
+    void load();
+  }, [load]);
+
   return {
     user,
     loading,
     error,
-    refresh: () => load(),
+    refresh,
+    reload: refresh,
   };
 }

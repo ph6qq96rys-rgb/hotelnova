@@ -1,11 +1,14 @@
 // src/features/production/pages/MenuCategoriesPage.tsx
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppScope } from "../../../app/useAppScope";
 import ProductionWorkflowBar from "../components/ProductionWorkflowBar";
-import { menuCategoriesApi, type UpsertMenuCategoryRequest } from "../api/menuCategoriesApi";
+import {
+  menuCategoriesApi,
+  type UpsertMenuCategoryRequest,
+} from "../api/menuCategoriesApi";
 import type { MenuCategoryDto, StockLocationDto } from "../types";
-import "../production.css";
+import "../layout/production.css";
 
 function normalizeList<T>(res: T[] | { items?: T[] } | null | undefined): T[] {
   if (!res) return [];
@@ -15,29 +18,37 @@ function normalizeList<T>(res: T[] | { items?: T[] } | null | undefined): T[] {
 function extractApiError(e: unknown, fallback = "Request failed."): string {
   const err = e as any;
   const data = err?.response?.data;
+
   if (!data) return err?.message ?? fallback;
   if (typeof data === "string") return data;
+
   return data?.message ?? data?.title ?? err?.message ?? fallback;
 }
 
-function emptyForm() {
+type FormState = {
+  id: string;
+  name: string;
+  code: string;
+  isActive: boolean;
+  defaultConsumptionBranchStockLocationId: string;
+};
+
+function createEmptyForm(): FormState {
   return {
     id: "",
     name: "",
     code: "",
     isActive: true,
-    defaultConsumptionLocationId: "",
+    defaultConsumptionBranchStockLocationId: "",
   };
 }
-
-type FormState = ReturnType<typeof emptyForm>;
 
 export default function MenuCategoriesPage() {
   const { companyId, branchId } = useAppScope();
 
   const [categories, setCategories] = useState<MenuCategoryDto[]>([]);
   const [locations, setLocations] = useState<StockLocationDto[]>([]);
-  const [form, setForm] = useState<FormState>(emptyForm());
+  const [form, setForm] = useState<FormState>(() => createEmptyForm());
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -47,46 +58,59 @@ export default function MenuCategoriesPage() {
   const editing = Boolean(form.id);
 
   const sortedCategories = useMemo(
-    () => [...categories].sort((a, b) => a.name.localeCompare(b.name)),
+    () =>
+      [...categories].sort((a, b) =>
+        (a.name ?? "").localeCompare(b.name ?? "")
+      ),
     [categories]
   );
 
-  const canSave = Boolean(
-    companyId &&
-      branchId &&
-      form.name.trim() &&
-      !saving
+  const activeConsumptionLocations = useMemo(
+    () =>
+      [...locations]
+        .filter((x) => x.isActive !== false)
+        .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")),
+    [locations]
   );
 
-  async function load() {
-    if (!companyId || !branchId) return;
+  const canSave = Boolean(
+    companyId && branchId && form.name.trim() && !saving && !loading
+  );
+
+  const reset = useCallback(() => {
+    setForm(createEmptyForm());
+    setError(null);
+    setNotice(null);
+  }, []);
+
+  const load = useCallback(async () => {
+    if (!companyId || !branchId) {
+      setCategories([]);
+      setLocations([]);
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const [catRes, locRes] = await Promise.all([
+      const [categoryResult, locationResult] = await Promise.all([
         menuCategoriesApi.list(companyId, branchId),
         menuCategoriesApi.listStockLocations(companyId, branchId),
       ]);
 
-      setCategories(normalizeList<MenuCategoryDto>(catRes));
-      setLocations(
-        normalizeList<StockLocationDto>(locRes)
-          .filter((x) => x.isActive !== false)
-          .sort((a, b) => a.name.localeCompare(b.name))
-      );
+      setCategories(normalizeList<MenuCategoryDto>(categoryResult));
+      setLocations(normalizeList<StockLocationDto>(locationResult));
     } catch (e) {
       setError(extractApiError(e, "Failed to load menu categories."));
     } finally {
       setLoading(false);
     }
-  }
+  }, [companyId, branchId]);
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, branchId]);
+  }, [load]);
 
   function edit(row: MenuCategoryDto) {
     setNotice(null);
@@ -97,14 +121,9 @@ export default function MenuCategoriesPage() {
       name: row.name ?? "",
       code: row.code ?? "",
       isActive: row.isActive !== false,
-      defaultConsumptionLocationId: row.defaultConsumptionLocationId ?? "",
+      defaultConsumptionBranchStockLocationId:
+        row.defaultConsumptionBranchStockLocationId ?? "",
     });
-  }
-
-  function reset() {
-    setForm(emptyForm());
-    setError(null);
-    setNotice(null);
   }
 
   async function save() {
@@ -116,7 +135,8 @@ export default function MenuCategoriesPage() {
       name: form.name.trim(),
       code: form.code.trim() || null,
       isActive: form.isActive,
-      defaultConsumptionLocationId: form.defaultConsumptionLocationId || null,
+      defaultConsumptionBranchStockLocationId:
+        form.defaultConsumptionBranchStockLocationId || null,
     };
 
     setSaving(true);
@@ -132,7 +152,7 @@ export default function MenuCategoriesPage() {
         setNotice("Menu category created.");
       }
 
-      reset();
+      setForm(createEmptyForm());
       await load();
     } catch (e) {
       setError(extractApiError(e, "Failed to save menu category."));
@@ -161,31 +181,46 @@ export default function MenuCategoriesPage() {
           <p className="p-kicker">Menu Configuration</p>
           <h1 className="p-title">Menu Categories</h1>
           <p className="p-subtitle">
-            Configure category defaults such as Kitchen, Bar, Coffee Bar, or Bakery consumption locations.
-            Menu items inherit these defaults unless individually overridden.
+            Configure category defaults such as Kitchen, Bar, Coffee Bar, or
+            Bakery consumption locations. Menu items inherit these defaults
+            unless individually overridden.
           </p>
         </div>
 
-        <button className="p-btn p-btn--outline" onClick={() => void load()} disabled={loading || saving}>
-          Refresh
+        <button
+          className="p-btn p-btn--outline"
+          onClick={() => void load()}
+          disabled={loading || saving}
+        >
+          {loading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
 
       {error && (
         <div className="p-alert p-alert--error">
           <span className="p-alert__body">{error}</span>
-          <button className="p-dismiss" onClick={() => setError(null)}>✕</button>
+          <button className="p-dismiss" onClick={() => setError(null)}>
+            ✕
+          </button>
         </div>
       )}
 
       {notice && (
         <div className="p-alert p-alert--success">
           <span className="p-alert__body">{notice}</span>
-          <button className="p-dismiss" onClick={() => setNotice(null)}>✕</button>
+          <button className="p-dismiss" onClick={() => setNotice(null)}>
+            ✕
+          </button>
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 16 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "420px 1fr",
+          gap: 16,
+        }}
+      >
         <div className="p-card">
           <div className="p-card__head">
             <div>
@@ -193,11 +228,15 @@ export default function MenuCategoriesPage() {
                 {editing ? "Edit Category" : "Create Category"}
               </p>
               <p className="p-card__subtitle">
-                Assign a default stock location for POS consumption.
+                Assign the branch consumption location used for POS COGS.
               </p>
             </div>
 
-            <span className={`p-badge ${form.isActive ? "p-badge--active" : "p-badge--inactive"}`}>
+            <span
+              className={`p-badge ${
+                form.isActive ? "p-badge--active" : "p-badge--inactive"
+              }`}
+            >
               {form.isActive ? "Active" : "Inactive"}
             </span>
           </div>
@@ -208,7 +247,9 @@ export default function MenuCategoriesPage() {
               <input
                 className="p-input"
                 value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, name: e.target.value }))
+                }
                 disabled={saving}
                 placeholder="e.g. Foods, Drinks, Coffee"
               />
@@ -219,34 +260,42 @@ export default function MenuCategoriesPage() {
               <input
                 className="p-input"
                 value={form.code}
-                onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, code: e.target.value }))
+                }
                 disabled={saving}
                 placeholder="Optional"
               />
             </div>
 
             <div className="p-field">
-              <label className="p-field__label">Default Consumption Location</label>
+              <label className="p-field__label">
+                Default Consumption Location
+              </label>
+
               <select
                 className="p-select"
-                value={form.defaultConsumptionLocationId}
+                value={form.defaultConsumptionBranchStockLocationId}
                 onChange={(e) =>
                   setForm((p) => ({
                     ...p,
-                    defaultConsumptionLocationId: e.target.value,
+                    defaultConsumptionBranchStockLocationId: e.target.value,
                   }))
                 }
-                disabled={saving}
+                disabled={saving || loading}
               >
                 <option value="">No default location</option>
-                {locations.map((loc) => (
+
+                {activeConsumptionLocations.map((loc) => (
                   <option key={loc.id} value={loc.id}>
                     {loc.code ? `${loc.name} (${loc.code})` : loc.name}
                   </option>
                 ))}
               </select>
+
               <span className="p-field__hint">
-                Example: Foods → Kitchen, Drinks → Bar, Coffee → Coffee Bar.
+                This value must be the branch stock location assignment ID, not
+                the global stock location ID.
               </span>
             </div>
 
@@ -254,7 +303,9 @@ export default function MenuCategoriesPage() {
               <input
                 type="checkbox"
                 checked={form.isActive}
-                onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, isActive: e.target.checked }))
+                }
                 disabled={saving}
               />
               <span>Active</span>
@@ -262,11 +313,24 @@ export default function MenuCategoriesPage() {
           </div>
 
           <div className="p-card__footer">
-            <button className="p-btn p-btn--outline" onClick={reset} disabled={saving}>
+            <button
+              className="p-btn p-btn--outline"
+              onClick={reset}
+              disabled={saving}
+            >
               Clear
             </button>
-            <button className="p-btn p-btn--accent p-btn--lg" onClick={save} disabled={!canSave}>
-              {saving ? "Saving..." : editing ? "Update Category" : "Create Category"}
+
+            <button
+              className="p-btn p-btn--accent p-btn--lg"
+              onClick={() => void save()}
+              disabled={!canSave}
+            >
+              {saving
+                ? "Saving..."
+                : editing
+                ? "Update Category"
+                : "Create Category"}
             </button>
           </div>
         </div>
@@ -276,15 +340,21 @@ export default function MenuCategoriesPage() {
             <div>
               <p className="p-card__title">Configured Categories</p>
               <p className="p-card__subtitle">
-                Category default locations are inherited by menu items and used by POS COGS posting.
+                Category default locations are inherited by menu items and used
+                by POS COGS posting.
               </p>
             </div>
-            <span className="p-badge">{sortedCategories.length} Categories</span>
+
+            <span className="p-badge">
+              {sortedCategories.length} Categories
+            </span>
           </div>
 
           <div className="p-card__body">
             {loading ? (
-              <div style={{ color: "var(--p-text-muted)", padding: 24 }}>Loading categories...</div>
+              <div style={{ color: "var(--p-text-muted)", padding: 24 }}>
+                Loading categories...
+              </div>
             ) : sortedCategories.length === 0 ? (
               <div style={{ color: "var(--p-text-muted)", padding: 24 }}>
                 No categories configured yet.
@@ -298,7 +368,7 @@ export default function MenuCategoriesPage() {
                       <th>Code</th>
                       <th>Default Consumption Location</th>
                       <th>Status</th>
-                      <th style={{ width: 120 }}></th>
+                      <th style={{ width: 120 }} />
                     </tr>
                   </thead>
 
@@ -319,12 +389,22 @@ export default function MenuCategoriesPage() {
                           )}
                         </td>
                         <td>
-                          <span className={`p-badge ${row.isActive === false ? "p-badge--inactive" : "p-badge--active"}`}>
+                          <span
+                            className={`p-badge ${
+                              row.isActive === false
+                                ? "p-badge--inactive"
+                                : "p-badge--active"
+                            }`}
+                          >
                             {row.isActive === false ? "Inactive" : "Active"}
                           </span>
                         </td>
                         <td>
-                          <button className="p-btn p-btn--outline" onClick={() => edit(row)} disabled={saving}>
+                          <button
+                            className="p-btn p-btn--outline"
+                            onClick={() => edit(row)}
+                            disabled={saving}
+                          >
                             Edit
                           </button>
                         </td>
@@ -337,8 +417,10 @@ export default function MenuCategoriesPage() {
 
             <div className="p-alert p-alert--warning" style={{ marginTop: 16 }}>
               <span className="p-alert__body">
-                ERP rule: configure defaults at category level first. Use item-level override only when a specific
-                menu item consumes from a different branch stock location.
+                ERP rule: configure branch-level consumption defaults at the
+                category level first. Use item-level override only when a
+                specific menu item consumes from a different branch stock
+                location.
               </span>
             </div>
           </div>

@@ -2,11 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { RefreshCcw } from "lucide-react";
+import { RefreshCcw, ShieldAlert } from "lucide-react";
 
 import { useAppContext } from "../../../app/AppContext";
 import { useAppScope } from "../../../app/useAppScope";
-import type { BranchDto, CompanyDto } from "../types/company.types";
+import type {
+  BranchDto,
+  CompanyDto,
+  CompanySettingsDto,
+} from "../types/company.types";
 
 import { onboardingApi, type OnboardingSnapshotDto } from "./api/onboardingApi";
 import { CompanyStep } from "./steps/CompanyStep";
@@ -24,11 +28,258 @@ import { extractApiError, upsertById } from "./utils/onboarding.utils";
 
 import { Alert, WizardRail } from "./components/company.ui";
 import "./company-onboarding.css";
-import type {
-  CompanySettingsDto,
-} from "../types/company.types";
+
+type RoleName = string;
+
+type OnboardingReadiness = Record<
+  WizardStepKey,
+  {
+    done: boolean;
+    locked: boolean;
+  }
+>;
+
+type CompanyStepAccess = {
+  canCreateCompany: boolean;
+  canSwitchCompany: boolean;
+  canEditCompanyProfile: boolean;
+  canEditCompanySettings: boolean;
+};
+
+type BranchStepAccess = {
+  canCreateBranch: boolean;
+  canEditBranch: boolean;
+  canDeleteBranch: boolean;
+  canViewAllBranches: boolean;
+  assignedBranchIds: string[];
+};
+
 function idOf(value: unknown): string {
-  return String((value as any)?.id ?? (value as any)?.Id ?? "").trim();
+  const item = value as any;
+
+  return String(
+    item?.id ??
+      item?.companyId ??
+      item?.branchId ??
+      item?.Id ??
+      item?.CompanyId ??
+      item?.BranchId ??
+      "",
+  ).trim();
+}
+
+function normalizeKey(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/[\s_-]+/g, "")
+    .toLowerCase();
+}
+
+function readJwtPayload(token: string | null): any | null {
+  if (!token) return null;
+
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(window.atob(normalized));
+  } catch {
+    return null;
+  }
+}
+
+function getStoredToken(app: any): string | null {
+  return (
+    app?.token ??
+    app?.accessToken ??
+    app?.auth?.token ??
+    app?.auth?.accessToken ??
+    localStorage.getItem("accessToken") ??
+    localStorage.getItem("token") ??
+    localStorage.getItem("jwt")
+  );
+}
+
+function collectRoleValues(target: string[], value: unknown): void {
+  if (!value) return;
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      collectRoleValues(target, parsed);
+    } catch {
+      target.push(value);
+    }
+
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((x) => collectRoleValues(target, x));
+    return;
+  }
+
+  if (typeof value === "object") {
+    const x = value as any;
+
+    collectRoleValues(
+      target,
+      x.name ??
+        x.roleName ??
+        x.role ??
+        x.value ??
+        x.key ??
+        x.normalizedName ??
+        x.type,
+    );
+  }
+}
+
+function getCurrentRoles(app: any, scope: any): RoleName[] {
+  const roles: string[] = [];
+  const token = getStoredToken(app);
+  const claims = readJwtPayload(token);
+
+  [
+    app?.role,
+    app?.roleName,
+    app?.roles,
+    app?.userRoles,
+    app?.user?.role,
+    app?.user?.roleName,
+    app?.user?.roles,
+    app?.currentUser?.role,
+    app?.currentUser?.roleName,
+    app?.currentUser?.roles,
+    app?.auth?.role,
+    app?.auth?.roleName,
+    app?.auth?.roles,
+    app?.authUser?.role,
+    app?.authUser?.roleName,
+    app?.authUser?.roles,
+    scope?.role,
+    scope?.roleName,
+    scope?.roles,
+    scope?.user?.role,
+    scope?.user?.roleName,
+    scope?.user?.roles,
+    claims?.role,
+    claims?.roles,
+    claims?.Role,
+    claims?.Roles,
+    claims?.[
+      "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+    ],
+    localStorage.getItem("roles"),
+    localStorage.getItem("userRoles"),
+  ].forEach((source) => collectRoleValues(roles, source));
+
+  return Array.from(new Set(roles.map((x) => x.trim()).filter(Boolean)));
+}
+
+function getCurrentCompanyId(app: any, scope: any, paramsCompanyId?: string): string {
+  const token = getStoredToken(app);
+  const claims = readJwtPayload(token);
+
+  return String(
+    paramsCompanyId ??
+      scope?.companyId ??
+      scope?.company?.id ??
+      app?.companyId ??
+      app?.activeCompanyId ??
+      app?.company?.id ??
+      app?.activeCompany?.id ??
+      app?.user?.companyId ??
+      app?.currentUser?.companyId ??
+      app?.authUser?.companyId ??
+      claims?.companyId ??
+      claims?.CompanyId ??
+      claims?.company_id ??
+      claims?.tenant_company_id ??
+      "",
+  ).trim();
+}
+
+function getCurrentBranchId(app: any, scope: any, paramsBranchId?: string): string | null {
+  const token = getStoredToken(app);
+  const claims = readJwtPayload(token);
+
+  const value = String(
+    paramsBranchId ??
+      scope?.branchId ??
+      scope?.branch?.id ??
+      app?.branchId ??
+      app?.activeBranchId ??
+      app?.branch?.id ??
+      app?.activeBranch?.id ??
+      claims?.branchId ??
+      claims?.BranchId ??
+      claims?.branch_id ??
+      "",
+  ).trim();
+
+  return value || null;
+}
+
+function collectBranchIds(...sources: unknown[]): string[] {
+  const values: string[] = [];
+
+  for (const source of sources) {
+    if (!source) continue;
+
+    if (Array.isArray(source)) {
+      for (const item of source) {
+        if (typeof item === "string") {
+          values.push(item);
+          continue;
+        }
+
+        if (item && typeof item === "object") {
+          const x = item as any;
+          values.push(
+            String(x.id ?? x.branchId ?? x.BranchId ?? x.value ?? x.key ?? ""),
+          );
+        }
+      }
+
+      continue;
+    }
+
+    if (typeof source === "string") {
+      values.push(source);
+    }
+  }
+
+  return Array.from(new Set(values.map((x) => x.trim()).filter(Boolean)));
+}
+
+function getAssignedBranchIds(app: any, scope: any): string[] {
+  return collectBranchIds(
+    app?.assignedBranchIds,
+    app?.branchIds,
+    app?.user?.assignedBranchIds,
+    app?.user?.branchIds,
+    app?.user?.branches,
+    app?.currentUser?.assignedBranchIds,
+    app?.currentUser?.branchIds,
+    app?.currentUser?.branches,
+    app?.auth?.assignedBranchIds,
+    app?.authUser?.assignedBranchIds,
+    scope?.assignedBranchIds,
+    scope?.branchIds,
+    scope?.branches,
+    scope?.user?.assignedBranchIds,
+    scope?.user?.branchIds,
+    scope?.user?.branches,
+    app?.branchId,
+    scope?.branchId,
+  );
+}
+
+function hasRole(roles: RoleName[], role: string): boolean {
+  const expected = normalizeKey(role);
+  return roles.some((x) => normalizeKey(x) === expected);
 }
 
 function companyIdOf(company: CompanyDto | null | undefined): string {
@@ -36,7 +287,7 @@ function companyIdOf(company: CompanyDto | null | undefined): string {
 }
 
 function companyNameOf(company: CompanyDto | null | undefined): string | null {
-  return company?.legalName ?? null;
+  return company?.legalName ?? (company as any)?.name ?? null;
 }
 
 function branchNameOf(branch: BranchDto | null | undefined): string | null {
@@ -51,7 +302,9 @@ function branchLabel(branch: BranchDto | null | undefined): string {
 }
 
 function companyOnboardingPath(companyId?: string | null): string {
-  return companyId ? `/companies/${companyId}/onboarding` : "/companies/onboarding";
+  return companyId
+    ? `/companies/${companyId}/onboarding`
+    : "/companies/onboarding";
 }
 
 function branchOnboardingPath(companyId: string, branchId: string): string {
@@ -65,57 +318,123 @@ function companyDashboardPath(companyId: string): string {
 function buildSnapshotPatch(
   snapshot: OnboardingSnapshotDto,
   companyId: string,
-  requestedBranchId?: string | null
+  requestedBranchId?: string | null,
 ) {
   const branches = snapshot.branches ?? [];
 
-  const activeBranchId =
-    requestedBranchId ||
-    idOf(snapshot.activeBranch) ||
-    idOf(branches.find((branch) => (branch as any).isMain)) ||
-    idOf(branches[0]) ||
-    null;
+  const requestedBranch = requestedBranchId
+    ? branches.find((branch) => idOf(branch) === requestedBranchId)
+    : null;
 
   const activeBranch =
+    requestedBranch ??
     snapshot.activeBranch ??
-    branches.find((branch) => idOf(branch) === activeBranchId) ??
     branches.find((branch) => (branch as any).isMain) ??
     branches[0] ??
     null;
+
+  const activeBranchId = idOf(activeBranch) || null;
 
   return {
     companyId,
     company: snapshot.company,
     settings: snapshot.settings ?? undefined,
-
     branches,
     branchId: activeBranchId,
     branch: activeBranch,
-
     stockLocations: snapshot.stockLocations ?? [],
     stores: snapshot.stores ?? [],
     members: snapshot.users ?? [],
-
     readiness: snapshot.readiness ?? {},
   };
+}
+
+function AccessDeniedCard() {
+  return (
+    <div className="ob-page">
+      <div className="ob-card" style={{ maxWidth: 760, margin: "48px auto" }}>
+        <div className="ob-card-header">
+          <div
+            className="ob-card-title"
+            style={{ display: "flex", alignItems: "center", gap: 10 }}
+          >
+            <ShieldAlert size={20} /> Access denied
+          </div>
+          <div className="ob-card-subtitle">
+            Company onboarding is restricted to Company Administrators and
+            platform System Administrators.
+          </div>
+        </div>
+
+        <div className="ob-card-body">
+          <Alert
+            tone="danger"
+            title="Organization setup is admin-only"
+            message="Your current role can operate inside assigned branches, but it cannot create companies, create branches, switch companies, or run the onboarding wizard."
+          />
+
+          <div style={{ marginTop: 16 }}>
+            <Link className="ob-btn ob-btn--ghost" to="/">
+              Back to dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function CompanyOnboardingModule() {
   const navigate = useNavigate();
   const params = useParams<{ companyId?: string; branchId?: string }>();
 
-  const app = useAppContext();
-  const scope = useAppScope();
+  const app = useAppContext() as any;
+  const scope = useAppScope() as any;
+
+  const roles = useMemo(() => getCurrentRoles(app, scope), [app, scope]);
+  const assignedBranchIds = useMemo(
+    () => getAssignedBranchIds(app, scope),
+    [app, scope],
+  );
+
+  const isSystemAdmin = hasRole(roles, "SystemAdmin");
+  const isCompanyAdmin = hasRole(roles, "CompanyAdmin");
+  const isBranchAdmin = hasRole(roles, "BranchAdmin");
+
+  const canManageOrganization = isSystemAdmin || isCompanyAdmin;
 
   const initialCompanyId =
-    params.companyId ||
-    scope.companyId ||
-    app.companyId ||
-    undefined;
+    getCurrentCompanyId(app, scope, params.companyId) || undefined;
+
+  const initialBranchId = getCurrentBranchId(app, scope, params.branchId);
+
+  const companyAccess: CompanyStepAccess = useMemo(
+    () => ({
+      canCreateCompany: isSystemAdmin,
+      canSwitchCompany: isSystemAdmin,
+      canEditCompanyProfile: isSystemAdmin || isCompanyAdmin,
+      canEditCompanySettings: isSystemAdmin || isCompanyAdmin,
+    }),
+    [isSystemAdmin, isCompanyAdmin],
+  );
+
+  const branchAccess: BranchStepAccess = useMemo(
+    () => ({
+      canCreateBranch: isCompanyAdmin,
+      canEditBranch: isCompanyAdmin || isBranchAdmin,
+      canDeleteBranch: isCompanyAdmin,
+      canViewAllBranches: isSystemAdmin || isCompanyAdmin,
+      assignedBranchIds,
+    }),
+    [assignedBranchIds, isBranchAdmin, isCompanyAdmin, isSystemAdmin],
+  );
+
+  const canSwitchBranch =
+    branchAccess.canViewAllBranches || assignedBranchIds.length > 0;
 
   const [state, dispatch] = useReducer(
     onboardingReducer,
-    createInitialOnboardingState(initialCompanyId, initialCompanyId)
+    createInitialOnboardingState(initialCompanyId, initialCompanyId),
   );
 
   const [companies, setCompanies] = useState<CompanyDto[]>([]);
@@ -123,17 +442,19 @@ export default function CompanyOnboardingModule() {
 
   const activeIndex = Math.max(
     0,
-    ONBOARDING_STEPS.findIndex((step) => step.key === state.active)
+    ONBOARDING_STEPS.findIndex((step) => step.key === state.active),
   );
 
   const activeBranch = useMemo((): BranchDto | null => {
     if (state.branch) return state.branch;
     if (!state.branchId) return null;
 
-    return state.branches.find((branch) => idOf(branch) === state.branchId) ?? null;
+    return (
+      state.branches.find((branch) => idOf(branch) === state.branchId) ?? null
+    );
   }, [state.branch, state.branchId, state.branches]);
 
-  const readiness = useMemo(() => {
+  const readiness: OnboardingReadiness = useMemo(() => {
     const hasCompany = Boolean(state.companyId);
     const hasBranch = Boolean(state.branchId);
     const hasStockLocations = state.stockLocations.length > 0;
@@ -143,30 +464,31 @@ export default function CompanyOnboardingModule() {
     return {
       company: {
         done: hasCompany,
-        locked: false,
+        locked: !canManageOrganization,
       },
       branch: {
         done: hasBranch,
-        locked: !hasCompany,
+        locked: !canManageOrganization || !hasCompany,
       },
       locations: {
         done: hasStockLocations,
-        locked: !hasBranch,
+        locked: !canManageOrganization || !hasBranch,
       },
       stores: {
         done: hasStores,
-        locked: !hasBranch,
+        locked: !canManageOrganization || !hasBranch,
       },
       users: {
         done: hasBranchAdmin,
-        locked: !hasBranch,
+        locked: !canManageOrganization || !hasBranch,
       },
       review: {
         done: hasCompany && hasBranch && hasStockLocations && hasBranchAdmin,
-        locked: !hasBranch,
+        locked: !canManageOrganization || !hasBranch,
       },
     };
   }, [
+    canManageOrganization,
     state.companyId,
     state.branchId,
     state.stockLocations.length,
@@ -177,25 +499,27 @@ export default function CompanyOnboardingModule() {
   const syncAppScope = useCallback(
     (patch: ReturnType<typeof buildSnapshotPatch>) => {
       if (patch.companyId) {
-        app.setCompany({
+        app.setCompany?.({
           id: patch.companyId,
           name: companyNameOf(patch.company),
         });
       }
 
       if (patch.branchId) {
-        app.setBranch({
+        app.setBranch?.({
           id: patch.branchId,
           name: branchNameOf(patch.branch),
         });
       } else {
-        app.setBranch(null);
+        app.setBranch?.(null);
       }
     },
-    [app]
+    [app],
   );
 
   const loadCompanies = useCallback(async () => {
+    if (!canManageOrganization) return;
+
     setCompaniesLoading(true);
 
     try {
@@ -209,27 +533,27 @@ export default function CompanyOnboardingModule() {
     } finally {
       setCompaniesLoading(false);
     }
-  }, []);
+  }, [canManageOrganization]);
 
   const reloadSnapshot = useCallback(
     async (
       requestedCompanyId: string | null = state.companyId,
-      requestedBranchId: string | null = state.branchId
+      requestedBranchId: string | null = state.branchId,
     ) => {
-      if (!requestedCompanyId) return;
+      if (!canManageOrganization || !requestedCompanyId) return;
 
       dispatch({ type: "LOAD_START" });
 
       try {
         const snapshot = await onboardingApi.getSnapshot(
           requestedCompanyId,
-          requestedBranchId
+          requestedBranchId,
         );
 
         const patch = buildSnapshotPatch(
           snapshot,
           requestedCompanyId,
-          requestedBranchId
+          requestedBranchId,
         );
 
         syncAppScope(patch);
@@ -245,25 +569,37 @@ export default function CompanyOnboardingModule() {
         });
       }
     },
-    [state.companyId, state.branchId, syncAppScope]
+    [canManageOrganization, state.companyId, state.branchId, syncAppScope],
   );
 
   useEffect(() => {
-    void loadCompanies();
-  }, [loadCompanies]);
+    if (!canManageOrganization) {
+      console.warn("Company onboarding denied", {
+        roles,
+        normalizedRoles: roles.map(normalizeKey),
+      });
+    }
+  }, [canManageOrganization, roles]);
 
   useEffect(() => {
+    if (!canManageOrganization) return;
+    void loadCompanies();
+  }, [canManageOrganization, loadCompanies]);
+
+  useEffect(() => {
+    if (!canManageOrganization) return;
+
     const companyId =
       params.companyId ||
       state.companyId ||
-      scope.companyId ||
-      app.companyId;
+      getCurrentCompanyId(app, scope) ||
+      null;
 
     const branchId =
       params.branchId ||
       state.branchId ||
-      scope.branchId ||
-      app.branchId ||
+      getCurrentBranchId(app, scope) ||
+      initialBranchId ||
       null;
 
     if (companyId) {
@@ -271,38 +607,41 @@ export default function CompanyOnboardingModule() {
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canManageOrganization]);
 
   function goTo(step: WizardStepKey) {
-    if (!readiness[step].locked) {
-      dispatch({
-        type: "SET_ACTIVE",
-        step,
-      });
-    }
+    if (!canManageOrganization) return;
+    if (readiness[step].locked) return;
+
+    dispatch({
+      type: "SET_ACTIVE",
+      step,
+    });
   }
 
   function next() {
-    const candidate = ONBOARDING_STEPS[activeIndex + 1];
+    if (!canManageOrganization) return;
 
+    const candidate = ONBOARDING_STEPS[activeIndex + 1];
     if (candidate && !readiness[candidate.key].locked) {
       goTo(candidate.key);
     }
   }
 
   function back() {
-    const candidate = ONBOARDING_STEPS[activeIndex - 1];
+    if (!canManageOrganization) return;
 
+    const candidate = ONBOARDING_STEPS[activeIndex - 1];
     if (candidate) {
       goTo(candidate.key);
     }
   }
 
   async function selectCompany(companyId: string) {
-    if (!companyId) return;
+    if (!companyAccess.canSwitchCompany || !companyId) return;
 
-    app.setCompany({ id: companyId });
-    app.setBranch(null);
+    app.setCompany?.({ id: companyId });
+    app.setBranch?.(null);
 
     await reloadSnapshot(companyId, null);
 
@@ -317,14 +656,16 @@ export default function CompanyOnboardingModule() {
   }
 
   async function afterCompanyCreated(company: CompanyDto) {
+    if (!companyAccess.canCreateCompany) return;
+
     const companyId = companyIdOf(company);
     if (!companyId) return;
 
-    app.setCompany({
+    app.setCompany?.({
       id: companyId,
       name: companyNameOf(company),
     });
-    app.setBranch(null);
+    app.setBranch?.(null);
 
     setCompanies((previous) => [
       company,
@@ -348,9 +689,14 @@ export default function CompanyOnboardingModule() {
     });
   }
 
-  async function onCompanySaved(
-  settings: CompanySettingsDto
-) {
+  async function onCompanySaved(settings: CompanySettingsDto) {
+    if (
+      !companyAccess.canEditCompanyProfile &&
+      !companyAccess.canEditCompanySettings
+    ) {
+      return;
+    }
+
     await loadCompanies();
 
     dispatch({
@@ -364,13 +710,24 @@ export default function CompanyOnboardingModule() {
     await reloadSnapshot(state.companyId, state.branchId);
   }
 
+  function canAccessBranch(branchId: string): boolean {
+    if (!branchId) return false;
+    if (branchAccess.canViewAllBranches) return true;
+
+    const normalized = normalizeKey(branchId);
+    return assignedBranchIds.some((id) => normalizeKey(id) === normalized);
+  }
+
   async function selectBranch(branchId: string) {
-    if (!state.companyId || !branchId) return;
+    if (!canSwitchBranch || !state.companyId || !branchId) return;
+    if (!canAccessBranch(branchId)) return;
 
     const branch =
       state.branches.find((item) => idOf(item) === branchId) ?? null;
 
-    app.setBranch({
+    if (!branch) return;
+
+    app.setBranch?.({
       id: branchId,
       name: branchNameOf(branch),
     });
@@ -388,10 +745,12 @@ export default function CompanyOnboardingModule() {
   }
 
   async function afterBranchCreated(branch: BranchDto) {
+    if (!branchAccess.canCreateBranch) return;
+
     const branchId = idOf(branch);
     if (!state.companyId || !branchId) return;
 
-    app.setBranch({
+    app.setBranch?.({
       id: branchId,
       name: branchNameOf(branch),
     });
@@ -426,6 +785,8 @@ export default function CompanyOnboardingModule() {
   }
 
   async function afterBranchUpdated(branch: BranchDto) {
+    if (!branchAccess.canEditBranch) return;
+
     dispatch({
       type: "SAVE_SUCCESS",
       notice: "Branch updated.",
@@ -439,11 +800,12 @@ export default function CompanyOnboardingModule() {
   }
 
   async function refreshCurrentBranch() {
+    if (!canManageOrganization) return;
     await reloadSnapshot(state.companyId, state.branchId);
   }
 
   async function finish() {
-    if (!state.companyId || !state.branchId) return;
+    if (!canManageOrganization || !state.companyId || !state.branchId) return;
 
     dispatch({
       type: "SAVE_START",
@@ -468,13 +830,19 @@ export default function CompanyOnboardingModule() {
     }
   }
 
+  if (!canManageOrganization) {
+    return <AccessDeniedCard />;
+  }
+
   const progressPct = Math.round(
-    ((activeIndex + 1) / ONBOARDING_STEPS.length) * 100
+    ((activeIndex + 1) / ONBOARDING_STEPS.length) * 100,
   );
 
   const dashboardHref = state.companyId
     ? companyDashboardPath(state.companyId)
-    : "/platform/tenants";
+    : isSystemAdmin
+      ? "/platform/tenants"
+      : "/";
 
   return (
     <div className="ob-page">
@@ -519,9 +887,7 @@ export default function CompanyOnboardingModule() {
         <Alert tone="danger" title="Action required" message={state.error} />
       )}
 
-      {state.notice && (
-        <Alert tone="ok" title="Saved" message={state.notice} />
-      )}
+      {state.notice && <Alert tone="ok" title="Saved" message={state.notice} />}
 
       <div className="ob-layout">
         <WizardRail
@@ -560,6 +926,7 @@ export default function CompanyOnboardingModule() {
                     }
                   }}
                   disabled={
+                    !canSwitchBranch ||
                     !state.companyId ||
                     state.branches.length === 0 ||
                     state.loading
@@ -568,23 +935,33 @@ export default function CompanyOnboardingModule() {
                 >
                   <option value="">Select branch…</option>
 
-                  {state.branches.map((branch) => {
-                    const branchId = idOf(branch);
-                    const code = (branch as any).code;
+                  {state.branches
+                    .filter((branch) => canAccessBranch(idOf(branch)))
+                    .map((branch) => {
+                      const branchId = idOf(branch);
+                      const code = (branch as any).code;
 
-                    return (
-                      <option key={branchId} value={branchId}>
-                        {branch.name}
-                        {code ? ` (${code})` : ""}
-                      </option>
-                    );
-                  })}
+                      return (
+                        <option key={branchId} value={branchId}>
+                          {branch.name}
+                          {code ? ` (${code})` : ""}
+                        </option>
+                      );
+                    })}
                 </select>
 
                 <div className="ob-context-counts">
                   <span>
-                    {state.branches.length} branch
-                    {state.branches.length !== 1 ? "es" : ""}
+                    {
+                      state.branches.filter((branch) =>
+                        canAccessBranch(idOf(branch)),
+                      ).length
+                    } branch
+                    {state.branches.filter((branch) =>
+                      canAccessBranch(idOf(branch)),
+                    ).length !== 1
+                      ? "es"
+                      : ""}
                   </span>
                   <span>
                     {state.stockLocations.length} location
@@ -608,6 +985,7 @@ export default function CompanyOnboardingModule() {
                 existing={state.company}
                 defaultSettings={state.settings}
                 saving={state.saving || companiesLoading}
+                access={companyAccess}
                 onSelected={selectCompany}
                 onCreated={afterCompanyCreated}
                 onSaved={onCompanySaved}
@@ -620,6 +998,7 @@ export default function CompanyOnboardingModule() {
                 companyId={state.companyId}
                 activeBranchId={state.branchId}
                 saving={state.saving}
+                access={branchAccess}
                 onCreated={afterBranchCreated}
                 onSelected={selectBranch}
                 onUpdated={afterBranchUpdated}
@@ -658,18 +1037,16 @@ export default function CompanyOnboardingModule() {
                 />
               )}
 
-            {state.active === "stores" &&
-              state.companyId &&
-              state.branchId && (
-                <StoresStep
-                  companyId={state.companyId}
-                  branchId={state.branchId}
-                  branchName={branchLabel(activeBranch)}
-                  saving={state.saving}
-                  dispatch={dispatch}
-                  onChanged={refreshCurrentBranch}
-                />
-              )}
+            {state.active === "stores" && state.companyId && state.branchId && (
+              <StoresStep
+                companyId={state.companyId}
+                branchId={state.branchId}
+                branchName={branchLabel(activeBranch)}
+                saving={state.saving}
+                dispatch={dispatch}
+                onChanged={refreshCurrentBranch}
+              />
+            )}
 
             {state.active === "users" &&
               (!state.companyId || !state.branchId) && (
@@ -680,18 +1057,16 @@ export default function CompanyOnboardingModule() {
                 />
               )}
 
-            {state.active === "users" &&
-              state.companyId &&
-              state.branchId && (
-                <UsersStep
-                  companyId={state.companyId}
-                  branchId={state.branchId}
-                  branchName={branchLabel(activeBranch)}
-                  saving={state.saving}
-                  dispatch={dispatch}
-                  onChanged={refreshCurrentBranch}
-                />
-              )}
+            {state.active === "users" && state.companyId && state.branchId && (
+              <UsersStep
+                companyId={state.companyId}
+                branchId={state.branchId}
+                branchName={branchLabel(activeBranch)}
+                saving={state.saving}
+                dispatch={dispatch}
+                onChanged={refreshCurrentBranch}
+              />
+            )}
 
             {state.active === "review" && (
               <ReviewStep

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
@@ -8,6 +8,9 @@ import {
   type StockTransferListDto,
   type StockTransferStatus,
 } from "../types";
+import { buildStockTransferPaths } from "../routing/stockTransferRoutes";
+import { fmtDateTime, getApiError, money, safeNum } from "../utils/apiUtils";
+import { normalizeStockTransferStatus } from "../utils/stockTransferStatus";
 
 import {
   cardStyle,
@@ -28,12 +31,6 @@ type PageState =
   | { status: "loaded" }
   | { status: "error"; message: string };
 
-type StockTransferPaths = {
-  list: string;
-  newTransfer: string;
-  detail: (id: string) => string;
-};
-
 const ALL_STATUSES: StockTransferStatus[] = [
   STOCK_TRANSFER_STATUS.Draft,
   STOCK_TRANSFER_STATUS.Submitted,
@@ -42,45 +39,6 @@ const ALL_STATUSES: StockTransferStatus[] = [
   STOCK_TRANSFER_STATUS.Posted,
   STOCK_TRANSFER_STATUS.Reversed,
 ];
-
-function money(value: number) {
-  return Number.isFinite(value) ? value.toFixed(2) : "0.00";
-}
-
-function safeNum(value: unknown) {
-  const numberValue = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(numberValue) ? numberValue : 0;
-}
-
-function fmtDateTime(value?: string | null) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "—";
-
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? raw : date.toLocaleString();
-}
-
-function getApiError(error: any) {
-  const data = error?.response?.data;
-
-  if (data && typeof data === "object") {
-    const title = data.title || data.error || "Request failed";
-    const detail = data.detail || data.message || "";
-    const traceId = data.traceId ? ` (traceId: ${data.traceId})` : "";
-
-    const errors =
-      data.errors && typeof data.errors === "object"
-        ? " " +
-          Object.entries(data.errors)
-            .map(([key, value]) => `${key}: ${(value as any[]).join(", ")}`)
-            .join(" | ")
-        : "";
-
-    return `${title}${traceId}${detail ? ` — ${detail}` : ""}${errors}`;
-  }
-
-  return error?.message ?? "Request failed";
-}
 
 export default function StockTransfersPage() {
   const navigate = useNavigate();
@@ -95,18 +53,7 @@ export default function StockTransfersPage() {
 
   const loading = pageState.status === "loading";
   const errorMessage = pageState.status === "error" ? pageState.message : null;
-
-  const paths = useMemo<StockTransferPaths | null>(() => {
-    if (!companyId) return null;
-
-    const base = `/companies/${companyId}/inventory/stock-transfers`;
-
-    return {
-      list: base,
-      newTransfer: `${base}/new`,
-      detail: (id: string) => `${base}/${id}`,
-    };
-  }, [companyId]);
+  const paths = useMemo(() => buildStockTransferPaths(companyId), [companyId]);
 
   const go = useCallback(
     (path: string) => {
@@ -116,25 +63,20 @@ export default function StockTransfersPage() {
   );
 
   const load = useCallback(async () => {
-    if (!companyId) {
+    if (!companyId || !branchId) {
       setRows([]);
       setPageState({
         status: "error",
-        message: "Company scope is required before viewing stock transfers.",
+        message: "Company and branch scope are required before viewing stock transfers.",
       });
       return;
     }
 
     const requestId = ++requestIdRef.current;
-
     setPageState({ status: "loading" });
 
     try {
-      const data = await stockTransfersApi.list(
-        companyId,
-        branchId,
-        status || undefined
-      );
+      const data = await stockTransfersApi.list(companyId, branchId, status || undefined);
 
       if (requestId !== requestIdRef.current) return;
 
@@ -178,7 +120,7 @@ export default function StockTransfersPage() {
 
   const stats = useMemo(() => {
     const count = (nextStatus: StockTransferStatus) =>
-      rows.filter((row) => row.status === nextStatus).length;
+      rows.filter((row) => normalizeStockTransferStatus(row.status) === nextStatus).length;
 
     return {
       total: rows.length,
@@ -186,22 +128,16 @@ export default function StockTransfersPage() {
       submitted: count(STOCK_TRANSFER_STATUS.Submitted),
       approved: count(STOCK_TRANSFER_STATUS.Approved),
       posted: count(STOCK_TRANSFER_STATUS.Posted),
-      totalQty: rows.reduce(
-        (sum, row) => sum + safeNum((row as any).totalQuantity),
-        0
-      ),
-      totalValue: rows.reduce(
-        (sum, row) => sum + safeNum((row as any).totalValue),
-        0
-      ),
+      totalQty: rows.reduce((sum, row) => sum + safeNum((row as any).totalQuantity), 0),
+      totalValue: rows.reduce((sum, row) => sum + safeNum((row as any).totalValue), 0),
     };
   }, [rows]);
 
-  if (!companyId || !paths) {
+  if (!companyId || !branchId || !paths) {
     return (
       <div style={{ padding: 16 }}>
         <div style={cardStyle}>
-          Company scope is required before viewing stock transfers.
+          Company and branch scope are required before viewing stock transfers.
         </div>
       </div>
     );
@@ -209,11 +145,7 @@ export default function StockTransfersPage() {
 
   return (
     <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
-      <PageHeader
-        totalValue={stats.totalValue}
-        errorMessage={errorMessage}
-      />
-
+      <PageHeader totalValue={stats.totalValue} errorMessage={errorMessage} />
       <StatsCard stats={stats} />
 
       <div style={cardStyle}>
@@ -224,7 +156,7 @@ export default function StockTransfersPage() {
           onQueryChange={setQuery}
           onStatusChange={setStatus}
           onRefresh={() => void load()}
-          onNew={() => go(paths.newTransfer)}
+          onNew={() => go(paths.create)}
         />
 
         <TransfersTable
@@ -237,7 +169,7 @@ export default function StockTransfersPage() {
       <StickyActions
         loading={loading}
         onRefresh={() => void load()}
-        onNew={() => go(paths.newTransfer)}
+        onNew={() => go(paths.create)}
       />
     </div>
   );
@@ -251,24 +183,14 @@ function PageHeader({
   errorMessage: string | null;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        justifyContent: "space-between",
-        gap: 12,
-      }}
-    >
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
       <div>
         <div style={{ fontSize: 22, fontWeight: 800 }}>Stock Transfers</div>
         <div style={{ opacity: 0.75, marginTop: 6 }}>
-          Warehouse and branch inventory movement with controlled approval and
-          posting workflow.
+          Warehouse and branch inventory movement with controlled approval and posting workflow.
         </div>
 
-        {errorMessage ? (
-          <div style={{ marginTop: 10, ...errorStyle }}>{errorMessage}</div>
-        ) : null}
+        {errorMessage ? <div style={{ marginTop: 10, ...errorStyle }}>{errorMessage}</div> : null}
       </div>
 
       <div style={{ textAlign: "right" }}>
@@ -293,13 +215,7 @@ function StatsCard({
 }) {
   return (
     <div style={cardStyle}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))",
-          gap: 12,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 12 }}>
         <Kpi label="Total" value={stats.total} />
         <Kpi label="Draft" value={stats.draft} />
         <Kpi label="Submitted" value={stats.submitted} />
@@ -329,14 +245,7 @@ function TransfersToolbar({
   onNew: () => void;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 12,
-        flexWrap: "wrap",
-      }}
-    >
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
       <div>
         <div style={{ fontSize: 16, fontWeight: 800 }}>Transfers</div>
         <div style={{ opacity: 0.75, marginTop: 4 }}>
@@ -344,14 +253,7 @@ function TransfersToolbar({
         </div>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          alignItems: "center",
-          flexWrap: "wrap",
-        }}
-      >
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <input
           style={{ ...inputStyle(false), width: 260 }}
           value={query}
@@ -365,9 +267,7 @@ function TransfersToolbar({
           <select
             style={{ ...inputStyle(false), width: 220 }}
             value={status}
-            onChange={(event) =>
-              onStatusChange(event.target.value as "" | StockTransferStatus)
-            }
+            onChange={(event) => onStatusChange(event.target.value as "" | StockTransferStatus)}
             disabled={loading}
           >
             <option value="">All statuses</option>
@@ -435,39 +335,23 @@ function TransfersTable({
           {!loading
             ? rows.map((row) => {
                 const anyRow = row as any;
+                const normalizedStatus = normalizeStockTransferStatus(row.status);
 
                 return (
-                  <tr
-                    key={row.id}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => onOpen(row.id)}
-                  >
+                  <tr key={row.id} style={{ cursor: "pointer" }} onClick={() => onOpen(row.id)}>
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 800 }}>
-                        {anyRow.transferNumber ?? "—"}
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>
-                        {anyRow.reference ?? ""}
-                      </div>
+                      <div style={{ fontWeight: 800 }}>{anyRow.transferNumber ?? "—"}</div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>{anyRow.reference ?? ""}</div>
                     </td>
 
                     <td style={tdStyle}>
                       {row.fromLocationName} → {row.toLocationName}
                     </td>
 
-                    <td style={tdStyle}>
-                      {fmtDateTime(anyRow.transferDateUtc)}
-                    </td>
-
-                    <td style={tdStyle}>{row.status}</td>
-
-                    <td style={{ ...tdStyle, textAlign: "right" }}>
-                      {safeNum(anyRow.totalQuantity)}
-                    </td>
-
-                    <td style={{ ...tdStyle, textAlign: "right" }}>
-                      {anyRow.totalValue == null ? "—" : money(anyRow.totalValue)}
-                    </td>
+                    <td style={tdStyle}>{fmtDateTime(anyRow.transferDateUtc)}</td>
+                    <td style={tdStyle}>{normalizedStatus}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }}>{safeNum(anyRow.totalQuantity)}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }}>{money(anyRow.totalValue)}</td>
 
                     <td style={{ ...tdStyle, textAlign: "right" }}>
                       <button
@@ -521,14 +405,7 @@ function StickyActions({
 
 function Kpi({ label, value }: { label: string; value: number | string }) {
   return (
-    <div
-      style={{
-        padding: 12,
-        borderRadius: 12,
-        background: "rgba(0,0,0,.03)",
-        border: "1px solid rgba(0,0,0,.08)",
-      }}
-    >
+    <div style={{ padding: 12, borderRadius: 12, background: "rgba(0,0,0,.03)", border: "1px solid rgba(0,0,0,.08)" }}>
       <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.7 }}>{label}</div>
       <div style={{ marginTop: 6, fontSize: 22, fontWeight: 800 }}>{value}</div>
     </div>

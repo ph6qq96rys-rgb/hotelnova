@@ -1,16 +1,37 @@
 // src/features/inventory/siv/hooks/useSivScreenController.ts
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   sivApi,
   type CreateSivDraftRequest,
   type FifoIssueCandidateDto,
   type InventoryItemSearchResult,
   type LocationOption,
+  type SivDetailsDto,
+  type SivLineDto,
+  type UpdateSivDraftRequest,
 } from "../api/sivApi";
 
 const DESTINATION_REQUIRED_MESSAGE =
   "SIV destination location is required. Select Kitchen, Bar, Coffee Bar, or another consumption location.";
+
+const defaultIssueDate = () => new Date().toISOString().slice(0, 10);
+
+type Nullable<T> = T | null | undefined;
+
+type DraftLineLike = Partial<SivLineDto> & {
+  key?: string;
+  inventoryItemId?: string | null;
+  inventoryItemName?: string | null;
+  baseUomId?: string | null;
+  baseUomCode?: string | null;
+  quantity?: number | string | null;
+  notes?: string | null;
+};
+
+export type FifoOptionWithUiKey = FifoIssueCandidateDto & {
+  __fifoOptionKey: string;
+};
 
 export type SIVLine = {
   key: string;
@@ -26,7 +47,7 @@ export type SIVLine = {
   batchNo: string;
   expiryDate: string;
   selectedFifoKey: string;
-  fifoOptions: FifoIssueCandidateDto[];
+  fifoOptions: FifoOptionWithUiKey[];
   loadingFifo: boolean;
   loadingAvailability: boolean;
   lineError: string;
@@ -37,11 +58,23 @@ type Args = {
   branchId: string;
   departmentId?: string | null;
   currentLocationId?: string | null;
+  requestedByUserId?: string | null;
 };
+
+type ValidationResult = {
+  ok: boolean;
+  message?: string;
+};
+
+function makeKey(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function makeEmptyLine(): SIVLine {
   return {
-    key: crypto.randomUUID(),
+    key: makeKey(),
     id: null,
     itemId: "",
     itemName: "",
@@ -61,118 +94,170 @@ function makeEmptyLine(): SIVLine {
   };
 }
 
-function unwrapData<T>(response: unknown): T {
-  const r = response as any;
-  return (r?.data ?? r) as T;
+function text(value: unknown): string {
+  return value == null ? "" : String(value);
 }
 
-function unwrapArray<T>(response: unknown): T[] {
-  const data = (response as any)?.data ?? response;
-
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.results)) return data.results;
-  if (Array.isArray(data?.value)) return data.value;
-
-  return [];
+function nullableText(value: unknown): string | null {
+  const valueText = text(value).trim();
+  return valueText || null;
 }
 
-function normalizeDate(value: unknown): string {
+function num(value: unknown, fallback = 0): number {
+  if (value === "" || value == null) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function dateOnly(value: unknown): string {
   if (!value) return "";
-
-  const d = new Date(String(value));
-  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
 }
 
-function getApiError(e: unknown, fallback: string): string {
-  const err = e as any;
-  const data = err?.response?.data;
+function apiError(error: unknown, fallback: string): string {
+  const err = error as {
+    response?: { data?: unknown };
+    message?: string;
+  };
 
-  if (typeof data === "string") return data;
+  const data = err?.response?.data as
+    | string
+    | { error?: string; Error?: string; message?: string; title?: string }
+    | undefined;
 
+if (typeof data === "string") {
+  return data || fallback;
+}
+
+if (data && typeof data === "object") {
   return (
-    data?.error ??
-    data?.Error ??
-    data?.message ??
-    data?.title ??
+    data.error ??
+    data.Error ??
+    data.message ??
+    data.title ??
     err?.message ??
     fallback
   );
 }
 
-function makeFifoKey(opt: Partial<FifoIssueCandidateDto>): string {
+return err?.message ?? fallback;
+}
+
+function fifoBusinessDate(option: Partial<FifoIssueCandidateDto>): string {
+  return dateOnly(option.expiryDate) || dateOnly(option.receivedDate) || "";
+}
+
+function makeFifoBaseKey(option: Partial<FifoIssueCandidateDto>): string {
   return [
-    opt.fifoLayerId || opt.sourceId || "no-source",
-    opt.batchNo || "no-batch",
-    opt.expiryDate || "no-exp",
+    option.fifoLayerId || "no-layer",
+    option.sourceId || "no-source",
+    option.sourceNumber || "no-source-number",
+    option.itemId || "no-item",
+    option.uomId || "no-uom",
+    dateOnly(option.receivedDate) || "no-received",
+    option.batchNo || "no-batch",
+    dateOnly(option.expiryDate) || "no-exp",
+    option.availableQty ?? "no-qty",
+    option.availableBaseQty ?? "no-base-qty",
   ].join("|");
 }
 
-function getItemId(item: any): string {
-  return String(item?.itemId ?? item?.id ?? item?.inventoryItemId ?? "");
+function withUniqueFifoKeys(options: FifoIssueCandidateDto[]): FifoOptionWithUiKey[] {
+  const seen = new Map<string, number>();
+
+  return options.map((option) => {
+    const base = makeFifoBaseKey(option);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+
+    return {
+      ...option,
+      __fifoOptionKey: count === 0 ? base : `${base}|dup-${count}`,
+    };
+  });
 }
 
-function getItemName(item: any): string {
-  return String(
-    item?.itemName ??
-      item?.name ??
-      item?.inventoryItemName ??
-      item?.description ??
-      "",
-  );
+export function getFifoOptionKey(option: Partial<FifoIssueCandidateDto>): string {
+  return (option as Partial<FifoOptionWithUiKey>).__fifoOptionKey || makeFifoBaseKey(option);
 }
 
-function getItemUomId(item: any): string {
-  return String(item?.uomId ?? item?.baseUomId ?? item?.unitOfMeasureId ?? "");
+function sortFifoLots(lots: FifoIssueCandidateDto[]): FifoIssueCandidateDto[] {
+  return [...lots].sort((a, b) => {
+    const aDate = fifoBusinessDate(a) || "9999-12-31";
+    const bDate = fifoBusinessDate(b) || "9999-12-31";
+    if (aDate !== bDate) return aDate.localeCompare(bDate);
+
+    const aReceived = dateOnly(a.receivedDate) || "9999-12-31";
+    const bReceived = dateOnly(b.receivedDate) || "9999-12-31";
+    if (aReceived !== bReceived) return aReceived.localeCompare(bReceived);
+
+    return makeFifoBaseKey(a).localeCompare(makeFifoBaseKey(b));
+  });
 }
 
-function getItemUomCode(item: any): string {
-  return String(
-    item?.uomCode ?? item?.baseUomCode ?? item?.unitOfMeasureCode ?? "",
-  );
+function itemId(item: Partial<InventoryItemSearchResult> & Record<string, unknown>): string {
+  return text(item.itemId ?? item.id ?? item.inventoryItemId);
 }
 
-function normalizeInventoryItem(item: any): InventoryItemSearchResult {
+function itemName(item: Partial<InventoryItemSearchResult> & Record<string, unknown>): string {
+  return text(item.itemName ?? item.name ?? item.inventoryItemName ?? item.description);
+}
+
+function itemUomId(item: Partial<InventoryItemSearchResult> & Record<string, unknown>): string {
+  return text(item.uomId ?? item.baseUomId ?? item.unitOfMeasureId);
+}
+
+function itemUomCode(item: Partial<InventoryItemSearchResult> & Record<string, unknown>): string {
+  return text(item.uomCode ?? item.baseUomCode ?? item.unitOfMeasureCode);
+}
+
+function normalizeInventoryItem(
+  item: Partial<InventoryItemSearchResult> & Record<string, unknown>,
+): InventoryItemSearchResult {
+  const id = itemId(item);
+  const name = itemName(item);
+  const uomId = itemUomId(item);
+  const uomCode = itemUomCode(item);
+
   return {
     ...item,
-    id: getItemId(item),
-    name: getItemName(item),
-    uomId: getItemUomId(item),
-    uomCode: getItemUomCode(item),
-    baseUomId: item?.baseUomId ?? getItemUomId(item),
-    baseUomCode: item?.baseUomCode ?? getItemUomCode(item),
-    sku: item?.sku ?? null,
-    barcode: item?.barcode ?? null,
-    isActive: Boolean(item?.isActive ?? true),
+    id,
+    name,
+    uomId,
+    uomCode,
+    baseUomId: text(item.baseUomId ?? uomId),
+    baseUomCode: text(item.baseUomCode ?? uomCode),
+    sku: nullableText(item.sku),
+    barcode: nullableText(item.barcode),
+    isActive: Boolean(item.isActive ?? true),
   };
 }
 
-function normalizeLocation(location: any): LocationOption {
+function normalizeLocation(location: Partial<LocationOption> & Record<string, unknown>): LocationOption {
   return {
-    id: String(location?.id ?? location?.locationId ?? ""),
-    name: String(
-      location?.name ?? location?.locationName ?? location?.code ?? "",
-    ),
-    code: location?.code ?? null,
-    locationType: location?.locationType ?? null,
-    canIssue: location?.canIssue ?? null,
-    canReceive: location?.canReceive ?? null,
-    canProduce: location?.canProduce ?? null,
-    canSell: location?.canSell ?? null,
+    id: text(location.id ?? location.locationId),
+    name: text(location.name ?? location.locationName ?? location.code),
+    code: nullableText(location.code),
+    locationType: nullableText(location.locationType),
+    canIssue: Boolean(location.canIssue),
+    canReceive: Boolean(location.canReceive),
+    canProduce: Boolean(location.canProduce),
+    canSell: Boolean(location.canSell),
+    isActive: Boolean(location.isActive ?? true),
   };
 }
 
 function uniqueLocations(locations: LocationOption[]): LocationOption[] {
   const seen = new Set<string>();
-  return locations.filter((x) => {
-    if (!x.id || seen.has(x.id)) return false;
-    seen.add(x.id);
+  return locations.filter((location) => {
+    if (!location.id || !location.name || seen.has(location.id)) return false;
+    seen.add(location.id);
     return true;
   });
 }
 
-function resetLineStockFields(line: SIVLine, message = ""): SIVLine {
+function resetStockFields(line: SIVLine, message = ""): SIVLine {
   return {
     ...line,
     availableQty: undefined,
@@ -187,14 +272,129 @@ function resetLineStockFields(line: SIVLine, message = ""): SIVLine {
   };
 }
 
-function resolveDefaultDestinationId(
+function defaultDestinationId(
   locations: LocationOption[],
-  currentLocationId?: string | null,
+  currentLocationId?: Nullable<string>,
 ): string {
-  if (currentLocationId && locations.some((x) => x.id === currentLocationId))
+  if (currentLocationId && locations.some((location) => location.id === currentLocationId)) {
     return currentLocationId;
-  if (locations.length === 1) return locations[0].id;
-  return "";
+  }
+  return locations.length === 1 ? locations[0].id : "";
+}
+
+function hasDuplicateLines(lines: SIVLine[]): boolean {
+  const seen = new Set<string>();
+
+  for (const line of lines) {
+    const key = `${line.itemId}|${line.uomId}|${line.batchNo || "no-batch"}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+
+  return false;
+}
+
+function validateDraft(args: {
+  companyId: string;
+  branchId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  selectedLines: SIVLine[];
+}): ValidationResult {
+  const { companyId, branchId, fromLocationId, toLocationId, selectedLines } = args;
+
+  if (!companyId) return { ok: false, message: "Missing company scope." };
+  if (!branchId) return { ok: false, message: "Missing branch scope. Please select a branch before creating an SIV." };
+  if (!fromLocationId) return { ok: false, message: "SIV source warehouse is required." };
+  if (!toLocationId) return { ok: false, message: DESTINATION_REQUIRED_MESSAGE };
+  if (fromLocationId === toLocationId) return { ok: false, message: "SIV source and destination locations cannot be the same." };
+  if (!selectedLines.length) return { ok: false, message: "At least one line is required." };
+  if (selectedLines.some((line) => !line.uomId)) return { ok: false, message: "UOM is required. Please reselect the affected item." };
+  if (selectedLines.some((line) => num(line.qty) <= 0)) return { ok: false, message: "Quantity must be greater than zero." };
+
+  const overStock = selectedLines.some((line) => {
+    const available = line.availableQty ?? line.availableBaseQty;
+    return available != null && num(line.qty) > available;
+  });
+
+  if (overStock) return { ok: false, message: "Requested quantity cannot exceed available warehouse stock." };
+
+  const lineWithError = selectedLines.find((line) => Boolean(line.lineError));
+  if (lineWithError) return { ok: false, message: lineWithError.lineError || "Resolve line errors before saving." };
+
+  if (hasDuplicateLines(selectedLines)) return { ok: false, message: "Duplicate item + batch + UOM combinations are not allowed." };
+
+  return { ok: true };
+}
+
+function getDraftFifoSourceNumber(line: DraftLineLike): string | null {
+  return (
+    nullableText(line.grnNumber) ??
+    nullableText(line.receiptNumber) ??
+    nullableText(line.documentNumber) ??
+    nullableText(line.sourceNumber)
+  );
+}
+
+function mapDraftLine(line: DraftLineLike): SIVLine {
+  const itemIdValue = text(line.itemId ?? line.inventoryItemId);
+  const itemNameValue = text(line.itemName ?? line.inventoryItemName);
+  const uomIdValue = text(line.uomId ?? line.baseUomId);
+  const uomCodeValue = text(line.uomCode ?? line.baseUomCode);
+  const qtyValue = num(line.qty ?? line.quantity, 0);
+  const savedQty = qtyValue > 0 ? qtyValue : 0;
+  const savedAvailableQty = num(line.availableQty ?? line.availableBaseQty ?? savedQty, savedQty);
+  const savedAvailableBaseQty = num(line.availableBaseQty ?? line.availableQty ?? savedQty, savedQty);
+
+  const fifoOption: FifoIssueCandidateDto = {
+    fifoLayerId: text(line.fifoLayerId ?? line.inventoryLayerId),
+    sourceId: nullableText(line.sourceId),
+    sourceNumber: getDraftFifoSourceNumber(line),
+    grnNumber: nullableText(line.grnNumber),
+    receiptNumber: nullableText(line.receiptNumber),
+    documentNumber: nullableText(line.documentNumber),
+    itemId: itemIdValue,
+    itemName: itemNameValue,
+    uomId: uomIdValue,
+    uomCode: uomCodeValue,
+    batchNo: nullableText(line.batchNo),
+    expiryDate: nullableText(line.expiryDate),
+    availableQty: savedAvailableQty,
+    availableBaseQty: savedAvailableBaseQty,
+    receivedDate: text(line.receivedDate),
+  };
+
+  const hasFifo = Boolean(
+    fifoOption.fifoLayerId ||
+      fifoOption.sourceId ||
+      fifoOption.sourceNumber ||
+      fifoOption.batchNo ||
+      fifoOption.expiryDate ||
+      fifoOption.receivedDate,
+  );
+
+  const fifoOptions = hasFifo ? withUniqueFifoKeys([fifoOption]) : [];
+  const selectedFifoKey = fifoOptions[0]?.__fifoOptionKey ?? "";
+
+  return {
+    key: text(line.key ?? line.id) || makeKey(),
+    id: nullableText(line.id),
+    itemId: itemIdValue,
+    itemName: itemNameValue,
+    uomId: uomIdValue,
+    uomCode: uomCodeValue,
+    qty: qtyValue > 0 ? qtyValue : "",
+    remarks: text(line.remarks ?? line.notes),
+    availableQty: savedAvailableQty,
+    availableBaseQty: savedAvailableBaseQty,
+    batchNo: text(line.batchNo),
+    expiryDate: dateOnly(line.expiryDate ?? line.receivedDate),
+    selectedFifoKey,
+    fifoOptions,
+    loadingFifo: false,
+    loadingAvailability: false,
+    lineError: "",
+  };
 }
 
 export function useSivScreenController({
@@ -202,6 +402,7 @@ export function useSivScreenController({
   branchId,
   departmentId,
   currentLocationId,
+  requestedByUserId,
 }: Args) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -213,27 +414,27 @@ export function useSivScreenController({
   const [selectedFromLocationId, setSelectedFromLocationIdState] = useState("");
   const [selectedToLocationId, setSelectedToLocationIdState] = useState("");
 
-  const [issueDate, setIssueDate] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  );
+  const [issueDate, setIssueDate] = useState(defaultIssueDate);
   const [notes, setNotes] = useState("");
+  const [rowVersion, setRowVersion] = useState<string | null>(null);
   const [lines, setLines] = useState<SIVLine[]>([makeEmptyLine()]);
 
+  const fifoRequestIds = useRef<Record<string, string>>({});
+
   const replaceLine = useCallback((key: string, patch: Partial<SIVLine>) => {
-    setLines((prev) =>
-      prev.map((line) => (line.key === key ? { ...line, ...patch } : line)),
-    );
+    setLines((prev) => prev.map((line) => (line.key === key ? { ...line, ...patch } : line)));
   }, []);
 
   const setSelectedFromLocationId = useCallback((locationId: string) => {
     setSelectedFromLocationIdState(locationId);
+    setError("");
+    setSuccess("");
+    fifoRequestIds.current = {};
     setLines((prev) =>
       prev.map((line) =>
-        resetLineStockFields(
+        resetStockFields(
           line,
-          line.itemId
-            ? "Warehouse changed. Please reselect this item to reload FIFO stock."
-            : "",
+          line.itemId ? "Warehouse changed. Please reselect this item to reload FIFO stock." : "",
         ),
       ),
     );
@@ -242,6 +443,7 @@ export function useSivScreenController({
   const setSelectedToLocationId = useCallback((locationId: string) => {
     setSelectedToLocationIdState(locationId);
     setError("");
+    setSuccess("");
   }, []);
 
   const loadLocations = useCallback(async () => {
@@ -259,13 +461,13 @@ export function useSivScreenController({
     ]);
 
     const from = uniqueLocations(
-      unwrapArray<LocationOption>(fromResponse).map(normalizeLocation),
-    );
-    let to = uniqueLocations(
-      unwrapArray<LocationOption>(toResponse).map(normalizeLocation),
+      (fromResponse as Array<Partial<LocationOption> & Record<string, unknown>>).map(normalizeLocation),
     );
 
-    // Fallback for older APIs that do not yet support destination filtering.
+    let to = uniqueLocations(
+      (toResponse as Array<Partial<LocationOption> & Record<string, unknown>>).map(normalizeLocation),
+    );
+
     if (to.length === 0 && currentLocationId) {
       to = [
         {
@@ -273,6 +475,10 @@ export function useSivScreenController({
           name: "Current location",
           code: null,
           canReceive: true,
+          canIssue: false,
+          canSell: false,
+          canProduce: false,
+          isActive: true,
         },
       ];
     }
@@ -281,13 +487,13 @@ export function useSivScreenController({
     setToLocations(to);
 
     setSelectedFromLocationIdState((prev) => {
-      if (prev && from.some((x) => x.id === prev)) return prev;
+      if (prev && from.some((location) => location.id === prev)) return prev;
       return from.length === 1 ? from[0].id : "";
     });
 
     setSelectedToLocationIdState((prev) => {
-      if (prev && to.some((x) => x.id === prev)) return prev;
-      return resolveDefaultDestinationId(to, currentLocationId);
+      if (prev && to.some((location) => location.id === prev)) return prev;
+      return defaultDestinationId(to, currentLocationId);
     });
   }, [companyId, branchId, currentLocationId]);
 
@@ -300,7 +506,7 @@ export function useSivScreenController({
         setError("");
         await loadLocations();
       } catch (e) {
-        if (active) setError(getApiError(e, "Failed to load SIV screen."));
+        if (active) setError(apiError(e, "Failed to load SIV screen."));
       } finally {
         if (active) setLoading(false);
       }
@@ -313,58 +519,64 @@ export function useSivScreenController({
     };
   }, [loadLocations]);
 
-  const addLine = useCallback(
-    () => setLines((prev) => [...prev, makeEmptyLine()]),
-    [],
-  );
+  const addLine = useCallback(() => {
+    setError("");
+    setSuccess("");
+    setLines((prev) => [...prev, makeEmptyLine()]);
+  }, []);
 
   const removeLine = useCallback((key: string) => {
+    setError("");
+    setSuccess("");
+    delete fifoRequestIds.current[key];
+
     setLines((prev) => {
-      const next = prev.filter((x) => x.key !== key);
+      const next = prev.filter((line) => line.key !== key);
       return next.length ? next : [makeEmptyLine()];
     });
   }, []);
 
   const updateLine = useCallback(
     <K extends keyof SIVLine>(key: string, field: K, value: SIVLine[K]) => {
-      setLines((prev) =>
-        prev.map((line) =>
-          line.key === key ? { ...line, [field]: value } : line,
-        ),
-      );
+      setError("");
+      setSuccess("");
+      setLines((prev) => prev.map((line) => (line.key === key ? { ...line, [field]: value } : line)));
     },
     [],
   );
 
   const searchInventoryItems = useCallback(
-    async (term: string) => {
+    async (term: string): Promise<InventoryItemSearchResult[]> => {
       if (!companyId || !selectedFromLocationId) return [];
 
-      const response = await sivApi.searchInventoryItems(companyId, {
+      const items = await sivApi.searchInventoryItems(companyId, {
         branchId: branchId || undefined,
         locationId: selectedFromLocationId,
         q: term.trim() || undefined,
       });
 
-      return unwrapArray<InventoryItemSearchResult>(response).map(
-        normalizeInventoryItem,
-      );
+      return (items as Array<Partial<InventoryItemSearchResult> & Record<string, unknown>>)
+        .map(normalizeInventoryItem)
+        .filter((item) => item.id && item.name && item.uomId && item.isActive);
     },
     [companyId, branchId, selectedFromLocationId],
   );
 
   const onPickItem = useCallback(
-    async (key: string, itemOrPatch: any) => {
-      const itemId = getItemId(itemOrPatch);
-      const itemName = getItemName(itemOrPatch);
-      const uomId = getItemUomId(itemOrPatch);
-      const uomCode = getItemUomCode(itemOrPatch);
+    async (key: string, itemOrPatch: Partial<InventoryItemSearchResult> & Record<string, unknown>) => {
+      const pickedItemId = itemId(itemOrPatch);
+      const pickedItemName = itemName(itemOrPatch);
+      const pickedUomId = itemUomId(itemOrPatch);
+      const pickedUomCode = itemUomCode(itemOrPatch);
+      const requestId = makeKey();
+
+      fifoRequestIds.current[key] = requestId;
 
       replaceLine(key, {
-        itemId,
-        itemName,
-        uomId,
-        uomCode,
+        itemId: pickedItemId,
+        itemName: pickedItemName,
+        uomId: pickedUomId,
+        uomCode: pickedUomCode,
         qty: "",
         remarks: "",
         availableQty: undefined,
@@ -375,10 +587,10 @@ export function useSivScreenController({
         fifoOptions: [],
         loadingFifo: false,
         loadingAvailability: false,
-        lineError: itemId && !uomId ? "Selected item has no UOM." : "",
+        lineError: pickedItemId && !pickedUomId ? "Selected item has no UOM." : "",
       });
 
-      if (!itemId) return;
+      if (!pickedItemId) return;
 
       if (!selectedFromLocationId) {
         replaceLine(key, {
@@ -387,7 +599,7 @@ export function useSivScreenController({
         return;
       }
 
-      if (!uomId) return;
+      if (!pickedUomId) return;
 
       replaceLine(key, {
         loadingFifo: true,
@@ -396,44 +608,30 @@ export function useSivScreenController({
       });
 
       try {
-        const response = await sivApi.getItemFifoLots(
-          companyId,
-          itemId,
-          selectedFromLocationId,
-        );
-        const lots = unwrapArray<FifoIssueCandidateDto>(response);
+        const lots = withUniqueFifoKeys(sortFifoLots(await sivApi.getItemFifoLots(companyId, pickedItemId, selectedFromLocationId)));
+
+        if (fifoRequestIds.current[key] !== requestId) return;
+
         const first = lots[0];
-
-        const totalAvailable = lots.reduce(
-          (sum, lot) =>
-            sum + Number(lot.availableQty ?? lot.availableBaseQty ?? 0),
-          0,
-        );
-
-        const totalAvailableBase = lots.reduce(
-          (sum, lot) =>
-            sum + Number(lot.availableBaseQty ?? lot.availableQty ?? 0),
-          0,
-        );
 
         replaceLine(key, {
           fifoOptions: lots,
-          selectedFifoKey: first ? makeFifoKey(first) : "",
+          selectedFifoKey: first?.__fifoOptionKey ?? "",
           batchNo: first?.batchNo ?? "",
-          expiryDate: normalizeDate(first?.expiryDate),
-          availableQty: totalAvailable,
-          availableBaseQty: totalAvailableBase,
+          expiryDate: dateOnly(first?.expiryDate ?? first?.receivedDate),
+          availableQty: first ? num(first.availableQty ?? first.availableBaseQty) : undefined,
+          availableBaseQty: first ? num(first.availableBaseQty ?? first.availableQty) : undefined,
           loadingFifo: false,
           loadingAvailability: false,
-          lineError: lots.length
-            ? ""
-            : "No FIFO stock available at this warehouse.",
+          lineError: lots.length ? "" : "No FIFO stock available at this warehouse.",
         });
       } catch (e) {
+        if (fifoRequestIds.current[key] !== requestId) return;
+
         replaceLine(key, {
           loadingFifo: false,
           loadingAvailability: false,
-          lineError: getApiError(e, "Failed to load FIFO lots."),
+          lineError: apiError(e, "Failed to load FIFO lots."),
         });
       }
     },
@@ -441,181 +639,84 @@ export function useSivScreenController({
   );
 
   const onChangeFifo = useCallback((key: string, selectedKey: string) => {
+    setError("");
+    setSuccess("");
+
     setLines((prev) =>
       prev.map((line) => {
         if (line.key !== key) return line;
 
-        const selected = line.fifoOptions.find(
-          (opt) => makeFifoKey(opt) === selectedKey,
-        );
+        const selected = line.fifoOptions.find((option) => option.__fifoOptionKey === selectedKey);
+
         if (!selected) {
-          return { ...line, selectedFifoKey: "", batchNo: "", expiryDate: "" };
+          return {
+            ...line,
+            selectedFifoKey: "",
+            batchNo: "",
+            expiryDate: "",
+            availableQty: undefined,
+            availableBaseQty: undefined,
+          };
         }
 
         return {
           ...line,
-          selectedFifoKey: selectedKey,
+          selectedFifoKey: selected.__fifoOptionKey,
           batchNo: selected.batchNo ?? "",
-          expiryDate: normalizeDate(selected.expiryDate),
-          availableQty: selected.availableQty,
-          availableBaseQty: selected.availableBaseQty ?? selected.availableQty,
+          expiryDate: dateOnly(selected.expiryDate ?? selected.receivedDate),
+          availableQty: num(selected.availableQty ?? selected.availableBaseQty),
+          availableBaseQty: num(selected.availableBaseQty ?? selected.availableQty),
           lineError: "",
         };
       }),
     );
   }, []);
 
-  const setLinesFromDraft = useCallback(
-    (draftLines: Record<string, unknown>[]) => {
-      const mapped: SIVLine[] = draftLines.map((x) => {
-        const fifoOpt: FifoIssueCandidateDto = {
-          fifoLayerId: String(x.fifoLayerId ?? x.inventoryLayerId ?? ""),
-          sourceId: (x.sourceId as string | null) ?? null,
-          sourceNumber: (x.sourceNumber as string | null) ?? "Saved FIFO",
-          itemId: String(x.itemId ?? ""),
-          itemName: String(x.itemName ?? x.inventoryItemName ?? ""),
-          uomId: String(x.uomId ?? x.baseUomId ?? ""),
-          uomCode: String(x.uomCode ?? x.baseUomCode ?? ""),
-          batchNo: (x.batchNo as string | null) ?? null,
-          expiryDate: (x.expiryDate as string | null) ?? null,
-          availableQty: Number(x.availableQty ?? x.qty ?? 0),
-          availableBaseQty: Number(x.availableBaseQty ?? x.qty ?? 0),
-          receivedDate: String(x.receivedDate ?? ""),
-        };
-
-        const hasFifo = Boolean(
-          fifoOpt.fifoLayerId ||
-          fifoOpt.sourceId ||
-          fifoOpt.batchNo ||
-          fifoOpt.expiryDate,
-        );
-
-        return {
-          key: String(x.id ?? crypto.randomUUID()),
-          id: (x.id as string | null) ?? null,
-          itemId: String(x.itemId ?? ""),
-          itemName: String(x.itemName ?? x.inventoryItemName ?? ""),
-          uomId: String(x.uomId ?? x.baseUomId ?? ""),
-          uomCode: String(x.uomCode ?? x.baseUomCode ?? ""),
-          qty: Number(x.qty ?? x.quantity ?? "") || "",
-          remarks: String(x.remarks ?? x.notes ?? ""),
-          availableQty: Number(x.availableQty ?? 0),
-          availableBaseQty: Number(x.availableBaseQty ?? x.availableQty ?? 0),
-          batchNo: String(x.batchNo ?? ""),
-          expiryDate: normalizeDate(x.expiryDate),
-          selectedFifoKey: hasFifo ? makeFifoKey(fifoOpt) : "",
-          fifoOptions: hasFifo ? [fifoOpt] : [],
-          loadingFifo: false,
-          loadingAvailability: false,
-          lineError: "",
-        };
-      });
-
-      setLines(mapped.length ? mapped : [makeEmptyLine()]);
-    },
-    [],
-  );
+  const setLinesFromDraft = useCallback((draftLines: DraftLineLike[]) => {
+    setLines(draftLines.length ? draftLines.map(mapDraftLine) : [makeEmptyLine()]);
+  }, []);
 
   const hydrateDraft = useCallback(
-    (draftInput: Record<string, unknown>) => {
-      const draft = unwrapData<Record<string, unknown>>(draftInput);
-      if (!draft) return;
+    (draftInput?: Partial<SivDetailsDto> | null) => {
+      if (!draftInput) return;
 
-      setSelectedFromLocationIdState(
-        String(draft.fromLocationId ?? draft.locationId ?? ""),
-      );
-      setSelectedToLocationIdState(
-        String(draft.toLocationId ?? currentLocationId ?? ""),
-      );
-      setIssueDate(
-        normalizeDate(draft.issueDate) || new Date().toISOString().slice(0, 10),
-      );
-      setNotes(String(draft.remarks ?? draft.notes ?? ""));
-
-      const draftLines =
-        draft.lines ??
-        draft.sivLines ??
-        draft.issueLines ??
-        draft.lineItems ??
-        draft.items ??
-        draft.details ??
-        draft.documentLines ??
-        [];
-
-      setLinesFromDraft(Array.isArray(draftLines) ? (draftLines as any[]) : []);
+      setRowVersion(draftInput.rowVersion ?? null);
+      setSelectedFromLocationIdState(text(draftInput.fromLocationId));
+      setSelectedToLocationIdState(text(draftInput.toLocationId ?? currentLocationId));
+      setIssueDate(dateOnly(draftInput.issueDate) || defaultIssueDate());
+      setNotes(text(draftInput.remarks));
+      setLinesFromDraft(Array.isArray(draftInput.lines) ? draftInput.lines : []);
     },
     [currentLocationId, setLinesFromDraft],
   );
 
-  const selectedLines = useMemo(
-    () => lines.filter((line) => Boolean(line.itemId)),
-    [lines],
+  const selectedLines = useMemo(() => lines.filter((line) => Boolean(line.itemId)), [lines]);
+
+  const validation = useMemo(
+    () =>
+      validateDraft({
+        companyId,
+        branchId,
+        fromLocationId: selectedFromLocationId,
+        toLocationId: selectedToLocationId,
+        selectedLines,
+      }),
+    [companyId, branchId, selectedFromLocationId, selectedToLocationId, selectedLines],
   );
-
-  const canSaveDraft = useMemo(() => {
-    if (!selectedFromLocationId) return false;
-    if (!selectedToLocationId) return false;
-    if (selectedLines.length === 0) return false;
-
-    return selectedLines.every(
-      (line) =>
-        Boolean(line.itemId) &&
-        Boolean(line.uomId) &&
-        Number(line.qty || 0) > 0 &&
-        !line.lineError,
-    );
-  }, [selectedFromLocationId, selectedToLocationId, selectedLines]);
 
   const buildRequest = useCallback((): CreateSivDraftRequest | null => {
     setError("");
 
-    if (!companyId) {
-      setError("Missing company scope.");
-      return null;
-    }
+    const result = validateDraft({
+      companyId,
+      branchId,
+      fromLocationId: selectedFromLocationId,
+      toLocationId: selectedToLocationId,
+      selectedLines,
+    });
 
-    if (!branchId) {
-      setError(
-        "Missing branch scope. Please select a branch before creating an SIV.",
-      );
-      return null;
-    }
-
-    if (!selectedFromLocationId) {
-      setError("SIV source warehouse is required.");
-      return null;
-    }
-
-    if (!selectedToLocationId) {
-      setError(DESTINATION_REQUIRED_MESSAGE);
-      return null;
-    }
-
-    if (selectedFromLocationId === selectedToLocationId) {
-      setError("SIV source and destination locations cannot be the same.");
-      return null;
-    }
-
-    if (!selectedLines.length) {
-      setError("At least one line is required.");
-      return null;
-    }
-
-    const noUom = selectedLines.find((line) => !line.uomId);
-    if (noUom) {
-      setError("UOM is required. Please reselect the affected item.");
-      return null;
-    }
-
-    const zeroQty = selectedLines.find((line) => Number(line.qty || 0) <= 0);
-    if (zeroQty) {
-      setError("Quantity must be greater than zero.");
-      return null;
-    }
-
-    const lineWithError = selectedLines.find((line) => Boolean(line.lineError));
-    if (lineWithError) {
-      setError(lineWithError.lineError || "Resolve line errors before saving.");
+    if (!result.ok) {
+      setError(result.message ?? "Resolve validation errors before saving.");
       return null;
     }
 
@@ -623,15 +724,16 @@ export function useSivScreenController({
       companyId,
       branchId,
       departmentId: departmentId ?? null,
+      requestedByUserId: requestedByUserId ?? null,
       fromLocationId: selectedFromLocationId,
       toLocationId: selectedToLocationId,
       issueDate,
-      remarks: notes || null,
+      remarks: notes.trim() || null,
       lines: selectedLines.map((line) => ({
         itemId: line.itemId,
         uomId: line.uomId,
-        qty: Number(line.qty || 0),
-        remarks: line.remarks || null,
+        qty: num(line.qty),
+        remarks: line.remarks.trim() || null,
         batchNo: line.batchNo || null,
         expiryDate: line.expiryDate || null,
       })),
@@ -640,6 +742,7 @@ export function useSivScreenController({
     companyId,
     branchId,
     departmentId,
+    requestedByUserId,
     issueDate,
     notes,
     selectedFromLocationId,
@@ -654,45 +757,63 @@ export function useSivScreenController({
 
     try {
       const request = buildRequest();
-      if (!request) return null;
 
-      const response = await sivApi.createDraft(companyId, request);
-      const created = unwrapData<any>(response);
+      if (!request) {
+        return null;
+      }
+
+      const created = await sivApi.createDraft(
+        companyId,
+        branchId,
+        request,
+      );
 
       setSuccess("SIV draft created.");
       return created;
     } catch (e) {
-      setError(getApiError(e, "Failed to create SIV draft."));
+      setError(apiError(e, "Failed to create SIV draft."));
       return null;
     } finally {
       setSaving(false);
     }
-  }, [buildRequest, companyId]);
+  }, [branchId, buildRequest, companyId]);
 
   const updateDraft = useCallback(
-    async (_draftId: string) => {
+    async (draftId: string) => {
       setSaving(true);
       setError("");
       setSuccess("");
 
       try {
         const request = buildRequest();
-        if (!request) return null;
 
-        // Replace this with sivApi.updateDraft(...) when your backend PATCH/PUT exists.
-        const response = await sivApi.createDraft(companyId, request);
-        const updated = unwrapData<any>(response);
+        if (!request) {
+          return null;
+        }
+
+        const updateRequest: UpdateSivDraftRequest = {
+          ...request,
+          sivId: draftId,
+          rowVersion,
+        };
+
+        const updated = await sivApi.updateDraft(
+          companyId,
+          branchId,
+          draftId,
+          updateRequest,
+        );
 
         setSuccess("SIV draft saved.");
         return updated;
       } catch (e) {
-        setError(getApiError(e, "Failed to save SIV draft."));
+        setError(apiError(e, "Failed to save SIV draft."));
         return null;
       } finally {
         setSaving(false);
       }
     },
-    [buildRequest, companyId],
+    [branchId, buildRequest, companyId, rowVersion],
   );
 
   return {
@@ -712,6 +833,7 @@ export function useSivScreenController({
     setIssueDate,
     notes,
     setNotes,
+    rowVersion,
 
     lines,
     addLine,
@@ -722,7 +844,8 @@ export function useSivScreenController({
     hydrateDraft,
 
     selectedLines,
-    canSaveDraft,
+    canSaveDraft: validation.ok,
+    validationMessage: validation.message ?? "",
 
     searchInventoryItems,
     onPickItem,

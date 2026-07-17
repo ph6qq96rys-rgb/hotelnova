@@ -1,31 +1,24 @@
-import { useEffect, useState } from "react";
-import { branchesApi } from "../../../company/api/branchesApi";
-import type { BranchDto } from "../../../company/types/company.types";
+// src/features/inventory/stockTransfers/hooks/useWarehouseBranch.ts
+
+import { useMemo } from "react";
+import { useBranches } from "./useStockTransferCatalogs";
 
 export function useWarehouseBranch(companyId: string | null) {
-  const [hqBranchId, setHqBranchId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { branches, loading, error } = useBranches(companyId);
 
-  useEffect(() => {
-    if (!companyId) return;
+  const warehouseBranch = useMemo(() => {
+    return (
+      branches.find((branch: any) => branch.isMain) ??
+      branches.find((branch) => branch.code === "HQ") ??
+      branches[0] ??
+      null
+    );
+  }, [branches]);
 
-    setLoading(true);
-    setError(null);
-
-    branchesApi
-      .list(companyId)
-      .then((branches: BranchDto[]) => {
-        const hq =
-          branches.find((b) => b.isMain) ||
-          branches.find((b) => b.code === "HQ") ||
-          branches[0]; // safe fallback
-
-        setHqBranchId(hq?.id ?? null);
-      })
-      .catch((e) => setError(e?.message ?? "Failed to load branches"))
-      .finally(() => setLoading(false));
-  }, [companyId]);
-
-  return { hqBranchId, loading, error };
+  return {
+    hqBranchId: warehouseBranch?.id ?? null,
+    warehouseBranch,
+    loading,
+    error,
+  };
 }

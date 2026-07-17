@@ -1,0 +1,150 @@
+.grn-editor-page {
+  padding-bottom: 96px;
+}
+
+.grn-editor-total {
+  text-align: right;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 16px;
+  padding: 14px 18px;
+  min-width: 180px;
+}
+
+.grn-editor-total span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.grn-editor-total strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 26px;
+  color: #1d4ed8;
+}
+
+.grn-editor-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  padding: 18px;
+  margin-top: 16px;
+}
+
+.grn-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.grn-col-3 { grid-column: span 3; }
+.grn-col-4 { grid-column: span 4; }
+.grn-col-5 { grid-column: span 5; }
+.grn-col-12 { grid-column: span 12; }
+
+.grn-field span {
+  display: block;
+  margin-bottom: 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.grn-field input,
+.grn-field select,
+.grn-field textarea,
+.grn-editor-lines input,
+.grn-editor-lines select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 11px;
+  font: inherit;
+  background: #fff;
+}
+
+.grn-field textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.grn-field .is-invalid,
+.grn-editor-lines .is-invalid {
+  border-color: #ef4444;
+  background: #fff7f7;
+}
+
+.grn-field small,
+.grn-editor-lines small,
+.grn-field-error {
+  display: block;
+  margin-top: 5px;
+  color: #dc2626;
+  font-size: 12px;
+}
+
+.grn-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.grn-section-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.grn-section-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
+.grn-editor-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin-top: 18px;
+  border: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, .94);
+  backdrop-filter: blur(10px);
+  border-radius: 18px;
+  box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.08);
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.grn-editor-footer > span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.grn-editor-footer > div {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .grn-col-3,
+  .grn-col-4,
+  .grn-col-5,
+  .grn-col-12 {
+    grid-column: span 12;
+  }
+
+  .grn-editor-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

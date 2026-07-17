@@ -226,11 +226,14 @@ export type MenuItemType = number;
 
 export interface MenuCategoryDto {
   id: string;
+  companyId: string;
+  branchId: string;
   name: string;
   code?: string | null;
   isActive?: boolean;
-  defaultConsumptionLocationId?: string | null;
+  defaultConsumptionBranchStockLocationId?: string | null;
   defaultConsumptionLocationName?: string | null;
+  itemCount: number;
 }
 
 export interface StockLocationDto {
@@ -239,6 +242,7 @@ export interface StockLocationDto {
   code?: string | null;
   isActive?: boolean;
 }
+
 
 export interface MenuItemDto {
   id: string;

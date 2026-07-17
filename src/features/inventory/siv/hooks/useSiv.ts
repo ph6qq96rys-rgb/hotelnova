@@ -1,395 +1,669 @@
-// src/features/inventory/siv/hooks/useSiv.ts
+// src/features/inventory/siv/api/sivApi.ts
 
-import {
-  useCallback,
-  useState,
-  type Dispatch,
-  type SetStateAction,
-} from "react";
-import { sivApi } from "../api/sivApi";
-import {
-  getApiError,
-  mapToListItem,
-  mapToVm,
-  type PagedResult,
-  type SivListItemDto,
-  type SivVm,
-} from "../types/sivTypes";
-import type {
-  ApproveSivLineRequest,
-  CreateSivDraftRequest,
-  IssueSivLineRequest,
-  SivLineFifoPreviewDto,
-} from "../api/sivApi";
+import { http } from "../../../../api/http";
+import type { PostSivRequest } from "../types/sivTypes";
 
-function unwrapData<T>(response: unknown): T {
-  const r = response as any;
-  return (r?.data ?? r) as T;
+/* =========================
+   DTOs
+========================= */
+
+export interface SivActionResultDto {
+  id: string;
+  number: string;
+  docStatus: string;
+  message: string;
 }
 
-function unwrapListPayload(response: unknown): {
-  items: unknown[];
-  page: number;
-  pageSize: number;
-  totalCount: number;
-} {
-  const r = unwrapData<any>(response);
-  const items = Array.isArray(r)
-    ? r
-    : Array.isArray(r?.items)
-      ? r.items
-      : Array.isArray(r?.data)
-        ? r.data
-        : [];
-
-  return {
-    items,
-    page: Number(r?.page ?? r?.pageNumber ?? 1),
-    pageSize: Number(r?.pageSize ?? 20),
-    totalCount: Number(r?.totalCount ?? r?.total ?? items.length),
-  };
+export interface SivListItemDto {
+  id: string;
+  number: string;
+  issueDate: string;
+  branchId: string;
+  branchName: string;
+  departmentId: string | null;
+  departmentName: string | null;
+  fromLocationId: string;
+  fromLocationName: string;
+  toLocationId: string | null;
+  toLocationName: string | null;
+  docStatus: string;
+  totalLines: number;
+  totalQuantity: number;
+  requestedByName: string;
 }
 
-export interface UseSivListParams {
+export interface SivLineDto {
+  id: string;
+  lineNo: number;
+  itemId: string;
+  itemCode: string | null;
+  itemName: string | null;
+  uomId: string;
+  uomCode: string | null;
+  qty: number;
+  requestedQty: number;
+  approvedQty: number | null;
+  issuedBaseQty: number;
+  remarks: string | null;
+  batchNo: string | null;
+  expiryDate: string | null;
+
+  // Optional FIFO/edit metadata. Returned by newer backends.
+  fifoLayerId?: string | null;
+  inventoryLayerId?: string | null;
+  sourceId?: string | null;
+  sourceNumber?: string | null;
+  grnNumber?: string | null;
+  receiptNumber?: string | null;
+  documentNumber?: string | null;
+  receivedDate?: string | null;
+  availableQty?: number | null;
+  availableBaseQty?: number | null;
+}
+
+export interface SivAuditDto {
+  requestedByUserId: string | null;
+  submittedByUserId: string | null;
+  approvedByUserId: string | null;
+  issuedByUserId: string | null;
+  postedByUserId: string | null;
+  reversedByUserId: string | null;
+  submittedAtUtc: string | null;
+  approvedAtUtc: string | null;
+  issuedAtUtc: string | null;
+  postedAtUtc: string | null;
+  reversedAtUtc: string | null;
+}
+
+export interface SivDetailsDto {
+  id: string;
   companyId: string;
+  branchId: string;
+  number: string;
+  docStatus: string;
+  status?: string;
+  issueDate: string;
+  departmentId: string | null;
+  departmentName: string | null;
+  fromLocationId: string;
+  fromLocationName: string;
+  toLocationId: string | null;
+  toLocationName: string | null;
+  remarks: string | null;
+  rowVersion: string | null;
+  lines: SivLineDto[];
+  audit: SivAuditDto;
+}
+
+export interface InventoryItemSearchResult {
+  id: string;
+  name: string;
+  sku: string | null;
+  barcode?: string | null;
+  uomId: string;
+  uomCode: string;
+  baseUomId?: string;
+  baseUomCode?: string;
+  isActive: boolean;
+}
+
+export interface LocationOption {
+  id: string;
+  name: string;
+  code: string | null;
+  locationType?: string | null;
+  canIssue?: boolean;
+  canReceive?: boolean;
+  canSell?: boolean;
+  canProduce?: boolean;
+  isActive?: boolean;
+}
+
+export interface UserStockLocationDto {
+  stockLocationId: string;
+  stockLocationName: string;
+  stockLocationCode?: string | null;
+  branchId: string;
+  branchName?: string | null;
+  locationType?: string | null;
+  isDefault: boolean;
+  canReceive: boolean;
+  canIssue: boolean;
+  canTransfer: boolean;
+  canSell: boolean;
+  canAdjust: boolean;
+}
+
+export interface FifoAllocationDto {
+  fifoLayerId: string;
+  sourceId: string;
+  sourceNumber: string | null;
+  receivedDate: string;
+  availableQty: number;
+  availableBaseQty: number;
+  proposedIssueQty: number;
+  proposedIssueBaseQty: number;
+  batchNo: string | null;
+  expiryDate: string | null;
+}
+
+export interface SivLineFifoPreviewDto {
+  sivId: string;
+  lineId: string;
+  itemId: string;
+  itemName: string | null;
+  uomId: string;
+  uomCode: string | null;
+  requestedQty: number;
+  allocations: FifoAllocationDto[];
+}
+
+export interface FifoIssueCandidateDto {
+  fifoLayerId: string;
+  sourceId: string | null;
+  sourceNumber: string | null;
+  grnNumber?: string | null;
+  receiptNumber?: string | null;
+  documentNumber?: string | null;
+  itemId?: string;
+  itemName?: string | null;
+  uomId?: string;
+  uomCode?: string | null;
+  receivedDate: string;
+  availableQty: number;
+  availableBaseQty: number;
+  batchNo: string | null;
+  expiryDate: string | null;
+}
+
+/* =========================
+   Requests
+========================= */
+
+export interface SivDraftLineRequest {
+  itemId: string;
+  uomId: string;
+  qty: number;
+  remarks?: string | null;
+  batchNo?: string | null;
+  expiryDate?: string | null;
+}
+
+export interface CreateSivDraftRequest {
+  companyId: string;
+  branchId: string;
+  departmentId?: string | null;
+  requestedByUserId?: string | null;
+  fromLocationId: string;
+  toLocationId: string;
+  issueDate: string;
+  remarks?: string | null;
+  lines: SivDraftLineRequest[];
+}
+
+export interface UpdateSivDraftRequest extends CreateSivDraftRequest {
+  sivId: string;
+  rowVersion?: string | null;
+}
+
+export interface GetSivListParams {
   branchId?: string;
-  q?: string;
+  departmentId?: string;
+  fromLocationId?: string;
+  toLocationId?: string;
   docStatus?: string;
   dateFrom?: string;
   dateTo?: string;
+  q?: string;
   page?: number;
   pageSize?: number;
 }
 
-export interface UseSivListResult {
-  data: PagedResult<SivListItemDto>;
-  loading: boolean;
-  error: string | null;
-  reload: () => Promise<void>;
+export interface SearchInventoryItemsParams {
+  branchId?: string;
+  locationId?: string;
+  q?: string;
 }
 
-export function useSivList(params: UseSivListParams): UseSivListResult {
-  const [data, setData] = useState<PagedResult<SivListItemDto>>({
-    items: [],
-    page: 1,
-    pageSize: 20,
-    totalCount: 0,
+export interface StockLocationQueryParams {
+  branchId?: string;
+  locationType?: string;
+  canIssue?: boolean;
+  canReceive?: boolean;
+  canSell?: boolean;
+  canProduce?: boolean;
+  isActive?: boolean;
+  q?: string;
+}
+
+export interface ApproveSivLineRequest {
+  lineId: string;
+  approvedQty: number;
+}
+
+export interface ApproveSivRequest {
+  rowVersion?: string | null;
+  remarks?: string | null;
+  lines?: ApproveSivLineRequest[] | null;
+
+  overrideReason?: string | null;
+  recommendationEvaluatedAtUtc?: string | null;
+}
+
+export interface IssueSivLineRequest {
+  lineId: string;
+  issuedQty: number;
+  batchNo?: string | null;
+  expiryDate?: string | null;
+}
+
+/* =========================
+   Routes
+========================= */
+
+const companySivBase = (companyId: string) =>
+  `/companies/${encodeURIComponent(companyId)}/siv`;
+
+const branchSivBase = (
+  companyId: string,
+  branchId: string,
+) =>
+  `/companies/${encodeURIComponent(companyId)}` +
+  `/branches/${encodeURIComponent(branchId)}/siv`;
+
+const inventoryBase = (companyId: string) =>
+  `/companies/${encodeURIComponent(companyId)}/inventory-items`;
+
+const currentUserStockLocationsBase = (companyId: string) =>
+  `/companies/${encodeURIComponent(companyId)}/users/me/stock-locations`;
+
+/* =========================
+   Helpers
+========================= */
+
+type QueryParams = Record<string, unknown>;
+
+function cleanParams<TParams extends object>(params: TParams): QueryParams {
+  return Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+  );
+}
+
+function unwrap<T>(response: unknown): T {
+  return (((response as { data?: unknown })?.data ?? response) as T);
+}
+
+function normalizeArray<T>(response: unknown): T[] {
+  const data = unwrap<unknown>(response);
+
+  if (Array.isArray(data)) return data as T[];
+
+  const obj = data as {
+    items?: unknown;
+    data?: unknown;
+    results?: unknown;
+    value?: unknown;
+  };
+
+  if (Array.isArray(obj.items)) return obj.items as T[];
+  if (Array.isArray(obj.data)) return obj.data as T[];
+  if (Array.isArray(obj.results)) return obj.results as T[];
+  if (Array.isArray(obj.value)) return obj.value as T[];
+
+  return [];
+}
+
+function sivListParams(params: GetSivListParams = {}): QueryParams {
+  return cleanParams({
+    branchId: params.branchId,
+    departmentId: params.departmentId,
+    fromLocationId: params.fromLocationId,
+    toLocationId: params.toLocationId,
+    docStatus: params.docStatus,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
+    q: params.q,
+    page: params.page,
+    pageSize: params.pageSize,
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    if (!params.companyId) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await sivApi.getList(params.companyId, {
-        branchId: params.branchId || undefined,
-        q: params.q || undefined,
-        docStatus: params.docStatus || undefined,
-        dateFrom: params.dateFrom || undefined,
-        dateTo: params.dateTo || undefined,
-        page: params.page ?? 1,
-        pageSize: params.pageSize ?? 20,
-      });
-
-      const payload = unwrapListPayload(response);
-      setData({
-        items: payload.items
-          .map(mapToListItem)
-          .filter(Boolean) as SivListItemDto[],
-        page: payload.page,
-        pageSize: payload.pageSize,
-        totalCount: payload.totalCount,
-      });
-    } catch (e) {
-      setError(getApiError(e, "Failed to load SIV list."));
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    params.companyId,
-    params.branchId,
-    params.q,
-    params.docStatus,
-    params.dateFrom,
-    params.dateTo,
-    params.page,
-    params.pageSize,
-  ]);
-
-  return { data, loading, error, reload };
 }
 
-export interface UseSivDetailResult {
-  doc: SivVm | null;
-  loading: boolean;
-  error: string | null;
-  reload: () => Promise<void>;
-  setDoc: Dispatch<SetStateAction<SivVm | null>>;
+function inventorySearchParams(params: SearchInventoryItemsParams = {}): QueryParams {
+  return cleanParams({
+    context: "Issue",
+    branchId: params.branchId,
+    locationId: params.locationId,
+    q: params.q,
+  });
 }
 
-export function useSivDetail(
+function stockLocationParams(params: StockLocationQueryParams = {}): QueryParams {
+  return cleanParams({
+    branchId: params.branchId,
+    locationType: params.locationType,
+    canIssue: params.canIssue,
+    canReceive: params.canReceive,
+    canSell: params.canSell,
+    canProduce: params.canProduce,
+    isActive: params.isActive,
+    q: params.q,
+  });
+}
+
+function fifoLotParams(itemId: string, locationId: string): QueryParams {
+  return cleanParams({ itemId, locationId });
+}
+
+/* =========================
+   SIV CRUD / Workflow
+   Public contract: all functions return DTO/data directly.
+   Components must never use `.data`.
+========================= */
+
+async function getList(
   companyId: string,
-  sivId: string,
-): UseSivDetailResult {
-  const [doc, setDoc] = useState<SivVm | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    if (!companyId || !sivId) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await sivApi.getById(companyId, sivId);
-      setDoc(mapToVm(unwrapData(response)));
-    } catch (e) {
-      setError(getApiError(e, "Failed to load SIV."));
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId, sivId]);
-
-  return { doc, loading, error, reload, setDoc };
-}
-
-export interface UseFifoPreviewResult {
-  preview: SivLineFifoPreviewDto | null;
-  loading: boolean;
-  error: string | null;
-  load: (lineId: string) => Promise<void>;
-}
-
-export function useFifoPreview(
-  companyId: string,
-  sivId: string,
-): UseFifoPreviewResult {
-  const [preview, setPreview] = useState<SivLineFifoPreviewDto | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(
-    async (lineId: string) => {
-      if (!companyId || !sivId || !lineId) return;
-
-      setLoading(true);
-      setError(null);
-      setPreview(null);
-
-      try {
-        const response = await sivApi.getFifoPreview(companyId, sivId, lineId);
-        setPreview(unwrapData(response));
-      } catch (e) {
-        setError(getApiError(e, "Failed to load FIFO preview."));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [companyId, sivId],
-  );
-
-  return { preview, loading, error, load };
-}
-
-type AsyncAction<TArgs extends unknown[]> = (...args: TArgs) => Promise<void>;
-
-function useAction<TArgs extends unknown[]>(handler: AsyncAction<TArgs>) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  const reset = useCallback(() => {
-    setError(null);
-    setSuccess(null);
-  }, []);
-
-  const run = useCallback(
-    async (...args: TArgs) => {
-      setBusy(true);
-      setError(null);
-      setSuccess(null);
-
-      try {
-        await handler(...args);
-      } catch (e) {
-        setError(getApiError(e, "Operation failed."));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [handler],
-  );
-
-  return { busy, error, success, setSuccess, reset, run };
-}
-
-export function useSivSubmit(
-  companyId: string,
-  sivId: string,
-  onSuccess: () => Promise<void>,
-) {
-  const action = useAction(
-    async (rowVersion: string | null, remarks?: string) => {
-      await sivApi.submit(companyId, sivId, {
-        rowVersion,
-        remarks: remarks || null,
-      });
-      action.setSuccess("SIV submitted for approval.");
-      await onSuccess();
-    },
-  );
-
-  return { ...action, submit: action.run };
-}
-
-export function useSivApprove(
-  companyId: string,
-  sivId: string,
-  onSuccess: () => Promise<void>,
-) {
-  const action = useAction(
-    async (
-      rowVersion: string | null,
-      remarks?: string,
-      lines?: ApproveSivLineRequest[],
-    ) => {
-      await sivApi.approve(companyId, sivId, {
-        rowVersion,
-        remarks: remarks || null,
-        lines: lines?.length ? lines : null,
-      });
-      action.setSuccess("SIV approved.");
-      await onSuccess();
-    },
-  );
-
-  return { ...action, approve: action.run };
-}
-
-export function useSivReject(
-  companyId: string,
-  sivId: string,
-  onSuccess: () => Promise<void>,
-) {
-  const action = useAction(
-    async (rowVersion: string | null, remarks: string) => {
-      await sivApi.reject(companyId, sivId, { rowVersion, remarks });
-      action.setSuccess("SIV rejected.");
-      await onSuccess();
-    },
-  );
-
-  return { ...action, reject: action.run };
-}
-
-export function useSivRequestChanges(
-  companyId: string,
-  sivId: string,
-  onSuccess: () => Promise<void>,
-) {
-  const action = useAction(
-    async (rowVersion: string | null, remarks: string) => {
-      await sivApi.requestChanges(companyId, sivId, { rowVersion, remarks });
-      action.setSuccess("SIV returned to requester for changes.");
-      await onSuccess();
-    },
-  );
-
-  return { ...action, requestChanges: action.run };
-}
-
-export function useSivIssue(
-  companyId: string,
-  sivId: string,
-  onSuccess: () => Promise<void>,
-) {
-  const action = useAction(
-    async (
-      rowVersion: string | null,
-      remarks?: string,
-      lines?: IssueSivLineRequest[],
-    ) => {
-      await sivApi.issue(companyId, sivId, {
-        rowVersion,
-        remarks: remarks || null,
-        lines: lines?.length ? lines : null,
-      });
-      action.setSuccess("SIV issued. Ready to post.");
-      await onSuccess();
-    },
-  );
-
-  return { ...action, issue: action.run };
-}
-
-export function useSivPost(
-  companyId: string,
-  sivId: string,
-  onSuccess: () => Promise<void>,
-) {
-  const action = useAction(async () => {
-    const response = await sivApi.post(companyId, sivId);
-    const result = unwrapData<any>(response);
-
-    if (result?.error) throw new Error(String(result.error));
-
-    action.setSuccess(
-      result?.message ||
-        "SIV posted. FIFO lots consumed and ledger entries created.",
-    );
-    await onSuccess();
+  params: GetSivListParams = {},
+): Promise<SivListItemDto[]> {
+  const response = await http.get<unknown>(companySivBase(companyId), {
+    params: sivListParams(params),
   });
 
-  return { ...action, post: action.run };
+  return normalizeArray<SivListItemDto>(response);
 }
 
-export function useSivReverse(
+async function getById(companyId: string, sivId: string): Promise<SivDetailsDto> {
+  const response = await http.get<SivDetailsDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}`);
+  return unwrap<SivDetailsDto>(response);
+}
+
+async function createDraft(
+  companyId: string,
+  branchId: string,
+  body: CreateSivDraftRequest,
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(
+    `${branchSivBase(companyId, branchId)}/drafts`,
+    body,
+  );
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+async function updateDraft(
+  companyId: string,
+  branchId: string,
+  sivId: string,
+  body: UpdateSivDraftRequest,
+): Promise<SivActionResultDto> {
+  const response = await http.put<SivActionResultDto>(
+    `${branchSivBase(companyId, branchId)}` +
+      `/drafts/${encodeURIComponent(sivId)}`,
+    body,
+  );
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+async function submit(
   companyId: string,
   sivId: string,
-  onSuccess: () => Promise<void>,
-) {
-  const action = useAction(
-    async (rowVersion: string | null, reason: string) => {
-      await sivApi.reverse(companyId, sivId, { rowVersion, reason });
-      action.setSuccess("SIV reversed. Stock balances restored.");
-      await onSuccess();
+  body: { rowVersion?: string | null; remarks?: string | null },
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/submit`, {
+    companyId,
+    sivId,
+    ...body,
+  });
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+async function approve(
+  companyId: string,
+  sivId: string,
+  request: ApproveSivRequest,
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(
+    `${companySivBase(companyId)}` +
+      `/${encodeURIComponent(sivId)}/approve`,
+    request,
+  );
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+
+
+async function reject(
+  companyId: string,
+  sivId: string,
+  body: { rowVersion?: string | null; remarks: string },
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/reject`, {
+    companyId,
+    sivId,
+    ...body,
+  });
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+async function requestChanges(
+  companyId: string,
+  sivId: string,
+  body: { rowVersion?: string | null; remarks: string },
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(
+    `${companySivBase(companyId)}/${encodeURIComponent(sivId)}/request-changes`,
+    {
+      companyId,
+      sivId,
+      ...body,
     },
   );
 
-  return { ...action, reverse: action.run };
+  return unwrap<SivActionResultDto>(response);
 }
 
-export function useSivCreateDraft(companyId: string) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+async function issue(
+  companyId: string,
+  sivId: string,
+  body: {
+    rowVersion?: string | null;
+    remarks?: string | null;
+    lines?: IssueSivLineRequest[] | null;
+  },
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/issue`, {
+    companyId,
+    sivId,
+    ...body,
+  });
 
-  const create = useCallback(
-    async (body: CreateSivDraftRequest): Promise<string | null> => {
-      if (!companyId) {
-        setError("Missing company scope.");
-        return null;
-      }
+  return unwrap<SivActionResultDto>(response);
+}
 
-      setBusy(true);
-      setError(null);
+async function post(
+  companyId: string,
+  sivId: string,
+  body: PostSivRequest = {},
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/post`, body);
+  return unwrap<SivActionResultDto>(response);
+}
 
-      try {
-        const response = await sivApi.createDraft(companyId, body);
-        return unwrapData<any>(response)?.id ?? null;
-      } catch (e) {
-        setError(getApiError(e, "Failed to create SIV draft."));
-        return null;
-      } finally {
-        setBusy(false);
-      }
-    },
-    [companyId],
+async function reverse(
+  companyId: string,
+  sivId: string,
+  body: { rowVersion?: string | null; reason: string },
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/reverse`, {
+    companyId,
+    sivId,
+    ...body,
+  });
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+async function getFifoPreview(
+  companyId: string,
+  sivId: string,
+  lineId: string,
+): Promise<SivLineFifoPreviewDto> {
+  const response = await http.get<SivLineFifoPreviewDto>(
+    `${companySivBase(companyId)}/${encodeURIComponent(sivId)}` +
+      `/lines/${encodeURIComponent(lineId)}/fifo-preview`,
   );
 
-  return { busy, error, create };
+  return unwrap<SivLineFifoPreviewDto>(response);
 }
+
+/* =========================
+   Inventory Search
+========================= */
+
+async function searchInventoryItems(
+  companyId: string,
+  params: SearchInventoryItemsParams = {},
+): Promise<InventoryItemSearchResult[]> {
+  const response = await http.get<InventoryItemSearchResult[]>(`${inventoryBase(companyId)}/search`, {
+    params: inventorySearchParams(params),
+  });
+
+  return normalizeArray<InventoryItemSearchResult>(response);
+}
+
+async function getStockLocations(
+  companyId: string,
+  params: StockLocationQueryParams = {},
+): Promise<LocationOption[]> {
+  const response = await http.get<LocationOption[]>(`${inventoryBase(companyId)}/stock-locations`, {
+    params: stockLocationParams({
+      isActive: true,
+      ...params,
+    }),
+  });
+
+  return normalizeArray<LocationOption>(response);
+}
+
+/**
+ * Legacy branch-level location APIs.
+ * Prefer current-user stock-location APIs when the backend supports them.
+ */
+function getIssueLocations(companyId: string, branchId?: string): Promise<LocationOption[]> {
+  return getStockLocations(companyId, {
+    branchId,
+    canIssue: true,
+    isActive: true,
+  });
+}
+
+function getConsumptionLocations(companyId: string, branchId?: string): Promise<LocationOption[]> {
+  return getStockLocations(companyId, {
+    branchId,
+    canReceive: true,
+    isActive: true,
+  });
+}
+
+async function getItemFifoLots(
+  companyId: string,
+  itemId: string,
+  locationId: string,
+): Promise<FifoIssueCandidateDto[]> {
+  const response = await http.get<FifoIssueCandidateDto[]>(
+    `${inventoryBase(companyId)}/fifo-issue-candidates`,
+    {
+      params: fifoLotParams(itemId, locationId),
+    },
+  );
+
+  return normalizeArray<FifoIssueCandidateDto>(response);
+}
+
+/* =========================
+   Current User Stock Locations
+========================= */
+
+async function getMyStockLocations(companyId: string): Promise<UserStockLocationDto[]> {
+  const response = await http.get<UserStockLocationDto[]>(currentUserStockLocationsBase(companyId));
+  return normalizeArray<UserStockLocationDto>(response);
+}
+
+async function getMyBranchStockLocations(
+  companyId: string,
+  branchId?: string | null,
+): Promise<UserStockLocationDto[]> {
+  const rows = await getMyStockLocations(companyId);
+  return branchId ? rows.filter((location) => location.branchId === branchId) : rows;
+}
+
+async function getMyIssueLocations(
+  companyId: string,
+  branchId?: string | null,
+): Promise<UserStockLocationDto[]> {
+  const rows = await getMyBranchStockLocations(companyId, branchId);
+  return rows.filter((location) => location.canIssue || location.canTransfer);
+}
+
+async function getMyDestinationLocations(
+  companyId: string,
+  branchId?: string | null,
+): Promise<UserStockLocationDto[]> {
+  const rows = await getMyBranchStockLocations(companyId, branchId);
+  return rows.filter((location) => location.canReceive || location.canTransfer);
+}
+
+async function getMyDefaultDestinationLocation(
+  companyId: string,
+  branchId?: string | null,
+): Promise<UserStockLocationDto | null> {
+  const destinations = await getMyDestinationLocations(companyId, branchId);
+  return destinations.find((location) => location.isDefault) ?? destinations[0] ?? null;
+}
+
+async function getMyDefaultIssueLocation(
+  companyId: string,
+  branchId?: string | null,
+): Promise<UserStockLocationDto | null> {
+  const sources = await getMyIssueLocations(companyId, branchId);
+  return sources.find((location) => location.isDefault) ?? sources[0] ?? null;
+}
+
+/* =========================
+   Export
+========================= */
+
+export const sivApi = {
+  getList,
+  getById,
+
+  createDraft,
+  updateDraft,
+
+  submit,
+  approve,
+  reject,
+  requestChanges,
+  issue,
+  post,
+  reverse,
+
+  getFifoPreview,
+  searchInventoryItems,
+
+  getStockLocations,
+  getIssueLocations,
+  getConsumptionLocations,
+
+  getMyStockLocations,
+  getMyBranchStockLocations,
+  getMyIssueLocations,
+  getMyDestinationLocations,
+  getMyDefaultDestinationLocation,
+  getMyDefaultIssueLocation,
+
+  getItemFifoLots,
+};

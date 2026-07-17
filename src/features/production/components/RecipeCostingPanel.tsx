@@ -4,7 +4,7 @@ import { useState } from "react";
 import { recipeCostingApi, type RecipeCostDto } from "../api/recipeCostingApi";
 import { menuItemsApi } from "../api/menuItemsApi";
 import type { MenuItemDto, UpsertMenuItemRequest } from "../types";
-import "../production.css";
+import "../layout/production.css";
 
 interface Props {
   companyId: string;

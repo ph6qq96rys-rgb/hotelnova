@@ -1,10 +1,10 @@
-﻿// src/features/organization/pages/OrgLocationsPage.tsx
+// src/features/organization/pages/OrgLocationsPage.tsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import OrgTree from "../components/OrgTree";
-import CompanyForm from "../components/CompanyForm";
 import BranchForm from "../components/BranchForm";
+import CompanyForm from "../components/CompanyForm";
+import OrgTree from "../components/OrgTree";
 import StoreForm from "../components/StoreForm";
 import { orgApi } from "../api/orgApi";
 import type {
@@ -32,12 +32,19 @@ type Modal =
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
 
-  const maybe = error as { response?: { data?: unknown }; message?: string };
+  const maybe = error as {
+    response?: { status?: number; data?: { message?: string; title?: string } | string };
+    message?: string;
+  };
 
   if (typeof maybe?.response?.data === "string") return maybe.response.data;
-  if (typeof maybe?.message === "string") return maybe.message;
 
-  return fallback;
+  return (
+    maybe?.response?.data?.message ??
+    maybe?.response?.data?.title ??
+    maybe?.message ??
+    fallback
+  );
 }
 
 function asCompany(row: OrganizationDto): CompanyDto {
@@ -71,129 +78,140 @@ export default function OrgLocationsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const currentCompany = useMemo(
+  const company = useMemo(
     () => companies.find((x) => x.id === selectedCompanyId) ?? null,
-    [companies, selectedCompanyId]
+    [companies, selectedCompanyId],
   );
 
-  const currentBranch = useMemo(
+  const branch = useMemo(
     () => branches.find((x) => x.id === selectedBranchId) ?? null,
-    [branches, selectedBranchId]
+    [branches, selectedBranchId],
   );
 
-  const currentStore = useMemo(
+  const store = useMemo(
     () => stores.find((x) => x.id === selectedStoreId) ?? null,
-    [stores, selectedStoreId]
+    [stores, selectedStoreId],
   );
 
-  const company = currentCompany ? asCompany(currentCompany) : null;
-  const branch = currentBranch ? asBranch(currentBranch) : null;
-  const store = currentStore ? asStore(currentStore) : null;
+  const currentCompany = company ? asCompany(company) : null;
+  const currentBranch = branch ? asBranch(branch) : null;
+  const currentStore = store ? asStore(store) : null;
 
-  const closeModal = useCallback(() => {
-    setModal({ kind: "none" });
-  }, []);
+  const closeModal = useCallback(() => setModal({ kind: "none" }), []);
 
-  const loadCompanies = useCallback(async () => {
-    const res = await orgApi.listCompanies();
+  const loadCompanies = useCallback(async (): Promise<OrganizationDto[]> => {
+    const res = await orgApi.listCompanies({ page: 1, pageSize: 500 });
     const rows = res.data.items ?? [];
 
     setCompanies(rows);
-
     setSelectedCompanyId((current) =>
-      current && rows.some((x) => x.id === current) ? current : null
+      current && rows.some((x) => x.id === current) ? current : rows[0]?.id ?? null,
     );
+
+    return rows;
   }, []);
 
-  const loadChildren = useCallback(async (companyId: string, branchId?: string | null) => {
-    const [branchRes, storeRes] = await Promise.all([
-      orgApi.listBranches(companyId),
-      orgApi.listStores(companyId, branchId),
-    ]);
+  const loadBranches = useCallback(async (companyId: string): Promise<OrganizationDto[]> => {
+    const res = await orgApi.listBranches(companyId, { page: 1, pageSize: 500 });
+    const rows = res.data.items ?? [];
 
-    const nextBranches = branchRes.data.items ?? [];
-    const nextStores = storeRes.data.items ?? [];
-
-    setBranches(nextBranches);
-    setStores(nextStores);
-
+    setBranches(rows);
     setSelectedBranchId((current) =>
-      current && nextBranches.some((x) => x.id === current) ? current : null
+      current && rows.some((x) => x.id === current) ? current : rows[0]?.id ?? null,
     );
 
-    setSelectedStoreId((current) =>
-      current && nextStores.some((x) => x.id === current) ? current : null
-    );
+    return rows;
   }, []);
 
-  const refresh = useCallback(async () => {
+  const loadStores = useCallback(
+    async (companyId: string, branchId?: string | null): Promise<OrganizationDto[]> => {
+      const res = await orgApi.listStores(companyId, branchId, { page: 1, pageSize: 500 });
+      const rows = res.data.items ?? [];
+
+      setStores(rows);
+      setSelectedStoreId((current) =>
+        current && rows.some((x) => x.id === current) ? current : null,
+      );
+
+      return rows;
+    },
+    [],
+  );
+
+  const refresh = useCallback(async (): Promise<void> => {
     setLoading(true);
     setError(null);
 
     try {
-      await loadCompanies();
+      const companyRows = await loadCompanies();
+      const nextCompanyId = selectedCompanyId ?? companyRows[0]?.id ?? null;
 
-      if (selectedCompanyId) {
-        await loadChildren(selectedCompanyId, selectedBranchId);
+      if (!nextCompanyId) {
+        setBranches([]);
+        setStores([]);
+        return;
       }
+
+      const branchRows = await loadBranches(nextCompanyId);
+      const nextBranchId = selectedBranchId ?? branchRows[0]?.id ?? null;
+
+      await loadStores(nextCompanyId, nextBranchId);
     } catch (err) {
+      setCompanies([]);
+      setBranches([]);
+      setStores([]);
       setError(errorMessage(err, "Failed to refresh organization data."));
     } finally {
       setLoading(false);
     }
-  }, [loadCompanies, loadChildren, selectedCompanyId, selectedBranchId]);
+  }, [loadBranches, loadCompanies, loadStores, selectedBranchId, selectedCompanyId]);
 
   useEffect(() => {
     void refresh();
+    // refresh intentionally runs once on mount; selection changes are handled below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    setSelectedBranchId(null);
-    setSelectedStoreId(null);
-
     if (!selectedCompanyId) {
       setBranches([]);
       setStores([]);
+      setSelectedBranchId(null);
+      setSelectedStoreId(null);
       return;
     }
 
     setLoading(true);
     setError(null);
+    setSelectedBranchId(null);
+    setSelectedStoreId(null);
 
-    loadChildren(selectedCompanyId)
+    loadBranches(selectedCompanyId)
+      .then((rows) => loadStores(selectedCompanyId, rows[0]?.id ?? null))
       .catch((err) => {
         setBranches([]);
         setStores([]);
         setError(errorMessage(err, "Failed to load branches and stores."));
       })
       .finally(() => setLoading(false));
-  }, [selectedCompanyId, loadChildren]);
+  }, [loadBranches, loadStores, selectedCompanyId]);
 
   useEffect(() => {
-    setSelectedStoreId(null);
-
     if (!selectedCompanyId) return;
 
     setLoading(true);
     setError(null);
+    setSelectedStoreId(null);
 
-    orgApi
-      .listStores(selectedCompanyId, selectedBranchId)
-      .then((res) => {
-        const rows = res.data.items ?? [];
-        setStores(rows);
-        setSelectedStoreId((current) =>
-          current && rows.some((x) => x.id === current) ? current : null
-        );
-      })
+    loadStores(selectedCompanyId, selectedBranchId)
       .catch((err) => {
         setStores([]);
         setError(errorMessage(err, "Failed to load stores."));
       })
       .finally(() => setLoading(false));
-  }, [selectedCompanyId, selectedBranchId]);
+  }, [loadStores, selectedBranchId, selectedCompanyId]);
 
-  async function save(work: () => Promise<void>) {
+  async function save(work: () => Promise<void>): Promise<void> {
     setSaving(true);
     setError(null);
 
@@ -220,37 +238,76 @@ export default function OrgLocationsPage() {
         </div>
 
         <div className="row gap">
-          <button type="button" className="btn btn-primary" disabled={saving} onClick={() => setModal({ kind: "company.create" })}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={saving}
+            onClick={() => setModal({ kind: "company.create" })}
+          >
             + Company
           </button>
 
-          <button type="button" className="btn" disabled={!company || saving} onClick={() => company && setModal({ kind: "company.edit", company })}>
+          <button
+            type="button"
+            className="btn"
+            disabled={!currentCompany || saving}
+            onClick={() => currentCompany && setModal({ kind: "company.edit", company: currentCompany })}
+          >
             Edit Company
           </button>
 
-          <button type="button" className="btn btn-primary" disabled={!selectedCompanyId || saving} onClick={() => setModal({ kind: "branch.create" })}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!selectedCompanyId || saving}
+            onClick={() => setModal({ kind: "branch.create" })}
+          >
             + Branch
           </button>
 
-          <button type="button" className="btn" disabled={!branch || saving} onClick={() => branch && setModal({ kind: "branch.edit", branch })}>
+          <button
+            type="button"
+            className="btn"
+            disabled={!currentBranch || saving}
+            onClick={() => currentBranch && setModal({ kind: "branch.edit", branch: currentBranch })}
+          >
             Edit Branch
           </button>
 
-          <button type="button" className="btn btn-primary" disabled={!selectedCompanyId || !selectedBranchId || saving} onClick={() => setModal({ kind: "store.create" })}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!selectedCompanyId || !selectedBranchId || saving}
+            onClick={() => setModal({ kind: "store.create" })}
+          >
             + Store
           </button>
 
-          <button type="button" className="btn" disabled={!store || saving} onClick={() => store && setModal({ kind: "store.edit", store })}>
+          <button
+            type="button"
+            className="btn"
+            disabled={!currentStore || saving}
+            onClick={() => currentStore && setModal({ kind: "store.edit", store: currentStore })}
+          >
             Edit Store
           </button>
 
-          <button type="button" className="btn" disabled={loading || saving} onClick={() => void refresh()}>
+          <button
+            type="button"
+            className="btn"
+            disabled={loading || saving}
+            onClick={() => void refresh()}
+          >
             Refresh
           </button>
         </div>
       </div>
 
-      {error && <div className="alert alert-danger"><strong>Error:</strong> {error}</div>}
+      {error && (
+        <div className="alert alert-danger">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
       {loading && <div className="alert alert-info">Loading organization data…</div>}
 
       <div className="two-col">
@@ -272,22 +329,38 @@ export default function OrgLocationsPage() {
           </div>
 
           <div className="card-body">
-            {!company ? (
+            {!currentCompany ? (
               <div className="muted">Select a company to see details.</div>
             ) : (
               <div className="grid">
-                <div><strong>Company:</strong> {company.name}</div>
-                <div><strong>Status:</strong> {company.isActive ? "Active" : "Disabled"}</div>
+                <div>
+                  <strong>Company:</strong> {currentCompany.name}
+                </div>
+                <div>
+                  <strong>Status:</strong> {currentCompany.isActive ? "Active" : "Disabled"}
+                </div>
 
                 <hr />
 
-                <div><strong>Branch:</strong> {branch?.name ?? "—"}</div>
-                <div><strong>City/Region:</strong> {branch ? `${branch.city ?? "—"} / ${branch.region ?? "—"}` : "—"}</div>
+                <div>
+                  <strong>Branch:</strong> {currentBranch?.name ?? "—"}
+                </div>
+                <div>
+                  <strong>City/Region:</strong>{" "}
+                  {currentBranch
+                    ? `${currentBranch.city ?? "—"} / ${currentBranch.region ?? "—"}`
+                    : "—"}
+                </div>
 
                 <hr />
 
-                <div><strong>Store:</strong> {store?.name ?? "—"}</div>
-                <div><strong>Store Type:</strong> {store ? (store.isWarehouse ? "Warehouse" : "Store") : "—"}</div>
+                <div>
+                  <strong>Store:</strong> {currentStore?.name ?? "—"}
+                </div>
+                <div>
+                  <strong>Store Type:</strong>{" "}
+                  {currentStore ? (currentStore.isWarehouse ? "Warehouse" : "Store") : "—"}
+                </div>
               </div>
             )}
           </div>
@@ -303,10 +376,10 @@ export default function OrgLocationsPage() {
                 saving={saving}
                 onCancel={closeModal}
                 onSubmit={(dto: CreateCompanyDto) =>
-                      save(async () => {
-                        await orgApi.create(dto);
-                      })
-                    }
+                  save(async () => {
+                    await orgApi.create(dto);
+                  })
+                }
               />
             )}
 
@@ -316,13 +389,12 @@ export default function OrgLocationsPage() {
                 saving={saving}
                 initial={modal.company}
                 onCancel={closeModal}
-                   onSubmit={(dto: UpdateCompanyDto) =>
-                      save(async () => {
-                        await orgApi.update(modal.company.id, dto);
-                      })
-                    }
-               />
-              
+                onSubmit={(dto: UpdateCompanyDto) =>
+                  save(async () => {
+                    await orgApi.update(modal.company.id, dto);
+                  })
+                }
+              />
             )}
 
             {modal.kind === "branch.create" && selectedCompanyId && (
@@ -331,11 +403,11 @@ export default function OrgLocationsPage() {
                 companyId={selectedCompanyId}
                 saving={saving}
                 onCancel={closeModal}
-                onSubmit={(dto: CreateBranchDto) => 
-                  save(async () =>{
-                      await  orgApi.create(dto);
-                    })
-                  }
+                onSubmit={(dto: CreateBranchDto) =>
+                  save(async () => {
+                    await orgApi.create(dto);
+                  })
+                }
               />
             )}
 
@@ -346,10 +418,10 @@ export default function OrgLocationsPage() {
                 saving={saving}
                 initial={modal.branch}
                 onCancel={closeModal}
-                onSubmit={(dto: UpdateBranchDto) => save(
-                  async() =>{
-                 await  orgApi.update(modal.branch.id, dto);
-                })
+                onSubmit={(dto: UpdateBranchDto) =>
+                  save(async () => {
+                    await orgApi.update(modal.branch.id, dto);
+                  })
                 }
               />
             )}
@@ -361,11 +433,11 @@ export default function OrgLocationsPage() {
                 branchId={selectedBranchId}
                 saving={saving}
                 onCancel={closeModal}
-                onSubmit={(dto: CreateStoreDto) => save(
-                  async() => {
-                  await orgApi.create(dto);
-                })
-              }
+                onSubmit={(dto: CreateStoreDto) =>
+                  save(async () => {
+                    await orgApi.create(dto);
+                  })
+                }
               />
             )}
 
@@ -377,11 +449,11 @@ export default function OrgLocationsPage() {
                 saving={saving}
                 initial={modal.store}
                 onCancel={closeModal}
-                onSubmit={(dto: UpdateStoreDto) => save(
-                  async() =>{
+                onSubmit={(dto: UpdateStoreDto) =>
+                  save(async () => {
                     await orgApi.update(modal.store.id, dto);
                   })
-                  }
+                }
               />
             )}
           </div>

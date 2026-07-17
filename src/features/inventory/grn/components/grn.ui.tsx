@@ -4,7 +4,7 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import { normalize, trim } from "../utils/grn.utils";
-import type { GrnStatus } from "../types/grn.types";
+import type { GrnStatus } from "../helpers/grn.status";
 
 // ── Design Tokens ─────────────────────────────────────────────────────────────
 // Centralized so any redesign touches one place.

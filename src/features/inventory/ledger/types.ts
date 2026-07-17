@@ -1,41 +1,120 @@
-export type InventoryMovementType =
-  | "GRN"
-  | "TRANSFER_IN"
-  | "TRANSFER_OUT"
-  | "ADJUSTMENT"
-  | "CONSUMPTION";
-
 // src/features/inventory/ledger/types.ts
 
+export type InventoryMovementType =
+  | "GRN"
+  | "SALE_COGS"
+  | "SIV_TRANSFER_IN"
+  | "SIV_TRANSFER_OUT"
+  | "STOCK_TRANSFER_IN"
+  | "STOCK_TRANSFER_OUT"
+  | "ADJUSTMENT_IN"
+  | "ADJUSTMENT_OUT"
+  | "PRODUCTION_INPUT"
+  | "PRODUCTION_OUTPUT"
+  | string;
+
+export type LedgerDirection = "IN" | "OUT" | "In" | "Out";
+
+/**
+ * Immutable inventory stock-card row returned by:
+ *
+ * GET /api/companies/{companyId}/branches/{branchId}/inventory-ledger
+ */
 export interface InventoryLedgerDto {
-  id: string;
-  createdAtUtc: string;
-  itemId: string;
-  itemName?: string;
-  locationId: string;
-  locationName?: string;
-  movementType: string;
+  id?: string;
+
+  postedAtUtc: string;
+
+  referenceType: string;
+  referenceNo: string;
+
+  itemId?: string;
+  itemName: string;
+
+  locationId?: string;
+  locationName: string;
+
+  uom: string;
+  direction: LedgerDirection;
+
   quantity: number;
-  unitCost: number;
+  quantityBase: number;
+
+  qtyInBase: number;
+  qtyOutBase: number;
+
+  unitCost: number | null;
+  valueChange: number | null;
+
+  balanceBase: number;
+  balanceValue: number | null;
 }
 
-export type InventoryLotDto = {
+/**
+ * Open FIFO layer returned by the inventory-lot endpoint.
+ */
+export interface InventoryLotDto {
   id: string;
+
   itemId: string;
   itemName?: string;
+
   locationId: string;
+  locationName?: string;
+
   remainingQty: number;
   unitCost: number;
-  receivedAtUtc: string;
-};
 
-export type InventoryLedgerFilter = {
-  companyId: string;
-  locationId?: string | null;
+  receivedAtUtc: string;
+
+  batchNo?: string | null;
+  expiryDateUtc?: string | null;
+}
+
+/**
+ * Query parameters accepted by the branch-scoped inventory-ledger endpoint.
+ *
+ * toUtc is an exclusive upper boundary.
+ */
+export interface InventoryLedgerQuery {
+  fromUtc?: string | null;
+  toUtc?: string | null;
+
   itemId?: string | null;
-  from?: string | null;
-  to?: string | null;
-};
+  locationId?: string | null;
+
+  item?: string | null;
+  location?: string | null;
+  referenceNo?: string | null;
+
+  movementType?: InventoryMovementType | null;
+  batchNo?: string | null;
+
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * Optional UI filter model.
+ *
+ * CompanyId and BranchId belong to application scope and should normally not
+ * be duplicated inside the ledger query object.
+ */
+export interface InventoryLedgerFilter {
+  itemId?: string | null;
+  locationId?: string | null;
+
+  item?: string | null;
+  location?: string | null;
+  referenceNo?: string | null;
+
+  movementType?: InventoryMovementType | null;
+  batchNo?: string | null;
+
+  fromUtc?: string | null;
+  toUtc?: string | null;
+}
+
 export interface PagedResult<T> {
   items: T[];
   page: number;
@@ -43,32 +122,3 @@ export interface PagedResult<T> {
   totalCount: number;
   totalPages: number;
 }
-
-export interface InventoryLedgerLineDto {
-  postedAt: string;          // ISO date string
-  itemId?: string;
-  itemName: string;
-  locationId?: string;
-  locationName: string;
-  referenceNo?: string;
-  sourceType?: string;
-  qty: number;
-  uom: string;
-  balanceQty?: number;       // if your dto includes it
-  unitCost?: number;
-  value?: number;
-}
-
-export type InventoryLedgerQuery = {
-  fromUtc?: string;      // ISO string
-  toUtc?: string;        // ISO string
-  itemId?: string|null;
-  locationId?: string|null;
-  item?: string;
-  location?: string;
-  referenceNo?: string;
-  page?: number;
-  pageSize?: number;
-};
-
-

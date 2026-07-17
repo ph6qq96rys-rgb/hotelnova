@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
 import { stockTransfersApi } from "../api/stockTransfersApi";
-import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
-import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryItemsApi";
-import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
+import { useStockTransferCatalogs } from "../hooks/useStockTransferCatalogs";
+import { buildStockTransferPaths } from "../routing/stockTransferRoutes";
+import {
+  clean,
+  dateOnlyToUtcIso,
+  getApiError,
+  safeNum,
+  todayDateOnly,
+} from "../utils/apiUtils";
 
 import {
   cardStyle,
@@ -31,24 +37,6 @@ type PageState =
   | { status: "saving" }
   | { status: "error"; message: string };
 
-type StockTransferPaths = {
-  list: string;
-  edit: (id: string) => string;
-};
-
-type ItemUomVm = {
-  uomId: string;
-  uomName: string;
-  isDefault?: boolean;
-};
-
-type ItemVm = {
-  id: string;
-  label: string;
-  uoms: ItemUomVm[];
-  defaultUomId: string;
-};
-
 type TransferLineDraft = {
   itemId: string;
   unitId: string;
@@ -69,10 +57,7 @@ type FieldErrors = {
   toLocationId?: string;
   transferDate?: string;
   lines?: string;
-  lineErrors?: Record<
-    number,
-    Partial<Record<keyof TransferLineDraft, string>>
-  >;
+  lineErrors?: Record<number, Partial<Record<keyof TransferLineDraft, string>>>;
 };
 
 const emptyDraft = (): TransferDraft => ({
@@ -83,100 +68,6 @@ const emptyDraft = (): TransferDraft => ({
   lines: [],
 });
 
-function clean(value?: string | null) {
-  return (value ?? "").trim();
-}
-
-function todayDateOnly() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function dateOnlyToUtcIso(dateOnly: string) {
-  const [year, month, day] = dateOnly.split("-").map(Number);
-
-  if (!year || !month || !day) {
-    return new Date().toISOString();
-  }
-
-  return new Date(Date.UTC(year, month - 1, day)).toISOString();
-}
-
-function getErrorMessage(error: any) {
-  const data = error?.response?.data;
-
-  if (typeof data === "string") return data;
-
-  return (
-    data?.detail ||
-    data?.title ||
-    data?.message ||
-    error?.message ||
-    "Request failed."
-  );
-}
-
-function toItemVm(dto: InventoryItemDto): ItemVm {
-  const raw = dto as any;
-
-  const id = clean(raw.id);
-  const name = clean(raw.name) || "Item";
-  const code = clean(raw.code) || clean(raw.sku);
-
-  const rawUoms: any[] = Array.isArray(raw.uoms)
-    ? raw.uoms
-    : Array.isArray(raw.itemUoms)
-    ? raw.itemUoms
-    : Array.isArray(raw.allowedUoms)
-    ? raw.allowedUoms
-    : [];
-
-  const uoms: ItemUomVm[] = rawUoms
-    .map((uom) => {
-      const uomId = clean(uom.uomId ?? uom.id);
-      const uomName = clean(uom.uomName ?? uom.name ?? uom.code ?? "UOM");
-
-      return {
-        uomId,
-        uomName,
-        isDefault:
-          Boolean(uom.isDefaultIssue) ||
-          Boolean(uom.isDefaultPurchase) ||
-          Boolean(uom.isDefault) ||
-          Boolean(uom.isBase),
-      };
-    })
-    .filter((uom) => Boolean(uom.uomId));
-
-  const baseUomId = clean(raw.baseUomId);
-  const baseUomName = clean(
-    raw.baseUomName ??
-      raw.baseUomCode ??
-      raw.baseUom?.name ??
-      raw.baseUom?.code
-  );
-
-  if (!uoms.length && baseUomId) {
-    uoms.push({
-      uomId: baseUomId,
-      uomName: baseUomName || "Base UOM",
-      isDefault: true,
-    });
-  }
-
-  const defaultUomId =
-    uoms.find((uom) => uom.isDefault)?.uomId ||
-    baseUomId ||
-    uoms[0]?.uomId ||
-    "";
-
-  return {
-    id,
-    label: code ? `${code} — ${name}` : name,
-    uoms,
-    defaultUomId,
-  };
-}
-
 function validateTransferDraft(draft: TransferDraft): FieldErrors {
   const next: FieldErrors = {};
   const lineErrors: NonNullable<FieldErrors["lineErrors"]> = {};
@@ -184,49 +75,34 @@ function validateTransferDraft(draft: TransferDraft): FieldErrors {
   const fromLocationId = clean(draft.fromLocationId);
   const toLocationId = clean(draft.toLocationId);
 
-  if (!fromLocationId) {
-    next.fromLocationId = "From location is required.";
-  }
-
-  if (!toLocationId) {
-    next.toLocationId = "To location is required.";
-  }
+  if (!fromLocationId) next.fromLocationId = "From location is required.";
+  if (!toLocationId) next.toLocationId = "To location is required.";
 
   if (fromLocationId && toLocationId && fromLocationId === toLocationId) {
     next.toLocationId = "To location must be different from From location.";
   }
 
-  if (!clean(draft.transferDate)) {
-    next.transferDate = "Transfer date is required.";
-  }
-
-  if (!draft.lines.length) {
-    next.lines = "Add at least one transfer line.";
-  }
+  if (!clean(draft.transferDate)) next.transferDate = "Transfer date is required.";
+  if (!draft.lines.length) next.lines = "Add at least one transfer line.";
 
   draft.lines.forEach((line, index) => {
     const row: Partial<Record<keyof TransferLineDraft, string>> = {};
 
     if (!clean(line.itemId)) row.itemId = "Item is required.";
     if (!clean(line.unitId)) row.unitId = "Unit is required.";
-
     if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
       row.quantity = "Quantity must be greater than zero.";
     }
 
-    if (Object.keys(row).length > 0) {
-      lineErrors[index] = row;
-    }
+    if (Object.keys(row).length > 0) lineErrors[index] = row;
   });
 
-  if (Object.keys(lineErrors).length > 0) {
-    next.lineErrors = lineErrors;
-  }
+  if (Object.keys(lineErrors).length > 0) next.lineErrors = lineErrors;
 
   return next;
 }
 
-function hasErrors(errors: FieldErrors) {
+function hasErrors(errors: FieldErrors): boolean {
   return Boolean(
     errors.fromLocationId ||
       errors.toLocationId ||
@@ -244,54 +120,55 @@ export default function StockTransferCreatePage() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [pageState, setPageState] = useState<PageState>({ status: "idle" });
 
-  const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
-  const [locationsLoading, setLocationsLoading] = useState(false);
-  const [locationLabelById, setLocationLabelById] = useState<Record<string, string>>(
-    {}
-  );
-  const fetchedLocationRef = useRef<Set<string>>(new Set());
-
-  const [items, setItems] = useState<ItemVm[]>([]);
-  const [itemsLoading, setItemsLoading] = useState(false);
-  const [itemLabelById, setItemLabelById] = useState<Record<string, string>>({});
-  const [uomLabelById, setUomLabelById] = useState<Record<string, string>>({});
+  const catalogs = useStockTransferCatalogs(companyId, branchId);
+  const paths = useMemo(() => buildStockTransferPaths(companyId), [companyId]);
 
   const busy = pageState.status === "saving";
   const submitError = pageState.status === "error" ? pageState.message : null;
 
-  const paths = useMemo<StockTransferPaths | null>(() => {
-    if (!companyId) return null;
+  const fromLocationOptions = useMemo<SelectOption[]>(
+    () =>
+      catalogs.fromLocations.map((location) => ({
+        value: location.stockLocationId,
+        label: location.label,
+      })),
+    [catalogs.fromLocations]
+  );
 
-    const base = `/companies/${companyId}/inventory/stock-transfers`;
-
-    return {
-      list: base,
-      edit: (id: string) => `${base}/${id}/edit`,
-    };
-  }, [companyId]);
-
-  const go = useCallback(
-    (path: string) => {
-      navigate(path);
-    },
-    [navigate]
+  const toLocationOptions = useMemo<SelectOption[]>(
+    () =>
+      catalogs.toLocations.map((location) => ({
+        value: location.stockLocationId,
+        label: location.label,
+      })),
+    [catalogs.toLocations]
   );
 
   const itemById = useMemo(() => {
-    return new Map(items.map((item) => [item.id, item]));
-  }, [items]);
+    return new Map(catalogs.items.map((item) => [item.id, item]));
+  }, [catalogs.items]);
 
-  const itemOptions = useMemo<SelectOption[]>(() => {
-    return items.map((item) => ({
-      value: item.id,
-      label: item.label,
-    }));
-  }, [items]);
+  const itemOptions = useMemo<SelectOption[]>(
+    () =>
+      catalogs.items.map((item) => ({
+        value: item.id,
+        label:
+          item.label ||
+          `${clean(item.sku) || clean(item.code)} ${clean(item.name)}`.trim() ||
+          "Item",
+      })),
+    [catalogs.items]
+  );
+
+  const uomById = useMemo(() => {
+    return new Map(catalogs.uoms.map((uom) => [String(uom.id), uom]));
+  }, [catalogs.uoms]);
 
   const summary = useMemo(() => {
-    const totalQuantity = form.lines.reduce((sum, line) => {
-      return sum + (Number.isFinite(line.quantity) ? Number(line.quantity) : 0);
-    }, 0);
+    const totalQuantity = form.lines.reduce(
+      (sum, line) => sum + safeNum(line.quantity),
+      0
+    );
 
     const distinctItems = new Set(
       form.lines.map((line) => clean(line.itemId)).filter(Boolean)
@@ -308,17 +185,14 @@ export default function StockTransferCreatePage() {
     setForm((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  const updateLine = useCallback(
-    (index: number, patch: Partial<TransferLineDraft>) => {
-      setForm((prev) => ({
-        ...prev,
-        lines: prev.lines.map((line, lineIndex) =>
-          lineIndex === index ? { ...line, ...patch } : line
-        ),
-      }));
-    },
-    []
-  );
+  const updateLine = useCallback((index: number, patch: Partial<TransferLineDraft>) => {
+    setForm((prev) => ({
+      ...prev,
+      lines: prev.lines.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, ...patch } : line
+      ),
+    }));
+  }, []);
 
   const addLine = useCallback(() => {
     setForm((prev) => ({
@@ -340,173 +214,7 @@ export default function StockTransferCreatePage() {
       ...prev,
       lines: prev.lines.filter((_, lineIndex) => lineIndex !== index),
     }));
-
-    setErrors((prev) => {
-      if (!prev.lineErrors) return prev;
-
-      const remapped: NonNullable<FieldErrors["lineErrors"]> = {};
-
-      Object.entries(prev.lineErrors).forEach(([key, value]) => {
-        const lineIndex = Number(key);
-
-        if (!Number.isFinite(lineIndex)) return;
-        if (lineIndex < index) remapped[lineIndex] = value;
-        if (lineIndex > index) remapped[lineIndex - 1] = value;
-      });
-
-      return {
-        ...prev,
-        lineErrors: remapped,
-      };
-    });
   }, []);
-
-  useEffect(() => {
-    if (!companyId || !branchId) {
-      setLocationOptions([]);
-      return;
-    }
-
-    let alive = true;
-
-    async function loadLocations() {
-      setLocationsLoading(true);
-
-      try {
-        const rows = await stockLocationsApi.list(companyId!, branchId!);
-
-        if (!alive) return;
-
-        const options = (rows ?? [])
-          .map((row: any) => ({
-            value: clean(row.id),
-            label: clean(row.name) || clean(row.code) || "Location",
-          }))
-          .filter((option) => Boolean(option.value));
-
-        setLocationOptions(options);
-
-        setLocationLabelById((prev) => {
-          const next = { ...prev };
-          options.forEach((option) => {
-            next[option.value] = option.label;
-          });
-          return next;
-        });
-      } catch {
-        if (alive) setLocationOptions([]);
-      } finally {
-        if (alive) setLocationsLoading(false);
-      }
-    }
-
-    void loadLocations();
-
-    return () => {
-      alive = false;
-    };
-  }, [companyId, branchId]);
-
-  useEffect(() => {
-    if (!companyId || !branchId) return;
-
-    const ids = [clean(form.fromLocationId), clean(form.toLocationId)].filter(
-      Boolean
-    );
-
-    ids.forEach((id) => {
-      if (locationLabelById[id]) return;
-      if (fetchedLocationRef.current.has(id)) return;
-
-      const api = stockLocationsApi as any;
-
-      if (typeof api.getById !== "function") {
-        fetchedLocationRef.current.add(id);
-        setLocationLabelById((prev) => ({
-          ...prev,
-          [id]: "Saved location",
-        }));
-        return;
-      }
-
-      fetchedLocationRef.current.add(id);
-
-      api
-        .getById(companyId, branchId, id)
-        .then((location: any) => {
-          setLocationLabelById((prev) => ({
-            ...prev,
-            [id]:
-              clean(location?.name) ||
-              clean(location?.code) ||
-              "Saved location",
-          }));
-        })
-        .catch(() => {
-          setLocationLabelById((prev) => ({
-            ...prev,
-            [id]: "Saved location",
-          }));
-        });
-    });
-  }, [
-    companyId,
-    branchId,
-    form.fromLocationId,
-    form.toLocationId,
-    locationLabelById,
-  ]);
-
-  useEffect(() => {
-    if (!companyId) {
-      setItems([]);
-      return;
-    }
-
-    let alive = true;
-
-    async function loadItems() {
-      setItemsLoading(true);
-
-      try {
-        const result = await inventoryItemsApi.list(companyId!);
-        const rows: InventoryItemDto[] = Array.isArray(result) ? result : result ?? [];
-        const viewModels = rows.map(toItemVm).filter((item) => Boolean(item.id));
-
-        if (!alive) return;
-
-        setItems(viewModels);
-
-        setItemLabelById((prev) => {
-          const next = { ...prev };
-          viewModels.forEach((item) => {
-            next[item.id] = item.label;
-          });
-          return next;
-        });
-
-        setUomLabelById((prev) => {
-          const next = { ...prev };
-          viewModels.forEach((item) => {
-            item.uoms.forEach((uom) => {
-              next[uom.uomId] = uom.uomName;
-            });
-          });
-          return next;
-        });
-      } catch {
-        if (alive) setItems([]);
-      } finally {
-        if (alive) setItemsLoading(false);
-      }
-    }
-
-    void loadItems();
-
-    return () => {
-      alive = false;
-    };
-  }, [companyId]);
 
   const submit = useCallback(async () => {
     setPageState({ status: "idle" });
@@ -541,31 +249,23 @@ export default function StockTransferCreatePage() {
     setPageState({ status: "saving" });
 
     try {
-      const id = await stockTransfersApi.create(companyId, branchId, payload);
-      go(paths.edit(id));
-    } catch (error: any) {
+      const id = await stockTransfersApi.create(companyId, branchId, payload as any);
+      navigate(paths.edit(id));
+    } catch (error) {
       setPageState({
         status: "error",
-        message: getErrorMessage(error),
+        message: getApiError(error),
       });
     }
-  }, [companyId, branchId, paths, form, go]);
+  }, [companyId, branchId, paths, form, navigate]);
 
-  if (!companyId) {
-    return <div style={{ padding: 16 }}>Select a company first.</div>;
-  }
-
-  if (!branchId) {
-    return <div style={{ padding: 16 }}>Select a branch first.</div>;
-  }
-
-  if (!paths) {
-    return <div style={{ padding: 16 }}>Company path could not be resolved.</div>;
-  }
+  if (!companyId) return <div style={{ padding: 16 }}>Select a company first.</div>;
+  if (!branchId) return <div style={{ padding: 16 }}>Select a branch first.</div>;
+  if (!paths) return <div style={{ padding: 16 }}>Company path could not be resolved.</div>;
 
   return (
     <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
-      <PageHeader submitError={submitError} />
+      <PageHeader submitError={submitError || catalogs.error} />
 
       <SummaryCard
         lines={summary.lines}
@@ -577,9 +277,9 @@ export default function StockTransferCreatePage() {
         form={form}
         errors={errors}
         busy={busy}
-        locationsLoading={locationsLoading}
-        locationOptions={locationOptions}
-        locationLabelById={locationLabelById}
+        catalogsLoading={catalogs.loading}
+        fromLocationOptions={fromLocationOptions}
+        toLocationOptions={toLocationOptions}
         onChange={setHeader}
       />
 
@@ -587,11 +287,10 @@ export default function StockTransferCreatePage() {
         form={form}
         errors={errors}
         busy={busy}
-        itemsLoading={itemsLoading}
+        catalogsLoading={catalogs.loading}
         itemById={itemById}
         itemOptions={itemOptions}
-        itemLabelById={itemLabelById}
-        uomLabelById={uomLabelById}
+        uomById={uomById}
         onAddLine={addLine}
         onRemoveLine={removeLine}
         onUpdateLine={updateLine}
@@ -599,7 +298,7 @@ export default function StockTransferCreatePage() {
 
       <FooterActions
         busy={busy}
-        onBack={() => go(paths.list)}
+        onBack={() => navigate(paths.list)}
         onSubmit={() => void submit()}
       />
     </div>
@@ -608,25 +307,14 @@ export default function StockTransferCreatePage() {
 
 function PageHeader({ submitError }: { submitError: string | null }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        justifyContent: "space-between",
-        gap: 12,
-      }}
-    >
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
       <div>
-        <div style={{ fontSize: 22, fontWeight: 800 }}>
-          Create Stock Transfer
-        </div>
+        <div style={{ fontSize: 22, fontWeight: 800 }}>Create Stock Transfer</div>
         <div style={{ opacity: 0.75, marginTop: 6 }}>
           Transfer stock between branch locations with controlled line items.
         </div>
 
-        {submitError ? (
-          <div style={{ marginTop: 10, ...errorStyle }}>{submitError}</div>
-        ) : null}
+        {submitError ? <div style={{ marginTop: 10, ...errorStyle }}>{submitError}</div> : null}
       </div>
     </div>
   );
@@ -643,13 +331,7 @@ function SummaryCard({
 }) {
   return (
     <div style={cardStyle}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-          gap: 12,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
         <Kpi label="Lines" value={lines} />
         <Kpi label="Total Qty" value={totalQuantity} />
         <Kpi label="Distinct Items" value={distinctItems} />
@@ -662,68 +344,44 @@ function HeaderCard({
   form,
   errors,
   busy,
-  locationsLoading,
-  locationOptions,
-  locationLabelById,
+  catalogsLoading,
+  fromLocationOptions,
+  toLocationOptions,
   onChange,
 }: {
   form: TransferDraft;
   errors: FieldErrors;
   busy: boolean;
-  locationsLoading: boolean;
-  locationOptions: SelectOption[];
-  locationLabelById: Record<string, string>;
+  catalogsLoading: boolean;
+  fromLocationOptions: SelectOption[];
+  toLocationOptions: SelectOption[];
   onChange: (patch: Partial<TransferDraft>) => void;
 }) {
   const fromId = clean(form.fromLocationId);
   const toId = clean(form.toLocationId);
 
-  const fromExists = fromId
-    ? locationOptions.some((option) => option.value === fromId)
-    : false;
-
-  const toExists = toId
-    ? locationOptions.some((option) => option.value === toId)
-    : false;
-
-  const fromLabel = locationLabelById[fromId] || "Saved location";
-  const toLabel = locationLabelById[toId] || "Saved location";
-
   return (
     <div style={cardStyle}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(12, 1fr)",
-          gap: 12,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
         <div style={{ gridColumn: "span 4" }}>
           <label style={labelStyle}>From Location *</label>
           <select
             style={inputStyle(Boolean(errors.fromLocationId))}
             value={fromId}
-            disabled={locationsLoading || busy}
+            disabled={catalogsLoading || busy}
             onChange={(event) => {
               const value = event.target.value;
-
               onChange({
                 fromLocationId: value,
                 toLocationId: value === toId ? "" : form.toLocationId,
               });
             }}
           >
-            {!fromId ? (
-              <option value="">
-                {locationsLoading ? "Loading locations..." : "Select from location…"}
-              </option>
-            ) : null}
+            <option value="">
+              {catalogsLoading ? "Loading locations..." : "Select from location…"}
+            </option>
 
-            {!fromExists && fromId ? (
-              <option value={fromId}>{fromLabel}</option>
-            ) : null}
-
-            {locationOptions
+            {fromLocationOptions
               .filter((option) => option.value !== toId)
               .map((option) => (
                 <option key={option.value} value={option.value}>
@@ -731,10 +389,7 @@ function HeaderCard({
                 </option>
               ))}
           </select>
-
-          {errors.fromLocationId ? (
-            <div style={errorStyle}>{errors.fromLocationId}</div>
-          ) : null}
+          {errors.fromLocationId ? <div style={errorStyle}>{errors.fromLocationId}</div> : null}
         </div>
 
         <div style={{ gridColumn: "span 4" }}>
@@ -742,25 +397,20 @@ function HeaderCard({
           <select
             style={inputStyle(Boolean(errors.toLocationId))}
             value={toId}
-            disabled={locationsLoading || busy}
+            disabled={catalogsLoading || busy}
             onChange={(event) => {
               const value = event.target.value;
-
               onChange({
                 toLocationId: value,
                 fromLocationId: value === fromId ? "" : form.fromLocationId,
               });
             }}
           >
-            {!toId ? (
-              <option value="">
-                {locationsLoading ? "Loading locations..." : "Select to location…"}
-              </option>
-            ) : null}
+            <option value="">
+              {catalogsLoading ? "Loading locations..." : "Select to location…"}
+            </option>
 
-            {!toExists && toId ? <option value={toId}>{toLabel}</option> : null}
-
-            {locationOptions
+            {toLocationOptions
               .filter((option) => option.value !== fromId)
               .map((option) => (
                 <option key={option.value} value={option.value}>
@@ -768,10 +418,7 @@ function HeaderCard({
                 </option>
               ))}
           </select>
-
-          {errors.toLocationId ? (
-            <div style={errorStyle}>{errors.toLocationId}</div>
-          ) : null}
+          {errors.toLocationId ? <div style={errorStyle}>{errors.toLocationId}</div> : null}
         </div>
 
         <div style={{ gridColumn: "span 4" }}>
@@ -783,10 +430,7 @@ function HeaderCard({
             disabled={busy}
             onChange={(event) => onChange({ transferDate: event.target.value })}
           />
-
-          {errors.transferDate ? (
-            <div style={errorStyle}>{errors.transferDate}</div>
-          ) : null}
+          {errors.transferDate ? <div style={errorStyle}>{errors.transferDate}</div> : null}
         </div>
 
         <div style={{ gridColumn: "span 12" }}>
@@ -808,11 +452,10 @@ function LinesCard({
   form,
   errors,
   busy,
-  itemsLoading,
+  catalogsLoading,
   itemById,
   itemOptions,
-  itemLabelById,
-  uomLabelById,
+  uomById,
   onAddLine,
   onRemoveLine,
   onUpdateLine,
@@ -820,25 +463,17 @@ function LinesCard({
   form: TransferDraft;
   errors: FieldErrors;
   busy: boolean;
-  itemsLoading: boolean;
-  itemById: Map<string, ItemVm>;
+  catalogsLoading: boolean;
+  itemById: Map<string, any>;
   itemOptions: SelectOption[];
-  itemLabelById: Record<string, string>;
-  uomLabelById: Record<string, string>;
+  uomById: Map<string, any>;
   onAddLine: () => void;
   onRemoveLine: (index: number) => void;
   onUpdateLine: (index: number, patch: Partial<TransferLineDraft>) => void;
 }) {
   return (
     <div style={cardStyle}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800 }}>Line Items</div>
           <div style={{ opacity: 0.75, marginTop: 4 }}>
@@ -851,9 +486,7 @@ function LinesCard({
         </button>
       </div>
 
-      {errors.lines ? (
-        <div style={{ ...errorStyle, marginTop: 10 }}>{errors.lines}</div>
-      ) : null}
+      {errors.lines ? <div style={{ ...errorStyle, marginTop: 10 }}>{errors.lines}</div> : null}
 
       <div style={{ marginTop: 14, overflowX: "auto" }}>
         <table style={tableStyle}>
@@ -883,11 +516,10 @@ function LinesCard({
                   index={index}
                   lineError={errors.lineErrors?.[index] ?? {}}
                   busy={busy}
-                  itemsLoading={itemsLoading}
+                  catalogsLoading={catalogsLoading}
                   itemById={itemById}
                   itemOptions={itemOptions}
-                  itemLabelById={itemLabelById}
-                  uomLabelById={uomLabelById}
+                  uomById={uomById}
                   onRemove={() => onRemoveLine(index)}
                   onUpdate={(patch) => onUpdateLine(index, patch)}
                 />
@@ -905,11 +537,10 @@ function TransferLineRow({
   index,
   lineError,
   busy,
-  itemsLoading,
+  catalogsLoading,
   itemById,
   itemOptions,
-  itemLabelById,
-  uomLabelById,
+  uomById,
   onRemove,
   onUpdate,
 }: {
@@ -917,11 +548,10 @@ function TransferLineRow({
   index: number;
   lineError: Partial<Record<keyof TransferLineDraft, string>>;
   busy: boolean;
-  itemsLoading: boolean;
-  itemById: Map<string, ItemVm>;
+  catalogsLoading: boolean;
+  itemById: Map<string, any>;
   itemOptions: SelectOption[];
-  itemLabelById: Record<string, string>;
-  uomLabelById: Record<string, string>;
+  uomById: Map<string, any>;
   onRemove: () => void;
   onUpdate: (patch: Partial<TransferLineDraft>) => void;
 }) {
@@ -929,20 +559,24 @@ function TransferLineRow({
   const unitId = clean(line.unitId);
 
   const selectedItem = itemId ? itemById.get(itemId) : undefined;
+  const rawUoms = Array.isArray((selectedItem as any)?.uoms) ? (selectedItem as any).uoms : [];
 
   const uomOptions: SelectOption[] =
-    selectedItem?.uoms.map((uom) => ({
-      value: uom.uomId,
-      label: uom.uomName,
-    })) ?? [];
-
-  const itemExists = itemId ? itemById.has(itemId) : false;
-  const uomExists = unitId
-    ? uomOptions.some((option) => option.value === unitId)
-    : false;
-
-  const savedItemLabel = itemLabelById[itemId] || (itemId ? "Saved item" : "");
-  const savedUomLabel = uomLabelById[unitId] || (unitId ? "Saved unit" : "");
+    rawUoms.length > 0
+      ? rawUoms
+          .map((uom: any) => {
+            const id = clean(uom.uomId ?? uom.id);
+            const catalogUom = uomById.get(id);
+            return {
+              value: id,
+              label: clean(uom.name ?? uom.uomName ?? catalogUom?.label ?? catalogUom?.name ?? catalogUom?.code) || "UOM",
+            };
+          })
+          .filter((option: SelectOption) => Boolean(option.value))
+      : Array.from(uomById.values()).map((uom: any) => ({
+          value: clean(uom.id),
+          label: clean(uom.label ?? uom.name ?? uom.code) || "UOM",
+        }));
 
   return (
     <tr>
@@ -952,34 +586,24 @@ function TransferLineRow({
         <select
           style={inputStyle(Boolean(lineError.itemId))}
           value={itemId}
-          disabled={itemsLoading || busy}
+          disabled={catalogsLoading || busy}
           onChange={(event) => {
             const selectedItemId = event.target.value;
             const item = selectedItemId ? itemById.get(selectedItemId) : undefined;
 
             onUpdate({
               itemId: selectedItemId,
-              unitId: item?.defaultUomId ?? "",
+              unitId: clean((item as any)?.defaultUomId) || clean((item as any)?.baseUomId) || "",
             });
           }}
         >
-          {!itemId ? (
-            <option value="">
-              {itemsLoading ? "Loading items..." : "Select item…"}
-            </option>
-          ) : null}
-
-          {!itemExists && itemId ? (
-            <option value={itemId}>{savedItemLabel}</option>
-          ) : null}
-
+          <option value="">{catalogsLoading ? "Loading items..." : "Select item…"}</option>
           {itemOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
         </select>
-
         {lineError.itemId ? <div style={errorStyle}>{lineError.itemId}</div> : null}
       </td>
 
@@ -991,16 +615,9 @@ function TransferLineRow({
           step={0.01}
           value={Number.isFinite(line.quantity) ? line.quantity : 0}
           disabled={busy}
-          onChange={(event) =>
-            onUpdate({
-              quantity: Number(event.target.value),
-            })
-          }
+          onChange={(event) => onUpdate({ quantity: Number(event.target.value) })}
         />
-
-        {lineError.quantity ? (
-          <div style={errorStyle}>{lineError.quantity}</div>
-        ) : null}
+        {lineError.quantity ? <div style={errorStyle}>{lineError.quantity}</div> : null}
       </td>
 
       <td style={tdStyle}>
@@ -1008,33 +625,15 @@ function TransferLineRow({
           style={inputStyle(Boolean(lineError.unitId))}
           value={unitId}
           disabled={!itemId || busy}
-          onChange={(event) =>
-            onUpdate({
-              unitId: event.target.value,
-            })
-          }
+          onChange={(event) => onUpdate({ unitId: event.target.value })}
         >
-          {!unitId ? (
-            <option value="">
-              {!itemId
-                ? "Select item first…"
-                : uomOptions.length === 0
-                ? "No UOM configured"
-                : "Select unit…"}
-            </option>
-          ) : null}
-
-          {!uomExists && unitId ? (
-            <option value={unitId}>{savedUomLabel}</option>
-          ) : null}
-
+          <option value="">{!itemId ? "Select item first…" : "Select unit…"}</option>
           {uomOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
         </select>
-
         {lineError.unitId ? <div style={errorStyle}>{lineError.unitId}</div> : null}
       </td>
 
@@ -1043,11 +642,7 @@ function TransferLineRow({
           style={inputStyle(false)}
           value={line.notes}
           disabled={busy}
-          onChange={(event) =>
-            onUpdate({
-              notes: event.target.value,
-            })
-          }
+          onChange={(event) => onUpdate({ notes: event.target.value })}
           placeholder="Optional"
         />
       </td>
@@ -1091,14 +686,7 @@ function FooterActions({
 
 function Kpi({ label, value }: { label: string; value: number | string }) {
   return (
-    <div
-      style={{
-        padding: 12,
-        borderRadius: 12,
-        background: "rgba(0,0,0,.03)",
-        border: "1px solid rgba(0,0,0,.08)",
-      }}
-    >
+    <div style={{ padding: 12, borderRadius: 12, background: "rgba(0,0,0,.03)", border: "1px solid rgba(0,0,0,.08)" }}>
       <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.7 }}>{label}</div>
       <div style={{ marginTop: 6, fontSize: 22, fontWeight: 800 }}>{value}</div>
     </div>

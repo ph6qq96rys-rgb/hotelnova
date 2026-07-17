@@ -1,6 +1,6 @@
 // src/modules/company/onboarding/steps/StockLocationsStep.tsx
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type React from "react";
 
 import type {
@@ -8,12 +8,14 @@ import type {
   StockLocation,
   StockLocationType,
 } from "../../types/company.types";
-
-import { stockLocationsApi } from "../../api/stockLocationsApi";
+import {
+  stockLocationsApi,
+  type BranchInventoryConfigurationDto,
+  type UpsertBranchInventoryConfigurationDto,
+} from "../../api/stockLocationsApi";
 import { LOCATION_TYPES } from "../state/onboarding.constants";
 import type { FieldErrors, OnboardingAction } from "../state/onboarding.types";
 import { extractApiError } from "../utils/onboarding.utils";
-
 import {
   Alert,
   Btn,
@@ -25,381 +27,955 @@ import {
   Spinner,
 } from "../components/company.ui";
 
-type Capability = {
-  canReceive: boolean;
-  canIssue: boolean;
-  canSell: boolean;
-  canProduce: boolean;
-};
-
-type LocationForm = Capability & {
-  name: string;
-  code: string;
-  locationType: StockLocationType;
-  isActive: boolean;
-  isDefault: boolean;
-  isDefaultReceiving: boolean;
-  isDefaultIssue: boolean;
-};
-
-const DEFAULT_LOCATION_TYPE = "Warehouse" as unknown as StockLocationType;
-
-const DEFAULT_FORM: LocationForm = {
-  name: "",
-  code: "",
-  locationType: DEFAULT_LOCATION_TYPE,
-  isActive: true,
-  isDefault: false,
-  isDefaultReceiving: false,
-  isDefaultIssue: false,
-  canReceive: true,
-  canIssue: true,
-  canSell: false,
-  canProduce: false,
-};
-
-const LOCATION_TYPE_OPTIONS = LOCATION_TYPES.map((x) => ({
-  value: String((x as any).value ?? x),
-  label: String((x as any).label ?? x),
-}));
-
-function asText(value: unknown): string {
-  return String(value ?? "").trim();
-}
-
-function locationId(location: StockLocation): string {
-  const x = location as any;
-  return asText(x.id ?? x.Id ?? x.locationId ?? x.stockLocationId);
-}
-
-function locationBranchId(location: StockLocation): string {
-  const x = location as any;
-  return asText(x.branchId ?? x.BranchId);
-}
-
-function isAssigned(location: StockLocation, branchId: string): boolean {
-  return locationBranchId(location).toLowerCase() === branchId.toLowerCase();
-}
-
-function toLocationType(value: unknown): StockLocationType {
-  return String(value ?? DEFAULT_LOCATION_TYPE) as unknown as StockLocationType;
-}
-
-function readLocationType(location: StockLocation): StockLocationType {
-  const x = location as any;
-  return toLocationType(x.locationType ?? x.type ?? DEFAULT_LOCATION_TYPE);
-}
-
-function normalizeType(value: unknown): string {
-  return String(value ?? "").trim().replace(/\s+/g, "");
-}
-
-function defaultCapability(type: StockLocationType): Capability {
-  switch (normalizeType(type)) {
-    case "Warehouse":
-    case "MainStore":
-    case "KitchenStore":
-    case "BarStore":
-      return {
-        canReceive: true,
-        canIssue: true,
-        canSell: false,
-        canProduce: false,
-      };
-
-    case "Production":
-    case "KitchenProduction":
-      return {
-        canReceive: true,
-        canIssue: true,
-        canSell: false,
-        canProduce: true,
-      };
-
-    case "POS":
-    case "SalesOutlet":
-      return {
-        canReceive: false,
-        canIssue: false,
-        canSell: true,
-        canProduce: false,
-      };
-
-    case "Transit":
-      return {
-        canReceive: false,
-        canIssue: false,
-        canSell: false,
-        canProduce: false,
-      };
-
-    default:
-      return {
-        canReceive: false,
-        canIssue: false,
-        canSell: false,
-        canProduce: false,
-      };
-  }
-}
-
-function applyTypeDefaults(
-  form: LocationForm,
-  type: StockLocationType,
-): LocationForm {
-  const caps = defaultCapability(type);
-
-  return {
-    ...form,
-    locationType: type,
-    ...caps,
-    isDefaultReceiving: caps.canReceive ? form.isDefaultReceiving : false,
-    isDefaultIssue: caps.canIssue ? form.isDefaultIssue : false,
-  };
-}
-
-function formFromLocation(location: StockLocation): LocationForm {
-  const x = location as any;
-  const type = readLocationType(location);
-  const caps = defaultCapability(type);
-
-  return {
-    name: String(x.name ?? ""),
-    code: String(x.code ?? ""),
-    locationType: type,
-    isActive: x.isActive ?? true,
-    isDefault: x.isDefault ?? false,
-    isDefaultReceiving: x.isDefaultReceiving ?? false,
-    isDefaultIssue: x.isDefaultIssue ?? false,
-    canReceive: x.canReceive ?? caps.canReceive,
-    canIssue: x.canIssue ?? caps.canIssue,
-    canSell: x.canSell ?? caps.canSell,
-    canProduce: x.canProduce ?? caps.canProduce,
-  };
-}
-
-function validateForm(
-  form: LocationForm,
-  setErrors: (errors: FieldErrors) => void,
-): boolean {
-  const errors: FieldErrors = {};
-
-  if (!form.name.trim()) errors.name = "Location name is required.";
-  if (!form.code.trim()) errors.code = "Location code is required.";
-  if (!String(form.locationType).trim()) {
-    errors.locationType = "Location type is required.";
-  }
-
-  if (!form.canReceive && !form.canIssue && !form.canSell && !form.canProduce) {
-    errors.capabilities = "At least one capability is required.";
-  }
-
-  if (form.isDefaultReceiving && !form.canReceive) {
-    errors.isDefaultReceiving =
-      "Default receiving location must be able to receive.";
-  }
-
-  if (form.isDefaultIssue && !form.canIssue) {
-    errors.isDefaultIssue = "Default issue location must be able to issue.";
-  }
-
-  setErrors(errors);
-  return Object.keys(errors).length === 0;
-}
-
-function toPayload(form: LocationForm): CreateStockLocationDto {
-  return {
-    name: form.name.trim(),
-    code: form.code.trim().toUpperCase(),
-    locationType: form.locationType,
-    isActive: form.isActive,
-    isDefault: form.isDefault,
-    isDefaultReceiving: form.isDefaultReceiving,
-    isDefaultIssue: form.isDefaultIssue,
-    canReceive: form.canReceive,
-    canIssue: form.canIssue,
-    canSell: form.canSell,
-    canProduce: form.canProduce,
-  } as CreateStockLocationDto;
-}
-
-function sameSet(a: Set<string>, b: Set<string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const value of a) if (!b.has(value)) return false;
-  return true;
-}
-
-function ValidationAlerts({ errors }: { errors: FieldErrors }) {
-  return (
-    <>
-      {Object.values(errors)
-        .filter(Boolean)
-        .map((message, index) => (
-          <Alert
-            key={`${message}-${index}`}
-            tone="danger"
-            title="Validation"
-            message={message!}
-          />
-        ))}
-    </>
-  );
-}
-
-function CheckboxField(props: {
-  label: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        fontSize: 12,
-        fontWeight: 600,
-        color: props.disabled ? "#94a3b8" : "#334155",
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={props.checked}
-        disabled={props.disabled}
-        onChange={(event) => props.onChange(event.target.checked)}
-      />
-      {props.label}
-    </label>
-  );
-}
-
-function CapabilityBadges({ caps }: { caps: Capability }) {
-  const items = [
-    ["Receive", caps.canReceive],
-    ["Issue", caps.canIssue],
-    ["Sell", caps.canSell],
-    ["Produce", caps.canProduce],
-  ] as const;
-
-  return (
-    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-      {items.map(([label, enabled]) => (
-        <span
-          key={label}
-          className={enabled ? "ob-badge ob-badge--success" : "ob-badge"}
-        >
-          {enabled ? "✓" : "—"} {label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function CapabilitiesEditor(props: {
-  form: LocationForm;
-  setForm: React.Dispatch<React.SetStateAction<LocationForm>>;
-}) {
-  return (
-    <div className="ob-grid-2">
-      <CheckboxField
-        label="Can receive stock"
-        checked={props.form.canReceive}
-        onChange={(checked) =>
-          props.setForm((form) => ({
-            ...form,
-            canReceive: checked,
-            isDefaultReceiving: checked ? form.isDefaultReceiving : false,
-          }))
-        }
-      />
-
-      <CheckboxField
-        label="Can issue stock"
-        checked={props.form.canIssue}
-        onChange={(checked) =>
-          props.setForm((form) => ({
-            ...form,
-            canIssue: checked,
-            isDefaultIssue: checked ? form.isDefaultIssue : false,
-          }))
-        }
-      />
-
-      <CheckboxField
-        label="Can sell"
-        checked={props.form.canSell}
-        onChange={(checked) =>
-          props.setForm((form) => ({ ...form, canSell: checked }))
-        }
-      />
-
-      <CheckboxField
-        label="Can produce"
-        checked={props.form.canProduce}
-        onChange={(checked) =>
-          props.setForm((form) => ({ ...form, canProduce: checked }))
-        }
-      />
-
-      <CheckboxField
-        label="Active"
-        checked={props.form.isActive}
-        onChange={(checked) =>
-          props.setForm((form) => ({ ...form, isActive: checked }))
-        }
-      />
-
-      <CheckboxField
-        label="Default for branch"
-        checked={props.form.isDefault}
-        onChange={(checked) =>
-          props.setForm((form) => ({ ...form, isDefault: checked }))
-        }
-      />
-
-      <CheckboxField
-        label="Default receiving"
-        checked={props.form.isDefaultReceiving}
-        disabled={!props.form.canReceive}
-        onChange={(checked) =>
-          props.setForm((form) => ({
-            ...form,
-            isDefaultReceiving: checked,
-            canReceive: checked ? true : form.canReceive,
-          }))
-        }
-      />
-
-      <CheckboxField
-        label="Default issue"
-        checked={props.form.isDefaultIssue}
-        disabled={!props.form.canIssue}
-        onChange={(checked) =>
-          props.setForm((form) => ({
-            ...form,
-            isDefaultIssue: checked,
-            canIssue: checked ? true : form.canIssue,
-          }))
-        }
-      />
-    </div>
-  );
-}
-
-export function StockLocationsStep(props: {
+type Props = {
   companyId: string | null;
   branchId: string | null;
   branchName?: string;
   saving: boolean;
   dispatch: React.Dispatch<OnboardingAction>;
   onChanged?: () => Promise<void> | void;
-}) {
-  const [items, setItems] = useState<StockLocation[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [originalSelectedIds, setOriginalSelectedIds] = useState<Set<string>>(
-    new Set(),
+};
+
+type LocationForm = {
+  name: string;
+  code: string;
+  locationType: StockLocationType;
+  isActive: boolean;
+  canReceive: boolean;
+  canIssue: boolean;
+  canSell: boolean;
+  canProduce: boolean;
+  canAdjust: boolean;
+  isConsumptionLocation: boolean;
+  isMainWarehouse: boolean;
+  canReceiveGrn: boolean;
+  isProductionCenter: boolean;
+};
+
+type BranchAssignmentOption = {
+  branchStockLocationId: string;
+  stockLocationId: string;
+  name: string;
+  code: string;
+  locationType: string;
+  isActive: boolean;
+
+  canReceive: boolean;
+  canIssue: boolean;
+  canSell: boolean;
+  canProduce: boolean;
+  canAdjust: boolean;
+
+  canRequestFrom: boolean;
+  canReceiveTo: boolean;
+  canConsumeFrom: boolean;
+  canSellFrom: boolean;
+  canTransferFrom: boolean;
+  canTransferTo: boolean;
+
+  isDefaultIssueSource: boolean;
+  isDefaultReceivingTarget: boolean;
+  isDefaultConsumptionLocation: boolean;
+  isDefaultSalesLocation: boolean;
+
+  isMainWarehouse: boolean;
+  canReceiveGrn: boolean;
+  isProductionCenter: boolean;
+  isConsumptionLocation: boolean;
+};
+
+const PAGE_SIZE = 500;
+const DEFAULT_TYPE = "Warehouse" as unknown as StockLocationType;
+
+const DEFAULT_FORM: LocationForm = {
+  name: "",
+  code: "",
+  locationType: DEFAULT_TYPE,
+  isActive: true,
+  canReceive: true,
+  canIssue: true,
+  canSell: false,
+  canProduce: false,
+  canAdjust: true,
+  isConsumptionLocation: false,
+  isMainWarehouse: true,
+  canReceiveGrn: true,
+  isProductionCenter: false,
+};
+
+const TYPE_OPTIONS = LOCATION_TYPES.map((x) => ({
+  value: String((x as any).value ?? x),
+  label: String((x as any).label ?? x),
+}));
+
+function text(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normalizeId(value: unknown): string {
+  const id = text(value);
+  if (!id || id === "00000000-0000-0000-0000-000000000000") return "";
+  return id;
+}
+
+function stockLocationIdOf(value: any): string {
+  return normalizeId(
+    value?.stockLocationId ??
+      value?.StockLocationId ??
+      value?.locationId ??
+      value?.LocationId ??
+      value?.stockLocation?.id ??
+      value?.StockLocation?.Id,
   );
+}
+
+function branchStockLocationIdOf(value: any): string {
+  const explicit = normalizeId(
+    value?.branchStockLocationId ??
+      value?.BranchStockLocationId ??
+      value?.assignmentId ??
+      value?.AssignmentId ??
+      value?.branchLocationId ??
+      value?.BranchLocationId,
+  );
+
+  if (explicit) return explicit;
+
+  // Branch assignment APIs commonly return the assignment id as `id` and the
+  // company stock-location id as `stockLocationId`. In that shape, `id` is the
+  // value the inventory-configuration API must save.
+  const rawId = normalizeId(value?.id ?? value?.Id);
+  const stockId = normalizeId(value?.stockLocationId ?? value?.StockLocationId);
+
+  if (rawId && stockId && rawId !== stockId) return rawId;
+
+  // Last-resort fallback keeps the UI usable for older endpoints. The backend
+  // should still be updated to return branchStockLocationId explicitly.
+  return rawId;
+}
+
+function nameOf(value: any): string {
+  return text(
+    value?.name ??
+      value?.Name ??
+      value?.stockLocationName ??
+      value?.StockLocationName ??
+      value?.locationName ??
+      value?.LocationName,
+  );
+}
+
+function codeOf(value: any): string {
+  return text(value?.code ?? value?.Code ?? value?.stockLocationCode ?? value?.StockLocationCode).toUpperCase();
+}
+
+function activeOf(value: any): boolean {
+  return value?.isActive !== false && value?.IsActive !== false && value?.active !== false;
+}
+
+function boolOf(value: any, keys: string[], fallback = false): boolean {
+  for (const key of keys) {
+    const pascal = `${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+    const raw = value?.[key] ?? value?.[pascal];
+    if (raw === true) return true;
+    if (raw === false) return false;
+  }
+
+  return fallback;
+}
+
+function typeOf(value: any): StockLocationType {
+  return String(value?.locationType ?? value?.LocationType ?? value?.type ?? value?.Type ?? DEFAULT_TYPE) as any;
+}
+
+function norm(value: unknown): string {
+  return String(value ?? "").replace(/[\s_-]+/g, "").toLowerCase();
+}
+
+function isWaste(type: unknown): boolean {
+  return norm(type) === "waste";
+}
+
+function isTransit(type: unknown): boolean {
+  return norm(type) === "transit";
+}
+
+function isProduction(type: unknown): boolean {
+  return norm(type).includes("production");
+}
+
+function isWarehouse(type: unknown): boolean {
+  const t = norm(type);
+  return t.includes("warehouse") || t.includes("mainstore") || t.includes("store");
+}
+
+function isKitchenBarOrPos(type: unknown): boolean {
+  const t = norm(type);
+  return t.includes("kitchen") || t.includes("bar") || t.includes("retail") || t.includes("pos");
+}
+
+function defaultCaps(type: StockLocationType): Partial<LocationForm> {
+  const t = norm(type);
+
+  if (isWarehouse(t)) {
+    return {
+      canReceive: true,
+      canIssue: true,
+      canSell: false,
+      canProduce: false,
+      canAdjust: true,
+      isConsumptionLocation: false,
+      isMainWarehouse: true,
+      canReceiveGrn: true,
+      isProductionCenter: false,
+    };
+  }
+
+  if (isProduction(t)) {
+    return {
+      canReceive: true,
+      canIssue: true,
+      canSell: false,
+      canProduce: true,
+      canAdjust: true,
+      isConsumptionLocation: false,
+      isMainWarehouse: false,
+      canReceiveGrn: false,
+      isProductionCenter: true,
+    };
+  }
+
+  if (isKitchenBarOrPos(t)) {
+    return {
+      canReceive: true,
+      canIssue: true,
+      canSell: t.includes("bar") || t.includes("retail") || t.includes("pos"),
+      canProduce: false,
+      canAdjust: true,
+      isConsumptionLocation: true,
+      isMainWarehouse: false,
+      canReceiveGrn: false,
+      isProductionCenter: false,
+    };
+  }
+
+  if (isWaste(t)) {
+    return {
+      canReceive: true,
+      canIssue: false,
+      canSell: false,
+      canProduce: false,
+      canAdjust: true,
+      isConsumptionLocation: false,
+      isMainWarehouse: false,
+      canReceiveGrn: false,
+      isProductionCenter: false,
+    };
+  }
+
+  return {
+    canReceive: false,
+    canIssue: false,
+    canSell: false,
+    canProduce: false,
+    canAdjust: false,
+    isConsumptionLocation: false,
+    isMainWarehouse: false,
+    canReceiveGrn: false,
+    isProductionCenter: false,
+  };
+}
+
+function formFromLocation(location: StockLocation): LocationForm {
+  const x = location as any;
+  const locationType = typeOf(x);
+  const caps = defaultCaps(locationType);
+
+  const canReceive = boolOf(x, ["canReceive"], caps.canReceive ?? false);
+  const canIssue = boolOf(x, ["canIssue"], caps.canIssue ?? false);
+  const canSell = boolOf(x, ["canSell"], caps.canSell ?? false);
+  const canProduce = boolOf(x, ["canProduce"], caps.canProduce ?? false);
+  const canAdjust = boolOf(x, ["canAdjust"], caps.canAdjust ?? false);
+
+  return {
+    name: nameOf(x),
+    code: codeOf(x),
+    locationType,
+    isActive: activeOf(x),
+    canReceive,
+    canIssue,
+    canSell,
+    canProduce,
+    canAdjust,
+    isConsumptionLocation: boolOf(
+      x,
+      ["isConsumptionLocation", "canConsume", "isDefaultConsumptionLocation"],
+      caps.isConsumptionLocation ?? false,
+    ),
+    isMainWarehouse: boolOf(
+      x,
+      ["isMainWarehouse", "isMainWarehouseForProduction", "isDefaultIssueSource"],
+      caps.isMainWarehouse ?? false,
+    ),
+    canReceiveGrn: boolOf(
+      x,
+      ["canReceiveGrn", "isDefaultReceiving", "isDefaultReceivingTarget"],
+      caps.canReceiveGrn ?? false,
+    ),
+    isProductionCenter: boolOf(
+      x,
+      ["isProductionCenter", "isProductionLocation"],
+      caps.isProductionCenter ?? false,
+    ),
+  };
+}
+
+function applyTypeDefaults(current: LocationForm, type: StockLocationType): LocationForm {
+  return {
+    ...current,
+    locationType: type,
+    ...defaultCaps(type),
+  };
+}
+
+function validateLocation(form: LocationForm, setErrors: (e: FieldErrors) => void) {
+  const errors: FieldErrors = {};
+
+  if (!form.name.trim()) errors.name = "Location name is required.";
+  if (!form.code.trim()) errors.code = "Location code is required.";
+  if (!String(form.locationType).trim()) errors.locationType = "Location type is required.";
+
+  if (!form.canReceive && !form.canIssue && !form.canSell && !form.canProduce && !form.canAdjust) {
+    errors.capabilities = "At least one capability is required.";
+  }
+
+  if (form.isMainWarehouse && (!form.canReceive || !form.canIssue)) {
+    errors.isMainWarehouse = "Main warehouse must be able to receive and issue.";
+  }
+
+  if (form.canReceiveGrn && !form.canReceive) {
+    errors.canReceiveGrn = "GRN receiving location must be able to receive.";
+  }
+
+  if (form.isProductionCenter && !form.canProduce) {
+    errors.isProductionCenter = "Production center must be able to produce.";
+  }
+
+  if (form.isConsumptionLocation && !form.canIssue) {
+    errors.isConsumptionLocation = "Consumption location must be able to issue/consume.";
+  }
+
+  if (isWaste(form.locationType) && (form.canIssue || form.canSell || form.canProduce)) {
+    errors.locationType = "Waste location can receive only. It cannot issue, sell, or produce.";
+  }
+
+  if (isTransit(form.locationType) && (form.canSell || form.canProduce)) {
+    errors.locationType = "Transit location cannot sell or produce.";
+  }
+
+  setErrors(errors);
+  return Object.keys(errors).length === 0;
+}
+
+function locationPayload(form: LocationForm): CreateStockLocationDto {
+  return {
+    name: form.name.trim(),
+    code: form.code.trim().toUpperCase(),
+    locationType: form.locationType,
+    isActive: form.isActive,
+
+    canReceive: form.canReceive,
+    canIssue: form.canIssue,
+    canSell: form.canSell,
+    canProduce: form.canProduce,
+    canAdjust: form.canAdjust,
+
+    isDefault: form.isMainWarehouse,
+    isDefaultReceiving: form.canReceiveGrn || form.isMainWarehouse,
+    isDefaultIssue: form.isMainWarehouse,
+
+    isMainWarehouse: form.isMainWarehouse,
+    canReceiveGrn: form.canReceiveGrn,
+    isProductionCenter: form.isProductionCenter,
+    isConsumptionLocation: form.isConsumptionLocation,
+  } as any;
+}
+
+function sameSet(a: Set<string>, b: Set<string>) {
+  if (a.size !== b.size) return false;
+  for (const value of a) if (!b.has(value)) return false;
+  return true;
+}
+
+function unique<T>(items: T[], key: (x: T) => string): T[] {
+  const map = new Map<string, T>();
+  for (const item of items) {
+    const id = key(item);
+    if (id && !map.has(id)) map.set(id, item);
+  }
+  return [...map.values()];
+}
+
+function toAssignmentOption(location: StockLocation): BranchAssignmentOption {
+  const x = location as any;
+  const locationType = String(x.locationType ?? x.LocationType ?? x.type ?? x.Type ?? "");
+
+  const caps = defaultCaps(locationType as any);
+
+  const canReceive = boolOf(x, ["canReceive"], caps.canReceive ?? false);
+  const canIssue = boolOf(x, ["canIssue"], caps.canIssue ?? false);
+  const canSell = boolOf(x, ["canSell"], caps.canSell ?? false);
+  const canProduce = boolOf(x, ["canProduce"], caps.canProduce ?? false);
+  const canAdjust = boolOf(x, ["canAdjust"], caps.canAdjust ?? false);
+
+  const isMainWarehouse = boolOf(
+    x,
+    ["isMainWarehouse", "isMainWarehouseForProduction", "isDefaultIssueSource"],
+    caps.isMainWarehouse ?? false,
+  );
+  const canReceiveGrn = boolOf(
+    x,
+    ["canReceiveGrn", "isDefaultReceiving", "isDefaultReceivingTarget"],
+    caps.canReceiveGrn ?? false,
+  );
+  const isProductionCenter = boolOf(
+    x,
+    ["isProductionCenter", "isProductionLocation"],
+    caps.isProductionCenter ?? false,
+  );
+  const isConsumptionLocation = boolOf(
+    x,
+    ["isConsumptionLocation", "canConsume", "isDefaultConsumptionLocation"],
+    caps.isConsumptionLocation ?? false,
+  );
+
+  const canTransferFrom = boolOf(x, ["canTransferFrom"], canIssue);
+  const canTransferTo = boolOf(x, ["canTransferTo"], canReceive);
+  const canRequestFrom = boolOf(x, ["canRequestFrom"], canIssue || canTransferFrom);
+  const canReceiveTo = boolOf(x, ["canReceiveTo"], canReceive || canTransferTo);
+  const canConsumeFrom = boolOf(x, ["canConsumeFrom"], canIssue && isConsumptionLocation);
+  const canSellFrom = boolOf(x, ["canSellFrom"], canSell);
+
+     return {
+      branchStockLocationId: branchStockLocationIdOf(x),
+      stockLocationId: stockLocationIdOf(x),
+      name: nameOf(x),
+      code: codeOf(x),
+      locationType,
+      isActive: activeOf(x),
+
+      canReceive,
+      canIssue,
+      canSell,
+      canProduce,
+      canAdjust,
+
+      canRequestFrom,
+      canReceiveTo,
+      canConsumeFrom,
+      canSellFrom,
+      canTransferFrom,
+      canTransferTo,
+
+      isDefaultIssueSource: boolOf(x, ["isDefaultIssueSource", "isDefaultIssue"], isMainWarehouse),
+      isDefaultReceivingTarget: boolOf(
+        x,
+        ["isDefaultReceivingTarget", "isDefaultReceiving"],
+        canReceiveGrn || isMainWarehouse,
+      ),
+      isDefaultConsumptionLocation: boolOf(
+        x,
+        ["isDefaultConsumptionLocation"],
+        isConsumptionLocation,
+      ),
+      isDefaultSalesLocation: boolOf(x, ["isDefaultSalesLocation"], canSell),
+
+      isMainWarehouse,
+      canReceiveGrn,
+      isProductionCenter,
+      isConsumptionLocation,
+    };
+}
+
+
+function optionLabel(x: BranchAssignmentOption): string {
+  const label = x.name || x.code || x.stockLocationId || x.branchStockLocationId;
+  return `${label}${x.code && x.name ? ` (${x.code})` : ""}`;
+}
+
+function isReceivingOption(x: BranchAssignmentOption): boolean {
+  return (
+    x.isActive &&
+    x.canReceive &&
+    x.canReceiveTo &&
+    (x.canReceiveGrn || x.isDefaultReceivingTarget || x.isMainWarehouse || isWarehouse(x.locationType)) &&
+    !isWaste(x.locationType) &&
+    !isTransit(x.locationType)
+  );
+}
+
+function isIssueOption(x: BranchAssignmentOption): boolean {
+  return (
+    x.isActive &&
+    x.canIssue &&
+    x.canRequestFrom &&
+    (x.isMainWarehouse || x.isDefaultIssueSource || isWarehouse(x.locationType)) &&
+    !x.isConsumptionLocation &&
+    !x.isProductionCenter &&
+    !isWaste(x.locationType) &&
+    !isTransit(x.locationType)
+  );
+}
+
+function isProductionOption(x: BranchAssignmentOption): boolean {
+  return (
+    x.isActive &&
+    x.canProduce &&
+    x.isProductionCenter &&
+    !x.isMainWarehouse &&
+    !x.isConsumptionLocation &&
+    !isWaste(x.locationType) &&
+    !isTransit(x.locationType)
+  );
+}
+
+function isConsumptionOption(x: BranchAssignmentOption): boolean {
+  return (
+    x.isActive &&
+    x.canIssue &&
+    x.canConsumeFrom &&
+    x.isConsumptionLocation &&
+    !x.isMainWarehouse &&
+    !x.isProductionCenter &&
+    !x.canReceiveGrn &&
+    !isWaste(x.locationType) &&
+    !isTransit(x.locationType)
+  );
+}
+
+function isAdjustmentOption(x: BranchAssignmentOption): boolean {
+  return x.isActive && x.canAdjust && !isTransit(x.locationType);
+}
+
+function keepCurrentIfStillValid(
+  currentId: string | null | undefined,
+  options: BranchAssignmentOption[],
+): string | null {
+  if (currentId && options.some((x) => x.branchStockLocationId === currentId)) return currentId;
+  return options[0]?.branchStockLocationId ?? null;
+}
+
+const Check = memo(function Check(props: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  help?: string;
+}) {
+  return (
+    <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12 }}>
+      <input
+        type="checkbox"
+        checked={props.checked}
+        disabled={props.disabled}
+        onChange={(e) => props.onChange(e.target.checked)}
+        style={{ marginTop: 2 }}
+      />
+      <span>
+        {props.label}
+        {props.help && (
+          <span style={{ display: "block", color: "#64748b", fontWeight: 500, marginTop: 2 }}>
+            {props.help}
+          </span>
+        )}
+      </span>
+    </label>
+  );
+});
+
+const Summary = memo(function Summary({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="ob-inner-card">
+      <div className="ob-inner-card-body">
+        <div style={{ color: "#64748b", fontSize: 11 }}>{label}</div>
+        <div style={{ fontSize: 20, fontWeight: 800 }}>{value}</div>
+      </div>
+    </div>
+  );
+});
+
+const LocationFormView = memo(function LocationFormView(props: {
+  form: LocationForm;
+  errors: FieldErrors;
+  onChange: React.Dispatch<React.SetStateAction<LocationForm>>;
+}) {
+  const f = props.form;
+
+  const set = useCallback(
+    (patch: Partial<LocationForm>) => props.onChange((current) => ({ ...current, ...patch })),
+    [props.onChange],
+  );
+
+  return (
+    <>
+      {Object.values(props.errors)
+        .filter(Boolean)
+        .map((message) => (
+          <Alert key={message} tone="danger" title="Validation" message={message!} />
+        ))}
+
+      <div className="ob-grid-2">
+        <Field label="Location name" required error={props.errors.name}>
+          <Input value={f.name} onChange={(v) => set({ name: v })} placeholder="Main Warehouse" />
+        </Field>
+
+        <Field label="Code" required error={props.errors.code}>
+          <Input value={f.code} onChange={(v) => set({ code: v.toUpperCase() })} placeholder="MAIN-WH" />
+        </Field>
+
+        <Field label="Location type" required error={props.errors.locationType}>
+          <SelectInput
+            value={String(f.locationType)}
+            onChange={(v) => props.onChange((current) => applyTypeDefaults(current, v as any))}
+            options={TYPE_OPTIONS as any}
+          />
+        </Field>
+      </div>
+
+      <SectionTitle
+        title="ERP capabilities"
+        subtitle="These flags control GRN, SIV, POS, production, transfer, consumption, and stock adjustment behavior."
+      />
+
+      <div className="ob-grid-2">
+        <Check label="Can receive" checked={f.canReceive} onChange={(v) => set({ canReceive: v })} />
+        <Check
+          label="Can issue"
+          checked={f.canIssue}
+          onChange={(v) =>
+            set({
+              canIssue: v,
+              isConsumptionLocation: v ? f.isConsumptionLocation : false,
+              isMainWarehouse: v && f.canReceive ? f.isMainWarehouse : false,
+            })
+          }
+        />
+        <Check label="Can sell" checked={f.canSell} onChange={(v) => set({ canSell: v })} />
+        <Check
+          label="Can adjust"
+          checked={f.canAdjust}
+          onChange={(v) => set({ canAdjust: v })}
+          help="Allows stock count, waste, damage, variance, and manual inventory adjustment documents."
+        />
+        <Check label="Can produce" checked={f.canProduce} onChange={(v) => set({ canProduce: v })} />
+        <Check label="Active" checked={f.isActive} onChange={(v) => set({ isActive: v })} />
+
+        <Check
+          label="Main warehouse / issue source"
+          checked={f.isMainWarehouse}
+          disabled={!f.canReceive || !f.canIssue}
+          help="Primary receiving and issue source. Used as Default Issue."
+          onChange={(v) =>
+            set({
+              isMainWarehouse: v,
+              canReceive: v ? true : f.canReceive,
+              canIssue: v ? true : f.canIssue,
+              canReceiveGrn: v ? true : f.canReceiveGrn,
+              isConsumptionLocation: v ? false : f.isConsumptionLocation,
+              isProductionCenter: v ? false : f.isProductionCenter,
+            })
+          }
+        />
+
+        <Check
+          label="GRN receiving target"
+          checked={f.canReceiveGrn}
+          disabled={!f.canReceive}
+          help="Allowed as default receiving location for supplier receipts."
+          onChange={(v) => set({ canReceiveGrn: v, canReceive: v ? true : f.canReceive })}
+        />
+
+        <Check
+          label="Production center"
+          checked={f.isProductionCenter}
+          disabled={!f.canProduce}
+          help="Used for production output, not normal consumption."
+          onChange={(v) =>
+            set({
+              isProductionCenter: v,
+              canProduce: v ? true : f.canProduce,
+              isMainWarehouse: v ? false : f.isMainWarehouse,
+              isConsumptionLocation: v ? false : f.isConsumptionLocation,
+            })
+          }
+        />
+
+        <Check
+          label="Consumption location"
+          checked={f.isConsumptionLocation}
+          disabled={!f.canIssue || f.isMainWarehouse || f.isProductionCenter}
+          help="Kitchen, Bar, or POS consumption destination."
+          onChange={(v) =>
+            set({
+              isConsumptionLocation: v,
+              canIssue: v ? true : f.canIssue,
+              isMainWarehouse: v ? false : f.isMainWarehouse,
+              isProductionCenter: v ? false : f.isProductionCenter,
+              canReceiveGrn: v ? false : f.canReceiveGrn,
+            })
+          }
+        />
+      </div>
+    </>
+  );
+});
+
+function SelectConfigField(props: {
+  label: string;
+  value?: string | null;
+  options: BranchAssignmentOption[];
+  disabled?: boolean;
+  onChange: (id: string | null) => void;
+  hint?: string;
+}) {
+  return (
+    <Field label={props.label}>
+      <SelectInput
+        value={props.value ?? ""}
+        disabled={props.disabled}
+        onChange={(v) => props.onChange(v ? String(v) : null)}
+        options={[
+          { value: "", label: "Not configured" },
+          ...props.options.map((x) => ({
+            value: x.branchStockLocationId,
+            label: optionLabel(x),
+          })),
+        ]}
+      />
+      {props.hint && <div style={{ color: "#64748b", fontSize: 11, marginTop: 6 }}>{props.hint}</div>}
+    </Field>
+  );
+}
+
+function InventoryConfigurationPanel(props: {
+  companyId: string | null;
+  branchId: string | null;
+  branchAssignments: StockLocation[];
+  config: BranchInventoryConfigurationDto | null;
+  saving: boolean;
+  dispatch: React.Dispatch<OnboardingAction>;
+  onSaved: () => Promise<void>;
+}) {
+  const options = useMemo(
+    () =>
+      unique(props.branchAssignments.map(toAssignmentOption), (x) => x.branchStockLocationId)
+        .filter((x) => x.branchStockLocationId && x.isActive)
+        .sort((a, b) => optionLabel(a).localeCompare(optionLabel(b))),
+    [props.branchAssignments],
+  );
+
+  const receivingOptions = useMemo(() => options.filter(isReceivingOption), [options]);
+  const issueOptions = useMemo(() => options.filter(isIssueOption), [options]);
+  const productionOptions = useMemo(() => options.filter(isProductionOption), [options]);
+  const consumptionOptions = useMemo(() => options.filter(isConsumptionOption), [options]);
+  const adjustmentOptions = useMemo(() => options.filter(isAdjustmentOption), [options]);
+
+  const [form, setForm] = useState<UpsertBranchInventoryConfigurationDto>({
+    defaultReceivingBranchStockLocationId: null,
+    defaultIssueBranchStockLocationId: null,
+    productionBranchStockLocationId: null,
+    consumptionBranchStockLocationId: null,
+  });
+
+  useEffect(() => {
+    setForm({
+      defaultReceivingBranchStockLocationId:
+        props.config?.defaultReceivingBranchStockLocationId ?? null,
+      defaultIssueBranchStockLocationId:
+        props.config?.defaultIssueBranchStockLocationId ?? null,
+      productionBranchStockLocationId:
+        props.config?.productionBranchStockLocationId ?? null,
+      consumptionBranchStockLocationId:
+        props.config?.consumptionBranchStockLocationId ?? null,
+    });
+  }, [props.config]);
+
+  useEffect(() => {
+    setForm((current) => ({
+      defaultReceivingBranchStockLocationId: keepCurrentIfStillValid(
+        current.defaultReceivingBranchStockLocationId,
+        receivingOptions,
+      ),
+      defaultIssueBranchStockLocationId: keepCurrentIfStillValid(
+        current.defaultIssueBranchStockLocationId,
+        issueOptions,
+      ),
+      productionBranchStockLocationId:
+        current.productionBranchStockLocationId &&
+        productionOptions.some((x) => x.branchStockLocationId === current.productionBranchStockLocationId)
+          ? current.productionBranchStockLocationId
+          : productionOptions[0]?.branchStockLocationId ?? null,
+      consumptionBranchStockLocationId: keepCurrentIfStillValid(
+        current.consumptionBranchStockLocationId,
+        consumptionOptions,
+      ),
+    }));
+  }, [receivingOptions, issueOptions, productionOptions, consumptionOptions]);
+
+  const validation = useMemo(() => {
+    const errors: string[] = [];
+
+    const receiving = options.find(
+      (x) => x.branchStockLocationId === form.defaultReceivingBranchStockLocationId,
+    );
+    const issue = options.find((x) => x.branchStockLocationId === form.defaultIssueBranchStockLocationId);
+    const production = options.find(
+      (x) => x.branchStockLocationId === form.productionBranchStockLocationId,
+    );
+    const consumption = options.find(
+      (x) => x.branchStockLocationId === form.consumptionBranchStockLocationId,
+    );
+
+    if (!receiving) errors.push("Default receiving location is required.");
+    else if (!isReceivingOption(receiving)) {
+      errors.push("Default receiving must be a warehouse/GRN receiving target.");
+    }
+
+    if (!issue) errors.push("Default issue location is required.");
+    else if (!isIssueOption(issue)) {
+      errors.push("Default issue must be Main Warehouse or a warehouse issue source.");
+    }
+
+    if (production && !isProductionOption(production)) {
+      errors.push("Production location must be a production center.");
+    }
+
+    if (!consumption) errors.push("Consumption location is required.");
+    else if (!isConsumptionOption(consumption)) {
+      errors.push("Consumption location must be Kitchen, Bar, or POS consumption location.");
+    }
+
+    if (issue && consumption && issue.branchStockLocationId === consumption.branchStockLocationId) {
+      errors.push("Default issue and consumption locations cannot be the same.");
+    }
+
+    if (adjustmentOptions.length === 0) {
+      errors.push("At least one branch stock location must allow stock adjustment.");
+    }
+
+    return errors;
+  }, [form, options, adjustmentOptions.length]);
+
+  const save = useCallback(async () => {
+    if (!props.companyId || !props.branchId) return;
+
+    if (validation.length > 0) {
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error: validation.join(" "),
+      });
+      return;
+    }
+
+    props.dispatch({ type: "SAVE_START" });
+
+    try {
+      await stockLocationsApi.configuration.save(props.companyId, props.branchId, form);
+      await props.onSaved();
+      props.dispatch({ type: "SAVE_SUCCESS", notice: "Branch inventory configuration saved." });
+    } catch (err) {
+      props.dispatch({
+        type: "SAVE_ERROR",
+        error: extractApiError(err, "Failed to save branch inventory configuration."),
+      });
+    }
+  }, [form, props, validation]);
+
+  const disabled = props.saving || !props.companyId || !props.branchId || options.length === 0;
+
+  return (
+    <div className="ob-inner-card">
+      <div className="ob-inner-card-body" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <SectionTitle
+          title="Branch inventory configuration"
+          subtitle="ERP defaults are saved against branch stock-location assignments. Invalid flows are blocked."
+        />
+
+        {options.length === 0 && (
+          <Alert
+            tone="warn"
+            title="No branch assignments"
+            message="Assign stock locations to the branch before setting inventory defaults."
+          />
+        )}
+
+        {options.length > 0 && validation.length > 0 && (
+          <Alert tone="warn" title="Configuration needs attention" message={validation.join(" ")} />
+        )}
+
+        {options.length > 0 && adjustmentOptions.length > 0 && (
+          <Alert
+            tone="success"
+            title="Adjustment locations configured"
+            message={`${adjustmentOptions.length} branch location${adjustmentOptions.length === 1 ? "" : "s"} can be used for stock adjustments.`}
+          />
+        )}
+
+        <div className="ob-grid-2">
+          <SelectConfigField
+            label="Default receiving"
+            value={form.defaultReceivingBranchStockLocationId}
+            options={receivingOptions}
+            disabled={disabled}
+            hint="Normally Main Warehouse. Used for GRN receiving."
+            onChange={(id) => setForm((x) => ({ ...x, defaultReceivingBranchStockLocationId: id }))}
+          />
+
+          <SelectConfigField
+            label="Default issue"
+            value={form.defaultIssueBranchStockLocationId}
+            options={issueOptions}
+            disabled={disabled}
+            hint="Must be Main Warehouse / issue source. Kitchen/POS are blocked."
+            onChange={(id) => setForm((x) => ({ ...x, defaultIssueBranchStockLocationId: id }))}
+          />
+
+          <SelectConfigField
+            label="Production location"
+            value={form.productionBranchStockLocationId}
+            options={productionOptions}
+            disabled={disabled}
+            hint="Used only for production output. Optional if this branch does not produce items."
+            onChange={(id) => setForm((x) => ({ ...x, productionBranchStockLocationId: id }))}
+          />
+
+          <SelectConfigField
+            label="Consumption location"
+            value={form.consumptionBranchStockLocationId}
+            options={consumptionOptions}
+            disabled={disabled}
+            hint="Kitchen, Bar, or POS. Used as SIV/recipe consumption destination."
+            onChange={(id) => setForm((x) => ({ ...x, consumptionBranchStockLocationId: id }))}
+          />
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Btn variant="primary" disabled={disabled || validation.length > 0} onClick={() => void save()}>
+            Save configuration
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function StockLocationsStep(props: Props) {
+  const [companyLocations, setCompanyLocations] = useState<StockLocation[]>([]);
+  const [branchLocations, setBranchLocations] = useState<StockLocation[]>([]);
+  const [config, setConfig] = useState<BranchInventoryConfigurationDto | null>(null);
+
+  const [assignedIds, setAssignedIds] = useState<Set<string>>(new Set());
+  const [originalAssignedIds, setOriginalAssignedIds] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -410,9 +986,7 @@ export function StockLocationsStep(props: {
   const [editSaving, setEditSaving] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState<LocationForm>({
-    ...DEFAULT_FORM,
-  });
+  const [createForm, setCreateForm] = useState<LocationForm>({ ...DEFAULT_FORM });
   const [createErrors, setCreateErrors] = useState<FieldErrors>({});
   const [createSaving, setCreateSaving] = useState(false);
 
@@ -420,38 +994,29 @@ export function StockLocationsStep(props: {
 
   const canManage = Boolean(props.companyId && props.branchId);
 
-  const assignmentDirty = useMemo(
-    () => !sameSet(selectedIds, originalSelectedIds),
-    [selectedIds, originalSelectedIds],
+  const dirtyAssignments = useMemo(
+    () => !sameSet(assignedIds, originalAssignedIds),
+    [assignedIds, originalAssignedIds],
   );
 
-  const selectedCount = selectedIds.size;
+  const branchAssignmentOptions = useMemo(
+    () => branchLocations.map(toAssignmentOption).filter((x) => x.branchStockLocationId),
+    [branchLocations],
+  );
 
-  const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
-      const aSelected = selectedIds.has(locationId(a)) ? 0 : 1;
-      const bSelected = selectedIds.has(locationId(b)) ? 0 : 1;
-      if (aSelected !== bSelected) return aSelected - bSelected;
+  const hasReceiving = branchAssignmentOptions.some(isReceivingOption);
+  const hasIssue = branchAssignmentOptions.some(isIssueOption);
+  const hasConsumption = branchAssignmentOptions.some(isConsumptionOption);
+  const hasAdjustment = branchAssignmentOptions.some(isAdjustmentOption);
 
-      const af = formFromLocation(a);
-      const bf = formFromLocation(b);
-
-      const aDefault = af.isDefaultReceiving || af.isDefaultIssue ? 0 : 1;
-      const bDefault = bf.isDefaultReceiving || bf.isDefaultIssue ? 0 : 1;
-      if (aDefault !== bDefault) return aDefault - bDefault;
-
-      return af.name.localeCompare(bf.name);
-    });
-  }, [items, selectedIds]);
-
-  const fetchLocations = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!props.companyId || !props.branchId) {
-      setItems([]);
-      setSelectedIds(new Set());
-      setOriginalSelectedIds(new Set());
-      setLoadError(
-        "Company and branch are required before stock locations can be loaded.",
-      );
+      setCompanyLocations([]);
+      setBranchLocations([]);
+      setAssignedIds(new Set());
+      setOriginalAssignedIds(new Set());
+      setConfig(null);
+      setLoadError(null);
       return;
     }
 
@@ -459,28 +1024,38 @@ export function StockLocationsStep(props: {
     setLoadError(null);
 
     try {
-      const data = await stockLocationsApi.list(props.companyId, {
-        activeOnly: false,
-        page: 1,
-        pageSize: 500,
-      });
+      const [companyRows, branchRows, branchConfig] = await Promise.all([
+        stockLocationsApi.company.list(props.companyId, {
+          activeOnly: false,
+          page: 1,
+          pageSize: PAGE_SIZE,
+        }),
+        stockLocationsApi.branchAssignments.list(props.companyId, props.branchId, {
+          activeOnly: false,
+          page: 1,
+          pageSize: PAGE_SIZE,
+        }),
+        stockLocationsApi.configuration.get(props.companyId, props.branchId),
+      ]);
 
-      const nextItems = Array.isArray(data) ? data : [];
+      const safeCompanyRows = Array.isArray(companyRows) ? companyRows : [];
+      const safeBranchRows = Array.isArray(branchRows) ? branchRows : [];
 
-      const assigned = new Set(
-        nextItems
-          .filter((item) => isAssigned(item, props.branchId!))
-          .map(locationId)
-          .filter(Boolean),
+      const branchAssignedStockLocationIds = new Set(
+        safeBranchRows.map(stockLocationIdOf).filter(Boolean),
       );
 
-      setItems(nextItems);
-      setSelectedIds(assigned);
-      setOriginalSelectedIds(new Set(assigned));
+      setCompanyLocations(safeCompanyRows);
+      setBranchLocations(safeBranchRows);
+      setAssignedIds(branchAssignedStockLocationIds);
+      setOriginalAssignedIds(new Set(branchAssignedStockLocationIds));
+      setConfig(branchConfig);
     } catch (err) {
-      setItems([]);
-      setSelectedIds(new Set());
-      setOriginalSelectedIds(new Set());
+      setCompanyLocations([]);
+      setBranchLocations([]);
+      setAssignedIds(new Set());
+      setOriginalAssignedIds(new Set());
+      setConfig(null);
       setLoadError(extractApiError(err, "Failed to load stock locations."));
     } finally {
       setLoading(false);
@@ -488,174 +1063,66 @@ export function StockLocationsStep(props: {
   }, [props.companyId, props.branchId]);
 
   useEffect(() => {
-    void fetchLocations();
-  }, [fetchLocations]);
+    void fetchData();
+  }, [fetchData]);
 
   useEffect(() => {
-    if (!loading && canManage && items.length === 0) {
-      setShowCreate(true);
-    }
-  }, [loading, canManage, items.length]);
+    if (!loading && canManage && companyLocations.length === 0) setShowCreate(true);
+  }, [loading, canManage, companyLocations.length]);
 
-  function toggleSelected(id: string, checked: boolean) {
-    setSelectedIds((current) => {
+  const setAssigned = useCallback((id: string, value: boolean) => {
+    setAssignedIds((current) => {
       const next = new Set(current);
-      checked ? next.add(id) : next.delete(id);
+      if (value) next.add(id);
+      else next.delete(id);
       return next;
     });
-  }
+  }, []);
 
-  function openEdit(location: StockLocation) {
-    setExpandedId(locationId(location));
-    setEditForm(formFromLocation(location));
-    setEditErrors({});
-  }
+  const saveAssignments = useCallback(async () => {
+    if (!props.companyId || !props.branchId) return;
 
-  function closeEdit() {
-    setExpandedId(null);
-    setEditErrors({});
-  }
-
-  async function refreshAfterSave() {
-    await fetchLocations();
-    await props.onChanged?.();
-  }
-
-  async function saveAssignments() {
-  if (!props.companyId || !props.branchId) return;
-
-  setAssignmentSaving(true);
-  props.dispatch({ type: "SAVE_START" });
-
-  try {
-    const selectedLocationIds = [...selectedIds];
-
-    await stockLocationsApi.assignManyToBranch(
-      props.companyId,
-      props.branchId,
-      {
-        stockLocationIds: selectedLocationIds,
-      },
-    );
-
-    await fetchLocations();
-    await props.onChanged?.();
-
-    props.dispatch({
-      type: "SAVE_SUCCESS",
-      notice: "Stock locations assigned to branch successfully.",
-    });
-  } catch (err) {
-    props.dispatch({
-      type: "SAVE_ERROR",
-      error: extractApiError(
-        err,
-        "Failed to assign stock locations to this branch.",
-      ),
-    });
-  } finally {
-    setAssignmentSaving(false);
-  }
-}
-
-  async function saveConfiguration(id: string) {
-    if (!props.companyId) return;
-    if (!validateForm(editForm, setEditErrors)) return;
-
-    const current = items.find((item) => locationId(item) === id);
-    const branchId = selectedIds.has(id)
-      ? props.branchId
-      : current
-        ? locationBranchId(current) || null
-        : null;
-
-    setEditSaving(true);
+    setAssignmentSaving(true);
     props.dispatch({ type: "SAVE_START" });
 
     try {
-      await stockLocationsApi.update(props.companyId, id, {
-        ...toPayload(editForm),
-        branchId,
+      await stockLocationsApi.branchAssignments.assignMany(props.companyId, props.branchId, {
+        stockLocationIds: [...assignedIds],
       });
 
-      await refreshAfterSave();
-      closeEdit();
+      await fetchData();
+      await props.onChanged?.();
 
       props.dispatch({
         type: "SAVE_SUCCESS",
-        notice: "Stock location configuration updated.",
+        notice: "Branch stock-location assignments saved.",
       });
     } catch (err) {
       props.dispatch({
         type: "SAVE_ERROR",
-        error: extractApiError(err, "Failed to update stock location."),
+        error: extractApiError(err, "Failed to save branch stock-location assignments."),
       });
     } finally {
-      setEditSaving(false);
+      setAssignmentSaving(false);
     }
-  }
+  }, [assignedIds, fetchData, props]);
 
-  async function setDefault(id: string, type: "receiving" | "issue") {
-    if (!props.companyId || !props.branchId) return;
-
-    props.dispatch({ type: "SAVE_START" });
-
-    try {
-      await stockLocationsApi.assignToBranch(props.companyId, id, props.branchId);
-
-      if (type === "receiving") {
-        await stockLocationsApi.setDefaultReceiving(
-          props.companyId,
-          id,
-          props.branchId,
-        );
-      } else {
-        await stockLocationsApi.setDefaultIssue(
-          props.companyId,
-          id,
-          props.branchId,
-        );
-      }
-
-      await refreshAfterSave();
-
-      props.dispatch({
-        type: "SAVE_SUCCESS",
-        notice: `Default ${type} location set.`,
-      });
-    } catch (err) {
-      props.dispatch({
-        type: "SAVE_ERROR",
-        error: extractApiError(err, "Failed to set default stock location."),
-      });
-    }
-  }
-
-  async function createLocation() {
-    if (!props.companyId || !props.branchId) return;
-    if (!validateForm(createForm, setCreateErrors)) return;
+  const createLocation = useCallback(async () => {
+    if (!props.companyId || !props.branchId || !validateLocation(createForm, setCreateErrors)) return;
 
     setCreateSaving(true);
     props.dispatch({ type: "SAVE_START" });
 
     try {
-      const created = await stockLocationsApi.create(
-        props.companyId,
-        toPayload(createForm),
-        props.branchId,
-      );
+      const created = await stockLocationsApi.company.create(props.companyId, locationPayload(createForm));
+      const createdId = stockLocationIdOf(created);
 
-      const id = locationId(created);
-
-      if (id) {
-        await stockLocationsApi.assignToBranch(
-          props.companyId,
-          id,
-          props.branchId,
-        );
+      if (createdId) {
+        await stockLocationsApi.branchAssignments.assignOne(props.companyId, props.branchId, createdId);
       }
 
-      await refreshAfterSave();
+      await fetchData();
+      await props.onChanged?.();
 
       setCreateForm({ ...DEFAULT_FORM });
       setCreateErrors({});
@@ -663,7 +1130,7 @@ export function StockLocationsStep(props: {
 
       props.dispatch({
         type: "SAVE_SUCCESS",
-        notice: "Stock location added and assigned to branch.",
+        notice: "Stock location created and assigned to branch.",
       });
     } catch (err) {
       props.dispatch({
@@ -673,19 +1140,56 @@ export function StockLocationsStep(props: {
     } finally {
       setCreateSaving(false);
     }
-  }
+  }, [createForm, fetchData, props]);
+
+  const saveLocation = useCallback(
+    async (id: string) => {
+      if (!props.companyId || !validateLocation(editForm, setEditErrors)) return;
+
+      setEditSaving(true);
+      props.dispatch({ type: "SAVE_START" });
+
+      try {
+        await stockLocationsApi.company.update(props.companyId, id, locationPayload(editForm) as any);
+
+        if (props.branchId && assignedIds.has(id)) {
+          await stockLocationsApi.branchAssignments.assignOne(props.companyId, props.branchId, id);
+        }
+
+        await fetchData();
+        await props.onChanged?.();
+
+        setExpandedId(null);
+
+        props.dispatch({
+          type: "SAVE_SUCCESS",
+          notice: "Stock location updated.",
+        });
+      } catch (err) {
+        props.dispatch({
+          type: "SAVE_ERROR",
+          error: extractApiError(err, "Failed to update stock location."),
+        });
+      } finally {
+        setEditSaving(false);
+      }
+    },
+    [assignedIds, editForm, fetchData, props],
+  );
+
+  const sortedCompanyLocations = useMemo(
+    () =>
+      [...companyLocations].sort(
+        (a, b) =>
+          Number(!assignedIds.has(stockLocationIdOf(a))) - Number(!assignedIds.has(stockLocationIdOf(b))) ||
+          nameOf(a).localeCompare(nameOf(b)),
+      ),
+    [companyLocations, assignedIds],
+  );
 
   if (loading) {
     return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "24px 0",
-          color: "#64748b",
-        }}
-      >
+      <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "24px 0", color: "#64748b" }}>
         <Spinner /> Loading stock locations…
       </div>
     );
@@ -693,164 +1197,118 @@ export function StockLocationsStep(props: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {loadError && (
-        <Alert
-          tone="danger"
-          title="Unable to load stock locations"
-          message={loadError}
-        />
-      )}
-
       {!canManage && (
         <Alert
           tone="warn"
-          title="Select company and branch first"
-          message="Stock locations are company-owned records and can be assigned to a branch during setup."
+          title="Select branch first"
+          message="Stock locations are company-owned, then assigned to a branch."
+        />
+      )}
+
+      {loadError && <Alert tone="danger" title="Unable to load stock locations" message={loadError} />}
+
+      {canManage && (
+        <div className="ob-grid-3">
+          <Summary label="Company locations" value={companyLocations.length} />
+          <Summary label="Assigned to branch" value={assignedIds.size} />
+          <Summary label="ERP ready" value={hasReceiving && hasIssue && hasConsumption && hasAdjustment ? "Yes" : "No"} />
+        </div>
+      )}
+
+      {canManage && (!hasReceiving || !hasIssue || !hasConsumption || !hasAdjustment) && (
+        <Alert
+          tone="warn"
+          title="Branch inventory setup incomplete"
+          message="Branch needs receiving, warehouse issue source, consumption location, and at least one stock-adjustment-enabled location before ERP inventory workflows can work correctly."
         />
       )}
 
       {canManage && (
         <div className="ob-inner-card">
-          <div className="ob-inner-card-body">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>
-                  Branch stock-location assignment
-                </div>
-                <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
-                  {selectedCount} selected for{" "}
-                  {props.branchName ?? "this branch"}.
-                </div>
+          <div
+            className="ob-inner-card-body"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <strong>Branch stock-location assignments</strong>
+              <div style={{ color: "#64748b", fontSize: 12 }}>
+                {assignedIds.size} selected for {props.branchName ?? "this branch"}.
               </div>
-
-              <Btn
-                variant="primary"
-                onClick={() => void saveAssignments()}
-                disabled={!assignmentDirty || assignmentSaving || props.saving}
-              >
-                {assignmentSaving ? "Saving…" : "Save selected locations"}
-              </Btn>
             </div>
+
+            <Btn
+              variant="primary"
+              disabled={!dirtyAssignments || assignmentSaving || props.saving}
+              onClick={() => void saveAssignments()}
+            >
+              {assignmentSaving ? "Saving…" : "Save assignments"}
+            </Btn>
           </div>
         </div>
       )}
 
-      {items.length === 0 && !showCreate && !loadError && canManage && (
-        <EmptyState
-          title="No stock locations yet"
-          sub={`Add warehouse, store, production, sales, or transit locations for ${
-            props.branchName ?? "this branch"
-          }.`}
-        />
+      {sortedCompanyLocations.length === 0 && (
+        <EmptyState title="No stock locations" sub="Create a company stock location and assign it to this branch." />
       )}
 
-      {sortedItems.map((location) => {
-        const id = locationId(location);
-        const x = location as any;
+      {sortedCompanyLocations.map((location) => {
+        const id = stockLocationIdOf(location);
         const form = formFromLocation(location);
-        const selected = selectedIds.has(id);
+        const assigned = assignedIds.has(id);
         const expanded = expandedId === id;
 
         return (
-          <div
-            key={id}
-            style={{
-              border: selected ? "1.5px solid #6366f1" : "1px solid #e2e8f0",
-              borderRadius: 12,
-              background: selected ? "#f5f3ff" : "#fff",
-              overflow: "hidden",
-            }}
-          >
+          <div key={id} className="ob-inner-card" style={{ borderColor: assigned ? "#22c55e" : undefined }}>
             <div
+              className="ob-inner-card-body"
               style={{
                 display: "grid",
                 gridTemplateColumns: "auto 1fr auto",
-                alignItems: "center",
                 gap: 12,
-                padding: "12px 16px",
+                alignItems: "center",
               }}
             >
               <input
                 type="checkbox"
-                checked={selected}
-                disabled={!canManage || assignmentSaving}
-                onChange={(event) => toggleSelected(id, event.target.checked)}
-                title="Assign this stock location to this branch"
+                checked={assigned}
+                onChange={(e) => setAssigned(id, e.target.checked)}
+                disabled={!canManage}
               />
 
-              <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span
-                    style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}
-                  >
-                    {x.name ?? "—"}
-                  </span>
-
-                  {x.code && (
-                    <span
-                      style={{
-                        fontFamily: "monospace",
-                        fontSize: 11,
-                        color: "#64748b",
-                        background: "#f1f5f9",
-                        padding: "1px 6px",
-                        borderRadius: 5,
-                      }}
-                    >
-                      {x.code}
-                    </span>
-                  )}
-
-                  <span className="ob-badge">
-                    {String(form.locationType)}
-                  </span>
-
-                  {selected && (
-                    <span className="ob-badge ob-badge--success">
-                      Assigned
-                    </span>
-                  )}
-
-                  {form.isDefaultReceiving && (
-                    <span className="ob-badge ob-badge--success">
-                      Default Receiving
-                    </span>
-                  )}
-
-                  {form.isDefaultIssue && (
-                    <span className="ob-badge ob-badge--info">
-                      Default Issue
-                    </span>
-                  )}
-
-                  {!form.isActive && (
-                    <span className="ob-badge ob-badge--warn">Inactive</span>
-                  )}
+              <div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <strong>{form.name}</strong>
+                  <span className="ob-badge">{form.code}</span>
+                  <span className="ob-badge">{String(form.locationType)}</span>
+                  {assigned && <span className="ob-badge ob-badge--success">Assigned</span>}
+                  {form.isMainWarehouse && <span className="ob-badge ob-badge--info">Issue source</span>}
+                  {form.canReceiveGrn && <span className="ob-badge ob-badge--info">GRN receiving</span>}
+                  {form.isProductionCenter && <span className="ob-badge ob-badge--info">Production</span>}
+                  {form.isConsumptionLocation && <span className="ob-badge ob-badge--info">Consumption</span>}
                 </div>
 
-                <CapabilityBadges caps={form} />
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                  {form.canReceive && <span className="ob-badge ob-badge--success">Receive</span>}
+                  {form.canIssue && <span className="ob-badge ob-badge--success">Issue</span>}
+                  {form.canSell && <span className="ob-badge ob-badge--success">Sell</span>}
+                  {form.canProduce && <span className="ob-badge ob-badge--success">Produce</span>}
+                  {form.canAdjust && <span className="ob-badge ob-badge--success">Adjust</span>}
+                </div>
               </div>
 
               <Btn
                 variant="ghost"
-                onClick={() => (expanded ? closeEdit() : openEdit(location))}
-                disabled={editSaving}
-                style={{ padding: "5px 12px", fontSize: 12, minHeight: 30 }}
+                onClick={() => {
+                  setExpandedId(expanded ? null : id);
+                  setEditForm(form);
+                  setEditErrors({});
+                }}
               >
                 {expanded ? "Close" : "Configure"}
               </Btn>
@@ -858,112 +1316,18 @@ export function StockLocationsStep(props: {
 
             {expanded && (
               <div
+                className="ob-inner-card-body"
                 style={{
                   borderTop: "1px solid #e2e8f0",
-                  background: "#f8fafc",
-                  padding: "20px 16px",
                   display: "flex",
                   flexDirection: "column",
                   gap: 16,
                 }}
               >
-                <ValidationAlerts errors={editErrors} />
-
-                <SectionTitle
-                  title="Location configuration"
-                  subtitle="This updates the stock-location master record. Branch assignment is saved separately."
-                />
-
-                <div className="ob-grid-2">
-                  <Field label="Name" required>
-                    <Input
-                      value={editForm.name}
-                      onChange={(value) =>
-                        setEditForm((form) => ({ ...form, name: value }))
-                      }
-                      placeholder="Main Warehouse"
-                    />
-                  </Field>
-
-                  <Field label="Code" required>
-                    <Input
-                      value={editForm.code}
-                      onChange={(value) =>
-                        setEditForm((form) => ({
-                          ...form,
-                          code: value.toUpperCase(),
-                        }))
-                      }
-                      placeholder="WH-01"
-                    />
-                  </Field>
-
-                  <Field label="Type" required>
-                    <SelectInput
-                      value={String(editForm.locationType)}
-                      options={LOCATION_TYPE_OPTIONS}
-                      onChange={(value) =>
-                        setEditForm((form) =>
-                          applyTypeDefaults(form, toLocationType(value)),
-                        )
-                      }
-                    />
-                  </Field>
-                </div>
-
-                <SectionTitle
-                  title="Capabilities"
-                  subtitle="These capabilities control inventory movement behavior."
-                />
-
-                <CapabilitiesEditor form={editForm} setForm={setEditForm} />
-
-                <SectionTitle
-                  title="Default assignments"
-                  subtitle="Setting a default will assign this location to the branch first."
-                />
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <Btn
-                    variant={form.isDefaultReceiving ? "primary" : "ghost"}
-                    onClick={() => void setDefault(id, "receiving")}
-                    disabled={form.isDefaultReceiving || editSaving}
-                    style={{ fontSize: 12 }}
-                  >
-                    {form.isDefaultReceiving
-                      ? "✓ Default Receiving"
-                      : "Set as Default Receiving"}
-                  </Btn>
-
-                  <Btn
-                    variant={form.isDefaultIssue ? "primary" : "ghost"}
-                    onClick={() => void setDefault(id, "issue")}
-                    disabled={form.isDefaultIssue || editSaving}
-                    style={{ fontSize: 12 }}
-                  >
-                    {form.isDefaultIssue
-                      ? "✓ Default Issue"
-                      : "Set as Default Issue"}
-                  </Btn>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    paddingTop: 4,
-                  }}
-                >
-                  <Btn variant="ghost" onClick={closeEdit} disabled={editSaving}>
-                    Discard
-                  </Btn>
-
-                  <Btn
-                    variant="primary"
-                    onClick={() => void saveConfiguration(id)}
-                    disabled={editSaving}
-                  >
-                    {editSaving ? "Saving…" : "Save configuration"}
+                <LocationFormView form={editForm} errors={editErrors} onChange={setEditForm} />
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <Btn variant="primary" disabled={editSaving || props.saving} onClick={() => void saveLocation(id)}>
+                    {editSaving ? "Saving…" : "Save location"}
                   </Btn>
                 </div>
               </div>
@@ -972,132 +1336,44 @@ export function StockLocationsStep(props: {
         );
       })}
 
-      <div
-        style={{
-          border: "1px dashed #cbd5e1",
-          borderRadius: 12,
-          overflow: "hidden",
-          background: "#fff",
+      <InventoryConfigurationPanel
+        companyId={props.companyId}
+        branchId={props.branchId}
+        branchAssignments={branchLocations}
+        config={config}
+        saving={props.saving}
+        dispatch={props.dispatch}
+        onSaved={async () => {
+          await fetchData();
+          await props.onChanged?.();
         }}
-      >
+      />
+
+      <div className="ob-inner-card">
         <button
           type="button"
-          onClick={() => setShowCreate((value) => !value)}
-          disabled={!canManage}
+          onClick={() => setShowCreate((v) => !v)}
           style={{
             width: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 16px",
-            background: "none",
+            padding: 14,
+            background: "transparent",
             border: "none",
-            cursor: canManage ? "pointer" : "not-allowed",
-            borderBottom: showCreate ? "1px solid #e2e8f0" : "none",
+            textAlign: "left",
+            cursor: "pointer",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                background: "#f0fdf4",
-                border: "1px solid #bbf7d0",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 16,
-                color: "#16a34a",
-                flexShrink: 0,
-              }}
-            >
-              +
-            </span>
-
-            <div style={{ textAlign: "left" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>
-                Add stock location
-              </div>
-
-              <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>
-                Warehouse, store, production, sales outlet, or transit location.
-              </div>
-            </div>
+          <strong>{showCreate ? "Close stock-location form" : "+ Create stock location"}</strong>
+          <div style={{ color: "#64748b", fontSize: 12, marginTop: 3 }}>
+            Creates a company-owned stock location and assigns it to the current branch.
           </div>
-
-          <span style={{ fontSize: 12, color: "#94a3b8" }}>
-            {showCreate ? "▲" : "▼"}
-          </span>
         </button>
 
         {showCreate && (
-          <div
-            style={{
-              padding: "20px 16px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
-            }}
-          >
-            <ValidationAlerts errors={createErrors} />
-
-            <SectionTitle
-              title="New stock location"
-              subtitle="Create a company stock location and assign it to this branch."
-            />
-
-            <div className="ob-grid-2">
-              <Field label="Name" required>
-                <Input
-                  value={createForm.name}
-                  onChange={(value) =>
-                    setCreateForm((form) => ({ ...form, name: value }))
-                  }
-                  placeholder="Main Warehouse"
-                />
-              </Field>
-
-              <Field label="Code" required>
-                <Input
-                  value={createForm.code}
-                  onChange={(value) =>
-                    setCreateForm((form) => ({
-                      ...form,
-                      code: value.toUpperCase(),
-                    }))
-                  }
-                  placeholder="WH-01"
-                />
-              </Field>
-
-              <Field label="Type" required>
-                <SelectInput
-                  value={String(createForm.locationType)}
-                  options={LOCATION_TYPE_OPTIONS}
-                  onChange={(value) =>
-                    setCreateForm((form) =>
-                      applyTypeDefaults(form, toLocationType(value)),
-                    )
-                  }
-                />
-              </Field>
-            </div>
-
-            <SectionTitle
-              title="Capabilities"
-              subtitle="These capabilities control inventory movement behavior."
-            />
-
-            <CapabilitiesEditor form={createForm} setForm={setCreateForm} />
-
+          <div className="ob-inner-card-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <LocationFormView form={createForm} errors={createErrors} onChange={setCreateForm} />
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Btn
-                variant="primary"
-                onClick={() => void createLocation()}
-                disabled={createSaving || !canManage}
-              >
-                {createSaving ? "Adding…" : "Add and assign location"}
+              <Btn variant="primary" disabled={!canManage || createSaving || props.saving} onClick={() => void createLocation()}>
+                {createSaving ? "Creating…" : "Create and assign"}
               </Btn>
             </div>
           </div>

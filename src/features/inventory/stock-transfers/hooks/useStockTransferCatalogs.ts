@@ -1,135 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
+// src/features/inventory/stockTransfers/hooks/useStockTransferCatalogs.ts
+
+import { useMemo } from "react";
 import { http } from "../../../../api/http";
 import type { BranchOptionDto, ItemOptionDto } from "../types";
+import { stockTransfersApi, type ItemLookupDto, type UomLookupDto } from "../api/stockTransfersApi";
+import { locationsApi } from "../api/locationsApi";
+import {
+  normalizeBranch,
+  normalizeItem,
+  type NormalizedStockLocation,
+} from "../mapping/stockTransferMappers";
+import { unwrapArray } from "../utils/apiUtils";
+import { useAsyncLookup } from "./useAsyncLookup";
 
-type UseLookupState<T> = {
-  data: T[];
-  loading: boolean;
-  error: string | null;
-};
-
-function isGuid(value?: string | null): value is string {
+function isId(value?: string | null): value is string {
   return Boolean(value && value.trim().length > 0);
 }
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Failed to load lookup data.";
-}
-
-function normalizeBranch(x: any): BranchOptionDto {
-  return {
-    id: x.id ?? x.branchId,
-    name: x.name ?? x.branchName ?? "",
-    code: x.code ?? x.branchCode ?? null,
-    label:
-      x.label ??
-      `${x.code ?? x.branchCode ?? ""} ${x.name ?? x.branchName ?? ""}`.trim(),
-  };
-}
-
-function normalizeItem(x: any): ItemOptionDto {
-  const itemId = x.id ?? x.itemId ?? x.inventoryItemId;
-  const baseUomId = x.defaultUomId ?? x.baseUomId ?? x.uomId ?? x.unitId ?? "";
-
-  const baseUom = x.baseUom ?? {
-    id: baseUomId,
-    code: x.baseUomCode ?? x.uomCode ?? x.unitCode ?? "",
-    name:
-      x.baseUomName ??
-      x.uomName ??
-      x.unitName ??
-      x.baseUomCode ??
-      x.uomCode ??
-      x.unitCode ??
-      "",
-  };
-
-  return {
-    id: itemId,
-    itemId,
-
-    code: x.code ?? x.sku ?? x.itemCode ?? "",
-    name: x.name ?? x.itemName ?? "",
-    label:
-      x.label ??
-      `${x.code ?? x.sku ?? x.itemCode ?? ""} ${
-        x.name ?? x.itemName ?? ""
-      }`.trim(),
-
-    defaultUomId: baseUomId || null,
-    baseUom,
-  };
-}
-
-function useLookup<T>(
-  enabled: boolean,
-  load: (signal: AbortSignal) => Promise<T[]>
-): UseLookupState<T> {
-  const [state, setState] = useState<UseLookupState<T>>({
-    data: [],
-    loading: false,
-    error: null,
-  });
-
-  useEffect(() => {
-    if (!enabled) {
-      setState({ data: [], loading: false, error: null });
-      return;
-    }
-
-    const controller = new AbortController();
-
-    setState((prev) => ({
-      ...prev,
-      loading: true,
-      error: null,
-    }));
-
-    load(controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) {
-          setState({
-            data,
-            loading: false,
-            error: null,
-          });
-        }
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) {
-          setState({
-            data: [],
-            loading: false,
-            error: getErrorMessage(error),
-          });
-        }
-      });
-
-    return () => controller.abort();
-  }, [enabled, load]);
-
-  return state;
-}
-
-export function useBranches(companyId?: string) {
-  const enabled = isGuid(companyId);
+export function useBranches(companyId?: string | null) {
+  const enabled = isId(companyId);
 
   const load = useMemo(
     () => async (signal: AbortSignal): Promise<BranchOptionDto[]> => {
       if (!companyId) return [];
 
-      const response = await http.get<BranchOptionDto[]>(
+      const response = await http.get(
         `/onboarding/companies/${companyId}/branches`,
         { signal }
       );
 
-      return (response.data ?? []).map(normalizeBranch);
+      return unwrapArray<BranchOptionDto>(response)
+        .map(normalizeBranch)
+        .filter((branch) => Boolean(branch.id));
     },
     [companyId]
   );
 
-  const { data, loading, error } = useLookup(enabled, load);
+  const { data, loading, error } = useAsyncLookup(enabled, load);
 
   return {
     branches: data,
@@ -138,29 +45,137 @@ export function useBranches(companyId?: string) {
   };
 }
 
-export function useItems(companyId?: string, branchId?: string) {
-  const enabled = isGuid(companyId) && isGuid(branchId);
+export function useItems(companyId?: string | null, branchId?: string | null) {
+  const enabled = isId(companyId) && isId(branchId);
 
   const load = useMemo(
     () => async (signal: AbortSignal): Promise<ItemOptionDto[]> => {
       if (!companyId || !branchId) return [];
 
-      const response = await http.get<any[]>(
+      const response = await http.get(
         `/companies/${companyId}/branches/${branchId}/inventory/items`,
         { signal }
       );
 
-      return (response.data ?? [])
+      return unwrapArray<ItemOptionDto>(response)
         .map(normalizeItem)
-        .filter((x) => isGuid(x.itemId));
+        .filter((item): item is ItemOptionDto => Boolean(item?.itemId));
     },
     [companyId, branchId]
   );
 
-  const { data, loading, error } = useLookup(enabled, load);
+  const { data, loading, error } = useAsyncLookup(enabled, load);
 
   return {
     items: data,
+    loading,
+    error,
+  };
+}
+
+export function useStockTransferCatalogs(
+  companyId?: string | null,
+  branchId?: string | null
+) {
+  const enabled = isId(companyId) && isId(branchId);
+
+  const branchesLoad = useMemo(
+    () => async (signal: AbortSignal) => {
+      if (!companyId) return [];
+
+      const response = await http.get(
+        `/onboarding/companies/${companyId}/branches`,
+        { signal }
+      );
+
+      return unwrapArray<BranchOptionDto>(response).map(normalizeBranch);
+    },
+    [companyId]
+  );
+
+  const locationsFromLoad = useMemo(
+    () => async (signal: AbortSignal): Promise<NormalizedStockLocation[]> => {
+      if (!companyId || !branchId) return [];
+
+      return locationsApi.list({
+        companyId,
+        branchId,
+        activeOnly: true,
+        capability: "TransferFrom",
+        signal,
+      });
+    },
+    [companyId, branchId]
+  );
+
+  const locationsToLoad = useMemo(
+    () => async (signal: AbortSignal): Promise<NormalizedStockLocation[]> => {
+      if (!companyId || !branchId) return [];
+
+      return locationsApi.list({
+        companyId,
+        branchId,
+        activeOnly: true,
+        capability: "TransferTo",
+        signal,
+      });
+    },
+    [companyId, branchId]
+  );
+
+  const itemsLoad = useMemo(
+    () => async (): Promise<ItemLookupDto[]> => {
+      if (!companyId) return [];
+      return stockTransfersApi.catalog.items(companyId);
+    },
+    [companyId]
+  );
+
+  const uomsLoad = useMemo(
+    () => async (): Promise<UomLookupDto[]> => {
+      if (!companyId) return [];
+      return stockTransfersApi.catalog.uoms(companyId);
+    },
+    [companyId]
+  );
+
+  const branchesState = useAsyncLookup(isId(companyId), branchesLoad);
+  const fromLocationsState = useAsyncLookup(enabled, locationsFromLoad);
+  const toLocationsState = useAsyncLookup(enabled, locationsToLoad);
+  const itemsState = useAsyncLookup(isId(companyId), itemsLoad);
+  const uomsState = useAsyncLookup(isId(companyId), uomsLoad);
+
+  const warehouseBranch = useMemo(() => {
+    return (
+      branchesState.data.find((branch: any) => branch.isMain) ??
+      branchesState.data.find((branch) => branch.code === "HQ") ??
+      branchesState.data[0] ??
+      null
+    );
+  }, [branchesState.data]);
+
+  const loading =
+    branchesState.loading ||
+    fromLocationsState.loading ||
+    toLocationsState.loading ||
+    itemsState.loading ||
+    uomsState.loading;
+
+  const error =
+    branchesState.error ||
+    fromLocationsState.error ||
+    toLocationsState.error ||
+    itemsState.error ||
+    uomsState.error ||
+    null;
+
+  return {
+    branches: branchesState.data,
+    warehouseBranch,
+    fromLocations: fromLocationsState.data,
+    toLocations: toLocationsState.data,
+    items: itemsState.data,
+    uoms: uomsState.data,
     loading,
     error,
   };

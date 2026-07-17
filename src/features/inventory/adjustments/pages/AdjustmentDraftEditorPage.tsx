@@ -10,7 +10,6 @@ import {
   inventoryControlSettingsApi,
   type InventoryControlSettingsDto,
 } from "../../settings/api/inventoryControlSettingsApi";
-
 import {
   canApprove,
   canPost,
@@ -20,7 +19,6 @@ import {
   normalizeAdjustmentStatus,
   STATUS_BADGE,
 } from "../utils/adjustmentWorkflow";
-
 import type {
   AdjustmentCandidateDto,
   InventoryAdjustmentDto,
@@ -55,6 +53,24 @@ type LineVm = {
   notes: string;
 };
 
+type NormalizedStockLocation = {
+  /**
+   * Real StockLocation.Id expected by backend adjustment validation.
+   * Never store BranchStockLocation.Id here.
+   */
+  id: string;
+  name: string;
+  code?: string;
+  branchId?: string;
+  branchName?: string;
+  branchLocationId?: string;
+  branchLocationName?: string;
+  type?: string;
+  isActive: boolean;
+  isDefault: boolean;
+  canAdjust?: boolean;
+};
+
 type VarianceLevel = "warning" | "high" | "critical" | null;
 
 const ADJUSTMENT_TYPES = [
@@ -63,6 +79,32 @@ const ADJUSTMENT_TYPES = [
   { value: "Damage", label: "Damage" },
   { value: "Variance", label: "Variance" },
 ] as const;
+
+type AdjustmentType = (typeof ADJUSTMENT_TYPES)[number]["value"];
+
+const SEARCH_DEBOUNCE_MS = 300;
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function cleanString(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+
+  const text = String(value).trim();
+  return text.length > 0 ? text : undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const clean = cleanString(value);
+    if (clean) return clean;
+  }
+
+  return undefined;
+}
 
 function toNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
@@ -75,6 +117,13 @@ function fmt3(value: unknown): string {
 
 function fmt2(value: unknown): string {
   return toNumber(value).toFixed(2);
+}
+
+function fmtMoney(value: unknown): string {
+  return `ETB ${toNumber(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function fmtDate(value?: string | null): string {
@@ -90,10 +139,115 @@ function fmtDate(value?: string | null): string {
   });
 }
 
+function normalizeStockLocation(
+  row: StockLocationOption | Record<string, unknown>
+): NormalizedStockLocation | null {
+  const source = toRecord(row);
+  const stockLocation = toRecord(source.stockLocation);
+  const location = toRecord(source.location);
+  const branchLocation = toRecord(source.branchLocation);
+  const branch = toRecord(source.branch);
+
+  /**
+   * Backend validation expects StockLocation.Id.
+   *
+   * Important:
+   * - BranchStockLocation.Id / BranchLocation.Id must NOT be sent as locationId.
+   * - Some refactored endpoints return `id` as the branch mapping id, so `id`
+   *   is intentionally used only after StockLocation-specific fields.
+   */
+  const stockLocationId = firstString(
+    source.stockLocationId,
+    source.locationId,
+    stockLocation.id,
+    location.id,
+    stockLocation.stockLocationId,
+    location.stockLocationId,
+    source.id
+  );
+
+  if (!stockLocationId) return null;
+
+  const branchLocationId = firstString(
+    source.branchLocationId,
+    source.branchStockLocationId,
+    branchLocation.id
+  );
+
+  const name =
+    firstString(
+      source.stockLocationName,
+      source.locationName,
+      source.name,
+      stockLocation.name,
+      location.name,
+      source.branchLocationName,
+      branchLocation.name,
+      source.displayName,
+      stockLocationId
+    ) ?? stockLocationId;
+
+  return {
+    id: stockLocationId,
+    name,
+    code: firstString(
+      source.stockLocationCode,
+      source.locationCode,
+      source.code,
+      stockLocation.code,
+      location.code
+    ),
+    branchId: firstString(source.branchId, branch.id, branchLocation.branchId),
+    branchName: firstString(source.branchName, branch.name),
+    branchLocationId,
+    branchLocationName: firstString(
+      source.branchLocationName,
+      branchLocation.name
+    ),
+    type: firstString(
+      source.stockLocationType,
+      source.locationType,
+      source.type,
+      stockLocation.type,
+      location.type
+    ),
+    canAdjust:
+      typeof source.canAdjust === "boolean"
+        ? source.canAdjust
+        : typeof stockLocation.canAdjust === "boolean"
+          ? stockLocation.canAdjust
+          : undefined,
+    isActive:
+      source.isActive !== false &&
+      source.active !== false &&
+      source.isEnabled !== false &&
+      stockLocation.isActive !== false &&
+      location.isActive !== false &&
+      branchLocation.isActive !== false,
+    isDefault:
+      source.isDefault === true ||
+      source.default === true ||
+      source.isPrimary === true ||
+      stockLocation.isDefault === true ||
+      location.isDefault === true,
+  };
+}
+
+function getLocationLabel(location: NormalizedStockLocation): string {
+  const left = location.code
+    ? `${location.code} — ${location.name}`
+    : location.name;
+
+  const scope = location.branchLocationName || location.branchName;
+  const suffix = [scope, location.type].filter(Boolean).join(" · ");
+
+  return suffix ? `${left} (${suffix})` : left;
+}
+
 function candidateToLine(candidate: AdjustmentCandidateDto): LineVm {
+  const source = candidate as AdjustmentCandidateDto & Record<string, unknown>;
   const conversionFactor =
-    toNumber((candidate as any).conversionFactor ?? candidate.toBaseFactor, 1) ||
-    1;
+    toNumber(source.conversionFactor ?? source.toBaseFactor, 1) || 1;
 
   return {
     vmId: `lot-${candidate.fifoLotId}`,
@@ -169,10 +323,7 @@ function updateCountedQuantity(line: LineVm, rawValue: string): LineVm {
 }
 
 function variancePercent(line: LineVm): number {
-  if (line.systemQty === 0) {
-    return line.countedQty === 0 ? 0 : 100;
-  }
-
+  if (line.systemQty === 0) return line.countedQty === 0 ? 0 : 100;
   return Math.abs((line.adjustmentQty / line.systemQty) * 100);
 }
 
@@ -215,62 +366,33 @@ function InlineModal({
   const [text, setText] = useState("");
 
   return (
-    <div
-      style={{
-        background: "rgba(0,0,0,.3)",
-        padding: "40px 20px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
+    <div className="adj-modal-shell" role="presentation">
       <div
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--r-lg)",
-          padding: 24,
-          width: "100%",
-          maxWidth: 420,
-        }}
+        className="adj-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="adj-modal-title"
       >
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>
+        <div id="adj-modal-title" className="adj-modal-title">
           {title}
         </div>
 
-        <div
-          style={{
-            fontSize: 13,
-            color: "var(--text-muted)",
-            marginBottom: 14,
-          }}
-        >
-          {body}
-        </div>
+        <div className="adj-modal-body">{body}</div>
 
         <textarea
-          style={{
-            width: "100%",
-            minHeight: 80,
-            fontSize: 13,
-            padding: "8px 10px",
-            borderRadius: "var(--r)",
-            border: "1px solid var(--border)",
-            background: "var(--surface-2)",
-            color: "var(--text)",
-            resize: "vertical",
-            marginBottom: 16,
-            fontFamily: "inherit",
-            boxSizing: "border-box",
-          }}
           value={text}
           onChange={(event) => setText(event.target.value)}
           placeholder={placeholder}
           autoFocus
         />
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button type="button" className="btn" disabled={working} onClick={onCancel}>
+        <div className="adj-modal-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={working}
+            onClick={onCancel}
+          >
             Cancel
           </button>
 
@@ -288,30 +410,50 @@ function InlineModal({
   );
 }
 
+function Metric({
+  label,
+  value,
+  sign,
+}: {
+  label: string;
+  value: string | number;
+  sign?: "neg" | "pos";
+}) {
+  return (
+    <div className="adj-metric">
+      <div className="adj-metric-label">{label}</div>
+      <div className="adj-metric-value" data-sign={sign}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
 export default function AdjustmentDraftEditorPage() {
   const navigate = useNavigate();
   const { adjustmentId } = useParams<{ adjustmentId?: string }>();
   const { companyId, branchId } = useAppScope();
 
   const isEdit = Boolean(adjustmentId);
-
   const adjustmentBasePath = companyId
     ? `/companies/${companyId}/inventory/adjustments`
     : "";
 
   const [draft, setDraft] = useState<InventoryAdjustmentDto | null>(null);
   const [lines, setLines] = useState<LineVm[]>([]);
-  const [locations, setLocations] = useState<StockLocationOption[]>([]);
+  const [locations, setLocations] = useState<NormalizedStockLocation[]>([]);
   const [candidates, setCandidates] = useState<AdjustmentCandidateDto[]>([]);
 
   const [locationId, setLocationId] = useState("");
-  const [adjustmentType, setAdjustmentType] = useState("StockCount");
+  const [adjustmentType, setAdjustmentType] =
+    useState<AdjustmentType>("StockCount");
   const [referenceNo, setReferenceNo] = useState("");
   const [reason, setReason] = useState("");
   const [remarks, setRemarks] = useState("");
   const [search, setSearch] = useState("");
 
   const [pageLoading, setPageLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
@@ -319,14 +461,26 @@ export default function AdjustmentDraftEditorPage() {
   const [settings, setSettings] =
     useState<InventoryControlSettingsDto | null>(null);
   const [modal, setModal] = useState<"reject" | "reverse" | null>(null);
-
   const [err, setErr] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const status = normalizeAdjustmentStatus(draft?.docStatus);
-  const isLocked = status !== "Draft";
+  const isLocked = isEdit && status !== "Draft";
+
+  const selectedLocation = useMemo(
+    () => locations.find((location) => location.id === locationId) ?? null,
+    [locations, locationId]
+  );
+
+  const activeLocations = useMemo(
+    () =>
+      locations.filter(
+        (location) => location.isActive && location.canAdjust !== false
+      ),
+    [locations]
+  );
 
   const usedLotIds = useMemo(
     () => new Set(lines.map((line) => line.fifoLotId)),
@@ -338,14 +492,15 @@ export default function AdjustmentDraftEditorPage() {
     [candidates, usedLotIds]
   );
 
-  const totals = useMemo(() => {
-    return {
+  const totals = useMemo(
+    () => ({
       system: lines.reduce((sum, line) => sum + line.systemQty, 0),
       counted: lines.reduce((sum, line) => sum + line.countedQty, 0),
       variance: lines.reduce((sum, line) => sum + line.adjustmentQty, 0),
       amount: lines.reduce((sum, line) => sum + line.lineAmount, 0),
-    };
-  }, [lines]);
+    }),
+    [lines]
+  );
 
   const hasVariance = useMemo(
     () => lines.some((line) => line.adjustmentQty !== 0),
@@ -360,57 +515,16 @@ export default function AdjustmentDraftEditorPage() {
   const canUsePage = Boolean(companyId && branchId);
 
   const goBack = useCallback(() => {
-    if (!adjustmentBasePath) return;
-    navigate(adjustmentBasePath);
+    if (adjustmentBasePath) navigate(adjustmentBasePath);
   }, [adjustmentBasePath, navigate]);
 
   const goToAdjustment = useCallback(
     (id: string, replace = false) => {
-      if (!adjustmentBasePath) return;
-      navigate(`${adjustmentBasePath}/${id}`, { replace });
-    },
-    [adjustmentBasePath, navigate]
-  );
-
-  const loadLocations = useCallback(async () => {
-    if (!companyId || !branchId) return;
-
-    setErr(null);
-
-    try {
-      const rows = await stockLocationsApi.list(companyId, branchId);
-      setLocations(Array.isArray(rows) ? rows : []);
-    } catch (error) {
-      setLocations([]);
-      setErr(getApiError(error, "Failed to load stock locations."));
-    }
-  }, [companyId, branchId]);
-
-  const loadExisting = useCallback(
-    async (id: string) => {
-      if (!companyId || !branchId) return;
-
-      setPageLoading(true);
-      setErr(null);
-      setSuccess(null);
-
-      try {
-        const dto = await adjustmentApi.get(companyId, branchId, id);
-
-        setDraft(dto);
-        setLocationId(dto.locationId ?? "");
-        setAdjustmentType(dto.adjustmentType ?? "StockCount");
-        setReferenceNo(dto.referenceNo ?? "");
-        setReason(dto.reason ?? "");
-        setRemarks(dto.remarks ?? "");
-        setLines((dto.lines ?? []).map(dtoLineToVm));
-      } catch (error) {
-        setErr(getApiError(error, "Failed to load adjustment."));
-      } finally {
-        setPageLoading(false);
+      if (adjustmentBasePath) {
+        navigate(`${adjustmentBasePath}/${id}`, { replace });
       }
     },
-    [companyId, branchId]
+    [adjustmentBasePath, navigate]
   );
 
   const loadCandidates = useCallback(
@@ -429,16 +543,89 @@ export default function AdjustmentDraftEditorPage() {
           branchId,
           stockLocationId,
           {
-            search: keyword || undefined,
+            search: keyword.trim() || undefined,
           }
         );
 
         setCandidates(Array.isArray(rows) ? rows : []);
       } catch (error) {
         setCandidates([]);
-        setErr(getApiError(error, "Failed to load stock candidates."));
+        setErr(
+          getApiError(error, "Failed to load stock candidates for this location.")
+        );
       } finally {
         setCandidateLoading(false);
+      }
+    },
+    [companyId, branchId]
+  );
+
+  const loadLocations = useCallback(async () => {
+    if (!companyId || !branchId) return;
+
+    setLocationLoading(true);
+    setErr(null);
+
+    try {
+      const rows = await stockLocationsApi.list(companyId, branchId);
+      const normalized = (Array.isArray(rows) ? rows : [])
+        .map((row) =>
+          normalizeStockLocation(row as StockLocationOption & Record<string, unknown>)
+        )
+        .filter((row): row is NormalizedStockLocation => Boolean(row));
+
+      setLocations(normalized);
+
+      if (!isEdit && !locationId) {
+        const preferred =
+          normalized.find(
+            (location) =>
+              location.isActive &&
+              location.canAdjust !== false &&
+              location.isDefault
+          ) ??
+          normalized.find(
+            (location) => location.isActive && location.canAdjust !== false
+          );
+
+        if (preferred) {
+          setLocationId(preferred.id);
+        }
+      }
+    } catch (error) {
+      setLocations([]);
+      setErr(getApiError(error, "Failed to load branch stock locations."));
+    } finally {
+      setLocationLoading(false);
+    }
+  }, [companyId, branchId, isEdit, locationId]);
+
+  const loadExisting = useCallback(
+    async (id: string) => {
+      if (!companyId || !branchId) return;
+
+      setPageLoading(true);
+      setErr(null);
+      setSuccess(null);
+
+      try {
+        const dto = await adjustmentApi.get(companyId, branchId, id);
+
+        setDraft(dto);
+        setLocationId(dto.locationId ?? "");
+        setAdjustmentType(
+          ADJUSTMENT_TYPES.some((item) => item.value === dto.adjustmentType)
+            ? (dto.adjustmentType as AdjustmentType)
+            : "StockCount"
+        );
+        setReferenceNo(dto.referenceNo ?? "");
+        setReason(dto.reason ?? "");
+        setRemarks(dto.remarks ?? "");
+        setLines((dto.lines ?? []).map(dtoLineToVm));
+      } catch (error) {
+        setErr(getApiError(error, "Failed to load adjustment."));
+      } finally {
+        setPageLoading(false);
       }
     },
     [companyId, branchId]
@@ -447,18 +634,12 @@ export default function AdjustmentDraftEditorPage() {
   useEffect(() => {
     if (!canUsePage) return;
 
+    void loadLocations();
+
     if (isEdit && adjustmentId) {
       void loadExisting(adjustmentId);
-    } else {
-      void loadLocations();
     }
-  }, [
-    canUsePage,
-    isEdit,
-    adjustmentId,
-    loadExisting,
-    loadLocations,
-  ]);
+  }, [canUsePage, isEdit, adjustmentId, loadExisting, loadLocations]);
 
   useEffect(() => {
     if (!companyId || !branchId || !locationId) {
@@ -478,7 +659,7 @@ export default function AdjustmentDraftEditorPage() {
       .catch((error) => {
         if (!cancelled) {
           setSettings(null);
-          setErr(getApiError(error, "Failed to load inventory control settings."));
+          setErr(getApiError(error, "Failed to load inventory control policy."));
         }
       })
       .finally(() => {
@@ -491,12 +672,20 @@ export default function AdjustmentDraftEditorPage() {
   }, [companyId, branchId, locationId]);
 
   useEffect(() => {
+    if (!isLocked && locationId) {
+      void loadCandidates(locationId, search);
+    }
+  }, [isLocked, locationId, loadCandidates, search]);
+
+  useEffect(() => {
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
   }, []);
 
   function handleLocationChange(stockLocationId: string) {
+    if (stockLocationId === locationId) return;
+
     setLocationId(stockLocationId);
     setLines([]);
     setCandidates([]);
@@ -514,16 +703,18 @@ export default function AdjustmentDraftEditorPage() {
 
     searchTimer.current = setTimeout(() => {
       void loadCandidates(locationId, value);
-    }, 300);
+    }, SEARCH_DEBOUNCE_MS);
   }
 
   function addCandidate(candidate: AdjustmentCandidateDto) {
-    if (usedLotIds.has(candidate.fifoLotId)) return;
+    if (isLocked || usedLotIds.has(candidate.fifoLotId)) return;
 
     setLines((previous) => [...previous, candidateToLine(candidate)]);
   }
 
   function removeLine(index: number) {
+    if (isLocked) return;
+
     setLines((previous) => previous.filter((_, i) => i !== index));
   }
 
@@ -537,13 +728,43 @@ export default function AdjustmentDraftEditorPage() {
 
   function handleNotesChange(index: number, value: string) {
     setLines((previous) =>
-      previous.map((line, i) => (i === index ? { ...line, notes: value } : line))
+      previous.map((line, i) =>
+        i === index ? { ...line, notes: value } : line
+      )
     );
   }
 
-  function validateBeforeSave(): string | null {
+  function validateSelectedLocation(): string | null {
     if (!locationId) return "Select a stock location.";
-    if (lines.length === 0) return "Add at least one line.";
+
+    if (!selectedLocation && !isEdit) {
+      return "Selected stock location is not available in the current branch scope.";
+    }
+
+    if (selectedLocation && !selectedLocation.isActive) {
+      return "Selected stock location is inactive.";
+    }
+
+    if (selectedLocation && selectedLocation.canAdjust === false) {
+      return "Selected stock location does not allow stock adjustments.";
+    }
+
+    if (
+      selectedLocation?.branchId &&
+      branchId &&
+      selectedLocation.branchId !== branchId
+    ) {
+      return "Selected stock location does not belong to the active branch.";
+    }
+
+    return null;
+  }
+
+  function validateBeforeSave(): string | null {
+    const locationError = validateSelectedLocation();
+    if (locationError) return locationError;
+
+    if (lines.length === 0) return "Add at least one stock lot line.";
 
     if (
       settings?.requireReasonOnVariance &&
@@ -563,17 +784,18 @@ export default function AdjustmentDraftEditorPage() {
     return validateBeforeSave();
   }
 
-  function buildLines() {
-    return lines.map((line) => ({
-      fifoLotId: line.fifoLotId,
-      itemId: line.itemId,
-      uomId: line.uomId,
-      systemQty: line.systemQty,
-      countedQty: line.countedQty,
-      unitCost: line.unitCost,
-      notes: line.notes || undefined,
-    }));
-  }
+function buildLines() {
+  return lines.map((line, index) => ({
+    lineNo: index + 1,
+    fifoLotId: line.fifoLotId,
+    itemId: line.itemId,
+    uomId: line.uomId,
+    systemQty: line.systemQty,
+    countedQty: line.countedQty,
+    unitCost: line.unitCost,
+    notes: line.notes.trim() || undefined,
+  }));
+}
 
   async function saveDraft() {
     if (!companyId || !branchId) return;
@@ -591,27 +813,24 @@ export default function AdjustmentDraftEditorPage() {
     setSuccess(null);
 
     try {
+      const payload = {
+        locationId,
+        adjustmentType,
+        referenceNo: referenceNo.trim() || undefined,
+        reason: reason.trim() || undefined,
+        remarks: remarks.trim() || undefined,
+        lines: buildLines(),
+      };
+
       if (isEdit && adjustmentId) {
-        await adjustmentApi.updateDraft(companyId, branchId, adjustmentId, {
-          locationId,
-          adjustmentType: adjustmentType as any,
-          referenceNo: referenceNo || undefined,
-          reason: reason || undefined,
-          remarks: remarks || undefined,
-          lines: buildLines(),
-        });
+        await adjustmentApi.updateDraft(companyId, branchId, adjustmentId, payload);
 
         setSuccess("Adjustment saved.");
         await loadExisting(adjustmentId);
       } else {
         const created = await adjustmentApi.createDraft(companyId, branchId, {
-          locationId,
-          adjustmentType: adjustmentType as any,
+          ...payload,
           adjustmentDate: new Date().toISOString(),
-          referenceNo: referenceNo || undefined,
-          reason: reason || undefined,
-          remarks: remarks || undefined,
-          lines: buildLines(),
         });
 
         setSuccess("Adjustment draft created.");
@@ -683,88 +902,56 @@ export default function AdjustmentDraftEditorPage() {
 
   if (!companyId || !branchId) {
     return (
-      <div className="adj-page page">
+      <main className="adj-page page">
         <div className="alert alert-warning">
           Select a company and branch before opening inventory adjustments.
         </div>
-      </div>
+      </main>
     );
   }
 
   if (pageLoading) {
     return (
-      <div className="adj-page page">
-        <div
-          style={{
-            padding: 48,
-            textAlign: "center",
-            color: "var(--text-muted)",
-            fontSize: 13,
-          }}
-        >
-          Loading adjustment…
-        </div>
-      </div>
+      <main className="adj-page page">
+        <div className="adj-loading">Loading adjustment…</div>
+      </main>
     );
   }
 
-  if (modal === "reject") {
+  if (modal === "reject" || modal === "reverse") {
+    const isReject = modal === "reject";
+
     return (
-      <div className="adj-page page">
+      <main className="adj-page page">
         <InlineModal
-          title="Reject adjustment"
-          body="Provide a reason. This will be visible to the submitter."
-          placeholder="Rejection reason required"
+          title={isReject ? "Reject adjustment" : "Reverse adjustment"}
+          body={
+            isReject
+              ? "Provide a reason. This will be visible to the submitter."
+              : "This writes counter-entries to FIFO and the inventory ledger. This cannot be undone."
+          }
+          placeholder={
+            isReject ? "Rejection reason required" : "Reason for reversal required"
+          }
           requireText
-          confirmLabel="Confirm reject"
+          confirmLabel={isReject ? "Confirm reject" : "Confirm reverse"}
           danger
           working={saving}
-          onConfirm={rejectAdjustment}
+          onConfirm={isReject ? rejectAdjustment : reverseAdjustment}
           onCancel={() => {
             setModal(null);
             setErr(null);
           }}
         />
 
-        {err && (
-          <div className="alert alert-danger" style={{ margin: "0 20px" }}>
-            {err}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (modal === "reverse") {
-    return (
-      <div className="adj-page page">
-        <InlineModal
-          title="Reverse adjustment"
-          body="This writes counter-entries to FIFO and inventory ledger. This cannot be undone."
-          placeholder="Reason for reversal required"
-          requireText
-          confirmLabel="Confirm reverse"
-          danger
-          working={saving}
-          onConfirm={reverseAdjustment}
-          onCancel={() => {
-            setModal(null);
-            setErr(null);
-          }}
-        />
-
-        {err && (
-          <div className="alert alert-danger" style={{ margin: "0 20px" }}>
-            {err}
-          </div>
-        )}
-      </div>
+        {err && <div className="alert alert-danger adj-modal-error">{err}</div>}
+      </main>
     );
   }
 
   return (
-    <div className="adj-page page">
-      <div className="adj-header">
+    <main className="adj-page page">
+      <header className="adj-header">
         <div className="adj-header-left">
           <div className="adj-kicker">
             {isEdit
@@ -784,11 +971,15 @@ export default function AdjustmentDraftEditorPage() {
                   draft?.submittedAt
                     ? ` · Submitted ${fmtDate(draft.submittedAt)}`
                     : ""
-                }${
-                  draft?.postedAt ? ` · Posted ${fmtDate(draft.postedAt)}` : ""
-                }`
-              : "Select a stock location, then add FIFO lots to count."}
+                }${draft?.postedAt ? ` · Posted ${fmtDate(draft.postedAt)}` : ""}`
+              : "Select an active branch stock location, then add FIFO lots to count."}
           </div>
+
+          {selectedLocation && (
+            <div className="adj-location-context">
+              Location: {getLocationLabel(selectedLocation)}
+            </div>
+          )}
         </div>
 
         <div className="adj-btn-row">
@@ -796,12 +987,7 @@ export default function AdjustmentDraftEditorPage() {
 
           {draft?.hasHighVariance && (
             <span className="adj-badge warn">
-              <i
-                className="ti ti-alert-triangle"
-                aria-hidden
-                style={{ fontSize: 11, marginRight: 4 }}
-              />
-              {draft.highestVariancePercent?.toFixed(1)}% variance
+              ⚠ {draft.highestVariancePercent?.toFixed(1)}% variance
             </span>
           )}
 
@@ -830,10 +1016,9 @@ export default function AdjustmentDraftEditorPage() {
           {canReject(status) && (
             <button
               type="button"
-              className="btn btn-danger"
+              className="btn btn-danger btn-ghost-danger"
               disabled={saving}
               onClick={() => setModal("reject")}
-              style={{ background: "transparent" }}
             >
               Reject
             </button>
@@ -853,10 +1038,9 @@ export default function AdjustmentDraftEditorPage() {
           {canReverse(status) && (
             <button
               type="button"
-              className="btn btn-danger"
+              className="btn btn-danger btn-ghost-danger"
               disabled={saving}
               onClick={() => setModal("reverse")}
-              style={{ background: "transparent" }}
             >
               Reverse
             </button>
@@ -877,7 +1061,7 @@ export default function AdjustmentDraftEditorPage() {
             ← Back
           </button>
         </div>
-      </div>
+      </header>
 
       {err && <div className="alert alert-danger">{err}</div>}
       {success && <div className="alert alert-success">{success}</div>}
@@ -894,38 +1078,69 @@ export default function AdjustmentDraftEditorPage() {
         </div>
       )}
 
-      <div className="adj-card">
-        <div className="adj-form-grid">
-          {!isEdit && (
-            <div className="adj-field">
-              <label>
-                Stock location <span className="req">*</span>
-              </label>
+      <section className="adj-card" aria-labelledby="adj-header-form-title">
+        <div className="adj-section-title" id="adj-header-form-title">
+          Adjustment header
+        </div>
 
+        <div className="adj-form-grid">
+          <div className="adj-field adj-field-wide-sm">
+            <label htmlFor="adj-location">
+              Stock location <span className="req">*</span>
+            </label>
+
+            {isEdit ? (
+              <input
+                id="adj-location"
+                value={
+                  selectedLocation
+                    ? getLocationLabel(selectedLocation)
+                    : locationId || "—"
+                }
+                readOnly
+                disabled
+              />
+            ) : (
               <select
+                id="adj-location"
                 value={locationId}
                 onChange={(event) => handleLocationChange(event.target.value)}
-                disabled={isLocked}
+                disabled={isLocked || locationLoading}
               >
-                <option value="">— select location —</option>
-                {locations.map((location) => (
+                <option value="">
+                  {locationLoading
+                    ? "Loading locations…"
+                    : "— select stock location —"}
+                </option>
+
+                {activeLocations.map((location) => (
                   <option key={location.id} value={location.id}>
-                    {location.name}
+                    {getLocationLabel(location)}
                   </option>
                 ))}
               </select>
+            )}
+
+            <div className="adj-help-text">
+              Only active stock locations linked to the selected branch are
+              available.
             </div>
-          )}
+          </div>
 
-          {!isEdit && (
-            <div className="adj-field">
-              <label>
-                Adjustment type <span className="req">*</span>
-              </label>
+          <div className="adj-field">
+            <label htmlFor="adj-type">
+              Adjustment type <span className="req">*</span>
+            </label>
 
+            {isEdit ? (
+              <input id="adj-type" value={adjustmentType} readOnly disabled />
+            ) : (
               <select
+                id="adj-type"
                 value={adjustmentType}
-                onChange={(event) => setAdjustmentType(event.target.value)}
+                onChange={(event) =>
+                  setAdjustmentType(event.target.value as AdjustmentType)
+                }
                 disabled={isLocked}
               >
                 {ADJUSTMENT_TYPES.map((type) => (
@@ -934,12 +1149,13 @@ export default function AdjustmentDraftEditorPage() {
                   </option>
                 ))}
               </select>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="adj-field">
-            <label>Reference no</label>
+            <label htmlFor="adj-ref">Reference no</label>
             <input
+              id="adj-ref"
               value={referenceNo}
               onChange={(event) => setReferenceNo(event.target.value)}
               disabled={isLocked}
@@ -948,18 +1164,20 @@ export default function AdjustmentDraftEditorPage() {
           </div>
 
           <div className="adj-field">
-            <label>Reason</label>
+            <label htmlFor="adj-reason">Reason</label>
             <input
+              id="adj-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               disabled={isLocked}
-              placeholder="Brief reason for adjustment"
+              placeholder="Brief reason"
             />
           </div>
 
-          <div className="adj-field adj-remarks" style={{ gridColumn: "1 / -1" }}>
-            <label>Remarks</label>
+          <div className="adj-field adj-remarks">
+            <label htmlFor="adj-remarks">Remarks</label>
             <textarea
+              id="adj-remarks"
               value={remarks}
               onChange={(event) => setRemarks(event.target.value)}
               disabled={isLocked}
@@ -967,184 +1185,124 @@ export default function AdjustmentDraftEditorPage() {
             />
           </div>
         </div>
-      </div>
+      </section>
 
       {lines.length > 0 && (
-        <div className="adj-metrics">
-          <div className="adj-metric">
-            <div className="adj-metric-label">Lines</div>
-            <div className="adj-metric-value">{lines.length}</div>
-          </div>
-
-          <div className="adj-metric">
-            <div className="adj-metric-label">System qty</div>
-            <div className="adj-metric-value">{fmt3(totals.system)}</div>
-          </div>
-
-          <div className="adj-metric">
-            <div className="adj-metric-label">Counted qty</div>
-            <div className="adj-metric-value">{fmt3(totals.counted)}</div>
-          </div>
-
-          <div className="adj-metric">
-            <div className="adj-metric-label">Net variance</div>
-            <div
-              className="adj-metric-value"
-              data-sign={
-                totals.variance < 0
-                  ? "neg"
-                  : totals.variance > 0
-                    ? "pos"
-                    : undefined
-              }
-            >
-              {totals.variance >= 0 ? "+" : ""}
-              {fmt3(totals.variance)}
-            </div>
-          </div>
-        </div>
+        <section className="adj-metrics" aria-label="Adjustment totals">
+          <Metric label="Lines" value={lines.length} />
+          <Metric label="System qty" value={fmt3(totals.system)} />
+          <Metric label="Counted qty" value={fmt3(totals.counted)} />
+          <Metric
+            label="Net variance"
+            value={`${totals.variance >= 0 ? "+" : ""}${fmt3(totals.variance)}`}
+            sign={
+              totals.variance < 0
+                ? "neg"
+                : totals.variance > 0
+                  ? "pos"
+                  : undefined
+            }
+          />
+          <Metric
+            label="Value impact"
+            value={fmtMoney(totals.amount)}
+            sign={
+              totals.amount < 0 ? "neg" : totals.amount > 0 ? "pos" : undefined
+            }
+          />
+        </section>
       )}
 
       {locationId && (
-        <div className="adj-policy-banner">
+        <section className="adj-policy-banner" aria-live="polite">
           {settingsLoading
             ? "Loading inventory control policy…"
             : settings
               ? (
-                  <>
-                    <strong>Variance policy</strong> · Warning{" "}
-                    {fmt2(settings.warningVariancePercent)}% · High{" "}
-                    {fmt2(settings.highVariancePercent)}% · Critical{" "}
-                    {fmt2(settings.criticalVariancePercent)}%
-                    {settings.requireReasonOnVariance && " · Reason required"}
-                    {settings.blockPostingOnCriticalVariance &&
-                      " · Critical posting blocked"}
-                  </>
-                )
-              : "No inventory control policy loaded."}
-        </div>
+                <>
+                  <strong>Variance policy</strong> · Warning{" "}
+                  {fmt2(settings.warningVariancePercent)}% · High{" "}
+                  {fmt2(settings.highVariancePercent)}% · Critical{" "}
+                  {fmt2(settings.criticalVariancePercent)}%
+                  {settings.requireReasonOnVariance && " · Reason required"}
+                  {settings.blockPostingOnCriticalVariance &&
+                    " · Critical posting blocked"}
+                </>
+              )
+              : "No inventory control policy loaded for this location."}
+        </section>
       )}
 
       {!isLocked && locationId && (
-        <div className="adj-card">
+        <section className="adj-card" aria-labelledby="adj-add-lots-title">
           <div className="adj-section-head">
             <div>
-              <h2>Add stock lots</h2>
+              <h2 id="adj-add-lots-title">Add stock lots</h2>
               <p>
                 {candidateLoading
                   ? "Loading available lots…"
                   : `${availableCandidates.length} lot${
                       availableCandidates.length !== 1 ? "s" : ""
-                    } available`}
+                    } available in ${
+                      selectedLocation?.name ?? "selected location"
+                    }`}
               </p>
             </div>
 
             <input
+              className="adj-search-input"
               value={search}
               onChange={(event) => handleSearchChange(event.target.value)}
               placeholder="Search item / batch…"
-              style={{ maxWidth: 240 }}
             />
           </div>
 
           {availableCandidates.length === 0 && !candidateLoading ? (
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--text-soft)",
-                padding: "12px 0",
-              }}
-            >
+            <div className="adj-empty-card">
               {search
                 ? "No lots match your search."
-                : "All available lots have been added."}
+                : "All available lots have been added, or this location has no available FIFO lots."}
             </div>
           ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                gap: 8,
-              }}
-            >
+            <div className="adj-candidate-grid">
               {availableCandidates.map((candidate) => (
                 <button
                   type="button"
                   key={candidate.fifoLotId}
+                  className="adj-candidate-card"
                   onClick={() => addCandidate(candidate)}
-                  style={{
-                    textAlign: "left",
-                    padding: "10px 12px",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--r-md)",
-                    background: "var(--surface)",
-                    cursor: "pointer",
-                    transition: "background .12s",
-                  }}
                 >
-                  <div
-                    style={{
-                      fontWeight: 500,
-                      fontSize: 13,
-                      color: "var(--text)",
-                    }}
-                  >
+                  <div className="adj-candidate-title">
                     {candidate.itemName}
-                    {candidate.itemCode && (
-                      <span
-                        style={{
-                          fontWeight: 400,
-                          color: "var(--text-muted)",
-                          marginLeft: 4,
-                          fontSize: 11,
-                        }}
-                      >
-                        {candidate.itemCode}
-                      </span>
-                    )}
+                    {candidate.itemCode && <span>{candidate.itemCode}</span>}
                   </div>
 
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--text-muted)",
-                      fontFamily: "var(--mono)",
-                      marginTop: 3,
-                    }}
-                  >
+                  <div className="adj-candidate-uom">
                     {candidate.uomName}
                     {candidate.uomId !== candidate.baseUomId && (
-                      <span style={{ marginLeft: 6, color: "var(--text-soft)" }}>
+                      <span>
                         1 {candidate.uomName} = {candidate.toBaseFactor}{" "}
                         {candidate.baseUomName}
                       </span>
                     )}
                   </div>
 
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--text-muted)",
-                      marginTop: 2,
-                      display: "flex",
-                      gap: 8,
-                      flexWrap: "wrap",
-                    }}
-                  >
+                  <div className="adj-candidate-meta">
                     <span>
                       On hand: <strong>{fmt3(candidate.systemQty)}</strong>
                     </span>
 
-                    {candidate.batchNo && <span>Batch: {candidate.batchNo}</span>}
+                    {candidate.batchNo && (
+                      <span>Batch: {candidate.batchNo}</span>
+                    )}
 
                     {candidate.expiryDate && (
                       <span
-                        style={{
-                          color:
-                            new Date(candidate.expiryDate.toString()) < new Date()
-                              ? "var(--danger)"
-                              : "inherit",
-                        }}
+                        className={
+                          new Date(candidate.expiryDate.toString()) < new Date()
+                            ? "adj-expired"
+                            : undefined
+                        }
                       >
                         Exp: {String(candidate.expiryDate).slice(0, 10)}
                       </span>
@@ -1154,16 +1312,20 @@ export default function AdjustmentDraftEditorPage() {
               ))}
             </div>
           )}
-        </div>
+        </section>
       )}
 
-      <div className="adj-card" style={{ padding: 0 }}>
-        <div className="adj-section-head" style={{ padding: "14px 16px" }}>
+      <section
+        className="adj-card adj-card-flush"
+        aria-labelledby="adj-count-lines-title"
+      >
+        <div className="adj-section-head adj-section-head-padded">
           <div>
-            <h2>Count lines</h2>
+            <h2 id="adj-count-lines-title">Count lines</h2>
             <p>
               Enter counted quantities. Variance = counted − system.
-              {hasVariance && " Notes required on lines with variance."}
+              {hasVariance &&
+                " Notes are required by policy when applicable."}
             </p>
           </div>
         </div>
@@ -1206,10 +1368,8 @@ export default function AdjustmentDraftEditorPage() {
                       : line.adjustmentQty > 0
                         ? "pos"
                         : undefined;
-
                   const varianceLevel = getVarianceLevel(line, settings);
                   const percent = variancePercent(line);
-
                   const notesRequired = Boolean(
                     settings?.requireReasonOnVariance &&
                       line.adjustmentQty !== 0 &&
@@ -1267,9 +1427,10 @@ export default function AdjustmentDraftEditorPage() {
                           value={line.expiryDate?.slice(0, 10) ?? "—"}
                           readOnly
                           disabled
-                          style={
-                            line.expiryDate && new Date(line.expiryDate) < new Date()
-                              ? { color: "var(--danger)" }
+                          data-expired={
+                            line.expiryDate &&
+                            new Date(line.expiryDate) < new Date()
+                              ? "true"
                               : undefined
                           }
                         />
@@ -1321,9 +1482,7 @@ export default function AdjustmentDraftEditorPage() {
                           value={fmt2(line.unitCost)}
                           readOnly
                           disabled
-                          title={`$${fmt2(line.unitCostDisplay)} per ${
-                            line.uomName
-                          }`}
+                          title={`${fmt2(line.unitCostDisplay)} per ${line.uomName}`}
                         />
                       </td>
 
@@ -1349,7 +1508,7 @@ export default function AdjustmentDraftEditorPage() {
                       </td>
 
                       {!isLocked && (
-                        <td style={{ textAlign: "center" }}>
+                        <td className="adj-remove-cell">
                           <button
                             type="button"
                             className="adj-remove-btn"
@@ -1369,9 +1528,7 @@ export default function AdjustmentDraftEditorPage() {
             {lines.length > 0 && (
               <tfoot>
                 <tr>
-                  <td colSpan={5} style={{ fontWeight: 500 }}>
-                    Totals
-                  </td>
+                  <td colSpan={5}>Totals</td>
                   <td className="num">{fmt3(totals.system)}</td>
                   <td className="num">{fmt3(totals.counted)}</td>
                   <td
@@ -1398,7 +1555,7 @@ export default function AdjustmentDraftEditorPage() {
                           : undefined
                     }
                   >
-                    ${fmt2(totals.amount)}
+                    {fmtMoney(totals.amount)}
                   </td>
                   <td />
                   {!isLocked && <td />}
@@ -1407,7 +1564,7 @@ export default function AdjustmentDraftEditorPage() {
             )}
           </table>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

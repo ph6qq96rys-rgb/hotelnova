@@ -1,66 +1,73 @@
+// src/features/inventory/stockTransfers/api/locationsApi.ts
+
 import { http } from "../../../../api/http";
-import type {StockLocationDto} from "../types"
+import type { StockLocationDto } from "../types";
+import { normalizeLocation, type NormalizedStockLocation } from "../mapping/stockTransferMappers";
+import { toQuery, unwrapArray } from "../utils/apiUtils";
 
-export type LocationLiteDto = {
-  id: string;
-  name: string;
-  code?: string | null;
-  branchName?: string | null; // optional if you have it
-  active?: boolean;
+export type LocationCapability =
+  | "TransferFrom"
+  | "TransferTo"
+  | "Adjust"
+  | "Any";
+
+export type ListLocationsRequest = {
+  companyId: string;
+  branchId: string;
+  activeOnly?: boolean;
+  capability?: LocationCapability;
+  signal?: AbortSignal;
 };
-function unwrap<T>(res: unknown): T {
-  const d = res as Record<string, unknown>;
-  if (d?.data   !== undefined) return d.data   as T;
-  if (d?.result !== undefined) return d.result as T;
-  if (d?.items  !== undefined) return d.items  as T;
-  return res as T;
+
+function branchStockLocationsUrl(companyId: string, branchId: string): string {
+  return `/companies/${companyId}/branches/${branchId}/stock-locations`;
 }
 
-function toQuery(params: Record<string, unknown>): string {
-  const qs = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === "") return;
-    qs.set(key, String(value));
-  });
-  const text = qs.toString();
-  return text ? `?${text}` : "";
+function matchesCapability(
+  location: NormalizedStockLocation,
+  capability: LocationCapability
+): boolean {
+  if (capability === "TransferFrom") return location.canTransferFrom;
+  if (capability === "TransferTo") return location.canTransferTo;
+  if (capability === "Adjust") return location.canAdjust;
+  return true;
 }
-export type PagedResult<T> = {
-  items: T[];
-  page: number;
-  pageSize: number;
-  totalCount: number;
-};
+
 export const locationsApi = {
-  async list2(companyId: string, branchId: string|null): Promise<StockLocationDto[]> {
-            const res = await http.get(`/companies/${companyId}/branches/${branchId}/stock-locations`);
-            return res.data ?? [];
-  },
-  async listLocations(
-    companyId: string,
-    branchId: string|null,
-    signal?: AbortSignal
-  ): Promise<StockLocationDto[]> {
-    const res = await http.get(
-      `/companies/${companyId}/branches/${branchId}/stock-locations${toQuery({ activeOnly: true })}`,
+  async list(request: ListLocationsRequest): Promise<NormalizedStockLocation[]> {
+    const { companyId, branchId, activeOnly = true, capability = "Any", signal } = request;
+
+    const response = await http.get(
+      `${branchStockLocationsUrl(companyId, branchId)}${toQuery({ activeOnly })}`,
       { signal }
     );
-    const raw = unwrap<PagedResult<StockLocationDto> | StockLocationDto[]>(res);
-    return Array.isArray(raw) ? raw : (raw?.items ?? []);
+
+    return unwrapArray<StockLocationDto>(response)
+      .map(normalizeLocation)
+      .filter((row): row is NormalizedStockLocation => Boolean(row))
+      .filter((row) => (activeOnly ? row.isActive !== false : true))
+      .filter((row) => matchesCapability(row, capability));
   },
-  
+
+  /**
+   * Compatibility wrapper for existing pages.
+   */
+  async listLocations(
+    companyId: string,
+    branchId: string,
+    signal?: AbortSignal
+  ): Promise<NormalizedStockLocation[]> {
+    return this.list({ companyId, branchId, activeOnly: true, signal });
+  },
+
+  /**
+   * Compatibility wrapper for existing pages.
+   */
   async getStockLocations(
     companyId: string,
     branchId: string,
     signal?: AbortSignal
-  ): Promise<StockLocationDto[]> {
-    const res = await http.get(
-      `/companies/${companyId}/branches/${branchId}/stock-locations${toQuery({ activeOnly: true })}`,
-      { signal }
-    );
-    const raw = unwrap<PagedResult<StockLocationDto> | StockLocationDto[]>(res);
-    return Array.isArray(raw) ? raw : (raw?.items ?? []);
+  ): Promise<NormalizedStockLocation[]> {
+    return this.list({ companyId, branchId, activeOnly: true, signal });
   },
-  
-      
 };

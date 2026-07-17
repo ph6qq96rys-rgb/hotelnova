@@ -7,7 +7,6 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { AppProvider } from "./app/AppContext";
 import AppRoutes from "./routes/AppRoutes";
 
-import "./index.css";
 import "./styles/global.css";
 
 // Created at module level — must NOT be inside a component or render call,

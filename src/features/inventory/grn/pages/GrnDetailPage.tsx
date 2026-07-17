@@ -1,452 +1,587 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useAppScope } from "../../../../app/useAppScope";
-import { grnApi } from "../api/grnApi";
-import type { GrnDetailDto } from "../types/grn.types";
-import "./GrnDetailPage.css";
 
-type ApiError = {
-  response?: {
-    data?: {
-      title?: string;
-      detail?: string;
-      message?: string;
-    };
-  };
-  message?: string;
+import { useAppScope } from "../../../../app/useAppScope";
+import { grnApi, type GrnScope } from "../api/grnApi";
+import GrnReversalModal from "../components/GrnReverseModal";
+import type { GrnDetailDto, GrnLineDto } from "../types/grn.types";
+import {
+  getGrnLineAmount,
+  getGrnLineCount,
+  getGrnLineTotal,
+  getGrnLocationName,
+  getGrnNumber,
+  getGrnReceiptDate,
+  getGrnTotal,
+} from "../helpers/grn.formatters";
+import {
+  formatGrnStatusLabel,
+  normalizeGrnStatus,
+  type GrnStatus,
+} from "../helpers/grn.status";
+
+import "../styles/GrnPages.erp.css";
+
+type TabKey = "items" | "inventory" | "audit";
+type ReversalMode = "request" | "approval";
+
+type RouteParams = {
+  companyId?: string;
+  branchId?: string;
+  grnId?: string;
+  id?: string;
 };
 
-type GrnLine = {
-  id?: string;
-  itemId?: string;
-  itemName?: string;
-  itemCode?: string;
-  quantity?: number;
-  qty?: number;
-  uomId?: string;
-  uomName?: string;
-  uomCode?: string;
-  unitCost?: number;
-  taxAmount?: number;
-  batchNo?: string | null;
-  expiryDate?: string | null;
-  expiryDateUtc?: string | null;
+type ApiErrorPayload = {
+  title?: string;
+  detail?: string;
+  message?: string;
+  error?: string;
+  errors?: Record<string, string[] | string>;
+};
+
+type GrnLineView = GrnLineDto & {
+  qty?: number | null;
 };
 
 type GrnDetailView = GrnDetailDto & {
-  id?: string;
-  grnNumber?: string | null;
-  supplierName?: string | null;
-  status?: string | null;
-  receivingLocationName?: string | null;
-  locationName?: string | null;
-  warehouseName?: string | null;
-  receivedDate?: string | null;
-  receivedAt?: string | null;
-  receiptDate?: string | null;
-  receivedAtUtc?: string | null;
-  postedAt?: string | null;
-  postedAtUtc?: string | null;
-  notes?: string | null;
-  hasIssues?: boolean | null;
-  hasIssuedLines?: boolean | null;
-  isIssued?: boolean | null;
-  issued?: boolean | null;
-  lines?: GrnLine[];
+  id: string;
+  companyId: string;
+  status: GrnStatus;
+  lines: GrnLineView[];
+  branchName?: string | null;
+  postedByName?: string | null;
+  createdByName?: string | null;
+  reversalReason?: string | null;
 };
 
-function text(value: unknown): string {
-  return String(value ?? "").trim();
+const MONEY_FORMATTER = new Intl.NumberFormat(undefined, {
+  style: "currency",
+  currency: "USD",
+});
+
+const QTY_FORMATTER = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 3,
+});
+
+function cleanOptional(value?: string | null): string | undefined {
+  const cleaned = String(value ?? "").trim();
+  return cleaned || undefined;
 }
 
-function number(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
+function toViewModel(dto: GrnDetailDto): GrnDetailView {
+  return {
+    ...dto,
+    id: dto.id,
+    companyId: dto.companyId ?? "",
+    status: normalizeGrnStatus(dto.status),
+    lines: Array.isArray(dto.lines) ? dto.lines : [],
+  };
 }
 
-function money(value: unknown): string {
-  return number(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+function getApiError(error: unknown, fallback: string): string {
+  const err = error as {
+    response?: { data?: string | ApiErrorPayload };
+    message?: string;
+  };
+
+  const data = err.response?.data;
+
+  if (typeof data === "string") return data.trim() || fallback;
+
+  if (data && typeof data === "object") {
+    if (data.errors) {
+      return Object.entries(data.errors)
+        .map(([field, value]) => `${field}: ${Array.isArray(value) ? value.join(", ") : value}`)
+        .join("\n");
+    }
+
+    return data.detail ?? data.message ?? data.error ?? data.title ?? err.message ?? fallback;
+  }
+
+  return err.message ?? fallback;
 }
 
-function date(value: unknown): string {
-  const raw = text(value);
-  if (!raw) return "—";
+function formatDate(value?: string | null): string {
+  if (!value) return "—";
 
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
 
-  return parsed.toLocaleString();
+  return new Intl.DateTimeFormat(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
-function getErrorMessage(error: unknown, fallback: string): string {
-  const e = error as ApiError;
+function formatDateTime(value?: string | null): string {
+  if (!value) return "—";
 
-  return (
-    e?.response?.data?.title ||
-    e?.response?.data?.detail ||
-    e?.response?.data?.message ||
-    e?.message ||
-    fallback
-  );
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
-function statusOf(grn: GrnDetailView): string {
-  return text(grn.status).toUpperCase() || "DRAFT";
+function formatQty(value?: number | null): string {
+  return QTY_FORMATTER.format(Number(value ?? 0));
 }
 
-function isPosted(grn: GrnDetailView): boolean {
-  return statusOf(grn) === "POSTED";
+function formatMoney(value?: number | null): string {
+  return MONEY_FORMATTER.format(Number(value ?? 0));
 }
 
-function hasIssuedStock(grn: GrnDetailView): boolean {
-  return Boolean(
-    grn.hasIssues ||
-      grn.hasIssuedLines ||
-      grn.isIssued ||
-      grn.issued
-  );
+function getWarehouseLabel(grn: GrnDetailDto & { branchName?: string | null }): string {
+  const warehouse = getGrnLocationName(grn) || "Warehouse not recorded";
+  return grn.branchName ? `${grn.branchName} • ${warehouse}` : warehouse;
 }
 
-function canReverse(grn: GrnDetailView): boolean {
-  return isPosted(grn) && !hasIssuedStock(grn);
+function getLineQty(line: GrnLineView): number {
+  return Number(line.quantity ?? line.qty ?? 0);
 }
 
-function receiptDateOf(grn: GrnDetailView): unknown {
-  return (
-    grn.receivedDate ??
-    grn.receivedAt ??
-    grn.receiptDate ??
-    grn.receivedAtUtc
-  );
+function statusClass(status: GrnStatus): string {
+  return `erp-grn-status erp-grn-status--${String(status).toLowerCase()}`;
 }
 
-function locationOf(grn: GrnDetailView): string {
-  return text(
-    grn.receivingLocationName ??
-      grn.locationName ??
-      grn.warehouseName
-  );
+function buildGrnPath(companyId: string, grnId?: string, suffix = ""): string {
+  if (!grnId) return `/companies/${companyId}/grns`;
+  return `/companies/${companyId}/grns/${grnId}${suffix}`;
 }
 
-function lineQuantity(line: GrnLine): number {
-  return number(line.quantity ?? line.qty);
-}
-
-function lineTotal(line: GrnLine): number {
-  return lineQuantity(line) * number(line.unitCost) + number(line.taxAmount);
-}
-
-function StatusBadge({ value }: { value: string }) {
-  return (
-    <span className={`grn-status grn-status--${value.toLowerCase()}`}>
-      {value || "—"}
-    </span>
-  );
-}
-
-function Field({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="grn-field-view">
-      <div className="grn-field-label">{label}</div>
-      <div className="grn-field-value">{value || "—"}</div>
-    </div>
-  );
+function isReversalRequested(status: string): boolean {
+  const normalized = status.replace(/[_\s-]/g, "").toUpperCase();
+  return normalized === "REVERSALREQUESTED";
 }
 
 export default function GrnDetailPage() {
   const navigate = useNavigate();
-  const { companyId } = useAppScope();
-  const { grnId } = useParams<{ grnId: string }>();
+  const params = useParams<RouteParams>();
+  const { companyId: scopeCompanyId, branchId: scopeBranchId } = useAppScope();
 
-  const [data, setData] = useState<GrnDetailView | null>(null);
+  const companyId = cleanOptional(params.companyId) ?? cleanOptional(scopeCompanyId) ?? "";
+  const branchId = cleanOptional(params.branchId) ?? cleanOptional(scopeBranchId);
+  const grnId = cleanOptional(params.grnId) ?? cleanOptional(params.id) ?? "";
+
+  const scope = useMemo<GrnScope | null>(() => {
+    if (!companyId) return null;
+    return { companyId, branchId };
+  }, [branchId, companyId]);
+
+  const [doc, setDoc] = useState<GrnDetailView | null>(null);
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState<TabKey>("items");
+  const [reverseOpen, setReverseOpen] = useState(false);
 
   const load = useCallback(async () => {
-    if (!companyId || !grnId) return;
+    if (!scope || !grnId) {
+      setDoc(null);
+      return;
+    }
 
     setLoading(true);
-    setError(null);
+    setError("");
 
     try {
-      const result = await grnApi.getById(companyId, grnId);
-      setData(result as GrnDetailView);
+      const dto = await grnApi.getById(scope, grnId);
+      setDoc(toViewModel(dto));
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to load GRN."));
+      setDoc(null);
+      setError(getApiError(err, "Unable to load goods receipt."));
     } finally {
       setLoading(false);
     }
-  }, [companyId, grnId]);
+  }, [grnId, scope]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const lines = useMemo<GrnLine[]>(() => {
-    return Array.isArray(data?.lines) ? data.lines : [];
-  }, [data]);
+  const lines = doc?.lines ?? [];
+  const status = doc?.status ?? "DRAFT";
+  const statusText = String(status).toUpperCase();
 
-  const totalCost = useMemo(() => {
-    return lines.reduce((sum, line) => sum + lineTotal(line), 0);
-  }, [lines]);
+  const lineCount = doc ? getGrnLineCount(doc) : lines.length;
+  const totalValue = doc ? getGrnTotal(doc) : 0;
 
-  async function handleReverse() {
-    if (!companyId || !grnId || !data) return;
+  const totalQty = useMemo(
+    () => lines.reduce((sum, line) => sum + getLineQty(line), 0),
+    [lines],
+  );
 
-    if (!canReverse(data)) {
-      setError("Only posted GRNs with no issued stock can be reversed.");
-      return;
-    }
+  const canEdit = statusText === "DRAFT";
+  const canPost = statusText === "DRAFT";
+  const canRequestReversal = statusText === "POSTED";
+  const canApproveRejectReversal = isReversalRequested(statusText);
 
-    const grnNo = text(data.grnNumber) || grnId;
+  const reversalMode: ReversalMode = canApproveRejectReversal ? "approval" : "request";
 
-    const reason = window.prompt(
-      `Enter reversal reason for GRN ${grnNo}`,
-      "Incorrect receipt"
-    );
+  const postReceipt = useCallback(async () => {
+    if (!scope || !doc?.id) return;
 
-    if (!reason?.trim()) {
-      setError("Reversal reason is required.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Reverse GRN ${grnNo}? This action will create reversal inventory entries.`
-    );
-
-    if (!confirmed) return;
-
-    setBusy(true);
-    setError(null);
-    setSuccess(null);
+    setPosting(true);
+    setError("");
 
     try {
-      await grnApi.reverseById(companyId, grnId, {
-        reason: reason.trim(),
-      });
-
-      setSuccess("GRN reversed successfully.");
+      await grnApi.postDraft(scope, doc.id);
       await load();
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to reverse GRN."));
+      setError(getApiError(err, "Unable to post goods receipt."));
     } finally {
-      setBusy(false);
+      setPosting(false);
     }
-  }
+  }, [doc?.id, load, scope]);
 
   if (!companyId) {
     return (
-      <main className="grn-detail-page">
-        <section className="grn-empty">Select a company to continue.</section>
+      <main className="page erp-grn-page">
+        <section className="erp-empty-state">
+          <h2>Select a company</h2>
+          <p>Select a company workspace before opening goods receipts.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!grnId) {
+    return (
+      <main className="page erp-grn-page">
+        <section className="erp-empty-state">
+          <h2>Goods receipt reference missing</h2>
+          <p>The page URL does not include a valid GRN reference.</p>
+          <button type="button" className="btn" onClick={() => navigate(buildGrnPath(companyId))}>
+            Open Goods Receipts
+          </button>
+        </section>
       </main>
     );
   }
 
   if (loading) {
     return (
-      <main className="grn-detail-page">
-        <section className="grn-empty">Loading GRN…</section>
+      <main className="page erp-grn-page">
+        <section className="erp-inline-state">Loading goods receipt…</section>
       </main>
     );
   }
 
-  if (error && !data) {
+  if (!doc) {
     return (
-      <main className="grn-detail-page">
-        <div className="grn-alert grn-alert--error">{error}</div>
+      <main className="page erp-grn-page">
+        {error ? <div className="alert alert-danger">{error}</div> : null}
+        <section className="erp-empty-state">
+          <h2>Goods receipt not found</h2>
+          <p>Open the receipt list and try again.</p>
+          <button type="button" className="btn" onClick={() => navigate(buildGrnPath(companyId))}>
+            Open Goods Receipts
+          </button>
+        </section>
       </main>
     );
   }
-
-  if (!data) {
-    return (
-      <main className="grn-detail-page">
-        <section className="grn-empty">GRN not found.</section>
-      </main>
-    );
-  }
-
-  const status = statusOf(data);
-  const reversible = canReverse(data);
 
   return (
-    <main className="grn-detail-page">
-      <header className="grn-detail-header">
+    <main className="page erp-grn-page">
+      <header className="erp-grn-detail-hero">
         <div>
-          <h1>GRN {text(data.grnNumber) || "—"}</h1>
+          <button
+            type="button"
+            className="erp-back-link"
+            onClick={() => navigate(buildGrnPath(companyId))}
+          >
+            ← Goods Receipts
+          </button>
+          <div className="erp-kicker">Goods Receipt</div>
+          <h1>{getGrnNumber(doc)}</h1>
           <p>
-            {text(data.supplierName) || "No supplier"} ·{" "}
-            {date(receiptDateOf(data))}
+            {doc.supplierName || "Supplier not recorded"} • {getWarehouseLabel(doc)}
           </p>
         </div>
 
-        <div className="grn-actions">
-          <button
-            type="button"
-            className="grn-btn"
-            onClick={() => navigate(`/companies/${companyId}/grns`)}
-          >
-            All GRNs
-          </button>
+        <div className="erp-command-bar">
+          <span className={statusClass(status)}>{formatGrnStatusLabel(status)}</span>
 
-          {isPosted(data) && (
+          {canEdit ? (
             <button
               type="button"
-              className="grn-btn grn-btn--danger"
-              disabled={!reversible || busy}
-              title={
-                reversible
-                  ? "Reverse this GRN"
-                  : "Cannot reverse after stock has been issued"
-              }
-              onClick={() => void handleReverse()}
+              className="btn"
+              onClick={() => navigate(buildGrnPath(companyId, doc.id, "/edit"))}
             >
-              {busy ? "Reversing…" : "Reverse"}
+              Edit
             </button>
-          )}
+          ) : null}
+
+          {canPost ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={posting}
+              onClick={() => void postReceipt()}
+            >
+              {posting ? "Posting…" : "Post Receipt"}
+            </button>
+          ) : null}
+
+          {canRequestReversal || canApproveRejectReversal ? (
+            <button
+              type="button"
+              className={canApproveRejectReversal ? "btn btn-primary" : "btn btn-danger"}
+              onClick={() => setReverseOpen(true)}
+            >
+              {canApproveRejectReversal ? "Approve / Reject Reversal" : "Request Reversal"}
+            </button>
+          ) : null}
+
+          <button type="button" className="btn" onClick={() => window.print()}>
+            Print
+          </button>
         </div>
       </header>
 
-      {error && <div className="grn-alert grn-alert--error">{error}</div>}
-      {success && <div className="grn-alert grn-alert--success">{success}</div>}
+      {error ? <div className="alert alert-danger">{error}</div> : null}
 
-      <section className="grn-stats">
-        <article>
-          <span>Status</span>
-          <strong>
-            <StatusBadge value={status} />
-          </strong>
-        </article>
-
-        <article>
-          <span>Lines</span>
-          <strong>{lines.length}</strong>
-        </article>
-
-        <article>
-          <span>Total Cost</span>
-          <strong>${money(totalCost)}</strong>
-        </article>
-
-        <article>
-          <span>Issued</span>
-          <strong>
-            {isPosted(data)
-              ? hasIssuedStock(data)
-                ? "Yes"
-                : "No"
-              : "N/A"}
-          </strong>
-        </article>
+      <section className="erp-grn-summary-grid">
+        <Summary label="Receipt Date" value={formatDate(getGrnReceiptDate(doc))} />
+        <Summary label="Warehouse" value={getWarehouseLabel(doc)} />
+        <Summary label="Items" value={String(lineCount)} />
+        <Summary label="Total Quantity" value={formatQty(totalQty)} />
+        <Summary label="Inventory Value" value={formatMoney(totalValue)} />
       </section>
 
-      <section className="grn-card">
-        <h3>Receipt Information</h3>
+      <div className="erp-grn-detail-layout">
+        <section className="card erp-grn-card">
+          <nav className="erp-tabs" aria-label="Goods receipt detail tabs">
+            {TAB_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={tab === option.key ? "active" : ""}
+                onClick={() => setTab(option.key)}
+              >
+                {option.key === "items" ? `Items (${lineCount})` : option.label}
+              </button>
+            ))}
+          </nav>
 
-        <div className="grn-info-grid">
-          <Field label="GRN Number" value={text(data.grnNumber) || "—"} />
-          <Field label="Status" value={<StatusBadge value={status} />} />
-          <Field label="Location" value={locationOf(data) || "—"} />
-          <Field label="Supplier" value={text(data.supplierName) || "—"} />
-          <Field label="Received" value={date(receiptDateOf(data))} />
-          <Field label="Posted" value={date(data.postedAt ?? data.postedAtUtc)} />
-          <Field label="Notes" value={text(data.notes) || "—"} />
-        </div>
-      </section>
+          {tab === "items" ? <ItemsTable lines={lines} /> : null}
+          {tab === "inventory" ? (
+            <InventoryImpact doc={doc} lines={lines} totalValue={totalValue} />
+          ) : null}
+          {tab === "audit" ? <AuditTrail doc={doc} /> : null}
+        </section>
 
-      <section className="grn-card">
-        <h3>Line Items</h3>
+        <aside className="erp-side-panel">
+          <div className="card">
+            <h3>Document Summary</h3>
+            <Info label="Status" value={formatGrnStatusLabel(status)} />
+            <Info label="Supplier" value={doc.supplierName || "—"} />
+            <Info label="Branch" value={doc.branchName || "—"} />
+            <Info label="Warehouse" value={getGrnLocationName(doc) || "—"} />
+            <Info label="Received" value={formatDate(getGrnReceiptDate(doc))} />
+            <Info label="Value" value={formatMoney(totalValue)} />
+          </div>
 
-        <div className="grn-table-wrap">
-          <table className="grn-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Item</th>
-                <th>Qty</th>
-                <th>UOM</th>
-                <th>Unit Cost</th>
-                <th>Tax</th>
-                <th>Total</th>
-                <th>Batch</th>
-                <th>Expiry</th>
-              </tr>
-            </thead>
+          <div className="card">
+            <h3>Workflow</h3>
+            <Workflow status={status} />
+          </div>
+        </aside>
+      </div>
 
-            <tbody>
-              {lines.length === 0 ? (
-                <tr>
-                  <td colSpan={9}>No line items.</td>
-                </tr>
-              ) : (
-                lines.map((line, index) => (
-                  <tr key={line.id ?? `${line.itemId}-${index}`}>
-                    <td>{index + 1}</td>
-                    <td className="grn-strong">
-                      {text(line.itemName ?? line.itemCode ?? line.itemId) ||
-                        "—"}
-                    </td>
-                    <td>{money(lineQuantity(line))}</td>
-                    <td>
-                      {text(line.uomName ?? line.uomCode ?? line.uomId) || "—"}
-                    </td>
-                    <td>${money(line.unitCost)}</td>
-                    <td>${money(line.taxAmount)}</td>
-                    <td className="grn-strong">${money(lineTotal(line))}</td>
-                    <td>{text(line.batchNo) || "—"}</td>
-                    <td>
-                      {text(line.expiryDate ?? line.expiryDateUtc).slice(
-                        0,
-                        10
-                      ) || "—"}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <footer className="grn-sticky-bar">
-        <span>
-          {reversible
-            ? "Eligible for reversal because it is posted and not issued."
-            : "Only posted, unissued GRNs can be reversed."}
-        </span>
-
-        <div className="grn-actions">
-          <button
-            type="button"
-            className="grn-btn"
-            onClick={() => navigate(`/companies/${companyId}/grns`)}
-          >
-            Back
-          </button>
-
-          {isPosted(data) && (
-            <button
-              type="button"
-              className="grn-btn grn-btn--danger"
-              disabled={!reversible || busy}
-              onClick={() => void handleReverse()}
-            >
-              {busy ? "Reversing…" : "Reverse"}
-            </button>
-          )}
-        </div>
-      </footer>
+      <GrnReversalModal
+        open={reverseOpen}
+        mode={reversalMode}
+        companyId={companyId}
+        grn={{
+          id: doc.id,
+          grnNumber: getGrnNumber(doc),
+          supplierName: doc.supplierName,
+          receivingLocationName: getGrnLocationName(doc),
+          receivedDate: getGrnReceiptDate(doc),
+          status: doc.status,
+          reversalReason: doc.reversalReason,
+          reverseReason: doc.reverseReason,
+        }}
+        onClose={() => setReverseOpen(false)}
+        onCompleted={async () => {
+          setReverseOpen(false);
+          await load();
+        }}
+      />
     </main>
+  );
+}
+
+const TAB_OPTIONS: ReadonlyArray<{ key: TabKey; label: string }> = [
+  { key: "items", label: "Items" },
+  { key: "inventory", label: "Inventory Impact" },
+  { key: "audit", label: "Audit Trail" },
+];
+
+function Summary({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="erp-summary-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="erp-info-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function ItemsTable({ lines }: { lines: GrnLineView[] }) {
+  return (
+    <div className="erp-table-wrap">
+      <table className="table erp-grn-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Item</th>
+            <th className="num">Received Qty</th>
+            <th>UOM</th>
+            <th className="num">Unit Cost</th>
+            <th className="num">Line Value</th>
+            <th>Batch</th>
+            <th>Expiry</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.length === 0 ? (
+            <tr>
+              <td colSpan={8} className="erp-empty-row">
+                No items on this goods receipt.
+              </td>
+            </tr>
+          ) : (
+            lines.map((line, index) => {
+              const qty = getLineQty(line);
+              const lineValue = getGrnLineTotal(line) || getGrnLineAmount(line);
+
+              return (
+                <tr key={line.id || index}>
+                  <td>{String(line.lineNo ?? index + 1).padStart(2, "0")}</td>
+                  <td>
+                    <strong>{line.itemName || "Unknown item"}</strong>
+                    <small>{line.itemCode || ""}</small>
+                  </td>
+                  <td className="num">{formatQty(qty)}</td>
+                  <td>{line.uomCode || line.uomName || "—"}</td>
+                  <td className="num">{formatMoney(line.unitCost)}</td>
+                  <td className="num">{formatMoney(lineValue)}</td>
+                  <td>{line.batchNo || "—"}</td>
+                  <td>{formatDate(line.expiryDate)}</td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function InventoryImpact({
+  doc,
+  lines,
+  totalValue,
+}: {
+  doc: GrnDetailView;
+  lines: GrnLineView[];
+  totalValue: number;
+}) {
+  return (
+    <div className="erp-impact-grid">
+      <Summary label="FIFO Lots Created" value={String(lines.length)} />
+      <Summary label="Warehouse" value={getWarehouseLabel(doc)} />
+      <Summary label="Inventory Added" value={formatMoney(totalValue)} />
+      <Summary label="Posting Rule" value="Receipt increases stock" />
+    </div>
+  );
+}
+
+function AuditTrail({ doc }: { doc: GrnDetailView }) {
+  const events = [
+    {
+      label: "Created",
+      at: doc.createdAt ?? doc.createdAtUtc,
+      by: doc.createdByName,
+    },
+    {
+      label: "Posted",
+      at: doc.postedAt ?? doc.postedAtUtc,
+      by: doc.postedByName,
+    },
+    {
+      label: "Reversal Requested",
+      at: doc.reversedAt ?? doc.reversedAtUtc,
+      by: doc.reversedByUser,
+      note: doc.reversalReason ?? doc.reverseReason,
+    },
+    {
+      label: "Reversed",
+      at: doc.reversedAt ?? doc.reversedAtUtc,
+      by: doc.reversedByUser,
+      note: doc.reversalReason ?? doc.reverseReason,
+    },
+  ].filter((event) => Boolean(event.at));
+
+  if (events.length === 0) {
+    return <div className="erp-empty-row">No audit events recorded.</div>;
+  }
+
+  return (
+    <div className="erp-audit-list">
+      {events.map((event, index) => (
+        <div className="erp-audit-item" key={`${event.label}-${event.at}`}>
+          <span>{index + 1}</span>
+          <div>
+            <strong>{event.label}</strong>
+            <p>
+              {formatDateTime(event.at)}
+              {event.by ? ` • ${event.by}` : ""}
+            </p>
+            {event.note ? <p>{event.note}</p> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Workflow({ status }: { status: GrnStatus }) {
+  const statusText = String(status).replace(/[_\s-]/g, "").toUpperCase();
+
+  const steps =
+    statusText === "REVERSALREQUESTED"
+      ? ["DRAFT", "POSTED", "REVERSALREQUESTED", "REVERSED"]
+      : ["DRAFT", "POSTED", "REVERSED"];
+
+  const currentIndex = Math.max(
+    steps.findIndex((step) => step === statusText),
+    0,
+  );
+
+  return (
+    <div className="erp-workflow">
+      {steps.map((step, index) => (
+        <div key={step} className={index <= currentIndex ? "done" : ""}>
+          <span />
+          {formatGrnStatusLabel(step as GrnStatus)}
+        </div>
+      ))}
+    </div>
   );
 }

@@ -1,17 +1,39 @@
 // src/routes/routeDefConfig.ts
 
+import { useMemo } from "react";
+import type { ReactNode } from "react";
+import type { RouteObject } from "react-router-dom";
+
 import { routeConfig } from "./routeConfig";
 import { companyRoutes } from "./companyRoutes";
 import { useGrnRoutes } from "./grnroutes";
 import { useSalesRoutes } from "./sales-cogsroute";
 import { getHrRoutes } from "./hrRoutes";
 import { getPostRoutes } from "./posRoutes";
-import { useAppScope } from "../app/useAppScope";
 import { inventoryMasterRoutes } from "./inventoryMasterRoutes";
+import { useAppScope } from "../app/useAppScope";
 
-import type { AppRoute } from "./sales-cogsroute";
+export type AppRouteLike = RouteObject & {
+  path?: string;
+  label?: string;
+  element?: ReactNode;
+  icon?: ReactNode;
+  nav?: boolean;
+  section?: string;
+  roles?: string[];
+  permissions?: string[];
+  order?: number;
+  hidden?: boolean;
+  menu?: {
+    label?: string;
+    section?: string;
+    order?: number;
+  };
+  getHref?: (companyId: string) => string;
+  children?: AppRouteLike[];
+};
 
-type RouteWithHref = AppRoute & {
+export type RouteWithHref = AppRouteLike & {
   getHref?: (companyId: string) => string;
 };
 
@@ -39,12 +61,24 @@ function stripCompanyPrefix(path?: string | null): string | undefined {
 
   if (clean.startsWith("companies/")) {
     const parts = clean.split("/");
+
     if (parts.length >= 3) {
       return parts.slice(2).join("/");
     }
   }
 
   return clean;
+}
+
+function joinPaths(parentPath?: string, childPath?: string): string | undefined {
+  const parent = cleanPath(parentPath);
+  const child = cleanPath(childPath);
+
+  if (!parent && !child) return undefined;
+  if (!parent) return child;
+  if (!child) return parent;
+
+  return `${parent}/${child}`.replace(/\/+/g, "/");
 }
 
 function companyHref(companyId: string, path?: string | null): string {
@@ -57,17 +91,18 @@ function companyHref(companyId: string, path?: string | null): string {
   return `/companies/${companyId}/${clean}`;
 }
 
-function normalizeRoute(
-  route: AppRoute,
-  parentPath = ""
-): RouteWithHref {
-  const rawPath = cleanPath(route.path);
-  const ownPath = stripCompanyPrefix(rawPath);
+function getChildren(route: AppRouteLike): AppRouteLike[] {
+  return Array.isArray(route.children)
+    ? (route.children as AppRouteLike[])
+    : [];
+}
 
-  const fullPath =
-    ownPath && parentPath
-      ? `${parentPath}/${ownPath}`.replace(/\/+/g, "/")
-      : ownPath || parentPath;
+function normalizeRoute(
+  route: AppRouteLike,
+  parentPath?: string
+): RouteWithHref {
+  const ownPath = stripCompanyPrefix(route.path);
+  const fullPath = joinPaths(parentPath, ownPath);
 
   const normalized: RouteWithHref = {
     ...route,
@@ -75,36 +110,55 @@ function normalizeRoute(
     getHref: (companyId: string) => companyHref(companyId, fullPath),
   };
 
-  if (Array.isArray((route as any).children)) {
-    normalized.children = ((route as any).children as AppRoute[]).map((child) =>
+  const children = getChildren(route);
+
+  if (children.length > 0) {
+    normalized.children = children.map((child) =>
       normalizeRoute(child, fullPath)
-    ) as any;
+    );
   }
 
   return normalized;
 }
 
-function flattenRoutes(routes: AppRoute[]): RouteWithHref[] {
+function flattenRoutes(routes: AppRouteLike[]): RouteWithHref[] {
   const result: RouteWithHref[] = [];
 
-  function walk(items: AppRoute[], parentPath = "") {
+  function walk(items: AppRouteLike[], parentPath?: string) {
     for (const route of items) {
       const normalized = normalizeRoute(route, parentPath);
       result.push(normalized);
 
-      if (Array.isArray((route as any).children)) {
-        const childParent =
-          stripCompanyPrefix(route.path) ??
-          parentPath;
+      const children = getChildren(route);
 
-        walk((route as any).children as AppRoute[], childParent);
+      if (children.length > 0) {
+        const childParent = joinPaths(
+          parentPath,
+          stripCompanyPrefix(route.path)
+        );
+
+        walk(children, childParent);
       }
     }
   }
 
   walk(routes);
-
   return result;
+}
+
+function withCompanyHref(
+  route: RouteWithHref,
+  companyId: string | null | undefined
+): RouteWithHref {
+  const clean = stripCompanyPrefix(route.path);
+
+  return {
+    ...route,
+    path: clean,
+    getHref: companyId
+      ? () => companyHref(companyId, route.path)
+      : route.getHref,
+  };
 }
 
 export function useAppRoutes(): RouteWithHref[] {
@@ -115,21 +169,24 @@ export function useAppRoutes(): RouteWithHref[] {
   const hrRoutes = getHrRoutes();
   const posRoutes = getPostRoutes();
 
-  const allRoutes: AppRoute[] = [
-    ...(routeConfig as AppRoute[]),
-    ...(companyRoutes as AppRoute[]),
-    ...(inventoryMasterRoutes as AppRoute[]),
-    ...grnRoutes,
-    ...salesRoutes,
-    ...(hrRoutes as AppRoute[]),
-    ...(posRoutes as AppRoute[]),
-  ];
+  const allRoutes = useMemo<AppRouteLike[]>(
+    () => [
+      ...(routeConfig as AppRouteLike[]),
+      ...(companyRoutes as AppRouteLike[]),
+      ...(inventoryMasterRoutes as AppRouteLike[]),
+      ...(grnRoutes as AppRouteLike[]),
+      ...(salesRoutes as AppRouteLike[]),
+      ...(hrRoutes as AppRouteLike[]),
+      ...(posRoutes as AppRouteLike[]),
+    ],
+    [grnRoutes, salesRoutes, hrRoutes, posRoutes]
+  );
 
-  return flattenRoutes(allRoutes).map((route) => ({
-    ...route,
-    path: stripCompanyPrefix(route.path),
-    getHref: companyId
-      ? () => companyHref(companyId, route.path)
-      : route.getHref,
-  }));
+  return useMemo(
+    () =>
+      flattenRoutes(allRoutes).map((route) =>
+        withCompanyHref(route, companyId)
+      ),
+    [allRoutes, companyId]
+  );
 }

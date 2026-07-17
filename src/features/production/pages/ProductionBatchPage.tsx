@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAppScope } from "../../../app/useAppScope";
+import { useErpNavigate } from "../../../routes/useErpNavigation";
 import { http } from "../../../api/http";
 import {
   ApiError,
@@ -29,6 +30,55 @@ const hasText       = (v: unknown): v is string => typeof v === "string" && v.tr
 const safeNum       = (value: unknown, fallback = 0): number => { const n = Number(value); return Number.isFinite(n) ? n : fallback; };
 const nonEmptyGuid  = (v: string | null | undefined): string | null =>
   (!v || v === "00000000-0000-0000-0000-000000000000") ? null : v;
+
+
+function text(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function locationIdOf(value: any): string {
+  return text(value?.stockLocationId ?? value?.StockLocationId ?? value?.id ?? value?.Id);
+}
+
+function locationTypeOf(value: any): string {
+  return text(value?.locationType ?? value?.type).replace(/[\s_-]+/g, "").toLowerCase();
+}
+
+function boolOf(value: any, ...keys: string[]): boolean {
+  return keys.some((key) => value?.[key] === true);
+}
+
+function locationLabel(value: any): string {
+  const name = text(value?.name ?? value?.stockLocationName);
+  const code = text(value?.code).toUpperCase();
+  return code ? `${name} (${code})` : name;
+}
+
+function isIssueLocation(value: any): boolean {
+  const type = locationTypeOf(value);
+  const isMainWarehouse = boolOf(value, "isMainWarehouse", "isDefaultIssueSource") || type.includes("warehouse");
+  return (
+    value?.isActive !== false &&
+    locationIdOf(value) !== "" &&
+    (value?.canIssue === true || value?.canRequestFrom === true || value?.canTransferFrom === true) &&
+    isMainWarehouse &&
+    !boolOf(value, "isConsumptionLocation", "canConsume", "canConsumeFrom") &&
+    !boolOf(value, "isProductionCenter") &&
+    type !== "waste" &&
+    type !== "transit"
+  );
+}
+
+function isOutputLocation(value: any): boolean {
+  const type = locationTypeOf(value);
+  return (
+    value?.isActive !== false &&
+    locationIdOf(value) !== "" &&
+    ((value?.canProduce === true && boolOf(value, "isProductionCenter")) || type.includes("production")) &&
+    type !== "waste" &&
+    type !== "transit"
+  );
+}
 
 function normaliseStatus(status: unknown): number {
   if (typeof status === "string") return BatchStatus[status as keyof typeof BatchStatus] ?? -1;
@@ -128,7 +178,22 @@ function MetricBox({ label, value }: { label: string; value: string }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProductionBatchPage() {
-  const nav = useNavigate();
+  const erpNavigation = useErpNavigate() as any;
+  const nav = useMemo(() => {
+    return (to: string | number, options?: { replace?: boolean }) => {
+      if (typeof to === "number") {
+        if (typeof erpNavigation?.back === "function") return erpNavigation.back();
+        if (typeof erpNavigation?.navigate === "function") return erpNavigation.navigate(to);
+        return window.history.go(to);
+      }
+
+      if (typeof erpNavigation === "function") return erpNavigation(to, options);
+      if (typeof erpNavigation?.navigate === "function") return erpNavigation.navigate(to, options);
+      if (typeof erpNavigation?.to === "function") return erpNavigation.to(to, options);
+      if (typeof erpNavigation?.go === "function") return erpNavigation.go(to, options);
+      window.location.assign(to);
+    };
+  }, [erpNavigation]);
   const { batchId: routeBatchId } = useParams<{ batchId?: string }>();
   const [sp] = useSearchParams();
 
@@ -179,6 +244,9 @@ export default function ProductionBatchPage() {
   const itemById = useMemo(() => new Map(inventoryItems.map((i) => [i.id, i])), [inventoryItems]);
 
   const totalInputQty = useMemo(() => inputs.reduce((s, l) => s + safeNum(l.qty, 0), 0), [inputs]);
+
+  const issueLocations = useMemo(() => locations.filter(isIssueLocation), [locations]);
+  const outputLocations = useMemo(() => locations.filter(isOutputLocation), [locations]);
 
   const rawStatus  = batch ? normaliseStatus(batch.status) : BatchStatus.Draft;
   const statusLabel= batchStatusLabel(rawStatus);
@@ -231,14 +299,16 @@ export default function ProductionBatchPage() {
     ])
       .then(([locs, menus, items]) => {
         if (ctrl.signal.aborted) return;
-        const activeLocs  = locs.filter((l) => l.isActive !== false);
+        const activeLocs  = locs.filter((l: any) => l.isActive !== false);
+        const issueLocs = activeLocs.filter(isIssueLocation);
+        const outputLocs = activeLocs.filter(isOutputLocation);
         const activeMenus = menus.filter((m) => m.isActive !== false);
         const activeItems = items.filter((i) => i.isActive !== false);
         setLocations(activeLocs); setMenuItems(activeMenus); setInventoryItems(activeItems);
         setCatalogReady(true);
         if (isNewPage) {
-          setIssueLocationId((prev) => activeLocs.some((l) => l.id === prev) ? prev : activeLocs[0]?.id ?? "");
-          setOutputLocationId((prev) => activeLocs.some((l) => l.id === prev) ? prev : activeLocs[1]?.id ?? activeLocs[0]?.id ?? "");
+          setIssueLocationId((prev) => issueLocs.some((l: any) => locationIdOf(l) === prev) ? prev : locationIdOf(issueLocs[0]));
+          setOutputLocationId((prev) => outputLocs.some((l: any) => locationIdOf(l) === prev) ? prev : locationIdOf(outputLocs[0]));
           if (menuItemIdFromQuery) setMenuItemId(menuItemIdFromQuery);
           else setMenuItemId((prev) => activeMenus.some((m) => m.id === prev) ? prev : activeMenus[0]?.id ?? "");
           if (recipeIdFromQuery) setRecipeId(recipeIdFromQuery);
@@ -326,6 +396,8 @@ export default function ProductionBatchPage() {
     if (!hasText(issueLocationId))   return "Issue location is required.";
     if (!hasText(outputLocationId))  return "Output location is required.";
     if (issueLocationId === outputLocationId) return "Issue and output locations cannot be the same.";
+    if (!issueLocations.some((l: any) => locationIdOf(l) === issueLocationId)) return "Issue location must be a warehouse issue source.";
+    if (!outputLocations.some((l: any) => locationIdOf(l) === outputLocationId)) return "Output location must be a production center.";
     if (!plannedQty || plannedQty <= 0) return "Planned quantity must be greater than zero.";
     return null;
   }
@@ -440,9 +512,9 @@ export default function ProductionBatchPage() {
       {/* Header */}
       <div className="p-page-header">
         <div>
-          <p className="p-kicker">Production · Operations</p>
-          <h1 className="p-title">Production Batch</h1>
-          <p className="p-subtitle">Execute a recipe, consume inputs, produce outputs, and post inventory.</p>
+          <p className="p-kicker">ERP Production · Branch Execution</p>
+          <h1 className="p-title">Production Batch Control</h1>
+          <p className="p-subtitle">Execute recipe-controlled manufacturing, consume inputs, produce outputs, and post inventory with scoped ERP navigation.</p>
         </div>
         <div className="p-btn-row">
           <button className="p-btn p-btn--ghost"    onClick={() => nav("/production")}      disabled={loading}>← Back</button>
@@ -494,6 +566,8 @@ export default function ProductionBatchPage() {
 
         {/* Metrics strip */}
         <div className="p-metrics">
+          <MetricBox label="Company Scope" value={companyId ? `${companyId.slice(0, 8)}…` : "—"} />
+          <MetricBox label="Branch Scope"  value={branchId ? `${branchId.slice(0, 8)}…` : "—"} />
           <MetricBox label="Recipe ID"      value={recipeId ? `${recipeId.slice(0, 8)}…` : "—"} />
           <MetricBox label="Menu Item"      value={menuById.get(menuItemId) ?? "—"} />
           <MetricBox label="Planned Qty"    value={plannedQty > 0 ? String(plannedQty) : "—"} />
@@ -506,8 +580,8 @@ export default function ProductionBatchPage() {
       <div className="p-card">
         <div className="p-card__head">
           <div>
-            <p className="p-card__title">Recipe & Batch Information</p>
-            <p className="p-card__subtitle">Recipe is the source of truth. Menu item retained as sales context.</p>
+            <p className="p-card__title">Recipe, Batch & Posting Controls</p>
+            <p className="p-card__subtitle">Recipe is the source of truth. Company and branch scope are retained for audit-safe posting.</p>
           </div>
         </div>
         <div className="p-card__body">
@@ -550,7 +624,7 @@ export default function ProductionBatchPage() {
                 disabled={catalogLoading || loading || !canEdit}
               >
                 <option value="">{catalogLoading ? "Loading locations…" : "Select issue location"}</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {issueLocations.map((l: any) => <option key={locationIdOf(l)} value={locationIdOf(l)}>{locationLabel(l)}</option>)}
               </select>
             </Field>
 
@@ -562,8 +636,8 @@ export default function ProductionBatchPage() {
                 disabled={catalogLoading || loading || !canEdit}
               >
                 <option value="">{catalogLoading ? "Loading locations…" : "Select output location"}</option>
-                {locations.filter((l) => l.id !== issueLocationId).map((l) => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
+                {outputLocations.filter((l: any) => locationIdOf(l) !== issueLocationId).map((l: any) => (
+                  <option key={locationIdOf(l)} value={locationIdOf(l)}>{locationLabel(l)}</option>
                 ))}
               </select>
             </Field>
@@ -575,8 +649,8 @@ export default function ProductionBatchPage() {
       <div className="p-card">
         <div className="p-toolbar">
           <div>
-            <p className="p-card__title">Input Lines / Consumption</p>
-            <p className="p-card__subtitle">Recipe lines are loaded by Apply Recipe. Manual adjustments remain auditable.</p>
+            <p className="p-card__title">Input Lines / Auditable Consumption</p>
+            <p className="p-card__subtitle">Recipe lines are loaded by Apply Recipe. Manual adjustments remain auditable before posting.</p>
           </div>
           <button className="p-btn p-btn--outline" onClick={addManualLine} disabled={loading || !canEdit || !hasBatch}>
             + Add Manual Line

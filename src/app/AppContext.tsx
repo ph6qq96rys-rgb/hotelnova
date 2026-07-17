@@ -1,17 +1,26 @@
-// src/context/AppContext.tsx
+// src/app/AppContext.tsx
 
-import React, {
+import {
   createContext,
   useCallback,
   useContext,
   useMemo,
   useState,
+  type ReactNode,
 } from "react";
 
-export type AppMode = "platform" | "tenant";
+import { loadAuth } from "../auth/auth.storage";
+import {
+  loadWorkspaceAuth,
+  saveWorkspaceAuth,
+  clearWorkspaceAuth,
+  type WorkspaceAuth,
+} from "../auth/workspace-auth.storage";
+
+export type AppScopeMode = "platform" | "tenant";
 
 export type AppScopeState = {
-  mode: AppMode;
+  mode: AppScopeMode;
 
   companyId: string | null;
   companyName: string | null;
@@ -27,34 +36,43 @@ export type AppScopeState = {
   stockLocationName: string | null;
 };
 
-export type AppScopeContextValue = AppScopeState & {
-  isPlatformMode: boolean;
-  isTenantMode: boolean;
-
-  hasCompany: boolean;
-  hasBranch: boolean;
-  hasOperationalScope: boolean;
-
-  enterPlatformMode: () => void;
-
-  setCompany: (company: {
-    id: string;
-    name?: string | null;
-    tenantSlug?: string | null;
-  } | null) => void;
-
-  setBranch: (branch: { id: string; name?: string | null } | null) => void;
-  setStore: (store: { id: string; name?: string | null } | null) => void;
-  setStockLocation: (location: { id: string; name?: string | null } | null) => void;
-
-  clearBranchScope: () => void;
-  clearScope: () => void;
+export type SetCompanyInput = {
+  id: string;
+  name: string;
+  tenantSlug?: string | null;
 };
 
-const SCOPE_KEY = "rfnb.scope.v3";
+export type SetBranchInput = {
+  id: string | null;
+  name?: string | null;
+};
 
-const emptyScope: AppScopeState = {
-  mode: "tenant",
+export type SetStoreInput = {
+  id: string | null;
+  name?: string | null;
+};
+
+export type SetStockLocationInput = {
+  id: string | null;
+  name?: string | null;
+};
+
+export type AppContextValue = AppScopeState & {
+  setCompany: (company: SetCompanyInput) => void;
+  setWorkspace: (workspace: WorkspaceAuth) => void;
+  clearCompany: () => void;
+
+  setBranch: (branch: SetBranchInput) => void;
+  setStore: (store: SetStoreInput) => void;
+  setStockLocation: (location: SetStockLocationInput) => void;
+
+  refreshScope: () => void;
+};
+
+const APP_SCOPE_KEY = "rfnb.scope.v3";
+
+const EMPTY_SCOPE: AppScopeState = {
+  mode: "platform",
 
   companyId: null,
   companyName: null,
@@ -70,242 +88,369 @@ const emptyScope: AppScopeState = {
   stockLocationName: null,
 };
 
-const platformScope: AppScopeState = {
-  ...emptyScope,
-  mode: "platform",
-};
+const AppContext = createContext<AppContextValue | null>(null);
 
-const AppContext = createContext<AppScopeContextValue | null>(null);
-
-function normalizeId(value?: string | null): string | null {
-  const text = String(value ?? "").trim();
-  return text.length > 0 ? text : null;
+function clean(value: unknown): string | null {
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : null;
 }
 
-function normalizeText(value?: string | null): string | null {
-  const text = String(value ?? "").trim();
-  return text.length > 0 ? text : null;
+function normalizeTenantSlug(value: unknown): string | null {
+  return clean(value)?.toLowerCase() ?? null;
 }
 
-function loadScope(): AppScopeState {
+function normalizeScope(
+  value: Partial<AppScopeState> | null | undefined,
+): AppScopeState {
+  const companyId = clean(value?.companyId);
+
+  return {
+    mode: companyId ? "tenant" : "platform",
+
+    companyId,
+    companyName: clean(value?.companyName),
+    tenantSlug: normalizeTenantSlug(value?.tenantSlug),
+
+    branchId: clean(value?.branchId),
+    branchName: clean(value?.branchName),
+
+    storeId: clean(value?.storeId),
+    storeName: clean(value?.storeName),
+
+    stockLocationId: clean(value?.stockLocationId),
+    stockLocationName: clean(value?.stockLocationName),
+  };
+}
+
+function readPersistedScope(): AppScopeState | null {
+  const raw =
+    sessionStorage.getItem(APP_SCOPE_KEY) ??
+    localStorage.getItem(APP_SCOPE_KEY);
+
+  if (!raw) return null;
+
   try {
-    const current = localStorage.getItem(SCOPE_KEY);
-
-    if (current) {
-      const parsed = JSON.parse(current) as Partial<AppScopeState>;
-
-      return {
-        ...emptyScope,
-        ...parsed,
-        mode: parsed.mode === "platform" ? "platform" : "tenant",
-        companyId: normalizeId(parsed.companyId),
-        companyName: normalizeText(parsed.companyName),
-        tenantSlug: normalizeText(parsed.tenantSlug)?.toLowerCase() ?? null,
-        branchId: normalizeId(parsed.branchId),
-        branchName: normalizeText(parsed.branchName),
-        storeId: normalizeId(parsed.storeId),
-        storeName: normalizeText(parsed.storeName),
-        stockLocationId: normalizeId(parsed.stockLocationId),
-        stockLocationName: normalizeText(parsed.stockLocationName),
-      };
-    }
-
-    const legacy =
-      localStorage.getItem("rfnb.scope.v2") ??
-      localStorage.getItem("rfnb.scope.v1");
-
-    if (!legacy) return emptyScope;
-
-    const parsed = JSON.parse(legacy) as Partial<AppScopeState>;
-
-    return {
-      ...emptyScope,
-      mode: normalizeId(parsed.companyId) ? "tenant" : "platform",
-      companyId: normalizeId(parsed.companyId),
-      companyName: normalizeText(parsed.companyName),
-      tenantSlug: normalizeText(parsed.tenantSlug)?.toLowerCase() ?? null,
-      branchId: normalizeId(parsed.branchId),
-      branchName: normalizeText(parsed.branchName),
-      storeId: normalizeId(parsed.storeId),
-      storeName: normalizeText(parsed.storeName),
-      stockLocationId: normalizeId(parsed.stockLocationId),
-      stockLocationName: normalizeText(parsed.stockLocationName),
-    };
+    return normalizeScope(
+      JSON.parse(raw) as Partial<AppScopeState>,
+    );
   } catch {
-    return emptyScope;
+    sessionStorage.removeItem(APP_SCOPE_KEY);
+    localStorage.removeItem(APP_SCOPE_KEY);
+    return null;
   }
 }
 
-function saveScope(scope: AppScopeState): void {
-  localStorage.setItem(SCOPE_KEY, JSON.stringify(scope));
+function loadInitialScope(): AppScopeState {
+  /*
+   * A delegated SystemAdmin workspace must take precedence over
+   * direct tenant authentication.
+   */
+  const workspace = loadWorkspaceAuth();
+
+  if (workspace?.accessToken && clean(workspace.companyId)) {
+    return normalizeScope({
+      mode: "tenant",
+      companyId: workspace.companyId,
+      companyName: workspace.companyName,
+      tenantSlug: workspace.tenantSlug,
+      branchId: workspace.branchId,
+      branchName: workspace.branchName,
+      storeId: null,
+      storeName: null,
+      stockLocationId: null,
+      stockLocationName: null,
+    });
+  }
+
+  const persistedScope = readPersistedScope();
+
+  if (persistedScope?.companyId) {
+    return persistedScope;
+  }
+
+  const auth = loadAuth();
+
+  if (auth?.accessToken) {
+    return normalizeScope({
+      mode: auth.companyId ? "tenant" : "platform",
+      companyId: auth.companyId,
+      companyName: auth.companyName,
+      tenantSlug: auth.tenantSlug,
+      branchId: auth.branchId,
+      branchName: auth.branchName,
+      storeId: auth.storeId,
+      storeName: null,
+      stockLocationId: auth.stockLocationId,
+      stockLocationName: null,
+    });
+  }
+
+  return EMPTY_SCOPE;
 }
 
-function clearLegacyScope(): void {
-  localStorage.removeItem("rfnb.scope.v1");
-  localStorage.removeItem("rfnb.scope.v2");
-}
+function persistScope(scope: AppScopeState): void {
+  const serialized = JSON.stringify(scope);
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [scope, setScopeState] = useState<AppScopeState>(() => loadScope());
+  /*
+   * Keep scope tab-scoped when a delegated workspace exists.
+   * Otherwise use local storage for direct tenant login.
+   */
+  if (loadWorkspaceAuth()?.accessToken) {
+    sessionStorage.setItem(APP_SCOPE_KEY, serialized);
+    localStorage.removeItem(APP_SCOPE_KEY);
+  } else {
+    localStorage.setItem(APP_SCOPE_KEY, serialized);
+    sessionStorage.removeItem(APP_SCOPE_KEY);
+  }
 
-  const updateScope = useCallback((next: AppScopeState) => {
-    setScopeState(next);
-    saveScope(next);
-    clearLegacyScope();
-  }, []);
+  if (scope.companyId) {
+    localStorage.setItem("companyId", scope.companyId);
+    sessionStorage.setItem("companyId", scope.companyId);
+  } else {
+    localStorage.removeItem("companyId");
+    sessionStorage.removeItem("companyId");
+  }
 
-  const enterPlatformMode = useCallback(() => {
+  if (scope.tenantSlug) {
+    localStorage.setItem("tenantSlug", scope.tenantSlug);
+    sessionStorage.setItem("tenantSlug", scope.tenantSlug);
+  } else {
     localStorage.removeItem("tenantSlug");
-    localStorage.removeItem("tenantId");
     sessionStorage.removeItem("tenantSlug");
-    sessionStorage.removeItem("tenantId");
+  }
 
-    updateScope(platformScope);
-  }, [updateScope]);
+  if (scope.branchId) {
+    localStorage.setItem("branchId", scope.branchId);
+    sessionStorage.setItem("branchId", scope.branchId);
+  } else {
+    localStorage.removeItem("branchId");
+    sessionStorage.removeItem("branchId");
+  }
+}
 
-  const setCompany = useCallback(
-    (company: {
-      id: string;
-      name?: string | null;
-      tenantSlug?: string | null;
-    } | null) => {
-      const companyId = normalizeId(company?.id);
+function clearPersistedScope(): void {
+  for (const storage of [localStorage, sessionStorage]) {
+    storage.removeItem(APP_SCOPE_KEY);
+    storage.removeItem("companyId");
+    storage.removeItem("tenantSlug");
+    storage.removeItem("branchId");
+  }
+}
 
-      if (!companyId) {
-        updateScope(emptyScope);
-        return;
-      }
+export function AppProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const [scope, setScope] =
+    useState<AppScopeState>(loadInitialScope);
 
-      const tenantSlug =
-        normalizeText(company?.tenantSlug)?.toLowerCase() ??
-        null;
+  const commitScope = useCallback(
+    (
+      updater:
+        | AppScopeState
+        | ((current: AppScopeState) => AppScopeState),
+    ) => {
+      setScope((current) => {
+        const next =
+          typeof updater === "function"
+            ? updater(current)
+            : updater;
 
-      if (tenantSlug) {
-        localStorage.setItem("tenantSlug", tenantSlug);
-        localStorage.removeItem("tenantId");
-      }
-
-      updateScope({
-        ...emptyScope,
-        mode: "tenant",
-        companyId,
-        companyName: company?.name ?? null,
-        tenantSlug,
+        const normalized = normalizeScope(next);
+        persistScope(normalized);
+        return normalized;
       });
     },
-    [updateScope]
+    [],
   );
 
-  const setBranch = useCallback(
-    (branch: { id: string; name?: string | null } | null) => {
-      const branchId = normalizeId(branch?.id);
+  const setCompany = useCallback(
+    (company: SetCompanyInput) => {
+      const companyId = clean(company.id);
 
-      updateScope({
-        ...scope,
-        branchId,
-        branchName: branchId ? branch?.name ?? null : null,
+      if (!companyId) {
+        throw new Error("company.id is required.");
+      }
+
+      commitScope((current) => ({
+        ...current,
+        mode: "tenant",
+        companyId,
+        companyName:
+          clean(company.name) ?? "Tenant workspace",
+        tenantSlug: normalizeTenantSlug(
+          company.tenantSlug,
+        ),
+
+        /*
+         * Never carry branch/location scope into another company.
+         */
+        branchId: null,
+        branchName: null,
+        storeId: null,
+        storeName: null,
+        stockLocationId: null,
+        stockLocationName: null,
+      }));
+    },
+    [commitScope],
+  );
+
+  const setWorkspace = useCallback(
+    (workspace: WorkspaceAuth) => {
+      const companyId = clean(workspace.companyId);
+      const accessToken = clean(workspace.accessToken);
+
+      if (!companyId) {
+        throw new Error(
+          "workspace.companyId is required.",
+        );
+      }
+
+      if (!accessToken) {
+        throw new Error(
+          "workspace.accessToken is required.",
+        );
+      }
+
+      /*
+       * Persist auth and reactive scope in one operation.
+       */
+      saveWorkspaceAuth({
+        ...workspace,
+        companyId,
+        accessToken,
+        companyName:
+          clean(workspace.companyName) ??
+          "Tenant workspace",
+        tenantSlug:
+          normalizeTenantSlug(workspace.tenantSlug) ??
+          "",
+        branchId: clean(workspace.branchId),
+        branchName: clean(workspace.branchName),
+        roles: Array.isArray(workspace.roles)
+          ? workspace.roles
+          : [],
+        permissions: Array.isArray(
+          workspace.permissions,
+        )
+          ? workspace.permissions
+          : [],
+      });
+
+      commitScope({
+        mode: "tenant",
+        companyId,
+        companyName:
+          clean(workspace.companyName) ??
+          "Tenant workspace",
+        tenantSlug: normalizeTenantSlug(
+          workspace.tenantSlug,
+        ),
+
+        branchId: clean(workspace.branchId),
+        branchName: clean(workspace.branchName),
+
         storeId: null,
         storeName: null,
         stockLocationId: null,
         stockLocationName: null,
       });
     },
-    [scope, updateScope]
+    [commitScope],
+  );
+
+  const clearCompany = useCallback(() => {
+    clearWorkspaceAuth();
+    clearPersistedScope();
+    setScope(EMPTY_SCOPE);
+  }, []);
+
+  const setBranch = useCallback(
+    (branch: SetBranchInput) => {
+      commitScope((current) => ({
+        ...current,
+        branchId: clean(branch.id),
+        branchName: clean(branch.name),
+
+        /*
+         * Child location choices may no longer be valid.
+         */
+        storeId: null,
+        storeName: null,
+        stockLocationId: null,
+        stockLocationName: null,
+      }));
+    },
+    [commitScope],
   );
 
   const setStore = useCallback(
-    (store: { id: string; name?: string | null } | null) => {
-      const storeId = normalizeId(store?.id);
-
-      updateScope({
-        ...scope,
-        storeId,
-        storeName: storeId ? store?.name ?? null : null,
-      });
+    (store: SetStoreInput) => {
+      commitScope((current) => ({
+        ...current,
+        storeId: clean(store.id),
+        storeName: clean(store.name),
+      }));
     },
-    [scope, updateScope]
+    [commitScope],
   );
 
   const setStockLocation = useCallback(
-    (location: { id: string; name?: string | null } | null) => {
-      const stockLocationId = normalizeId(location?.id);
-
-      updateScope({
-        ...scope,
-        stockLocationId,
-        stockLocationName: stockLocationId ? location?.name ?? null : null,
-      });
+    (location: SetStockLocationInput) => {
+      commitScope((current) => ({
+        ...current,
+        stockLocationId: clean(location.id),
+        stockLocationName: clean(location.name),
+      }));
     },
-    [scope, updateScope]
+    [commitScope],
   );
 
-  const clearBranchScope = useCallback(() => {
-    updateScope({
+  const refreshScope = useCallback(() => {
+    setScope(loadInitialScope());
+  }, []);
+
+  const value = useMemo<AppContextValue>(
+    () => ({
       ...scope,
-      branchId: null,
-      branchName: null,
-      storeId: null,
-      storeName: null,
-      stockLocationId: null,
-      stockLocationName: null,
-    });
-  }, [scope, updateScope]);
-
-  const clearScope = useCallback(() => {
-    localStorage.removeItem("tenantSlug");
-    localStorage.removeItem("tenantId");
-    sessionStorage.removeItem("tenantSlug");
-    sessionStorage.removeItem("tenantId");
-
-    updateScope(emptyScope);
-  }, [updateScope]);
-
-  const value = useMemo<AppScopeContextValue>(
-    () => {
-      const isPlatformMode = scope.mode === "platform";
-      const isTenantMode = scope.mode === "tenant";
-
-      return {
-        ...scope,
-
-        isPlatformMode,
-        isTenantMode,
-
-        hasCompany: isPlatformMode || Boolean(scope.companyId),
-        hasBranch: isPlatformMode || Boolean(scope.branchId),
-        hasOperationalScope:
-          isPlatformMode || Boolean(scope.companyId && scope.branchId),
-
-        enterPlatformMode,
-        setCompany,
-        setBranch,
-        setStore,
-        setStockLocation,
-        clearBranchScope,
-        clearScope,
-      };
-    },
-    [
-      scope,
-      enterPlatformMode,
       setCompany,
+      setWorkspace,
+      clearCompany,
       setBranch,
       setStore,
       setStockLocation,
-      clearBranchScope,
-      clearScope,
-    ]
+      refreshScope,
+    }),
+    [
+      scope,
+      setCompany,
+      setWorkspace,
+      clearCompany,
+      setBranch,
+      setStore,
+      setStockLocation,
+      refreshScope,
+    ],
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+    </AppContext.Provider>
+  );
 }
 
-export function useAppContext(): AppScopeContextValue {
-  const ctx = useContext(AppContext);
+export function useAppContext(): AppContextValue {
+  const context = useContext(AppContext);
 
-  if (!ctx) {
-    throw new Error("useAppContext must be used inside <AppProvider>.");
+  if (!context) {
+    throw new Error(
+      "useAppContext must be used inside <AppProvider>.",
+    );
   }
 
-  return ctx;
+  return context;
 }

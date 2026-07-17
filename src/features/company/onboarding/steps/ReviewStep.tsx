@@ -1,5 +1,9 @@
 // src/modules/company/onboarding/steps/ReviewStep.tsx
+// ERP-grade onboarding readiness review.
+// CompanyAdmin is recommended, not required.
+// Rule hierarchy for POS issue source: item -> category -> POS rule -> POS fallback -> branch default -> block.
 
+import { useCallback, useState } from "react";
 import { AlertCircle, CheckCircle, XCircle } from "lucide-react";
 import type {
   OnboardingReadiness,
@@ -7,28 +11,45 @@ import type {
 } from "../state/onboarding.types";
 import { Btn, EmptyState, InfoRow } from "../components/company.ui";
 
-function text(value: unknown, fallback = "—"): string {
-  const v = String(value ?? "").trim();
-  return v || fallback;
+type Props = {
+  state: OnboardingState;
+  readiness: OnboardingReadiness;
+  onFinish: () => Promise<void> | void;
+};
+
+type Tone = "success" | "warn" | "info" | "default";
+
+function text(value: unknown, fallback = "—") {
+  const s = String(value ?? "").trim();
+  return s || fallback;
 }
 
-function getId(x: any): string {
-  return String(x?.id ?? x?.Id ?? x?.userId ?? x?.employeeId ?? "");
-}
-
-function nameOf(x: any): string {
-  return text(
-    x?.employeeName ??
-      x?.employee?.fullName ??
-      x?.fullName ??
-      x?.name ??
-      x?.userName ??
-      x?.email,
+function idOf(x: any) {
+  return String(
+    x?.id ??
+      x?.Id ??
+      x?.userId ??
+      x?.employeeId ??
+      x?.stockLocationId ??
+      "",
   );
 }
 
-function getRoles(x: any): string[] {
-  if (Array.isArray(x?.roles)) return x.roles.filter(Boolean).map(String);
+function active(x: any) {
+  return (
+    x?.isActive !== false &&
+    String(x?.status ?? "active").toLowerCase() !== "inactive"
+  );
+}
+
+function rolesOf(x: any): string[] {
+  if (Array.isArray(x?.roles)) {
+    return x.roles.filter(Boolean).map(String);
+  }
+
+  if (Array.isArray(x?.roleNames)) {
+    return x.roleNames.filter(Boolean).map(String);
+  }
 
   if (typeof x?.roles === "string") {
     return x.roles
@@ -40,44 +61,69 @@ function getRoles(x: any): string[] {
   return [x?.role, x?.roleName, x?.primaryRole].filter(Boolean).map(String);
 }
 
-function hasRole(x: any, roleName: string): boolean {
-  const expected = roleName.trim().toLowerCase();
+function normalizeRole(value: string) {
+  return value.replace(/[\s_-]+/g, "").toLowerCase();
+}
 
-  return getRoles(x).some((role) => {
-    const current = role.trim().toLowerCase();
+function hasRole(x: any, role: string) {
+  const expected = normalizeRole(role);
+
+  return rolesOf(x).some((r) => {
+    const current = normalizeRole(r);
 
     if (expected === "companyadmin") {
-      return (
-        current === "companyadmin" ||
-        current === "companyadministrator" ||
-        current === "admin"
-      );
+      return ["companyadmin", "companyadministrator"].includes(current);
     }
 
     return current === expected;
   });
 }
 
-function isActiveEntity(x: any): boolean {
-  return (
-    x?.isActive === true ||
-    x?.isActive === undefined ||
-    String(x?.status ?? "").toLowerCase() === "active"
+function nameOf(x: any) {
+  return text(
+    x?.employeeName ??
+      x?.employee?.fullName ??
+      x?.fullName ??
+      x?.name ??
+      x?.userName ??
+      x?.email,
   );
 }
 
-function isOperationalMissingItem(item: string): boolean {
-  const value = item.toLowerCase();
+function locationType(x: any) {
+  return String(x?.locationType ?? x?.type ?? "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+function issueId(x: any) {
+  return String(
+    x?.defaultIssueStockLocationId ??
+      x?.issueStockLocationId ??
+      x?.issueLocationId ??
+      x?.stockLocationId ??
+      "",
+  ).trim();
+}
+
+function hasAnyId(value: unknown) {
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(String(value ?? "").trim());
+}
+
+function errorText(err: unknown) {
+  const e = err as any;
+  const data = e?.response?.data;
+
+  if (typeof data === "string") return data;
 
   return (
-    value.includes("transit") ||
-    value.includes("company admin") ||
-    value.includes("branch assignment") ||
-    value.includes("branch access") ||
-    value.includes("assigned to branch") ||
-    value.includes("stock location") ||
-    value.includes("stock-location") ||
-    value.includes("assigned to a stock location")
+    data?.detail ??
+    data?.error ??
+    data?.message ??
+    data?.title ??
+    e?.message ??
+    "Company activation failed. Please review the required setup and try again."
   );
 }
 
@@ -90,19 +136,19 @@ function CheckRow(props: {
   const required = props.required === true;
 
   const icon = props.done ? (
-    <CheckCircle size={16} color="#16a34a" style={{ flexShrink: 0 }} />
+    <CheckCircle size={16} color="#16a34a" />
   ) : required ? (
-    <XCircle size={16} color="#dc2626" style={{ flexShrink: 0 }} />
+    <XCircle size={16} color="#dc2626" />
   ) : (
-    <AlertCircle size={16} color="#d97706" style={{ flexShrink: 0 }} />
+    <AlertCircle size={16} color="#d97706" />
   );
 
   return (
     <div
       style={{
         display: "flex",
-        alignItems: "center",
         gap: 10,
+        alignItems: "center",
         padding: "9px 0",
         borderBottom: "1px solid #f1f5f9",
       }}
@@ -113,7 +159,7 @@ function CheckRow(props: {
         <div
           style={{
             fontSize: 13,
-            fontWeight: 500,
+            fontWeight: 600,
             color: props.done ? "#0f172a" : required ? "#b91c1c" : "#92400e",
           }}
         >
@@ -127,35 +173,11 @@ function CheckRow(props: {
         )}
       </div>
 
-      {required && !props.done && (
+      {!props.done && (
         <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: "#dc2626",
-            background: "#fef2f2",
-            padding: "1px 7px",
-            borderRadius: 999,
-            border: "1px solid #fecaca",
-          }}
+          className={required ? "ob-badge ob-badge--danger" : "ob-badge ob-badge--warn"}
         >
-          Required
-        </span>
-      )}
-
-      {!required && !props.done && (
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: "#92400e",
-            background: "#fffbeb",
-            padding: "1px 7px",
-            borderRadius: 999,
-            border: "1px solid #fde68a",
-          }}
-        >
-          Later
+          {required ? "Required" : "Recommended"}
         </span>
       )}
     </div>
@@ -169,34 +191,27 @@ function SummaryCard(props: {
   children: React.ReactNode;
 }) {
   return (
-    <div
-      style={{
-        border: "1px solid #e2e8f0",
-        borderRadius: 12,
-        background: "#fff",
-        overflow: "hidden",
-      }}
-    >
+    <div className="ob-inner-card">
       <div
         style={{
           display: "flex",
-          alignItems: "baseline",
           justifyContent: "space-between",
           padding: "12px 16px",
           borderBottom: "1px solid #f1f5f9",
           background: "#fafbfc",
         }}
       >
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>
-          {props.title}
-        </span>
-        <span style={{ fontSize: 11, color: "#94a3b8" }}>
+        <strong>{props.title}</strong>
+        <span style={{ color: "#94a3b8", fontSize: 11 }}>
           {props.count} {props.unit}
           {props.count !== 1 ? "s" : ""}
         </span>
       </div>
 
-      <div style={{ padding: "8px 16px", maxHeight: 240, overflowY: "auto" }}>
+      <div
+        className="ob-inner-card-body"
+        style={{ maxHeight: 240, overflowY: "auto" }}
+      >
         {props.children}
       </div>
     </div>
@@ -205,16 +220,16 @@ function SummaryCard(props: {
 
 function MiniRow(props: {
   label: string;
-  badge: string;
-  badgeTone: "success" | "warn" | "default" | "info";
   sub?: string;
+  badge: string;
+  tone?: Tone;
 }) {
   const cls =
-    props.badgeTone === "success"
+    props.tone === "success"
       ? "ob-badge ob-badge--success"
-      : props.badgeTone === "warn"
+      : props.tone === "warn"
         ? "ob-badge ob-badge--warn"
-        : props.badgeTone === "info"
+        : props.tone === "info"
           ? "ob-badge ob-badge--info"
           : "ob-badge";
 
@@ -223,25 +238,16 @@ function MiniRow(props: {
       style={{
         display: "flex",
         justifyContent: "space-between",
-        alignItems: "center",
         gap: 12,
         padding: "6px 0",
         borderBottom: "1px solid #f8fafc",
-        fontSize: 12,
-        color: "#334155",
       }}
     >
-      <span style={{ minWidth: 0 }}>
-        <span>{props.label}</span>
+      <span style={{ fontSize: 12 }}>
+        {props.label}
+
         {props.sub && (
-          <span
-            style={{
-              display: "block",
-              fontSize: 11,
-              color: "#94a3b8",
-              marginTop: 1,
-            }}
-          >
+          <span style={{ display: "block", color: "#94a3b8", fontSize: 11 }}>
             {props.sub}
           </span>
         )}
@@ -252,344 +258,384 @@ function MiniRow(props: {
   );
 }
 
-export function ReviewStep(props: {
-  state: OnboardingState;
-  readiness: OnboardingReadiness;
-  onFinish: () => void;
-}) {
-  const { state } = props;
+export function ReviewStep(props: Props) {
+  const [activating, setActivating] = useState(false);
+  const [activateError, setActivateError] = useState<string | null>(null);
 
-  const backendReadiness = state.readiness as any;
+  const state = props.state as any;
+  const backend = state.readiness as any;
 
-  const locations = state.stockLocations ?? [];
-  const stores = state.stores ?? [];
-  const members = state.members ?? [];
+  const locations: any[] = state.stockLocations ?? [];
+  const stores: any[] = state.stores ?? [];
+  const members: any[] = state.members ?? [];
 
   const hasCompany =
-    backendReadiness?.hasCompany === true ||
+    backend?.hasCompany === true ||
     props.readiness.company?.done === true ||
     Boolean(state.companyId || state.company);
 
   const hasBranch =
-    backendReadiness?.hasActiveBranch === true ||
+    backend?.hasBranch === true ||
+    backend?.hasActiveBranch === true ||
     props.readiness.branch?.done === true ||
     Boolean(state.branchId || state.branch);
 
-  const hasActiveWarehouse =
-    backendReadiness?.hasActiveWarehouse === true ||
-    locations.some(
-      (x: any) =>
-        String(x.locationType ?? x.type ?? "").toLowerCase() === "warehouse" &&
-        isActiveEntity(x),
+  const activeLocations = locations.filter(active);
+  const activeStores = stores.filter(active);
+  const activeMembers = members.filter(active);
+
+  const hasWarehouse =
+    backend?.hasStockLocation === true ||
+    backend?.hasActiveWarehouse === true ||
+    activeLocations.some(
+      (x) => locationType(x).includes("warehouse") || x.canReceive === true,
     );
 
   const hasTransitLocation =
-    backendReadiness?.hasTransitLocation === true ||
-    locations.some(
-      (x: any) =>
-        String(x.locationType ?? x.type ?? "").toLowerCase() === "transit" &&
-        isActiveEntity(x),
+    backend?.hasTransitLocation === true ||
+    activeLocations.some((x) => locationType(x).includes("transit"));
+
+  const hasReceiving =
+    backend?.hasDefaultReceivingLocation === true ||
+    activeLocations.some(
+      (x) => x.canReceive === true || x.isDefaultReceiving === true,
+    );
+
+  const hasIssue =
+    backend?.hasDefaultIssueLocation === true ||
+    activeLocations.some(
+      (x) =>
+        x.canIssue === true ||
+        x.canSell === true ||
+        x.isDefaultIssue === true,
+    );
+
+  const hasConsumptionLocation =
+    backend?.hasConsumptionLocation === true ||
+    activeLocations.some(
+      (x) =>
+        x.isConsumptionLocation === true ||
+        x.isDefaultConsumption === true ||
+        x.canConsume === true ||
+        locationType(x).includes("consumption"),
+    );
+
+  const hasProductionSource =
+    backend?.hasProductionSource === true ||
+    activeLocations.some(
+      (x) =>
+        x.isMainWarehouseForProduction === true ||
+        x.isProductionWarehouse === true ||
+        x.isDefaultProductionSource === true,
     );
 
   const hasStore =
-    backendReadiness?.hasActiveStore === true ||
-    props.readiness.stores?.done === true ||
-    stores.some((x: any) => isActiveEntity(x));
+    backend?.hasStore === true ||
+    backend?.hasActiveStore === true ||
+    activeStores.length > 0;
+
+  const hasBranchDefaultIssue = activeLocations.some(
+    (x) => x.isDefaultIssue === true || x.defaultIssue === true,
+  );
+
+  const hasStoreFallback = activeStores.some((s) => Boolean(issueId(s)));
+
+  const hasItemOrCategoryRules =
+    backend?.hasItemIssueRules === true ||
+    backend?.hasCategoryIssueRules === true;
+
+  const hasIssueHierarchy =
+    !hasStore ||
+    hasStoreFallback ||
+    hasBranchDefaultIssue ||
+    hasItemOrCategoryRules ||
+    hasIssue;
 
   const hasActiveUser =
-    backendReadiness?.hasActiveUser === true ||
-    props.readiness.users?.done === true ||
-    members.some((x: any) => isActiveEntity(x));
-
-  const hasUserBranchAssignment =
-    backendReadiness?.hasUserBranchAssignment === true ||
-    members.some((x: any) =>
-      Boolean(x.defaultBranchId ?? x.branchId ?? x.branchIds?.length),
-    );
-
-  const hasUserStockLocationAssignment =
-    backendReadiness?.hasUserStockLocationAssignment === true ||
-    members.some((x: any) =>
-      Boolean(
-        x.defaultStockLocationId ??
-          x.stockLocationId ??
-          x.stockLocationIds?.length,
-      ),
-    );
+    backend?.hasUser === true ||
+    backend?.hasActiveUser === true ||
+    activeMembers.length > 0;
 
   const hasCompanyAdmin =
-    backendReadiness?.hasCompanyAdmin === true ||
-    members.some((member: any) => hasRole(member, "CompanyAdmin"));
+    backend?.hasCompanyAdmin === true ||
+    activeMembers.some((m) => hasRole(m, "CompanyAdmin"));
+
+  const hasUserBranch =
+    backend?.hasUserBranchAssignment === true ||
+    activeMembers.some(
+      (m) =>
+        hasAnyId(m.defaultBranchId) ||
+        hasAnyId(m.branchId) ||
+        hasAnyId(m.branchIds) ||
+        hasAnyId(m.branches),
+    );
+
+  const hasUserLocation =
+    backend?.hasUserStockLocationAssignment === true ||
+    activeMembers.some(
+      (m) =>
+        hasAnyId(m.defaultStockLocationId) ||
+        hasAnyId(m.stockLocationId) ||
+        hasAnyId(m.stockLocationIds) ||
+        hasAnyId(m.stockLocations),
+    );
 
   const canActivate =
     hasCompany &&
     hasBranch &&
-    hasActiveWarehouse &&
+    hasWarehouse &&
+    hasTransitLocation &&
+    hasReceiving &&
+    hasIssue &&
     hasStore &&
-    hasActiveUser;
+    hasIssueHierarchy &&
+    hasActiveUser &&
+    hasUserBranch &&
+    hasUserLocation;
 
-  const missingItems: string[] = Array.isArray(backendReadiness?.missingItems)
-    ? backendReadiness.missingItems
-    : [];
+  const handleActivate = useCallback(
+    async (event?: React.MouseEvent<HTMLButtonElement>) => {
+      // This component is commonly rendered inside an onboarding form/wizard.
+      // Keep the activate button from submitting the parent form, which can
+      // navigate away before activation finishes.
+      event?.preventDefault();
+      event?.stopPropagation();
 
-  const blockingMissingItems = missingItems.filter(
-    (item) => !isOperationalMissingItem(item),
-  );
+      if (!canActivate || activating) return;
 
-  const warningMissingItems = missingItems.filter((item) =>
-    isOperationalMissingItem(item),
+      setActivateError(null);
+      setActivating(true);
+
+      try {
+        await props.onFinish();
+      } catch (err) {
+        setActivateError(errorText(err));
+      } finally {
+        setActivating(false);
+      }
+    },
+    [activating, canActivate, props],
   );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div className="ob-grid-2">
-        <div
-          style={{
-            border: "1px solid #e2e8f0",
-            borderRadius: 12,
-            background: "#fff",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              padding: "12px 16px",
-              borderBottom: "1px solid #f1f5f9",
-              background: "#fafbfc",
-              fontSize: 13,
-              fontWeight: 700,
-              color: "#0f172a",
-            }}
-          >
-            Company
-          </div>
-
-          <div style={{ padding: "12px 16px" }}>
-            <InfoRow label="Name" value={state.company?.legalName ?? "—"} />
-            <InfoRow label="Currency" value={state.company?.defaultCurrency ?? "ETB"} />
-            <InfoRow label="Timezone" value={(state.company as any)?.timezone ?? "—"} />
+        <div className="ob-inner-card">
+          <div className="ob-inner-card-body">
+            <InfoRow
+              label="Company"
+              value={text(state.company?.legalName ?? state.company?.name)}
+            />
+            <InfoRow label="Branch" value={text(state.branch?.name)} />
+            <InfoRow label="Branch code" value={text(state.branch?.code)} />
           </div>
         </div>
 
-        <div
-          style={{
-            border: "1px solid #e2e8f0",
-            borderRadius: 12,
-            background: "#fff",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              padding: "12px 16px",
-              borderBottom: "1px solid #f1f5f9",
-              background: "#fafbfc",
-              fontSize: 13,
-              fontWeight: 700,
-              color: "#0f172a",
-            }}
-          >
-            Branch
-          </div>
-
-          <div style={{ padding: "12px 16px" }}>
-            <InfoRow label="Name" value={(state.branch as any)?.name ?? "—"} />
-            <InfoRow label="Code" value={(state.branch as any)?.code ?? "—"} />
-            <InfoRow label="City" value={(state.branch as any)?.city ?? "—"} />
+        <div className="ob-inner-card">
+          <div className="ob-inner-card-body">
+            <InfoRow
+              label="ERP model"
+              value="Company stock locations + branch assignment + one or more POS"
+            />
+            <InfoRow
+              label="Issue hierarchy"
+              value="Item → Category → POS → Branch → Block"
+            />
+            <InfoRow
+              label="Activation"
+              value={canActivate ? "Ready" : "Incomplete"}
+            />
           </div>
         </div>
       </div>
 
       <div className="ob-grid-3">
-        <SummaryCard title="Stock locations" count={locations.length} unit="location">
-          {locations.length > 0 ? (
-            locations.map((location: any) => (
+        <SummaryCard
+          title="Stock locations"
+          count={locations.length}
+          unit="location"
+        >
+          {locations.length ? (
+            locations.map((x) => (
               <MiniRow
-                key={getId(location)}
-                label={`${text(location.name)}${location.code ? ` (${location.code})` : ""}`}
-                sub={text(location.locationType ?? location.type)}
-                badge={isActiveEntity(location) ? "Active" : "Inactive"}
-                badgeTone={isActiveEntity(location) ? "success" : "warn"}
+                key={idOf(x)}
+                label={`${text(x.name)}${x.code ? ` (${x.code})` : ""}`}
+                sub={text(x.locationType ?? x.type)}
+                badge={active(x) ? "Active" : "Inactive"}
+                tone={active(x) ? "success" : "warn"}
               />
             ))
           ) : (
             <EmptyState
               title="No locations"
-              sub="Add at least one warehouse. Transit can be configured later."
+              sub="Assign stock locations to this branch."
             />
           )}
         </SummaryCard>
 
-        <SummaryCard title="Stores" count={stores.length} unit="store">
-          {stores.length > 0 ? (
-            stores.map((store: any) => (
+        <SummaryCard title="POS/stores" count={stores.length} unit="POS">
+          {stores.length ? (
+            stores.map((x) => (
               <MiniRow
-                key={getId(store)}
-                label={`${text(store.name)}${store.code ? ` (${store.code})` : ""}`}
-                sub={text(store.locationType ?? store.storeType)}
-                badge={isActiveEntity(store) ? "Active" : "Inactive"}
-                badgeTone={isActiveEntity(store) ? "success" : "warn"}
+                key={idOf(x)}
+                label={`${text(x.name)}${x.code ? ` (${x.code})` : ""}`}
+                sub={
+                  issueId(x)
+                    ? `Fallback: ${issueId(x)}`
+                    : "Uses branch/item hierarchy"
+                }
+                badge={active(x) ? "Active" : "Inactive"}
+                tone={active(x) ? "success" : "warn"}
               />
             ))
           ) : (
-            <EmptyState title="No stores" sub="Add at least one POS or sales store." />
+            <EmptyState
+              title="No POS/stores"
+              sub="Add at least one POS for sales-enabled branches."
+            />
           )}
         </SummaryCard>
 
-        <SummaryCard title="Employee login accounts" count={members.length} unit="user">
-          {members.length > 0 ? (
-            members.map((member: any) => {
-              const roles = getRoles(member);
-              const isCompanyAdmin = hasRole(member, "CompanyAdmin");
+        <SummaryCard title="Users" count={members.length} unit="user">
+          {members.length ? (
+            members.map((m) => {
+              const roles = rolesOf(m);
+              const isAdmin = hasRole(m, "CompanyAdmin");
 
               return (
                 <MiniRow
-                  key={getId(member) || member.email}
-                  label={nameOf(member)}
-                  sub={text(member.email ?? member.userName)}
-                  badge={isCompanyAdmin ? "Company Admin" : roles[0] ?? "Staff"}
-                  badgeTone={isCompanyAdmin ? "success" : "default"}
+                  key={idOf(m) || m.email}
+                  label={nameOf(m)}
+                  sub={text(m.email ?? m.userName)}
+                  badge={roles.length ? roles.join(", ") : "No role"}
+                  tone={isAdmin ? "success" : "default"}
                 />
               );
             })
           ) : (
             <EmptyState
-              title="No user accounts"
-              sub="Create at least one active login account."
+              title="No users"
+              sub="Create at least one active operational user."
             />
           )}
         </SummaryCard>
       </div>
 
-      <div
-        style={{
-          border: "1px solid #e2e8f0",
-          borderRadius: 12,
-          background: "#fff",
-          padding: "14px 16px",
-        }}
-      >
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
-          Activation readiness
+      <div className="ob-inner-card">
+        <div className="ob-inner-card-body">
+          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
+            Activation readiness
+          </div>
+
+          <CheckRow done={hasCompany} required label="Company configured" />
+          <CheckRow done={hasBranch} required label="Branch configured" />
+
+          <CheckRow
+            done={hasWarehouse}
+            required
+            label="At least one active warehouse/stock location"
+          />
+
+          <CheckRow
+            done={hasTransitLocation}
+            required
+            label="Transit location configured"
+            detail="Required for inter-branch and in-transit inventory movement."
+          />
+
+          <CheckRow
+            done={hasReceiving}
+            required
+            label="Receiving-capable stock location"
+            detail="Required for GRN and stock transfer receiving."
+          />
+
+          <CheckRow
+            done={hasIssue}
+            required
+            label="Issue-capable stock location"
+            detail="Required for SIV, POS consumption, and production issue."
+          />
+
+          <CheckRow
+            done={hasConsumptionLocation}
+            label="Consumption location"
+            detail="Recommended for recipe and production consumption."
+          />
+
+          <CheckRow
+            done={hasProductionSource}
+            label="Main warehouse for production"
+            detail="Recommended when production/kitchen preparation is enabled."
+          />
+
+          <CheckRow
+            done={hasStore}
+            required
+            label="At least one POS/store configured"
+            detail="A branch may have one or many POS/stores."
+          />
+
+          <CheckRow
+            done={hasIssueHierarchy}
+            required={hasStore}
+            label="POS issue hierarchy configured"
+            detail="Passes if item/category rules, POS fallback, branch default issue location, or issue-capable location exists."
+          />
+
+          <CheckRow
+            done={hasActiveUser}
+            required
+            label="At least one active operational user"
+          />
+
+          <CheckRow
+            done={hasUserBranch}
+            required
+            label="User branch assignment"
+            detail="At least one active user must be assigned to an active branch."
+          />
+
+          <CheckRow
+            done={hasUserLocation}
+            required
+            label="User stock-location assignment"
+            detail="At least one active user must be assigned to an active stock location."
+          />
+
+          <CheckRow
+            done={hasCompanyAdmin}
+            label="Company administrator assigned"
+            detail="Recommended. Company administration can also be performed by a System Administrator."
+          />
         </div>
-
-        <CheckRow done={hasCompany} required label="Company created" />
-        <CheckRow done={hasBranch} required label="Active branch created" />
-        <CheckRow done={hasActiveWarehouse} required label="Active warehouse exists" />
-        <CheckRow done={hasStore} required label="Active store created" />
-        <CheckRow done={hasActiveUser} required label="Active user account created" />
-
-        <div style={{ height: 10 }} />
-
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", margin: "8px 0" }}>
-          Operational readiness
-        </div>
-
-        <CheckRow
-          done={hasTransitLocation}
-          label="Transit location exists"
-          detail="Required later for stock transfers and in-transit inventory movement."
-        />
-
-        <CheckRow
-          done={hasUserBranchAssignment}
-          label="User assigned to branch"
-          detail="Branch access can be configured after company activation."
-        />
-
-        <CheckRow
-          done={hasUserStockLocationAssignment}
-          label="User assigned to stock location"
-          detail="Stock-location access can be configured after company activation."
-        />
-
-        <CheckRow
-          done={hasCompanyAdmin}
-          label="Company Admin assigned"
-          detail="Recommended for delegated company administration."
-        />
       </div>
 
-      {blockingMissingItems.length > 0 && (
-        <div
-          style={{
-            border: "1px solid #fecaca",
-            borderRadius: 12,
-            background: "#fef2f2",
-            padding: "12px 16px",
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#991b1b" }}>
-            Required setup items
+      {activateError && (
+        <div className="ob-inner-card">
+          <div className="ob-inner-card-body">
+            <CheckRow
+              done={false}
+              required
+              label="Activation failed"
+              detail={activateError}
+            />
           </div>
-
-          <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "#b91c1c", fontSize: 12 }}>
-            {blockingMissingItems.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
         </div>
       )}
 
-      {warningMissingItems.length > 0 && (
-        <div
-          style={{
-            border: "1px solid #fde68a",
-            borderRadius: 12,
-            background: "#fffbeb",
-            padding: "12px 16px",
-          }}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Btn
+          type="button"
+          variant="primary"
+          disabled={!canActivate || activating}
+          onClick={handleActivate}
         >
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>
-            Setup items you can complete later
-          </div>
-
-          <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "#92400e", fontSize: 12 }}>
-            {warningMissingItems.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-          padding: "14px 16px",
-          border: canActivate ? "1px solid #bbf7d0" : "1px solid #fecaca",
-          borderRadius: 12,
-          background: canActivate ? "#f0fdf4" : "#fef2f2",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: canActivate ? "#166534" : "#991b1b",
-            }}
-          >
-            {canActivate ? "Ready to activate company" : "Setup is incomplete"}
-          </div>
-
-          <div
-            style={{
-              fontSize: 11,
-              color: canActivate ? "#15803d" : "#b91c1c",
-              marginTop: 2,
-            }}
-          >
-            {canActivate
-              ? "Core company setup is complete. Advanced ERP configuration can continue after activation."
-              : "Complete the required activation checks before activating this company."}
-          </div>
-        </div>
-
-        <Btn variant="primary" onClick={props.onFinish} disabled={!canActivate}>
-          Activate company
+          {activating
+            ? "Activating…"
+            : canActivate
+              ? "Activate company"
+              : "Complete required setup"}
         </Btn>
       </div>
     </div>

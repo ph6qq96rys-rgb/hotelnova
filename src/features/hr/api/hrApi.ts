@@ -92,13 +92,26 @@ const cleanParams = <T extends Record<string, unknown>>(params?: T): T | undefin
 const toArray = <T>(value: unknown): T[] => {
   if (Array.isArray(value)) return value as T[];
 
-  if (value && typeof value === 'object') {
-    const candidate = value as PagedResponse<T>;
-    if (Array.isArray(candidate.items)) return candidate.items;
-    if (Array.isArray(candidate.data)) return candidate.data;
-    if (Array.isArray(candidate.value)) return candidate.value;
-    if (Array.isArray(candidate.results)) return candidate.results;
-    if (Array.isArray(candidate.records)) return candidate.records;
+  if (!value || typeof value !== "object") return [];
+
+  const obj = value as Record<string, unknown>;
+
+  const keys = ["items", "data", "value", "result", "results", "records"];
+
+  for (const key of keys) {
+    const current = obj[key];
+
+    if (Array.isArray(current)) return current as T[];
+
+    if (current && typeof current === "object") {
+      const nested = current as Record<string, unknown>;
+
+      for (const nestedKey of keys) {
+        if (Array.isArray(nested[nestedKey])) {
+          return nested[nestedKey] as T[];
+        }
+      }
+    }
   }
 
   return [];
@@ -167,7 +180,16 @@ export const employeeApi = {
         params: cleanParams(params),
       })
       .then((r) => normalizeLookups(r.data)),
-
+    generateTelegramLinkToken(
+      companyId: string,
+      employeeId: string,
+    ) {
+      return http
+        .post(
+          `${base(companyId)}/employees/${employeeId}/telegram-link-token`,
+        )
+        .then((r) => r.data);
+    },
   availableForUser: (
     companyId: string,
     params?: { branchId?: string; q?: string; page?: number; pageSize?: number; includeManagers?: boolean }

@@ -174,3 +174,22 @@ export type CreateStockLocationResponse =
   | { locationId: string }
   | { LocationId: string }
   | any;
+
+
+  export type CreateCompanyUserRequest = {
+  employeeId: string;
+  userName: string;
+  email?: string | null;
+  password: string;
+  phoneNumber?: string | null;
+
+  roles: string[];
+
+  branchIds?: string[];
+  stockLocationIds?: string[];
+
+  branches?: string[];
+  stockLocations?: string[];
+
+  storeId?: string | null;
+};

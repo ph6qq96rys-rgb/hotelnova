@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Building2,
@@ -16,7 +17,7 @@ import {
 import { useAuth } from "../auth/useAuth";
 import { useAppContext } from "../app/AppContext";
 import { useAppRoutes } from "../routes/routeDefConfig";
-import type { AppRoute } from "../routes/sales-cogsroute";
+import type { AppRoute } from "../routes/routeConfig";
 
 type SidebarProps = {
   open?: boolean;
@@ -40,33 +41,49 @@ type SidebarItem = {
   section: string;
   to: string;
   order: number;
-  icon?: React.ReactNode;
+  icon?: ReactNode;
 };
 
 const SIDEBAR_COLLAPSED_KEY = "hotelnova.sidebar.collapsed.v1";
+
 const SYSTEM_ADMIN_ROLES = ["SYSTEMADMIN", "SYSADMIN"];
+const COMPANY_ADMIN_ROLES = ["COMPANYADMIN"];
 
 const SECTION_ORDER = [
   "System",
   "Dashboard",
+  "General",
+  "Setup",
+  "Security",
   "Sales",
   "Inventory",
   "Procurement",
   "Production",
   "Finance",
   "HR",
-  "Security",
   "Reports",
+  "Telegram Bot",
   "Settings",
-  "General",
 ];
 
 function readCollapsedPreference(): boolean {
   return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
 }
 
+function normalizeRole(role: string): string {
+  return role.trim().toUpperCase();
+}
+
 function isSystemAdminRole(role: string): boolean {
-  return SYSTEM_ADMIN_ROLES.includes(role.trim().toUpperCase());
+  return SYSTEM_ADMIN_ROLES.includes(normalizeRole(role));
+}
+
+function isCompanyAdminRole(role: string): boolean {
+  return COMPANY_ADMIN_ROLES.includes(normalizeRole(role));
+}
+
+function normalizePermission(permission: string): string {
+  return permission.trim().toLowerCase();
 }
 
 function isVisibleRoute(route: SidebarRoute): boolean {
@@ -118,6 +135,8 @@ function resolveSidebarPath(
     path = `companies/${companyId}`;
   } else if (!path.startsWith("companies/") && companyId) {
     path = `companies/${companyId}/${path}`;
+  } else if (!companyId && !path.startsWith("platform/") && !path.startsWith("system-admin/")) {
+    return null;
   }
 
   if (path.includes(":")) return null;
@@ -125,14 +144,37 @@ function resolveSidebarPath(
   return normalizePath(path);
 }
 
+function routeHasAnyPermission(
+  route: SidebarRoute,
+  hasPermission: (permission: string) => boolean
+): boolean {
+  const permissions = route.permissions ?? [];
+
+  if (permissions.length === 0) return true;
+
+  return permissions.some((permission) => hasPermission(permission));
+}
+
+function routeHasAnyRole(route: SidebarRoute, roles: string[]): boolean {
+  const requiredRoles = route.roles ?? [];
+
+  if (requiredRoles.length === 0) return true;
+
+  const userRoles = new Set(roles.map(normalizeRole));
+
+  return requiredRoles.some((role) => userRoles.has(normalizeRole(role)));
+}
+
 function buildSidebarItems(
   routes: SidebarRoute[],
-  companyId: string | null
+  companyId: string | null,
+  canAccessRoute: (route: SidebarRoute) => boolean
 ): SidebarItem[] {
   const items = new Map<string, SidebarItem>();
 
   for (const route of routes) {
     if (!isVisibleRoute(route)) continue;
+    if (!canAccessRoute(route)) continue;
 
     const label = getRouteLabel(route);
     const section = getRouteSection(route);
@@ -216,7 +258,7 @@ export default function Sidebar({
     );
   }, [collapsed]);
 
-  const companyId = auth.companyId ?? appScope.companyId;
+  const companyId = auth.companyId ?? appScope.companyId ?? null;
 
   const companyName =
     auth.auth?.companyName ??
@@ -233,9 +275,60 @@ export default function Sidebar({
     auth.user?.email ??
     "Admin User";
 
+  const roleNames = useMemo(
+    () =>
+      [
+        ...(((auth as any).roles ?? []) as string[]),
+        ...(((auth.user as any)?.roles ?? []) as string[]),
+        ...(((auth.user as any)?.roleNames ?? []) as string[]),
+      ]
+        .filter(Boolean)
+        .map(String),
+    [auth, auth.user]
+  );
+
   const isSystemAdmin =
-    auth.isSystemAdmin ||
-    auth.roles.some(isSystemAdminRole);
+    Boolean(auth.isSystemAdmin) || roleNames.some(isSystemAdminRole);
+
+  const isCompanyAdmin = roleNames.some(isCompanyAdminRole);
+
+  const permissionNames = useMemo(
+    () =>
+      [
+        ...(((auth as any).permissions ?? []) as string[]),
+        ...(((auth.user as any)?.permissions ?? []) as string[]),
+      ]
+        .filter(Boolean)
+        .map((permission) => normalizePermission(String(permission))),
+    [auth, auth.user]
+  );
+
+  const permissionSet = useMemo(
+    () => new Set(permissionNames),
+    [permissionNames]
+  );
+
+  function hasPermission(permission: string): boolean {
+    const normalized = normalizePermission(permission);
+
+    if (!normalized) return false;
+    if (isSystemAdmin) return true;
+    if (isCompanyAdmin) return true;
+
+    if (typeof (auth as any).hasPermission === "function") {
+      return Boolean((auth as any).hasPermission(permission));
+    }
+
+    return permissionSet.has(normalized);
+  }
+
+  function canAccessRoute(route: SidebarRoute): boolean {
+    if (isSystemAdmin) return true;
+
+    if (!routeHasAnyRole(route, roleNames)) return false;
+
+    return routeHasAnyPermission(route, hasPermission);
+  }
 
   const dashboardPath = companyId
     ? `/companies/${companyId}/dashboard`
@@ -244,7 +337,11 @@ export default function Sidebar({
       : "/login";
 
   const groupedRoutes = useMemo(() => {
-    const items = buildSidebarItems(routes as SidebarRoute[], companyId);
+    const items = buildSidebarItems(
+      routes as SidebarRoute[],
+      companyId,
+      canAccessRoute
+    );
 
     if (isSystemAdmin) {
       items.unshift({
@@ -267,10 +364,28 @@ export default function Sidebar({
     }
 
     return groupSidebarItems(items);
-  }, [routes, companyId, isSystemAdmin]);
+  }, [routes, companyId, isSystemAdmin, roleNames, permissionNames]);
 
   const sectionEntries = Object.entries(groupedRoutes);
   const initials = getInitials(userName);
+
+  const scopeLabel =
+    isSystemAdmin && !companyId
+      ? "Platform mode"
+      : "Active company";
+
+  const scopeBranch =
+    isSystemAdmin && !companyId
+      ? "System Administrator"
+      : isCompanyAdmin && branchName === "No branch selected"
+        ? "Company Administrator"
+        : branchName;
+
+  const footerRoleLabel = isSystemAdmin
+    ? "System Administrator"
+    : isCompanyAdmin
+      ? "Company Administrator"
+      : branchName;
 
   function toggleSection(section: string) {
     setCollapsedSections((prev) => ({
@@ -368,13 +483,9 @@ export default function Sidebar({
           </div>
 
           <div className="hnav-scope-meta">
-            <span className="hnav-scope-label">
-              {isSystemAdmin && !companyId ? "Platform mode" : "Active company"}
-            </span>
+            <span className="hnav-scope-label">{scopeLabel}</span>
             <span className="hnav-scope-name">{companyName}</span>
-            <span className="hnav-scope-branch">
-              {isSystemAdmin && !companyId ? "System Administrator" : branchName}
-            </span>
+            <span className="hnav-scope-branch">{scopeBranch}</span>
           </div>
         </div>
 
@@ -443,9 +554,7 @@ export default function Sidebar({
 
             <div className="hnav-user-meta">
               <span className="hnav-user-name">{userName}</span>
-              <span className="hnav-user-branch">
-                {isSystemAdmin ? "System Administrator" : branchName}
-              </span>
+              <span className="hnav-user-branch">{footerRoleLabel}</span>
             </div>
 
             <button

@@ -1,159 +1,285 @@
-import { useCallback, useEffect, useState } from "react";
-import { posApi } from "../api/posApi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { posApi, type PosScope } from "../api/posApi";
+import { extractApiError } from "../utils/posUtils";
 import type {
   OpenSessionRequest,
   PosSessionDto,
   SessionReportDto,
 } from "../types/posTypes";
 
-function normalizeSession(session: PosSessionDto | null | undefined): PosSessionDto | null {
+function normalizeText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normalizeSession(
+  session: PosSessionDto | null | undefined,
+): PosSessionDto | null {
   if (!session || typeof session !== "object") return null;
-  if (!session.id) return null;
+  if (!normalizeText(session.id)) return null;
 
   return session;
 }
 
-export function isSessionOpen(session: PosSessionDto | null): boolean {
+function validateScope(scope: PosScope): string | null {
+  if (!normalizeText(scope.companyId)) {
+    return "Company context is required before loading the POS session.";
+  }
+
+  if (!normalizeText(scope.branchId)) {
+    return "Branch context is required before loading the POS session.";
+  }
+
+  return null;
+}
+
+function requireValidClosingFloat(value: number): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(
+      "Closing float must be a valid non-negative amount.",
+    );
+  }
+}
+
+export function isSessionOpen(
+  session: PosSessionDto | null,
+): boolean {
   if (!session) return false;
 
-  const status = String(session.status ?? "")
-    .trim()
-    .toLowerCase();
+  const status = normalizeText(session.status).toLowerCase();
 
   return status === "open" || status === "1";
 }
 
-export function usePosSession() {
+export function usePosSession(scope: PosScope) {
+  const activeScope = useMemo<PosScope>(
+    () => ({
+      companyId: normalizeText(scope.companyId),
+      branchId: normalizeText(scope.branchId),
+    }),
+    [scope.companyId, scope.branchId],
+  );
+
   const [session, setSession] = useState<PosSessionDto | null>(null);
   const [xReport, setXReport] = useState<SessionReportDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const clearSessionState = useCallback(() => {
+    setSession(null);
+    setXReport(null);
+  }, []);
+
+  const requireValidScope = useCallback((): PosScope => {
+    const scopeError = validateScope(activeScope);
+
+    if (scopeError) {
+      throw new Error(scopeError);
+    }
+
+    return activeScope;
+  }, [activeScope]);
+
+  const requireSessionId = useCallback((): string => {
+    const sessionId = normalizeText(session?.id);
+
+    if (!sessionId) {
+      throw new Error("No active POS session.");
+    }
+
+    return sessionId;
+  }, [session?.id]);
+
+  const refresh = useCallback(async (): Promise<PosSessionDto | null> => {
+    const scopeError = validateScope(activeScope);
+
+    if (scopeError) {
+      clearSessionState();
+      setError(scopeError);
+      setLoading(false);
+      return null;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const current = normalizeSession(await posApi.currentSession());
-      setSession(current);
-      return current;
-    } catch (err) {
-      setSession(null);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to load POS session."
+      const current = normalizeSession(
+        await posApi.currentSession(activeScope),
       );
+
+      setSession(current);
+
+      if (!current) {
+        setXReport(null);
+      }
+
+      return current;
+    } catch (requestError) {
+      const message = extractApiError(
+        requestError,
+        "Failed to load the current POS session.",
+      );
+
+      clearSessionState();
+      setError(message);
+
       return null;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeScope, clearSessionState]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    clearSessionState();
+    void refresh();
+  }, [
+    activeScope.companyId,
+    activeScope.branchId,
+    clearSessionState,
+    refresh,
+  ]);
 
-  const open = useCallback(async (body: OpenSessionRequest) => {
-    setBusy(true);
-    setError(null);
+  const open = useCallback(
+    async (body: OpenSessionRequest): Promise<PosSessionDto> => {
+      const resolvedScope = requireValidScope();
 
-    try {
-      const created = normalizeSession(await posApi.openSession(body));
+      setBusy(true);
+      setError(null);
 
-      if (!created) {
-        throw new Error("POS session was opened but could not be loaded.");
+      try {
+        const created = normalizeSession(
+          await posApi.openSession(resolvedScope, body),
+        );
+
+        if (!created) {
+          throw new Error(
+            "POS session was opened but the server did not return a valid session.",
+          );
+        }
+
+        setSession(created);
+        setXReport(null);
+
+        return created;
+      } catch (requestError) {
+        const message = extractApiError(
+          requestError,
+          "Failed to open the POS session.",
+        );
+
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setBusy(false);
       }
+    },
+    [requireValidScope],
+  );
 
-      setSession(created);
-      return created;
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to open POS session."
-      );
-      throw err;
-    } finally {
-      setBusy(false);
-    }
+  const close = useCallback(
+    async (closingFloat: number) => {
+      const resolvedScope = requireValidScope();
+      const sessionId = requireSessionId();
+
+      requireValidClosingFloat(closingFloat);
+
+      setBusy(true);
+      setError(null);
+
+      try {
+        const closed = await posApi.closeSession(
+          resolvedScope,
+          sessionId,
+          { closingFloat },
+        );
+
+        clearSessionState();
+
+        return closed;
+      } catch (requestError) {
+        const message = extractApiError(
+          requestError,
+          "Failed to close the POS session.",
+        );
+
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      clearSessionState,
+      requireSessionId,
+      requireValidScope,
+    ],
+  );
+
+  const loadXReport = useCallback(
+    async (): Promise<SessionReportDto> => {
+      const resolvedScope = requireValidScope();
+      const sessionId = requireSessionId();
+
+      setError(null);
+
+      try {
+        const report = await posApi.xReport(
+          resolvedScope,
+          sessionId,
+        );
+
+        setXReport(report);
+
+        return report;
+      } catch (requestError) {
+        const message = extractApiError(
+          requestError,
+          "Failed to load the X report.",
+        );
+
+        setError(message);
+        throw new Error(message);
+      }
+    },
+    [requireSessionId, requireValidScope],
+  );
+
+  const runZReport = useCallback(
+    async (): Promise<SessionReportDto> => {
+      const resolvedScope = requireValidScope();
+      const sessionId = requireSessionId();
+
+      setBusy(true);
+      setError(null);
+
+      try {
+        const report = await posApi.zReport(
+          resolvedScope,
+          sessionId,
+        );
+
+        setXReport(report);
+
+        return report;
+      } catch (requestError) {
+        const message = extractApiError(
+          requestError,
+          "Failed to run the Z report.",
+        );
+
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [requireSessionId, requireValidScope],
+  );
+
+  const clearError = useCallback(() => {
+    setError(null);
   }, []);
-
-  const close = useCallback(async (closingFloat: number) => {
-    if (!session?.id) {
-      throw new Error("No active POS session.");
-    }
-
-    if (closingFloat < 0) {
-      throw new Error("Closing float cannot be negative.");
-    }
-
-    setBusy(true);
-    setError(null);
-
-    try {
-      const closed = await posApi.closeSession(session.id, {
-        closingFloat,
-      });
-
-      setSession(null);
-      setXReport(null);
-
-      return closed;
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to close POS session."
-      );
-      throw err;
-    } finally {
-      setBusy(false);
-    }
-  }, [session?.id]);
-
-  const loadXReport = useCallback(async () => {
-    if (!session?.id) {
-      throw new Error("No active POS session.");
-    }
-
-    setError(null);
-
-    try {
-      const report = await posApi.xReport(session.id);
-      setXReport(report);
-      return report;
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to load X report."
-      );
-      throw err;
-    }
-  }, [session?.id]);
-
-  const runZReport = useCallback(async () => {
-    if (!session?.id) {
-      throw new Error("No active POS session.");
-    }
-
-    setError(null);
-
-    try {
-      const report = await posApi.zReport(session.id);
-      setXReport(report);
-      return report;
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to run Z report."
-      );
-      throw err;
-    }
-  }, [session?.id]);
 
   return {
     session,
@@ -168,5 +294,6 @@ export function usePosSession() {
     close,
     loadXReport,
     runZReport,
+    clearError,
   };
 }

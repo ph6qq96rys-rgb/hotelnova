@@ -15,11 +15,35 @@ import {
 } from "../components/pos-ui";
 import "../components/pos.css";
 
-function useAppScope() {
-  const companyId = localStorage.getItem("companyId") ?? "";
-  const branchId = localStorage.getItem("branchId") ?? "";
+function clean(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
 
-  return { companyId, branchId };
+function readScopeValue(keys: string[]): string {
+  for (const key of keys) {
+    const value = clean(
+      localStorage.getItem(key) ?? sessionStorage.getItem(key)
+    );
+
+    if (value) return value;
+  }
+
+  return "";
+}
+
+function useAppScope() {
+  return {
+    companyId: readScopeValue([
+      "companyId",
+      "company_id",
+      "selectedCompanyId",
+    ]),
+    branchId: readScopeValue([
+      "branchId",
+      "branch_id",
+      "selectedBranchId",
+    ]),
+  };
 }
 
 function parseAmount(value: string): number {

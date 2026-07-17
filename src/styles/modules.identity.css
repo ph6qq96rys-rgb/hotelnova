@@ -476,3 +476,116 @@
     grid-template-columns: 1fr;
   }
 }
+.lux-filterGrid {
+  padding: 20px 22px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(160px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.lux-alert--success {
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.lux-alert__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.lux-empty__actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.lux-tableSurface {
+  position: relative;
+  min-height: 220px;
+}
+
+.lux-veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  z-index: 5;
+}
+
+.lux-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid #dbe3ef;
+  border-top-color: #2563eb;
+  border-radius: 999px;
+  animation: lux-spin 0.8s linear infinite;
+}
+
+.lux-modalBusy {
+  position: sticky;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #2563eb, #93c5fd, #2563eb);
+  background-size: 200% 100%;
+  animation: lux-loading 1s linear infinite;
+  z-index: 3;
+}
+
+@keyframes lux-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes lux-loading {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 1300px) {
+  .lux-filterGrid {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .lux-page {
+    padding: 16px;
+  }
+
+  .lux-filterGrid {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .lux-card__header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .lux-row,
+  .lux-form__actions {
+    justify-content: stretch;
+    flex-wrap: wrap;
+  }
+
+  .lux-row .lux-btn,
+  .lux-form__actions .lux-btn {
+    flex: 1;
+  }
+
+  .lux-kpis {
+    grid-template-columns: 1fr;
+  }
+}

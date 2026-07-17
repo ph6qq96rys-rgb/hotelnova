@@ -1,482 +1,269 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import { useAppScope } from "../../../../app/useAppScope";
-import { grnApi, type GrnStatus } from "../api/grnApi";
+import { grnApi } from "../api/grnApi";
+import GrnRegisterTable from "../components/GrnRegisterTable";
 import type { GrnListDto } from "../types/grn.types";
-import "./GrnListPage.css";
+import {
+  canReverseGrn,
+  formatGrnStatusLabel,
+  GRN_STATUS_OPTIONS,
+  normalizeGrnStatus,
+} from "../helpers/grn.status";
+import type { GrnStatus, GrnStatusFilter } from "../helpers/grn.status";
+import {
+  formatMoney,
+  getGrnBranchWarehouse,
+  getGrnNumber,
+  getGrnReceiptDate,
+  getGrnTotal,
+} from "../helpers/grn.formatters";
 
-type GrnStatusFilter = GrnStatus | "ALL";
-
-type ApiError = {
-  response?: {
-    data?: {
-      title?: string;
-      detail?: string;
-      message?: string;
-    };
-  };
-  message?: string;
-};
-
-type NormalizedGrn = GrnListDto & {
-  id: string;
-  grnNumber?: string | null;
-  supplierName?: string | null;
-  receivingLocationName?: string | null;
-  locationName?: string | null;
-  warehouseName?: string | null;
-  receivedDate?: string | Date | null;
-  receivedAt?: string | Date | null;
-  receiptDate?: string | Date | null;
-  receivedAtUtc?: string | Date | null;
-  status?: string | null;
-  totalCost?: number | null;
-  totalAmount?: number | null;
-  grandTotal?: number | null;
-  lineCount?: number | null;
-  linesCount?: number | null;
-  hasIssues?: boolean | null;
-  hasIssuedLines?: boolean | null;
-  isIssued?: boolean | null;
-  issued?: boolean | null;
-};
-
-const STATUS_OPTIONS: GrnStatusFilter[] = [
-  "ALL",
-  "DRAFT",
-  "POSTED",
-  "REVERSED",
-  "CANCELLED",
-];
-
-function toText(value: unknown): string {
-  return String(value ?? "").trim();
-}
-
-function toNumber(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function formatMoney(value: unknown): string {
-  return toNumber(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function formatDate(value: unknown): string {
-  const raw = toText(value);
-  if (!raw) return "—";
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return "—";
-
-  return parsed.toLocaleString();
-}
-
-function getStatus(row: NormalizedGrn): GrnStatus {
-  const status = toText(row.status).toUpperCase();
-  return (status || "DRAFT") as GrnStatus;
-}
-
-function isDraft(row: NormalizedGrn): boolean {
-  return getStatus(row) === "DRAFT";
-}
-
-function isPosted(row: NormalizedGrn): boolean {
-  return getStatus(row) === "POSTED";
-}
-
-function hasIssuedStock(row: NormalizedGrn): boolean {
-  return Boolean(
-    row.hasIssues ||
-      row.hasIssuedLines ||
-      row.isIssued ||
-      row.issued
-  );
-}
-
-function canReverse(row: NormalizedGrn): boolean {
-  return isPosted(row) && !hasIssuedStock(row);
-}
-
-function getLocationName(row: NormalizedGrn): string {
-  return toText(
-    row.receivingLocationName ??
-      row.locationName ??
-      row.warehouseName
-  );
-}
-
-function getReceiptDate(row: NormalizedGrn): unknown {
-  return (
-    row.receivedDate ??
-    row.receivedAt ??
-    row.receiptDate ??
-    row.receivedAtUtc
-  );
-}
-
-function getTotal(row: NormalizedGrn): number {
-  return toNumber(row.totalCost ?? row.totalAmount ?? row.grandTotal);
-}
-
-function getLineCount(row: NormalizedGrn): string | number {
-  return row.lineCount ?? row.linesCount ?? "—";
-}
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  const e = error as ApiError;
-
-  return (
-    e?.response?.data?.title ||
-    e?.response?.data?.detail ||
-    e?.response?.data?.message ||
-    e?.message ||
-    fallback
-  );
-}
-
-function StatusBadge({ status }: { status: GrnStatus }) {
-  return (
-    <span className={`grn-status grn-status--${status.toLowerCase()}`}>
-      {status}
-    </span>
-  );
-}
+import "../styles/GrnPages.erp.css";
 
 export default function GrnListPage() {
   const navigate = useNavigate();
-  const { companyId } = useAppScope();
+  const { companyId, branchId } = useAppScope();
 
-  const [rows, setRows] = useState<NormalizedGrn[]>([]);
+  const [rows, setRows] = useState<GrnListDto[]>([]);
   const [loading, setLoading] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<GrnStatusFilter>("ALL");
 
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<GrnStatusFilter>("ALL");
-
-  // Permission-ready flags.
-  // Replace these with your real auth/permission hook later.
-  const canCreateGrn = true;
-  const canViewGrn = true;
-  const canReverseGrn = true;
+  const scope = useMemo(
+    () => ({
+      companyId: companyId ?? "",
+      branchId: branchId ?? undefined,
+    }),
+    [branchId, companyId],
+  );
 
   const load = useCallback(async () => {
-    if (!companyId) return;
+    if (!scope.companyId) return;
 
     setLoading(true);
-    setError(null);
+    setError("");
 
     try {
-      const result = await grnApi.list(companyId, {
-        status,
+      const data = await grnApi.list(scope, {
+        status: toApiStatusFilter(statusFilter),
       });
 
-      setRows((result ?? []) as NormalizedGrn[]);
+      setRows(Array.isArray(data) ? data : []);
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to load GRNs."));
+      setRows([]);
+      setError(getApiErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [companyId, status]);
+  }, [scope, statusFilter]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const filteredRows = useMemo(() => {
-    const q = search.toLowerCase().trim();
+  const visibleRows = useMemo(
+    () => searchGrnRows(rows, query),
+    [query, rows],
+  );
 
-    return rows.filter((row) => {
-      const rowStatus = getStatus(row);
+  const dashboard = useMemo(() => buildGrnDashboard(rows), [rows]);
 
-      if (status !== "ALL" && rowStatus !== status) return false;
-      if (!q) return true;
+  const openReceipt = useCallback(
+    (row: GrnListDto) => {
+      if (!scope.companyId) return;
+      navigate(buildGrnDetailPath(scope.companyId, row.id, scope.branchId));
+    },
+    [navigate, scope],
+  );
 
-      return (
-        toText(row.grnNumber).toLowerCase().includes(q) ||
-        toText(row.supplierName).toLowerCase().includes(q) ||
-        getLocationName(row).toLowerCase().includes(q)
-      );
-    });
-  }, [rows, search, status]);
-
-  const stats = useMemo(() => {
-    return {
-      total: rows.length,
-      drafts: rows.filter(isDraft).length,
-      posted: rows.filter(isPosted).length,
-      reversed: rows.filter((x) => getStatus(x) === "REVERSED").length,
-      value: rows.reduce((sum, row) => sum + getTotal(row), 0),
-    };
-  }, [rows]);
-
-  async function handleReverse(row: NormalizedGrn) {
-    if (!companyId) return;
-
-    if (!canReverseGrn) {
-      setError("You do not have permission to reverse GRNs.");
-      return;
-    }
-
-    if (!canReverse(row)) {
-      setError("Only posted GRNs with no issued stock can be reversed.");
-      return;
-    }
-
-    const id = toText(row.id);
-    const grnNo = toText(row.grnNumber) || id;
-
-    const confirmed = window.confirm(
-      `Reverse posted GRN ${grnNo}? This will create reversal inventory entries.`
-    );
-
-    if (!confirmed) return;
-
-    setBusyId(id);
-    setError(null);
-
-    try {
-      await grnApi.reverseById(companyId, id, {
-        reason: "",
-      });
-
-      await load();
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to reverse GRN."));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  function openGrn(row: NormalizedGrn) {
-    if (!companyId || !canViewGrn) return;
-
-    const id = toText(row.id);
-    const path = isDraft(row)
-      ? `/companies/${companyId}/grns/drafts/${id}`
-      : `/companies/${companyId}/grns/${id}`;
-
-    navigate(path);
-  }
+  const createReceipt = useCallback(() => {
+    if (!scope.companyId) return;
+    navigate(buildGrnNewPath(scope.companyId, scope.branchId));
+  }, [navigate, scope]);
 
   if (!companyId) {
     return (
-      <main className="grn-page">
-        <section className="grn-empty">
-          Select a company to continue.
+      <main className="page erp-grn-page">
+        <section className="erp-empty-state">
+          <h2>Select a company</h2>
+          <p>Select a company workspace before viewing goods receipts.</p>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="grn-page">
-      <header className="grn-header">
+    <main className="page erp-grn-page">
+      <header className="erp-grn-hero">
         <div>
-          <h1>Goods Receipt Notes</h1>
+          <div className="erp-kicker">Inventory • Receiving</div>
+          <h1>Goods Receipts</h1>
           <p>
-            Receive supplier stock, manage drafts, post to inventory, and
-            reverse eligible receipts.
+            Track supplier receipts, posting, FIFO creation, and reversal readiness
+            from one operational register.
           </p>
         </div>
 
-        <div className="grn-actions">
-          {canReverseGrn && (
-            <button
-              type="button"
-              className="grn-btn"
-              onClick={() => navigate(`/companies/${companyId}/grns/reverse`)}
-            >
-              Reverse Center
-            </button>
-          )}
-
-          {canCreateGrn && (
-            <button
-              type="button"
-              className="grn-btn grn-btn--primary"
-              onClick={() =>
-                navigate(`/companies/${companyId}/grns/drafts/new`)
-              }
-            >
-              + New GRN
-            </button>
-          )}
-        </div>
+        <button type="button" className="btn btn-primary" onClick={createReceipt}>
+          + New Goods Receipt
+        </button>
       </header>
 
-      {error && (
-        <div role="alert" className="grn-alert">
-          {error}
-        </div>
-      )}
-
-      <section className="grn-stats">
-        <article>
-          <span>Total GRNs</span>
-          <strong>{stats.total}</strong>
-        </article>
-
-        <article>
-          <span>Drafts</span>
-          <strong>{stats.drafts}</strong>
-        </article>
-
-        <article>
-          <span>Posted</span>
-          <strong>{stats.posted}</strong>
-        </article>
-
-        <article>
-          <span>Reversed</span>
-          <strong>{stats.reversed}</strong>
-        </article>
-
-        <article>
-          <span>Total Value</span>
-          <strong>${formatMoney(stats.value)}</strong>
-        </article>
+      <section className="erp-grn-kpis" aria-label="Goods receipt summary">
+        <Kpi label="Today's Receipts" value={dashboard.todaysReceipts} />
+        <Kpi label="Awaiting Posting" value={dashboard.awaitingPosting} />
+        <Kpi label="Posted Today" value={dashboard.postedToday} />
+        <Kpi label="Reversible" value={dashboard.reversible} />
+        <Kpi label="Inventory Value" value={formatMoney(dashboard.inventoryValue)} />
       </section>
 
-      <section className="grn-card">
-        <div className="grn-filters">
-          <div className="grn-field">
-            <label htmlFor="grn-search">Search</label>
-            <input
-              id="grn-search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="GRN number, supplier, or location"
-            />
+      <section className="card erp-grn-card">
+        <div className="erp-grn-toolbar">
+          <div>
+            <h2>Receipt Register</h2>
+            <p>Open a receipt to review items, post drafts, or reverse posted receipts.</p>
           </div>
 
-          <div className="grn-field">
-            <label htmlFor="grn-status">Status</label>
+          <div className="erp-grn-filters">
+            <input
+              className="input"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search GRN, supplier, warehouse, or status"
+              disabled={loading}
+              aria-label="Search goods receipts"
+            />
+
             <select
-              id="grn-status"
-              value={status}
-              onChange={(e) =>
-                setStatus(e.target.value as GrnStatusFilter)
-              }
+              className="select"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as GrnStatusFilter)}
+              disabled={loading}
+              aria-label="Filter by status"
             >
-              {STATUS_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option === "ALL" ? "All" : option}
+              {GRN_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
+
+            <button type="button" className="btn btn-sm" onClick={() => void load()} disabled={loading}>
+              Refresh
+            </button>
           </div>
-
-          <button
-            type="button"
-            className="grn-btn"
-            disabled={loading}
-            onClick={() => void load()}
-          >
-            {loading ? "Loading…" : "Refresh"}
-          </button>
         </div>
-      </section>
 
-      <section className="grn-card">
-        <div className="grn-table-wrap">
-          <table className="grn-table">
-            <thead>
-              <tr>
-                <th>GRN #</th>
-                <th>Supplier</th>
-                <th>Location</th>
-                <th>Receipt Date</th>
-                <th>Lines</th>
-                <th>Total</th>
-                <th>Status</th>
-                <th>Issued</th>
-                <th className="grn-align-right">Actions</th>
-              </tr>
-            </thead>
+        {error && <div className="alert alert-danger">{error}</div>}
 
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={9}>Loading GRNs…</td>
-                </tr>
-              ) : filteredRows.length === 0 ? (
-                <tr>
-                  <td colSpan={9}>No GRNs found.</td>
-                </tr>
-              ) : (
-                filteredRows.map((row) => {
-                  const id = toText(row.id);
-                  const statusValue = getStatus(row);
-                  const reverseAllowed = canReverse(row);
-                  const isBusy = busyId === id;
-
-                  return (
-                    <tr key={id}>
-                      <td className="grn-number">
-                        {toText(row.grnNumber) || "—"}
-                      </td>
-
-                      <td>{toText(row.supplierName) || "—"}</td>
-
-                      <td>{getLocationName(row) || "—"}</td>
-
-                      <td>{formatDate(getReceiptDate(row))}</td>
-
-                      <td>{getLineCount(row)}</td>
-
-                      <td>${formatMoney(getTotal(row))}</td>
-
-                      <td>
-                        <StatusBadge status={statusValue} />
-                      </td>
-
-                      <td>
-                        {isPosted(row)
-                          ? hasIssuedStock(row)
-                            ? "Yes"
-                            : "No"
-                          : "—"}
-                      </td>
-
-                      <td className="grn-row-actions">
-                        <button
-                          type="button"
-                          className="grn-btn grn-btn--sm"
-                          disabled={!canViewGrn}
-                          onClick={() => openGrn(row)}
-                        >
-                          {isDraft(row) ? "Edit" : "View"}
-                        </button>
-
-                        {isPosted(row) && canReverseGrn && (
-                          <button
-                            type="button"
-                            className="grn-btn grn-btn--sm grn-btn--danger"
-                            disabled={!reverseAllowed || isBusy}
-                            title={
-                              reverseAllowed
-                                ? "Reverse this GRN"
-                                : "Cannot reverse after stock has been issued"
-                            }
-                            onClick={() => void handleReverse(row)}
-                          >
-                            {isBusy ? "…" : "Reverse"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        <GrnRegisterTable rows={visibleRows} loading={loading} onOpen={openReceipt} />
       </section>
     </main>
+  );
+}
+
+
+type GrnDashboard = {
+  todaysReceipts: number;
+  awaitingPosting: number;
+  postedToday: number;
+  reversible: number;
+  inventoryValue: number;
+};
+
+function buildGrnDashboard(rows: GrnListDto[]): GrnDashboard {
+  const today = new Date().toISOString().slice(0, 10);
+
+  return rows.reduce<GrnDashboard>(
+    (dashboard, row) => {
+      const status = normalizeGrnStatus(row.status);
+      const receiptDate = getGrnReceiptDate(row);
+      const receiptDay = receiptDate ? receiptDate.slice(0, 10) : "";
+
+      if (receiptDay === today) {
+        dashboard.todaysReceipts += 1;
+      }
+
+      if (status === "DRAFT" || status === "SUBMITTED" || status === "APPROVED") {
+        dashboard.awaitingPosting += 1;
+      }
+
+      if (status === "POSTED" && receiptDay === today) {
+        dashboard.postedToday += 1;
+      }
+
+      if (canReverseGrn(row)) {
+        dashboard.reversible += 1;
+      }
+
+      dashboard.inventoryValue += getGrnTotal(row);
+      return dashboard;
+    },
+    {
+      todaysReceipts: 0,
+      awaitingPosting: 0,
+      postedToday: 0,
+      reversible: 0,
+      inventoryValue: 0,
+    },
+  );
+}
+
+function buildGrnDetailPath(companyId: string, grnId: string, branchId?: string): string {
+  const params = new URLSearchParams();
+  if (branchId) params.set("branchId", branchId);
+
+  const queryString = params.toString();
+  return `/companies/${companyId}/grns/${grnId}${queryString ? `?${queryString}` : ""}`;
+}
+
+function buildGrnNewPath(companyId: string, branchId?: string): string {
+  const params = new URLSearchParams();
+  if (branchId) params.set("branchId", branchId);
+
+  const queryString = params.toString();
+  return `/companies/${companyId}/grns/new${queryString ? `?${queryString}` : ""}`;
+}
+
+function getApiErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return "Unable to load goods receipts. Please try again.";
+}
+
+function searchGrnRows(rows: GrnListDto[], query: string): GrnListDto[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return rows;
+
+  return rows.filter((row) => {
+    const status = normalizeGrnStatus(row.status);
+    const searchableText = [
+      getGrnNumber(row),
+      row.supplierName,
+      getGrnBranchWarehouse(row),
+      formatGrnStatusLabel(status),
+      row.status,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return searchableText.includes(needle);
+  });
+}
+
+export function toApiStatusFilter(
+  status: GrnStatusFilter,
+): GrnStatus | undefined {
+  return status === "ALL" ? undefined : status;
+}
+function Kpi({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="erp-kpi-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }

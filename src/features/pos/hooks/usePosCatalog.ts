@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { posApi } from "../api/posApi";
+import { posApi, type PosScope } from "../api/posApi";
 import type { MenuItemDto } from "../types/posTypes";
 
 export function usePosCatalog(
+  scope: PosScope,
   enabled: boolean,
   search: string
 ) {
@@ -16,13 +17,15 @@ export function usePosCatalog(
       return;
     }
 
+    let cancelled = false;
     const timer = window.setTimeout(async () => {
       setLoadingMenu(true);
       setError(null);
 
       try {
-        const rows = await posApi.menuItems(search, true);
+        const rows = await posApi.menuItems(scope, search, true);
 
+        if (cancelled) return;
         setMenuItems(
           Array.isArray(rows)
             ? rows.filter(
@@ -33,6 +36,7 @@ export function usePosCatalog(
             : []
         );
       } catch (err) {
+        if (cancelled) return;
         setMenuItems([]);
         setError(
           err instanceof Error
@@ -40,12 +44,15 @@ export function usePosCatalog(
             : "Failed to load menu items."
         );
       } finally {
-        setLoadingMenu(false);
+        if (!cancelled) setLoadingMenu(false);
       }
     }, 250);
 
-    return () => window.clearTimeout(timer);
-  }, [enabled, search]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [enabled, scope.companyId, scope.branchId, search]);
 
   const categories = useMemo(() => {
     const names = Array.from(

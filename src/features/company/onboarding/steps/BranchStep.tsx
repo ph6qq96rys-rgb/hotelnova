@@ -1,404 +1,362 @@
 // src/modules/company/onboarding/steps/BranchStep.tsx
-//
-// Self-contained: fetches its own branch list whenever companyId changes.
-// The parent no longer needs to pass a pre-loaded branches array.
+// ERP-grade branch setup step.
+// Security rules:
+// - CompanyAdmin: create/edit/delete branches.
+// - BranchAdmin: edit assigned branch only when allowed by access flags.
+// - BranchManager and other branch-level users: select assigned branch only; no configuration.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type React from "react";
 import type { BranchDto, CreateBranchDto } from "../../types/company.types";
 import { onboardingApi } from "../api/onboardingApi";
 import { DEFAULT_BRANCH_FORM } from "../state/onboarding.constants";
 import type { FieldErrors, OnboardingAction } from "../state/onboarding.types";
 import { extractApiError, trimOrNull } from "../utils/onboarding.utils";
-import {
-  Field, Input, TextArea, Checkbox,
-  Btn, Alert, SectionTitle, EmptyState, Spinner,
-} from "../components/company.ui";
+import { Alert, Btn, Checkbox, EmptyState, Field, Input, Spinner, TextArea } from "../components/company.ui";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+type BranchStepAccess = {
+  canCreateBranch: boolean;
+  canEditBranch: boolean;
+  canDeleteBranch: boolean;
+  canViewAllBranches: boolean;
+  /** For BranchAdmin/BranchManager. CompanyAdmin/SystemAdmin may pass [] with canViewAllBranches=true. */
+  assignedBranchIds: string[];
+};
 
-function getId(b: BranchDto): string { return String((b as any).id ?? ""); }
-
-function dtoToForm(b: BranchDto): CreateBranchDto {
-  return {
-    code:        (b as any).code        ?? "",
-    name:        (b as any).name        ?? "",
-    region:      (b as any).region      ?? "",
-    city:        (b as any).city        ?? "",
-    addressLine: (b as any).addressLine ?? "",
-    isMain:      !!(b as any).isMain,
-  } as CreateBranchDto;
-}
-
-function validate(
-  form: CreateBranchDto,
-  setErrors: (e: FieldErrors) => void,
-): boolean {
-  const e: FieldErrors = {};
-  if (!String(form.code ?? "").trim()) e.code = "Branch code is required.";
-  if (!String(form.name ?? "").trim()) e.name = "Branch name is required.";
-  setErrors(e);
-  return Object.keys(e).length === 0;
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
-
-export function BranchStep(props: {
-  companyId:      string | null;
-  /** Active/selected branch ID — highlighted in the list. */
+type Props = {
+  companyId: string | null;
   activeBranchId: string | null;
-  saving:         boolean;
-  onCreated:      (branch: BranchDto) => Promise<void> | void;
-  onSelected:     (branchId: string)  => void;
-  onUpdated?:     (branch: BranchDto) => Promise<void> | void;
-  dispatch:       React.Dispatch<OnboardingAction>;
-}) {
-  // ── Own data fetching ─────────────────────────────────────────────────────
-  const [branches, setBranches] = useState<BranchDto[]>([]);
-  const [loading,  setLoading]  = useState(false);
+  saving: boolean;
+  access: BranchStepAccess;
+  onCreated: (branch: BranchDto) => Promise<void> | void;
+  onSelected: (branchId: string) => void;
+  onUpdated?: (branch: BranchDto) => Promise<void> | void;
+  onDeleted?: (branchId: string) => Promise<void> | void;
+  dispatch: React.Dispatch<OnboardingAction>;
+};
 
-  useEffect(() => {
-    if (!props.companyId) { setBranches([]); return; }
+function idOf(value: any): string {
+  return String(value?.id ?? value?.branchId ?? value?.Id ?? "").trim();
+}
+
+function branchName(value: any): string {
+  return String(value?.name ?? value?.branchName ?? "Unnamed branch");
+}
+
+function toForm(branch: BranchDto): CreateBranchDto {
+  const x = branch as any;
+  return {
+    code: String(x.code ?? ""),
+    name: String(x.name ?? ""),
+    region: String(x.region ?? ""),
+    city: String(x.city ?? ""),
+    addressLine: String(x.addressLine ?? ""),
+    isMain: Boolean(x.isMain),
+    hasSalesOperations: x.hasSalesOperations ?? true,
+  } as any;
+}
+
+function validate(form: CreateBranchDto, setErrors: (e: FieldErrors) => void) {
+  const errors: FieldErrors = {};
+  if (!String((form as any).code ?? "").trim()) errors.code = "Branch code is required.";
+  if (!String((form as any).name ?? "").trim()) errors.name = "Branch name is required.";
+  setErrors(errors);
+  return Object.keys(errors).length === 0;
+}
+
+function normalize(form: CreateBranchDto): CreateBranchDto {
+  return {
+    ...form,
+    code: String((form as any).code ?? "").trim().toUpperCase(),
+    name: String((form as any).name ?? "").trim(),
+    region: trimOrNull((form as any).region),
+    city: trimOrNull((form as any).city),
+    addressLine: trimOrNull((form as any).addressLine),
+    isMain: Boolean((form as any).isMain),
+    hasSalesOperations: (form as any).hasSalesOperations ?? true,
+  } as any;
+}
+
+function ReadonlyRow(props: { label: string; value?: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <span style={{ color: "#94a3b8", fontSize: 12 }}>{props.label}</span>
+      <strong style={{ color: "#334155", fontSize: 13 }}>{props.value || "—"}</strong>
+    </div>
+  );
+}
+
+function BranchForm(props2: { value: CreateBranchDto; errors: FieldErrors; onChange: (next: CreateBranchDto) => void }) {
+  const f = props2.value as any;
+  const set = (patch: Record<string, unknown>) => props2.onChange({ ...props2.value, ...patch } as any);
+  return (
+    <div className="ob-grid-2">
+      <Field label="Branch code" required error={props2.errors.code}><Input value={String(f.code ?? "")} onChange={(v) => set({ code: v.toUpperCase() })} placeholder="YODA" /></Field>
+      <Field label="Branch name" required error={props2.errors.name}><Input value={String(f.name ?? "")} onChange={(v) => set({ name: v })} placeholder="YODA Branch" /></Field>
+      <Field label="Region"><Input value={String(f.region ?? "")} onChange={(v) => set({ region: v })} /></Field>
+      <Field label="City"><Input value={String(f.city ?? "")} onChange={(v) => set({ city: v })} /></Field>
+      <Field label="Address"><TextArea value={String(f.addressLine ?? "")} onChange={(v) => set({ addressLine: v })} /></Field>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 24 }}>
+        <Checkbox label="Main branch" checked={Boolean(f.isMain)} onChange={(v) => set({ isMain: v })} />
+        <Checkbox label="Sales-enabled branch" checked={f.hasSalesOperations !== false} onChange={(v) => set({ hasSalesOperations: v })} hint="When enabled, at least one POS/store is required. One or more POS are supported." />
+      </div>
+    </div>
+  );
+}
+
+function BranchReadonly(props2: { branch: BranchDto }) {
+  const x = props2.branch as any;
+  return (
+    <div className="ob-inner-card-body" style={{ borderTop: "1px solid #e2e8f0" }}>
+      <div className="ob-grid-2">
+        <ReadonlyRow label="Branch code" value={x.code} />
+        <ReadonlyRow label="Region" value={x.region} />
+        <ReadonlyRow label="City" value={x.city} />
+        <ReadonlyRow label="Address" value={x.addressLine} />
+        <ReadonlyRow label="Branch type" value={x.isMain ? "Main branch" : "Operational branch"} />
+        <ReadonlyRow label="Sales operations" value={x.hasSalesOperations !== false ? "Enabled" : "Disabled"} />
+      </div>
+    </div>
+  );
+}
+
+export function BranchStep(props: Props) {
+  const assignedSet = useMemo(
+    () => new Set(props.access.assignedBranchIds.map((x) => String(x).trim().toLowerCase()).filter(Boolean)),
+    [props.access.assignedBranchIds],
+  );
+
+  const [branches, setBranches] = useState<BranchDto[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<CreateBranchDto>({ ...DEFAULT_BRANCH_FORM, hasSalesOperations: true } as any);
+  const [editErrors, setEditErrors] = useState<FieldErrors>({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [deleteSavingId, setDeleteSavingId] = useState<string | null>(null);
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateBranchDto>({ ...DEFAULT_BRANCH_FORM, hasSalesOperations: true } as any);
+  const [createErrors, setCreateErrors] = useState<FieldErrors>({});
+  const [createSaving, setCreateSaving] = useState(false);
+
+  const canAccessBranch = useCallback(
+    (branchId: string) => props.access.canViewAllBranches || assignedSet.has(branchId.toLowerCase()),
+    [assignedSet, props.access.canViewAllBranches],
+  );
+
+  const visibleBranches = useMemo(
+    () => branches.filter((branch) => canAccessBranch(idOf(branch))),
+    [branches, canAccessBranch],
+  );
+
+  const fetchBranches = useCallback(async () => {
+    if (!props.companyId) {
+      setBranches([]);
+      setLoadError(null);
+      return;
+    }
+
     setLoading(true);
-    onboardingApi
-      .listBranches(props.companyId)
-      .then((data) => setBranches(Array.isArray(data) ? data : []))
-      .catch(() => setBranches([]))
-      .finally(() => setLoading(false));
+    setLoadError(null);
+
+    try {
+      // API must enforce server-side branch visibility. Client filtering below is a defensive UI fallback only.
+      const data = await onboardingApi.listBranches(props.companyId);
+      setBranches(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setBranches([]);
+      setLoadError(extractApiError(err, "Failed to load branches."));
+    } finally {
+      setLoading(false);
+    }
   }, [props.companyId]);
 
-  // ── Edit state ────────────────────────────────────────────────────────────
-  const [expandedId,   setExpandedId]   = useState<string | null>(null);
-  const [editForm,     setEditForm]     = useState<CreateBranchDto>({ ...DEFAULT_BRANCH_FORM });
-  const [editErrors,   setEditErrors]   = useState<FieldErrors>({});
-  const [editSaving,   setEditSaving]   = useState(false);
+  useEffect(() => { void fetchBranches(); }, [fetchBranches]);
 
-  // ── Create state ──────────────────────────────────────────────────────────
-  const [showCreate,   setShowCreate]   = useState(false);
-  const [createForm,   setCreateForm]   = useState<CreateBranchDto>({ ...DEFAULT_BRANCH_FORM });
-  const [createErrors, setCreateErrors] = useState<FieldErrors>({});
-
-  // Auto-open create form when no branches exist
   useEffect(() => {
-    if (!loading && branches.length === 0) setShowCreate(true);
-  }, [loading, branches.length]);
+    if (props.access.canCreateBranch && !loading && props.companyId && branches.length === 0) setShowCreate(true);
+    if (!props.access.canCreateBranch) setShowCreate(false);
+  }, [branches.length, loading, props.access.canCreateBranch, props.companyId]);
 
-  // ── Edit handlers ─────────────────────────────────────────────────────────
+  function canEditSpecificBranch(branchId: string) {
+    return props.access.canEditBranch && canAccessBranch(branchId);
+  }
 
-  function openEdit(b: BranchDto) {
-    setExpandedId(getId(b));
-    setEditForm(dtoToForm(b));
+  function canDeleteSpecificBranch(branch: BranchDto) {
+    const branchId = idOf(branch);
+    const x = branch as any;
+    return props.access.canDeleteBranch && canAccessBranch(branchId) && !x.isMain;
+  }
+
+  function openEdit(branch: BranchDto) {
+    const branchId = idOf(branch);
+    if (!canEditSpecificBranch(branchId)) return;
+    setExpandedId(branchId);
+    setEditForm(toForm(branch));
     setEditErrors({});
   }
 
-  function closeEdit() { setExpandedId(null); setEditErrors({}); }
+  async function saveEdit(branchId: string) {
+    if (!canEditSpecificBranch(branchId)) {
+      props.dispatch({ type: "SAVE_ERROR", error: "You are not authorized to configure this branch." });
+      return;
+    }
 
-  async function saveEdit(bid: string) {
-    if (!props.companyId || !validate(editForm, setEditErrors)) return;
+    if (!props.companyId || !branchId || !validate(editForm, setEditErrors)) return;
+
     setEditSaving(true);
     props.dispatch({ type: "SAVE_START" });
+
     try {
-      const updated = await onboardingApi.updateBranch(props.companyId, bid, {
-        code:        String(editForm.code ?? "").trim().toUpperCase(),
-        name:        String(editForm.name ?? "").trim(),
-        region:      trimOrNull(editForm.region),
-        city:        trimOrNull(editForm.city),
-        addressLine: trimOrNull(editForm.addressLine),
-        isMain:      !!editForm.isMain,
-      });
-      // Refresh local list
-      setBranches((prev) =>
-        prev.map((b) => getId(b) === bid ? updated : b),
-      );
-      closeEdit();
-      if (props.onUpdated) await props.onUpdated(updated);
+      const updated = await onboardingApi.updateBranch(props.companyId, branchId, normalize(editForm));
+      setBranches((current) => current.map((branch) => (idOf(branch) === branchId ? updated : branch)));
+      await props.onUpdated?.(updated);
+      setExpandedId(null);
       props.dispatch({ type: "SAVE_SUCCESS", notice: "Branch updated." });
     } catch (err) {
-      props.dispatch({
-        type: "SAVE_ERROR",
-        error: extractApiError(err, "Failed to update branch."),
-      });
-    } finally { setEditSaving(false); }
-  }
-
-  // ── Create handler ────────────────────────────────────────────────────────
-
-  async function create() {
-    if (!props.companyId || !validate(createForm, setCreateErrors)) return;
-    props.dispatch({ type: "SAVE_START" });
-    try {
-      const created = await onboardingApi.createBranch(props.companyId, {
-        ...createForm,
-        code:        String(createForm.code ?? "").trim().toUpperCase(),
-        name:        String(createForm.name ?? "").trim(),
-        region:      trimOrNull(createForm.region),
-        city:        trimOrNull(createForm.city),
-        addressLine: trimOrNull(createForm.addressLine),
-        isMain:      !!createForm.isMain,
-      });
-      // Append to local list immediately — no full reload needed
-      setBranches((prev) => [...prev, created]);
-      setCreateForm({ ...DEFAULT_BRANCH_FORM });
-      setShowCreate(false);
-      await props.onCreated(created);
-    } catch (err) {
-      props.dispatch({
-        type: "SAVE_ERROR",
-        error: extractApiError(err, "Failed to create branch."),
-      });
+      props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to update branch.") });
+    } finally {
+      setEditSaving(false);
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  async function deleteBranch(branch: BranchDto) {
+    const branchId = idOf(branch);
+    if (!props.companyId || !branchId) return;
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "24px 0", color: "#64748b" }}>
-        <Spinner /> Loading branches…
-      </div>
-    );
+    if (!canDeleteSpecificBranch(branch)) {
+      props.dispatch({ type: "SAVE_ERROR", error: "You are not authorized to delete this branch. Main branches cannot be deleted from this step." });
+      return;
+    }
+
+    setDeleteSavingId(branchId);
+    props.dispatch({ type: "SAVE_START" });
+
+    try {
+      const api = onboardingApi as any;
+      if (typeof api.deleteBranch !== "function") {
+        throw new Error("Branch delete API is not available in onboardingApi.");
+      }
+
+      await api.deleteBranch(props.companyId, branchId);
+      setBranches((current) => current.filter((item) => idOf(item) !== branchId));
+      await props.onDeleted?.(branchId);
+      if (props.activeBranchId === branchId) props.onSelected("");
+      props.dispatch({ type: "SAVE_SUCCESS", notice: "Branch deleted." });
+    } catch (err) {
+      props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to delete branch.") });
+    } finally {
+      setDeleteSavingId(null);
+    }
   }
+
+  async function createBranch() {
+    if (!props.access.canCreateBranch) {
+      props.dispatch({ type: "SAVE_ERROR", error: "Only a CompanyAdmin can create branches." });
+      return;
+    }
+
+    if (!props.companyId || !validate(createForm, setCreateErrors)) return;
+
+    setCreateSaving(true);
+    props.dispatch({ type: "SAVE_START" });
+
+    try {
+      const created = await onboardingApi.createBranch(props.companyId, normalize(createForm));
+      const branchId = idOf(created);
+      if (!branchId) throw new Error("Branch was created but the API did not return a branch id.");
+      setBranches((current) => [...current, created]);
+      props.onSelected(branchId);
+      await props.onCreated(created);
+      setCreateForm({ ...DEFAULT_BRANCH_FORM, hasSalesOperations: true } as any);
+      setCreateErrors({});
+      setShowCreate(false);
+      props.dispatch({ type: "SAVE_SUCCESS", notice: "Branch created. Continue with stock location assignment." });
+    } catch (err) {
+      props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to create branch.") });
+    } finally {
+      setCreateSaving(false);
+    }
+  }
+
+  function selectBranch(branchId: string) {
+    if (!branchId || !canAccessBranch(branchId)) {
+      props.dispatch({ type: "SAVE_ERROR", error: "You can only switch to branches assigned to your user account." });
+      return;
+    }
+    props.onSelected(branchId);
+  }
+
+  if (loading) return <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "24px 0", color: "#64748b" }}><Spinner /> Loading branches…</div>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {!props.companyId && <Alert tone="warn" title="Select company first" message="Branch setup starts after a company is selected." />}
+      {loadError && <Alert tone="danger" title="Unable to load branches" message={loadError} />}
+      {!props.access.canCreateBranch && !props.access.canEditBranch && <Alert tone="warn" title="Branch administration is locked" message="Your role can only work inside branches assigned to your account. Creating, configuring, deleting, or viewing other branches is restricted." />}
+      {visibleBranches.length === 0 && !showCreate && <EmptyState title="No accessible branches" sub={props.access.canCreateBranch ? "Create the first operational branch." : "Ask a CompanyAdmin to assign your user to a branch."} />}
 
-      {branches.length === 0 && !showCreate && (
-        <EmptyState
-          title="No branches yet"
-          sub="Use the form below to add the first branch for this company."
-        />
-      )}
-
-      {/* ── Branch list ───────────────────────────────────────────────────── */}
-      {branches.map((b) => {
-        const id         = getId(b);
-        const isActive   = id === props.activeBranchId;
-        const isExpanded = expandedId === id;
-        const a          = b as any;
+      {visibleBranches.map((branch) => {
+        const branchId = idOf(branch);
+        const x = branch as any;
+        const active = branchId === props.activeBranchId;
+        const expanded = branchId === expandedId;
+        const canEdit = canEditSpecificBranch(branchId);
+        const canDelete = canDeleteSpecificBranch(branch);
 
         return (
-          <div key={id} style={{
-            border:       isActive ? "1.5px solid #6366f1" : "1px solid #e2e8f0",
-            borderRadius: 12,
-            background:   isActive ? "#f5f3ff" : "#fff",
-            overflow:     "hidden",
-            transition:   "border-color 0.15s",
-          }}>
-
-            {/* ── Row summary ────────────────────────────────────────────── */}
-            <div style={{
-              display: "grid", gridTemplateColumns: "auto 1fr auto",
-              alignItems: "center", gap: 12, padding: "12px 16px",
-            }}>
-              {/* Active dot */}
-              <div style={{
-                width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
-                background: isActive ? "#6366f1" : "#e2e8f0",
-                border:     isActive ? "2px solid #a5b4fc" : "2px solid #e2e8f0",
-              }} />
-
-              {/* Info */}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{b.name}</span>
-                  {a.code && (
-                    <span style={{
-                      fontFamily: "monospace", fontSize: 11, color: "#64748b",
-                      background: "#f1f5f9", padding: "1px 6px", borderRadius: 5,
-                    }}>{a.code}</span>
-                  )}
-                  {a.isMain && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, color: "#059669",
-                      background: "#d1fae5", padding: "1px 7px",
-                      borderRadius: 999, border: "1px solid #6ee7b7",
-                    }}>Main</span>
-                  )}
-                  {isActive && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, color: "#6366f1",
-                      background: "#ede9fe", padding: "1px 7px",
-                      borderRadius: 999, border: "1px solid #c4b5fd",
-                    }}>Active</span>
-                  )}
+          <div key={branchId} className="ob-inner-card" style={{ borderColor: active ? "#6366f1" : undefined }}>
+            <div className="ob-inner-card-body" style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 12, alignItems: "center" }}>
+              <div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <strong>{branchName(branch)}</strong>
+                  {x.code && <span className="ob-badge">{x.code}</span>}
+                  {x.isMain && <span className="ob-badge ob-badge--success">Main</span>}
+                  {x.hasSalesOperations !== false && <span className="ob-badge ob-badge--info">Sales-enabled</span>}
+                  {active && <span className="ob-badge ob-badge--success">Current branch</span>}
                 </div>
-                <div style={{
-                  fontSize: 11, color: "#94a3b8", marginTop: 3,
-                  display: "flex", gap: 10, flexWrap: "wrap",
-                }}>
-                  {a.city   && <span>{a.city}</span>}
-                  {a.region && <span>{a.region}</span>}
-                </div>
+                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>{x.city ?? "—"} · supports one or more POS/stores</div>
               </div>
 
-              {/* Actions */}
-              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                {!isActive && (
-                  <Btn variant="primary" onClick={() => props.onSelected(id)}
-                    disabled={props.saving || editSaving}
-                    style={{ padding: "5px 12px", fontSize: 12, minHeight: 30 }}>
-                    Select
-                  </Btn>
-                )}
-                <Btn variant="ghost"
-                  onClick={() => isExpanded ? closeEdit() : openEdit(b)}
-                  disabled={editSaving}
-                  style={{ padding: "5px 12px", fontSize: 12, minHeight: 30 }}>
-                  {isExpanded ? "Close" : "Configure"}
-                </Btn>
-              </div>
+              <Btn variant="ghost" onClick={() => selectBranch(branchId)} disabled={!branchId || active}>Use branch</Btn>
+
+              {canEdit ? <Btn variant="ghost" onClick={() => (expanded ? setExpandedId(null) : openEdit(branch))}>{expanded ? "Close" : "Configure"}</Btn> : null}
+
+              {props.access.canDeleteBranch ? (
+                <Btn variant="ghost" onClick={() => void deleteBranch(branch)} disabled={!canDelete || deleteSavingId === branchId || props.saving}>{deleteSavingId === branchId ? "Deleting…" : "Delete"}</Btn>
+              ) : null}
             </div>
 
-            {/* ── Inline configure form ─────────────────────────────────── */}
-            {isExpanded && (
-              <div style={{
-                borderTop: "1px solid #e2e8f0", background: "#f8fafc",
-                padding: "20px 16px", display: "flex", flexDirection: "column", gap: 16,
-              }}>
-                {editErrors.code && (
-                  <Alert tone="danger" title="Validation" message={editErrors.code} />
-                )}
-                {editErrors.name && (
-                  <Alert tone="danger" title="Validation" message={editErrors.name} />
-                )}
-
-                <SectionTitle title="Branch details" subtitle="Location profile and address" />
-
-                <div className="ob-grid-2">
-                  <Field label="Branch code" required>
-                    <Input value={String(editForm.code ?? "")}
-                      onChange={(v) => setEditForm((x) => ({ ...x, code: v.toUpperCase() }))}
-                      placeholder="BOLE-01" />
-                  </Field>
-                  <Field label="Branch name" required>
-                    <Input value={String(editForm.name ?? "")}
-                      onChange={(v) => setEditForm((x) => ({ ...x, name: v }))}
-                      placeholder="Bole Branch" />
-                  </Field>
-                  <Field label="Region">
-                    <Input value={String(editForm.region ?? "")}
-                      onChange={(v) => setEditForm((x) => ({ ...x, region: v }))}
-                      placeholder="Oromia" />
-                  </Field>
-                  <Field label="City">
-                    <Input value={String(editForm.city ?? "")}
-                      onChange={(v) => setEditForm((x) => ({ ...x, city: v }))}
-                      placeholder="Addis Ababa" />
-                  </Field>
-                </div>
-
-                <Field label="Address">
-                  <TextArea value={String(editForm.addressLine ?? "")}
-                    onChange={(v) => setEditForm((x) => ({ ...x, addressLine: v }))}
-                    placeholder="Street / Building / Landmark…" rows={2} />
-                </Field>
-
-                <Checkbox
-                  checked={!!editForm.isMain}
-                  onChange={(v) => setEditForm((x) => ({ ...x, isMain: v }))}
-                  label="Main branch"
-                  hint="Mark as the primary branch for this company"
-                />
-
-                <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 4 }}>
-                  <Btn variant="ghost" onClick={closeEdit} disabled={editSaving}>
-                    Discard
-                  </Btn>
-                  <Btn variant="primary" onClick={() => saveEdit(id)} disabled={editSaving}>
-                    {editSaving ? "Saving…" : "Save changes"}
-                  </Btn>
-                </div>
+            {expanded && canEdit && (
+              <div className="ob-inner-card-body" style={{ borderTop: "1px solid #e2e8f0", display: "flex", flexDirection: "column", gap: 16 }}>
+                {Object.values(editErrors).filter(Boolean).map((m) => <Alert key={m} tone="danger" title="Validation" message={m!} />)}
+                <BranchForm value={editForm} errors={editErrors} onChange={setEditForm} />
+                <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn variant="primary" onClick={() => void saveEdit(branchId)} disabled={editSaving || props.saving}>{editSaving ? "Saving…" : "Save branch"}</Btn></div>
               </div>
             )}
+
+            {!canEdit && active && <BranchReadonly branch={branch} />}
           </div>
         );
       })}
 
-      {/* ── Add new branch (collapsible) ──────────────────────────────────── */}
-      <div style={{
-        border: "1px dashed #cbd5e1", borderRadius: 12,
-        overflow: "hidden", background: "#fff",
-      }}>
-        <button type="button" onClick={() => setShowCreate((v) => !v)}
-          style={{
-            width: "100%", display: "flex", alignItems: "center",
-            justifyContent: "space-between", padding: "12px 16px",
-            background: "none", border: "none", cursor: "pointer",
-            borderBottom: showCreate ? "1px solid #e2e8f0" : "none",
-          }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{
-              width: 28, height: 28, borderRadius: 8,
-              background: "#f0fdf4", border: "1px solid #bbf7d0",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 16, color: "#16a34a", flexShrink: 0,
-            }}>+</span>
-            <div style={{ textAlign: "left" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>
-                Add new branch
-              </div>
-              <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>
-                Create a new branch with its own locations and stores
-              </div>
+      {props.access.canCreateBranch && (
+        <div className="ob-inner-card">
+          <button type="button" onClick={() => setShowCreate((v) => !v)} style={{ width: "100%", padding: 14, background: "transparent", border: "none", textAlign: "left", cursor: "pointer" }}>
+            <strong>{showCreate ? "Close branch form" : "+ Add branch"}</strong>
+            <div style={{ color: "#64748b", fontSize: 12, marginTop: 3 }}>A branch can have assigned stock locations and one or more POS/stores.</div>
+          </button>
+          {showCreate && (
+            <div className="ob-inner-card-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {Object.values(createErrors).filter(Boolean).map((m) => <Alert key={m} tone="danger" title="Validation" message={m!} />)}
+              <BranchForm value={createForm} errors={createErrors} onChange={setCreateForm} />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn variant="primary" onClick={() => void createBranch()} disabled={createSaving || props.saving || !props.companyId}>{createSaving ? "Creating…" : "Create branch"}</Btn></div>
             </div>
-          </div>
-          <span style={{ fontSize: 12, color: "#94a3b8" }}>{showCreate ? "▲" : "▼"}</span>
-        </button>
-
-        {showCreate && (
-          <div style={{ padding: "20px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
-            {createErrors.code && (
-              <Alert tone="danger" title="Validation" message={createErrors.code} />
-            )}
-            {createErrors.name && (
-              <Alert tone="danger" title="Validation" message={createErrors.name} />
-            )}
-
-            <div className="ob-grid-2">
-              <Field label="Branch code" required hint="Short identifier e.g. BOLE-01">
-                <Input value={String(createForm.code ?? "")}
-                  onChange={(v) => setCreateForm((x) => ({ ...x, code: v.toUpperCase() }))}
-                  placeholder="BOLE-01" />
-              </Field>
-              <Field label="Branch name" required>
-                <Input value={String(createForm.name ?? "")}
-                  onChange={(v) => setCreateForm((x) => ({ ...x, name: v }))}
-                  placeholder="Bole Branch" />
-              </Field>
-              <Field label="Region">
-                <Input value={String(createForm.region ?? "")}
-                  onChange={(v) => setCreateForm((x) => ({ ...x, region: v }))}
-                  placeholder="Oromia" />
-              </Field>
-              <Field label="City">
-                <Input value={String(createForm.city ?? "")}
-                  onChange={(v) => setCreateForm((x) => ({ ...x, city: v }))}
-                  placeholder="Addis Ababa" />
-              </Field>
-            </div>
-
-            <Field label="Address">
-              <TextArea value={String(createForm.addressLine ?? "")}
-                onChange={(v) => setCreateForm((x) => ({ ...x, addressLine: v }))}
-                placeholder="Street / Building / Landmark…" rows={2} />
-            </Field>
-
-            <Checkbox
-              checked={!!createForm.isMain}
-              onChange={(v) => setCreateForm((x) => ({ ...x, isMain: v }))}
-              label="Main branch"
-              hint="Mark as the primary branch for this company"
-            />
-
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Btn variant="primary" onClick={create} disabled={props.saving}>
-                {props.saving ? "Creating…" : "Create branch"}
-              </Btn>
-            </div>
-          </div>
-        )}
-      </div>
-
+          )}
+        </div>
+      )}
     </div>
   );
 }

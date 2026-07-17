@@ -1,15 +1,17 @@
 ﻿// src/modules/security/components/UserForm.tsx
 
 import { useEffect, useMemo, useState } from "react";
+import { useAppScope } from "../../../app/useAppScope";
 import { securityApi } from "../api/securityApi";
 import type {
   CreateSecurityUserRequest,
   EmployeeOption,
+  RoleDto,
   StockLocationOption,
+  StoreOption,
   UpdateSecurityUserRequest,
   UserDto,
 } from "../api/securityApi";
-import { useAppScope } from "../../../app/useAppScope";
 
 type Props = {
   mode: "create" | "edit";
@@ -21,81 +23,173 @@ type Props = {
   busy?: boolean;
 };
 
-const ROLE_OPTIONS = [
-  "Admin",
-  "CompanyAdmin",
-  "Manager",
-  "FNBController",
-  "StoreKeeper",
-  "Chef",
-  "BarMan",
-  "Cashier",
-  "Waiter",
-  "HR",
-  "Finance",
-  "SystemAdmin",
-] as const;
-
-const REQUESTER_ROLES = new Set<string>(["Chef", "BarMan"]);
-
-const LOCATION_REQUIRED_ROLES = new Set<string>([
-  "Chef",
-  "BarMan",
-  "StoreKeeper",
-  "FNBController",
+const INVENTORY_ROLE_VALUES = new Set<string>([
+  "CHEF",
+  "BARMAN",
+  "STOREKEEPER",
+  "FNBCONTROLLER",
+  "INVENTORYCONTROLLER",
+  "WAREHOUSEMANAGER",
 ]);
 
-function rolesOf(user?: UserDto): string[] {
-  return (((user as any)?.roles ?? (user as any)?.roleNames ?? []) as string[])
-    .filter(Boolean)
-    .map(String);
+function cleanText(value: unknown): string {
+  return String(value ?? "").trim();
 }
 
-function hasSystemAdmin(roles: string[]): boolean {
-  return roles.some((role) => role.toLowerCase() === "systemadmin");
+function normalizeRoleValue(value: unknown): string {
+  return cleanText(value).toUpperCase();
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values.map(cleanText).filter(Boolean))];
+}
+
+function uniqueRoleValues(values: unknown[]): string[] {
+  return [...new Set(values.map(normalizeRoleValue).filter(Boolean))];
+}
+
+function toArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return unique(value.map((item) => String(item ?? "")));
+}
+
+function getRoleValue(role: RoleDto): string {
+  return normalizeRoleValue(
+    (role as any).value ??
+      (role as any).normalizedName ??
+      ""
+  );
+}
+
+function getRoleNameValue(role: RoleDto): string {
+  return normalizeRoleValue((role as any).name);
+}
+
+function getRoleDisplayName(role: RoleDto): string {
+  return cleanText(
+    (role as any).displayName ??
+      (role as any).name ??
+      (role as any).normalizedName ??
+      (role as any).value ??
+      "Role"
+  );
+}
+
+function getRoleDescription(role: RoleDto): string | null {
+  const description = cleanText((role as any).description);
+  return description || null;
+}
+
+function isRoleActive(role: RoleDto): boolean {
+  return (role as any).isActive !== false;
+}
+
+function isSystemRole(role: RoleDto): boolean {
+  const value = getRoleValue(role);
+  return Boolean((role as any).isSystem) || value === "SYSTEMADMIN";
+}
+
+function hasRole(roles: string[], roleValue: string): boolean {
+  const value = normalizeRoleValue(roleValue);
+  return roles.some((role) => normalizeRoleValue(role) === value);
+}
+
+function mapInitialRoles(
+  user: UserDto | undefined,
+  availableRoles: RoleDto[]
+): string[] {
+  if (!user || availableRoles.length === 0) return [];
+
+  const rawRoles = (user as any)?.roles ?? (user as any)?.roleNames ?? [];
+
+  if (!Array.isArray(rawRoles)) return [];
+
+  const lookup = new Map<string, string>();
+
+  for (const role of availableRoles) {
+    const value = getRoleValue(role);
+    if (!value) continue;
+
+    lookup.set(value, value);
+
+    const nameValue = getRoleNameValue(role);
+    if (nameValue) lookup.set(nameValue, value);
+  }
+
+  const mapped: string[] = [];
+
+  for (const role of rawRoles) {
+    if (typeof role === "string") {
+      const match = lookup.get(normalizeRoleValue(role));
+
+      if (match) {
+        mapped.push(match);
+      }
+
+      continue;
+    }
+
+    const value = normalizeRoleValue(
+      role?.value ??
+        role?.normalizedName ??
+        role?.name
+    );
+
+    const match = lookup.get(value);
+
+    if (match) {
+      mapped.push(match);
+    }
+  }
+
+  return uniqueRoleValues(mapped);
 }
 
 function normalizeIds(value: unknown): string[] {
-  return Array.isArray(value)
-    ? [...new Set(value.filter(Boolean).map(String))]
-    : [];
+  return toArray(value);
 }
 
-function normalizeRole(role: string): string {
-  return role.trim();
+function getInitialEmployeeId(user?: UserDto): string {
+  return cleanText((user as any)?.employeeId);
+}
+
+function getInitialBranchIds(user?: UserDto): string[] {
+  const branchIds = normalizeIds((user as any)?.branchIds);
+  const branchId = cleanText((user as any)?.branchId);
+
+  if (branchId && !branchIds.includes(branchId)) {
+    return [branchId, ...branchIds];
+  }
+
+  return branchIds;
+}
+
+const EMPTY_GUID = "00000000-0000-0000-0000-000000000000";
+
+function getInitialStoreId(user?: UserDto): string {
+  const id = cleanText((user as any)?.storeId);
+  return id && id.toLowerCase() !== EMPTY_GUID ? id : "";
+}
+
+function getInitialStockLocationIds(user?: UserDto): string[] {
+  return normalizeIds(
+    (user as any)?.stockLocationIds ??
+      (user as any)?.allowedStockLocationIds
+  );
 }
 
 function autoUserName(employee?: EmployeeOption | null): string {
   if (!employee) return "";
 
-  if (employee.employeeCode) {
-    return employee.employeeCode.trim().toLowerCase();
-  }
+  const code = cleanText(employee.employeeCode ?? employee.employeeNo);
+
+  if (code) return code.toLowerCase();
 
   return employee.fullName.trim().toLowerCase().replace(/\s+/g, ".");
 }
 
-function getInitialEmployeeId(user?: UserDto): string {
-  return String((user as any)?.employeeId ?? "");
-}
-
-function getInitialStockLocationId(user?: UserDto): string {
-  return String(
-    (user as any)?.stockLocationId ??
-      (user as any)?.defaultStockLocationId ??
-      ""
-  );
-}
-
-function getInitialAllowedStockLocationIds(user?: UserDto): string[] {
-  return normalizeIds((user as any)?.allowedStockLocationIds);
-}
-
-function getInitialBranchId(user?: UserDto): string | null {
-  return ((user as any)?.branchId ?? null) as string | null;
-}
-
 function isValidEmail(value: string): boolean {
+  if (!value) return true;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
@@ -109,56 +203,112 @@ export default function UserForm({
   const { companyId, branchId } = useAppScope();
   const isCreate = mode === "create";
 
-  const [employeeId, setEmployeeId] = useState("");
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState("");
-  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [employeeId, setEmployeeId] = useState("");
+
+  const [roleOptions, setRoleOptions] = useState<RoleDto[]>([]);
+  const [selectedRoleValues, setSelectedRoleValues] = useState<string[]>([]);
 
   const [stockLocations, setStockLocations] = useState<StockLocationOption[]>(
     []
   );
-  const [stockLocationsLoading, setStockLocationsLoading] = useState(false);
-  const [stockLocationId, setStockLocationId] = useState("");
-  const [allowedStockLocationIds, setAllowedStockLocationIds] = useState<
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [selectedStockLocationIds, setSelectedStockLocationIds] = useState<
     string[]
   >([]);
+
+  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
+  const [storeId, setStoreId] = useState("");
 
   const [userName, setUserName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isActive, setIsActive] = useState(true);
-  const [roles, setRoles] = useState<string[]>([]);
+
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [stockLocationsLoading, setStockLocationsLoading] = useState(false);
+  const [storesLoading, setStoresLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     setEmployeeId(getInitialEmployeeId(initial));
-    setStockLocationId(getInitialStockLocationId(initial));
-    setAllowedStockLocationIds(getInitialAllowedStockLocationIds(initial));
-
     setUserName(initial?.userName ?? "");
     setEmail(initial?.email ?? "");
     setPassword("");
     setIsActive(initial?.isActive ?? true);
-    setRoles(rolesOf(initial));
+    setSelectedRoleValues([]);
+    setSelectedBranchIds(getInitialBranchIds(initial));
+    setStoreId(getInitialStoreId(initial));
+    setSelectedStockLocationIds(getInitialStockLocationIds(initial));
     setError("");
   }, [initial?.id, mode]);
 
-  const isSystemAdmin = hasSystemAdmin(roles);
+  useEffect(() => {
+    if (roleOptions.length === 0) return;
+
+    setSelectedRoleValues(mapInitialRoles(initial, roleOptions));
+  }, [initial?.id, roleOptions]);
 
   const selectedEmployee = useMemo(
     () => employees.find((employee) => employee.id === employeeId) ?? null,
     [employees, employeeId]
   );
 
-  const effectiveBranchId =
-    selectedEmployee?.branchId ??
-    getInitialBranchId(initial) ??
-    branchId ??
-    null;
+  const effectiveBranchIds = useMemo(() => {
+    const employeeBranchId = cleanText(selectedEmployee?.branchId);
 
-  const requiresWarehouseLocation =
-    !isSystemAdmin &&
-    roles.some((role) => LOCATION_REQUIRED_ROLES.has(role));
+    return unique([
+      ...selectedBranchIds,
+      employeeBranchId,
+      branchId ?? "",
+    ]);
+  }, [selectedBranchIds, selectedEmployee?.branchId, branchId]);
+
+  const validRoleValues = useMemo(
+    () => new Set(roleOptions.map(getRoleValue).filter(Boolean)),
+    [roleOptions]
+  );
+
+  const requiresStockLocation = selectedRoleValues.some((roleValue) =>
+    INVENTORY_ROLE_VALUES.has(normalizeRoleValue(roleValue))
+  );
+
+  useEffect(() => {
+    if (!companyId) return;
+
+    const controller = new AbortController();
+
+    async function loadRoles() {
+      try {
+        setRolesLoading(true);
+
+        const rows = await securityApi.listRoles(companyId, controller.signal);
+
+        if (controller.signal.aborted) return;
+
+        const companyRoles = rows
+          .filter(isRoleActive)
+          .filter((role) => !isSystemRole(role))
+          .filter((role) => Boolean(getRoleValue(role)));
+
+        setRoleOptions(companyRoles);
+      } catch {
+        if (!controller.signal.aborted) {
+          setRoleOptions([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setRolesLoading(false);
+        }
+      }
+    }
+
+    void loadRoles();
+
+    return () => controller.abort();
+  }, [companyId]);
 
   useEffect(() => {
     if (!companyId || !isCreate) return;
@@ -175,7 +325,7 @@ export default function UserForm({
             branchId: branchId || undefined,
             q: employeeSearch || undefined,
             page: 1,
-            pageSize: 50,
+            pageSize: 100,
           },
           controller.signal
         );
@@ -203,29 +353,86 @@ export default function UserForm({
   useEffect(() => {
     if (!selectedEmployee || !isCreate) return;
 
-    if (!email && selectedEmployee.email) {
-      setEmail(selectedEmployee.email);
+    const employeeEmail = selectedEmployee.email ?? selectedEmployee.workEmail;
+
+    if (!email && employeeEmail) {
+      setEmail(employeeEmail);
     }
 
     if (!userName) {
       setUserName(autoUserName(selectedEmployee));
     }
+
+    if (selectedEmployee.branchId) {
+      setSelectedBranchIds((current) =>
+        unique([...current, selectedEmployee.branchId!])
+      );
+    }
   }, [selectedEmployee, isCreate, email, userName]);
 
   useEffect(() => {
     if (!companyId) return;
-    if (!effectiveBranchId && !isSystemAdmin) return;
 
     const controller = new AbortController();
 
-    async function loadLocations() {
+    async function loadStores() {
+      try {
+        setStoresLoading(true);
+
+        const rows = await securityApi.listStores(
+          companyId,
+          {
+            branchId:
+              effectiveBranchIds.length === 1
+                ? effectiveBranchIds[0]
+                : undefined,
+            isActive: true,
+            page: 1,
+            pageSize: 100,
+          },
+          controller.signal
+        );
+
+        if (!controller.signal.aborted) {
+          setStores(rows);
+
+          setStoreId((current) => {
+            if (!current) return "";
+            return rows.some((store) => store.id === current) ? current : "";
+          });
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setStores([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setStoresLoading(false);
+        }
+      }
+    }
+
+    void loadStores();
+
+    return () => controller.abort();
+  }, [companyId, effectiveBranchIds.join("|")]);
+
+  useEffect(() => {
+    if (!companyId) return;
+
+    const controller = new AbortController();
+
+    async function loadStockLocations() {
       try {
         setStockLocationsLoading(true);
 
         const rows = await securityApi.listStockLocations(
           companyId,
           {
-            branchId: effectiveBranchId || undefined,
+            branchId:
+              effectiveBranchIds.length === 1
+                ? effectiveBranchIds[0]
+                : undefined,
             isActive: true,
             page: 1,
             pageSize: 100,
@@ -247,60 +454,58 @@ export default function UserForm({
       }
     }
 
-    void loadLocations();
+    void loadStockLocations();
 
     return () => controller.abort();
-  }, [companyId, effectiveBranchId, isSystemAdmin]);
+  }, [companyId, effectiveBranchIds.join("|")]);
 
-  useEffect(() => {
-    if (!stockLocationId) return;
+  function toggleRole(role: RoleDto) {
+    const value = getRoleValue(role);
 
-    setAllowedStockLocationIds((current) =>
-      current.includes(stockLocationId)
-        ? current
-        : [...current, stockLocationId]
-    );
-  }, [stockLocationId]);
+    if (!value || value === "SYSTEMADMIN") return;
 
-  function toggleRole(role: string) {
-    const normalized = normalizeRole(role);
+    setSelectedRoleValues((current) => {
+      const exists = hasRole(current, value);
 
-    setRoles((current) => {
-      if (normalized === "SystemAdmin") {
-        return current.includes("SystemAdmin") ? [] : ["SystemAdmin"];
-      }
-
-      const withoutSystemAdmin = current.filter(
-        (item) => item !== "SystemAdmin"
-      );
-
-      return withoutSystemAdmin.includes(normalized)
-        ? withoutSystemAdmin.filter((item) => item !== normalized)
-        : [...withoutSystemAdmin, normalized];
+      return exists
+        ? uniqueRoleValues(
+            current.filter(
+              (item) => normalizeRoleValue(item) !== normalizeRoleValue(value)
+            )
+          )
+        : uniqueRoleValues([...current, value]);
     });
   }
 
-  function toggleAllowedLocation(id: string) {
-    setAllowedStockLocationIds((current) =>
+  function toggleStockLocation(id: string) {
+    setSelectedStockLocationIds((current) =>
       current.includes(id)
         ? current.filter((item) => item !== id)
-        : [...current, id]
+        : unique([...current, id])
     );
   }
 
   async function submit() {
     setError("");
 
-    const cleanUserName = userName.trim();
-    const cleanEmail = email.trim();
-    const cleanPassword = password.trim();
-
     if (!companyId) {
       setError("Company context is missing.");
       return;
     }
 
-    if (isCreate && !isSystemAdmin && !employeeId) {
+    const cleanEmployeeId = employeeId || getInitialEmployeeId(initial);
+    const cleanUserName = userName.trim();
+    const cleanEmail = email.trim();
+    const cleanPassword = password.trim();
+
+    const finalBranchIds = unique(effectiveBranchIds);
+    const finalStockLocationIds = unique(selectedStockLocationIds);
+
+    const finalRoles = uniqueRoleValues(selectedRoleValues).filter((role) =>
+      validRoleValues.has(role)
+    );
+
+    if (isCreate && !cleanEmployeeId) {
       setError("Employee selection is required.");
       return;
     }
@@ -310,69 +515,40 @@ export default function UserForm({
       return;
     }
 
-    if (!cleanEmail) {
-      setError("Email is required.");
-      return;
-    }
-
-    if (!isValidEmail(cleanEmail)) {
+    if (cleanEmail && !isValidEmail(cleanEmail)) {
       setError("Please enter a valid email address.");
       return;
     }
 
-    if (isCreate && cleanPassword.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (isCreate && cleanPassword.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
 
-    if (roles.length === 0) {
-      setError("At least one role is required.");
+    if (finalBranchIds.length === 0) {
+      setError("At least one branch assignment is required.");
       return;
     }
 
-    if (requiresWarehouseLocation && !stockLocationId) {
-      setError(
-        "Default stock location is required for warehouse request users."
-      );
+    if (finalRoles.length === 0) {
+      setError("At least one valid role is required.");
       return;
     }
 
-    const finalEmployeeId = isSystemAdmin
-      ? null
-      : employeeId || getInitialEmployeeId(initial) || null;
+    if (requiresStockLocation && finalStockLocationIds.length === 0) {
+      setError("At least one stock location is required for the selected role.");
+      return;
+    }
 
-    const finalStockLocationId = isSystemAdmin
-      ? null
-      : stockLocationId || getInitialStockLocationId(initial) || null;
-
-    const finalBranchId = isSystemAdmin ? null : effectiveBranchId;
-
-    const finalAllowedLocations = isSystemAdmin
-      ? []
-      : [
-          ...new Set(
-            [
-              finalStockLocationId,
-              ...allowedStockLocationIds,
-            ].filter(Boolean) as string[]
-          ),
-        ];
-
-    const commonPayload = {
-      employeeId: finalEmployeeId,
+    const commonPayload: UpdateSecurityUserRequest = {
+      employeeId: cleanEmployeeId,
       userName: cleanUserName,
-      email: cleanEmail,
-      roles,
-      roleNames: roles,
+      ...(cleanEmail ? { email: cleanEmail } : {}),
       isActive,
-      branchId: finalBranchId,
-      stockLocationId: finalStockLocationId,
-      allowedStockLocationIds: finalAllowedLocations,
-      canSubmitWarehouseRequests:
-        !isSystemAdmin && roles.some((role) => REQUESTER_ROLES.has(role)),
-      canApproveWarehouseRequests:
-        !isSystemAdmin && roles.includes("FNBController"),
-      canIssueStock: !isSystemAdmin && roles.includes("StoreKeeper"),
+      ...(storeId ? { storeId } : {}),
+      branchIds: finalBranchIds,
+      stockLocationIds: finalStockLocationIds,
+      roles: finalRoles,
     };
 
     const dto: CreateSecurityUserRequest | UpdateSecurityUserRequest = isCreate
@@ -390,14 +566,12 @@ export default function UserForm({
       <div className="lux-form__header">
         <div>
           <div className="lux-kicker">Identity & Operations Access</div>
-
           <h2 className="lux-form__title">
             {isCreate ? "Create ERP User" : "Edit ERP User"}
           </h2>
-
           <p className="lux-form__subtitle">
-            Link login access to employee context, branch scope, stock
-            location, and warehouse authority.
+            Link the login account to employee context, branches, stock
+            locations, and ERP roles.
           </p>
         </div>
       </div>
@@ -420,18 +594,17 @@ export default function UserForm({
                 value={employeeSearch}
                 onChange={(event) => setEmployeeSearch(event.target.value)}
                 placeholder="Search by name, code, email…"
-                disabled={busy || isSystemAdmin}
+                disabled={busy}
               />
             </label>
 
             <label className="lux-label">
-              Employee{" "}
-              {!isSystemAdmin && <span className="lux-required">*</span>}
+              Employee <span className="lux-required">*</span>
               <select
                 className="lux-input"
                 value={employeeId}
                 onChange={(event) => setEmployeeId(event.target.value)}
-                disabled={busy || employeesLoading || isSystemAdmin}
+                disabled={busy || employeesLoading}
               >
                 <option value="">
                   {employeesLoading
@@ -441,8 +614,8 @@ export default function UserForm({
 
                 {employees.map((employee) => (
                   <option key={employee.id} value={employee.id}>
-                    {employee.employeeCode
-                      ? `${employee.employeeCode} · `
+                    {employee.employeeCode || employee.employeeNo
+                      ? `${employee.employeeCode ?? employee.employeeNo} · `
                       : ""}
                     {employee.fullName}
                     {employee.departmentName
@@ -454,18 +627,25 @@ export default function UserForm({
               </select>
             </label>
 
+            {!employeesLoading && employees.length === 0 && (
+              <div className="lux-hint">
+                No available employees found. Employees already linked to users
+                may not appear here.
+              </div>
+            )}
+
             {selectedEmployee && (
               <div className="lux-employeeCard">
                 <div className="lux-employeeCard__name">
                   {selectedEmployee.fullName}
                 </div>
-
                 <div className="lux-employeeCard__meta">
-                  {selectedEmployee.employeeCode ?? "—"} ·{" "}
-                  {selectedEmployee.branchName ?? "No branch"} ·{" "}
+                  {selectedEmployee.employeeCode ??
+                    selectedEmployee.employeeNo ??
+                    "—"}{" "}
+                  · {selectedEmployee.branchName ?? "No branch"} ·{" "}
                   {selectedEmployee.departmentName ?? "No department"}
                 </div>
-
                 <div className="lux-employeeCard__meta">
                   Position: {selectedEmployee.positionName ?? "—"}
                 </div>
@@ -489,7 +669,7 @@ export default function UserForm({
           </label>
 
           <label className="lux-label">
-            Email <span className="lux-required">*</span>
+            Email
             <input
               className="lux-input"
               type="email"
@@ -508,7 +688,7 @@ export default function UserForm({
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Minimum 6 characters"
+                placeholder="Minimum 8 characters"
                 disabled={busy}
               />
             </label>
@@ -529,83 +709,113 @@ export default function UserForm({
       <section className="lux-panel" style={{ marginTop: 16 }}>
         <div className="lux-panel__title">Roles & Approval Authority</div>
 
+        {rolesLoading && <div className="lux-muted">Loading roles…</div>}
+
+        {!rolesLoading && roleOptions.length === 0 && (
+          <div className="lux-alert lux-alert--warning">
+            No active company roles found. Configure roles before creating
+            users.
+          </div>
+        )}
+
         <div className="lux-roleGrid">
-          {ROLE_OPTIONS.map((role) => (
-            <label key={role} className="lux-rolePill">
+          {roleOptions.map((role) => {
+            const value = getRoleValue(role);
+            const displayName = getRoleDisplayName(role);
+            const description = getRoleDescription(role);
+
+            return (
+              <label key={(role as any).id ?? value} className="lux-rolePill">
+                <input
+                  type="checkbox"
+                  value={value}
+                  checked={hasRole(selectedRoleValues, value)}
+                  onChange={() => toggleRole(role)}
+                  disabled={busy || rolesLoading}
+                />
+                <span title={description ?? value}>{displayName}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="lux-hint" style={{ marginTop: 10 }}>
+          Display names are shown for users, but only valid normalized backend
+          role values are submitted.
+        </div>
+      </section>
+
+      <section className="lux-panel" style={{ marginTop: 16 }}>
+        <div className="lux-panel__title">Organization & Stock Access</div>
+
+        <div className="lux-hint" style={{ marginBottom: 10 }}>
+          Branch assignments are derived from the selected employee and active
+          company scope. Stock locations are only required for inventory-related
+          roles.
+        </div>
+
+        <label className="lux-label">
+          Store / POS
+          <select
+            className="lux-input"
+            value={storeId}
+            onChange={(event) => setStoreId(event.target.value)}
+            disabled={busy || storesLoading}
+          >
+            <option value="">
+              {storesLoading ? "Loading stores…" : "— Select Store / POS —"}
+            </option>
+
+            {stores.map((store) => (
+              <option key={store.id} value={store.id}>
+                {store.code ? `${store.code} · ` : ""}
+                {store.name}
+                {store.branchName ? ` · ${store.branchName}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {!storesLoading && stores.length === 0 && (
+          <div className="lux-hint">
+            No active Store / POS records found for the current company or branch.
+          </div>
+        )}
+
+        <div className="lux-label">
+          Stock Locations{" "}
+          {requiresStockLocation && <span className="lux-required">*</span>}
+        </div>
+
+        {stockLocationsLoading && (
+          <div className="lux-muted">Loading stock locations…</div>
+        )}
+
+        <div className="lux-roleGrid">
+          {stockLocations.map((location) => (
+            <label key={location.id} className="lux-rolePill">
               <input
                 type="checkbox"
-                checked={roles.includes(role)}
-                onChange={() => toggleRole(role)}
+                value={location.name}
+                checked={selectedStockLocationIds.includes(location.id)}
+                onChange={() => toggleStockLocation(location.id)}
                 disabled={busy}
               />
-              <span>{role}</span>
+              <span>
+                {location.code ? `${location.code} · ` : ""}
+                {location.name}
+                {location.branchName ? ` · ${location.branchName}` : ""}
+              </span>
             </label>
           ))}
         </div>
 
-        <div className="lux-hint" style={{ marginTop: 10 }}>
-          Chef/BarMan submit requests. FNBController approves. StoreKeeper
-          issues stock. SystemAdmin is a technical platform account.
-        </div>
+        {!stockLocationsLoading && stockLocations.length === 0 && (
+          <div className="lux-hint">
+            No active stock locations found for the current company or branch.
+          </div>
+        )}
       </section>
-
-      {!isSystemAdmin && (
-        <section className="lux-panel" style={{ marginTop: 16 }}>
-          <div className="lux-panel__title">Warehouse Request Access</div>
-
-          <label className="lux-label">
-            Default Stock Location{" "}
-            {requiresWarehouseLocation && (
-              <span className="lux-required">*</span>
-            )}
-            <select
-              className="lux-input"
-              value={stockLocationId}
-              onChange={(event) => setStockLocationId(event.target.value)}
-              disabled={busy || stockLocationsLoading}
-            >
-              <option value="">
-                {stockLocationsLoading
-                  ? "Loading stock locations…"
-                  : "— Select default stock location —"}
-              </option>
-
-              {stockLocations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.code ? `${location.code} · ` : ""}
-                  {location.name}
-                  {location.branchName ? ` · ${location.branchName}` : ""}
-                  {location.locationType ? ` · ${location.locationType}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="lux-label">Allowed Stock Locations</div>
-
-          <div className="lux-roleGrid">
-            {stockLocations.map((location) => (
-              <label key={location.id} className="lux-rolePill">
-                <input
-                  type="checkbox"
-                  checked={allowedStockLocationIds.includes(location.id)}
-                  onChange={() => toggleAllowedLocation(location.id)}
-                  disabled={busy}
-                />
-                <span>
-                  {location.code ? `${location.code} · ` : ""}
-                  {location.name}
-                </span>
-              </label>
-            ))}
-          </div>
-
-          <div className="lux-hint" style={{ marginTop: 10 }}>
-            Allowed locations control where this user can request, approve, or
-            issue stock.
-          </div>
-        </section>
-      )}
 
       <div className="lux-form__actions">
         <button
@@ -621,7 +831,7 @@ export default function UserForm({
           className="lux-btn lux-btn--primary"
           type="button"
           onClick={submit}
-          disabled={busy}
+          disabled={busy || rolesLoading}
         >
           {busy ? "Saving…" : isCreate ? "Create User" : "Save Changes"}
         </button>

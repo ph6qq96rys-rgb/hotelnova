@@ -1,6 +1,9 @@
-import type { ReactNode } from "react";
+// src/features/pos/components/posUi.tsx
 
-export const money = (n: number | null | undefined) => `$${Number(n || 0).toFixed(2)}`;
+import type { CSSProperties, ReactNode } from "react";
+
+export const money = (n: number | null | undefined) =>
+  `${Number(n || 0).toFixed(2)} ETB`;
 
 export function Spinner() {
   return (
@@ -25,24 +28,47 @@ export function Button({
   disabled = false,
   loading = false,
   style,
+  className,
+  title,
 }: {
   children: ReactNode;
   onClick?: () => void;
   variant?: "ghost" | "gold" | "danger" | "green";
   disabled?: boolean;
   loading?: boolean;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
+  className?: string;
+  title?: string;
 }) {
   const variants = {
-    ghost: { background: "#1F1F23", color: "#A1A09A", border: "1px solid rgba(255,255,255,0.08)" },
-    gold: { background: "#D4A853", color: "#000", border: "1px solid #D4A853" },
-    danger: { background: "rgba(248,113,113,.12)", color: "#F87171", border: "1px solid rgba(248,113,113,.25)" },
-    green: { background: "rgba(74,222,128,.12)", color: "#4ADE80", border: "1px solid rgba(74,222,128,.25)" },
+    ghost: {
+      background: "#1F1F23",
+      color: "#A1A09A",
+      border: "1px solid rgba(255,255,255,0.08)",
+    },
+    gold: {
+      background: "#D4A853",
+      color: "#000",
+      border: "1px solid #D4A853",
+    },
+    danger: {
+      background: "rgba(248,113,113,.12)",
+      color: "#F87171",
+      border: "1px solid rgba(248,113,113,.25)",
+    },
+    green: {
+      background: "rgba(74,222,128,.12)",
+      color: "#4ADE80",
+      border: "1px solid rgba(74,222,128,.25)",
+    },
   } as const;
 
   return (
     <button
       type="button"
+      className={className}
+      title={title}
+      disabled={disabled || loading}
       onClick={!disabled && !loading ? onClick : undefined}
       style={{
         display: "inline-flex",
@@ -65,9 +91,21 @@ export function Button({
   );
 }
 
-export function Card({ children, style }: { children: ReactNode; style?: React.CSSProperties }) {
+export function Card({
+  children,
+  style,
+  className,
+  title,
+}: {
+  children: ReactNode;
+  style?: CSSProperties;
+  className?: string;
+  title?: string;
+}) {
   return (
     <section
+      className={className}
+      title={title}
       style={{
         background: "#18181B",
         border: "1px solid rgba(255,255,255,0.07)",
@@ -81,40 +119,102 @@ export function Card({ children, style }: { children: ReactNode; style?: React.C
   );
 }
 
-export function Pill({ children, tone = "muted" }: { children: ReactNode; tone?: "muted" | "green" | "gold" | "danger" }) {
+export function Pill({
+  children,
+  tone = "muted",
+}: {
+  children: ReactNode;
+  tone?: "muted" | "green" | "gold" | "danger" | "red";
+}) {
   const tones = {
     muted: { background: "#27272C", color: "#A1A09A" },
     green: { background: "rgba(74,222,128,.12)", color: "#4ADE80" },
     gold: { background: "rgba(212,168,83,.12)", color: "#D4A853" },
     danger: { background: "rgba(248,113,113,.12)", color: "#F87171" },
+    red: { background: "rgba(248,113,113,.12)", color: "#F87171" },
   };
-  return <span style={{ borderRadius: 999, padding: "3px 9px", fontSize: 11, fontWeight: 700, ...tones[tone] }}>{children}</span>;
+
+  return (
+    <span
+      style={{
+        borderRadius: 999,
+        padding: "3px 9px",
+        fontSize: 11,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+        ...tones[tone],
+      }}
+    >
+      {children}
+    </span>
+  );
 }
 
-export function Field({ label, value, accent = false }: { label: string; value: ReactNode; accent?: boolean }) {
+export function Field({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: ReactNode;
+  accent?: boolean;
+}) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 12,
+        padding: "9px 0",
+        borderBottom: "1px solid rgba(255,255,255,.06)",
+      }}
+    >
       <span style={{ color: "#71717A", fontSize: 12 }}>{label}</span>
-      <strong style={{ color: accent ? "#D4A853" : "#FAFAF9", fontSize: 13, textAlign: "right" }}>{value}</strong>
+      <strong
+        style={{
+          color: accent ? "#D4A853" : "#FAFAF9",
+          fontSize: 13,
+          textAlign: "right",
+        }}
+      >
+        {value}
+      </strong>
     </div>
   );
 }
 
-export function EmptyState({ title, detail }: { title: string; detail?: string }) {
+export function EmptyState({
+  title,
+  detail,
+}: {
+  title: string;
+  detail?: string;
+}) {
   return (
     <div style={{ textAlign: "center", padding: 36, color: "#71717A" }}>
-      <div style={{ fontSize: 15, color: "#FAFAF9", marginBottom: 6 }}>{title}</div>
-      {detail && <div style={{ fontSize: 13, lineHeight: 1.5 }}>{detail}</div>}
+      <div style={{ fontSize: 15, color: "#FAFAF9", marginBottom: 6 }}>
+        {title}
+      </div>
+      {detail && (
+        <div style={{ fontSize: 13, lineHeight: 1.5 }}>{detail}</div>
+      )}
     </div>
   );
 }
 
 export function ensurePosStyles() {
+  if (typeof document === "undefined") return;
   if (document.getElementById("erp-pos-styles")) return;
+
   const el = document.createElement("style");
   el.id = "erp-pos-styles";
   el.textContent = `
-    @keyframes hn-spin { to { transform: rotate(360deg); } }
+    @keyframes hn-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
     .erp-pos-input {
       width: 100%;
       box-sizing: border-box;
@@ -126,6 +226,16 @@ export function ensurePosStyles() {
       outline: none;
       font-family: inherit;
     }
+
+    .erp-pos-input:focus {
+      border-color: rgba(212,168,83,.7);
+      box-shadow: 0 0 0 3px rgba(212,168,83,.12);
+    }
+
+    .erp-pos-input::placeholder {
+      color: #71717A;
+    }
+
     .erp-pos-label {
       display: block;
       color: #71717A;
@@ -133,7 +243,13 @@ export function ensurePosStyles() {
       text-transform: uppercase;
       letter-spacing: .08em;
       margin-bottom: 6px;
+      margin-top: 10px;
+    }
+
+    button {
+      font-family: inherit;
     }
   `;
+
   document.head.appendChild(el);
 }

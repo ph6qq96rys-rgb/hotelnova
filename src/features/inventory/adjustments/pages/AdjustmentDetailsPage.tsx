@@ -14,11 +14,14 @@ import {
   STATUS_BADGE,
 } from "../utils/adjustmentWorkflow";
 
+type ConfirmAction = "reject" | "reverse" | null;
+
+const CURRENCY = "ETB";
+
 function fmtDate(value?: string | null): string {
   if (!value) return "—";
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleDateString(undefined, {
@@ -28,8 +31,23 @@ function fmtDate(value?: string | null): string {
   });
 }
 
+function fmtDateTime(value?: string | null): string {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function fmtMoney(value?: number | null): string {
-  return `ETB ${Number(value ?? 0).toLocaleString(undefined, {
+  return `${CURRENCY} ${Number(value ?? 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -42,19 +60,103 @@ function fmtQty(value?: number | null): string {
   });
 }
 
+function signedQty(value: number): string {
+  return `${value > 0 ? "+" : ""}${fmtQty(value)}`;
+}
+
+function signedMoney(value: number): string {
+  return `${value > 0 ? "+" : value < 0 ? "-" : ""}${fmtMoney(Math.abs(value))}`;
+}
+
+function normalizeText(value?: string | null): string {
+  return String(value ?? "").trim();
+}
+
+function friendlyStatus(status: string): string {
+  switch (status) {
+    case "Draft":
+      return "Draft";
+    case "Submitted":
+      return "Waiting for Approval";
+    case "Approved":
+      return "Approved · Ready to Post";
+    case "Posted":
+      return "Posted to Inventory";
+    case "Rejected":
+      return "Rejected";
+    case "Reversed":
+      return "Reversed";
+    default:
+      return status || "Unknown";
+  }
+}
+
+function statusMessage(status: string): string {
+  switch (status) {
+    case "Draft":
+      return "This adjustment is still editable and has not entered approval.";
+    case "Submitted":
+      return "This adjustment is waiting for manager review.";
+    case "Approved":
+      return "This adjustment is approved and ready to update stock.";
+    case "Posted":
+      return "Inventory balances have been updated.";
+    case "Rejected":
+      return "This adjustment was rejected and cannot be posted.";
+    case "Reversed":
+      return "This adjustment has been reversed with counter entries.";
+    default:
+      return "Review the adjustment workflow status.";
+  }
+}
+
+function friendlyAdjustmentType(value?: string | null): string {
+  const type = normalizeText(value).toLowerCase();
+
+  if (type.includes("count")) return "Stock Count Adjustment";
+  if (type.includes("increase")) return "Stock Increase";
+  if (type.includes("decrease")) return "Stock Decrease";
+  if (type.includes("damage")) return "Damage / Write-off";
+  if (type.includes("expiry")) return "Expired Stock Write-off";
+
+  return value || "Inventory Adjustment";
+}
+
+function impactText(value: number): string {
+  if (value > 0) return "Inventory value increased";
+  if (value < 0) return "Inventory value decreased";
+  return "No inventory value change";
+}
+
+function qtyImpactText(value: number): string {
+  if (value > 0) return "More stock than expected";
+  if (value < 0) return "Less stock than expected";
+  return "No quantity difference";
+}
+
+function valueTone(value: number): string {
+  if (value > 0) return "var(--success)";
+  if (value < 0) return "var(--danger)";
+  return "var(--text)";
+}
+
 function InfoField({
   label,
   value,
+  wide,
 }: {
   label: string;
   value?: string | null;
+  wide?: boolean;
 }) {
   return (
-    <div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2 }}>
+    <div style={{ gridColumn: wide ? "span 2" : undefined }}>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 3 }}>
         {label}
       </div>
-      <div style={{ fontSize: 13, fontWeight: 500 }}>{value || "—"}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
+        {value || "—"}
+      </div>
     </div>
   );
 }
@@ -83,79 +185,67 @@ function ConfirmModal({
   const [text, setText] = useState("");
 
   return (
-    <div
-      style={{
-        background: "rgba(0,0,0,.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "40px 20px",
-      }}
-    >
+    <div className="page">
       <div
         style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--r-lg)",
+          minHeight: "60vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
           padding: 24,
-          width: "100%",
-          maxWidth: 420,
         }}
       >
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>
-          {title}
-        </div>
-
-        <div
-          style={{
-            fontSize: 13,
-            color: "var(--text-muted)",
-            marginBottom: 14,
-          }}
-        >
-          {body}
-        </div>
-
-        <textarea
+        <section
+          className="card"
           style={{
             width: "100%",
-            minHeight: 80,
-            fontSize: 13,
-            padding: "8px 10px",
-            borderRadius: "var(--r)",
-            border: "1px solid var(--border)",
-            background: "var(--surface-2)",
-            color: "var(--text)",
-            resize: "vertical",
-            marginBottom: 16,
-            fontFamily: "inherit",
-            boxSizing: "border-box",
+            maxWidth: 480,
+            padding: 24,
           }}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={placeholder}
-          autoFocus
-        />
+        >
+          <h2 style={{ margin: 0, marginBottom: 8, fontSize: 18 }}>{title}</h2>
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button
-            type="button"
-            className="btn"
+          <p style={{ margin: 0, marginBottom: 16, color: "var(--text-muted)", fontSize: 13 }}>
+            {body}
+          </p>
+
+          <textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={placeholder}
             disabled={working}
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
+            autoFocus
+            style={{
+              width: "100%",
+              minHeight: 96,
+              resize: "vertical",
+              boxSizing: "border-box",
+              padding: "10px 12px",
+              borderRadius: "var(--r)",
+              border: "1px solid var(--border)",
+              background: "var(--surface-2)",
+              color: "var(--text)",
+              fontFamily: "inherit",
+              fontSize: 13,
+              marginBottom: 16,
+            }}
+          />
 
-          <button
-            type="button"
-            className={danger ? "btn btn-danger" : "btn btn-primary"}
-            disabled={working || (requireText && !text.trim())}
-            onClick={() => onConfirm(text.trim())}
-          >
-            {working ? "Working…" : confirmLabel}
-          </button>
-        </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button type="button" className="btn" disabled={working} onClick={onCancel}>
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              className={danger ? "btn btn-danger" : "btn btn-primary"}
+              disabled={working || (requireText && !text.trim())}
+              onClick={() => onConfirm(text.trim())}
+            >
+              {working ? "Working…" : confirmLabel}
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -164,13 +254,12 @@ function ConfirmModal({
 export default function AdjustmentDetailsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-
   const { adjustmentId } = useParams<{ adjustmentId: string }>();
   const { companyId, branchId } = useAppScope();
 
   const [working, setWorking] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [modal, setModal] = useState<"reject" | "reverse" | null>(null);
+  const [modal, setModal] = useState<ConfirmAction>(null);
 
   const adjustmentBasePath = companyId
     ? `/companies/${companyId}/inventory/adjustments`
@@ -178,7 +267,7 @@ export default function AdjustmentDetailsPage() {
 
   const queryKey = useMemo(
     () => ["inventory-adjustment", companyId, branchId, adjustmentId] as const,
-    [companyId, branchId, adjustmentId]
+    [companyId, branchId, adjustmentId],
   );
 
   const {
@@ -198,32 +287,36 @@ export default function AdjustmentDetailsPage() {
       (acc, line) => {
         const adjustmentQty = Number(line.adjustmentQty ?? 0);
         const unitCost = Number(line.unitCost ?? 0);
+        const lineAmount = unitCost * adjustmentQty;
 
         if (adjustmentQty > 0) acc.qtyIn += adjustmentQty;
         if (adjustmentQty < 0) acc.qtyOut += Math.abs(adjustmentQty);
 
-        acc.amount += unitCost * adjustmentQty;
+        acc.netQty += adjustmentQty;
+        acc.valueImpact += lineAmount;
+
+        if (line.isHighVariance) acc.highVarianceLines += 1;
 
         return acc;
       },
       {
         qtyIn: 0,
         qtyOut: 0,
-        amount: 0,
-      }
+        netQty: 0,
+        valueImpact: 0,
+        highVarianceLines: 0,
+      },
     );
   }, [item]);
 
-  const netVariance = totals.qtyIn - totals.qtyOut;
-
   const goBack = useCallback(() => {
-    if (!adjustmentBasePath) return;
-    navigate(adjustmentBasePath);
+    if (adjustmentBasePath) navigate(adjustmentBasePath);
   }, [adjustmentBasePath, navigate]);
 
   const goEdit = useCallback(() => {
-    if (!adjustmentBasePath || !item?.id) return;
-    navigate(`${adjustmentBasePath}/${item.id}/edit`);
+    if (adjustmentBasePath && item?.id) {
+      navigate(`${adjustmentBasePath}/${item.id}/edit`);
+    }
   }, [adjustmentBasePath, item?.id, navigate]);
 
   const invalidateAdjustment = useCallback(async () => {
@@ -245,66 +338,50 @@ export default function AdjustmentDetailsPage() {
         setWorking(false);
       }
     },
-    [invalidateAdjustment]
+    [invalidateAdjustment],
   );
 
   const submitAdjustment = useCallback(() => {
     if (!companyId || !branchId || !item?.id) return;
-
-    void runWorkflowAction(() =>
-      adjustmentApi.submit(companyId, branchId, item.id)
-    );
+    void runWorkflowAction(() => adjustmentApi.submit(companyId, branchId, item.id));
   }, [companyId, branchId, item?.id, runWorkflowAction]);
 
   const approveAdjustment = useCallback(() => {
     if (!companyId || !branchId || !item?.id) return;
-
-    void runWorkflowAction(() =>
-      adjustmentApi.approve(companyId, branchId, item.id)
-    );
+    void runWorkflowAction(() => adjustmentApi.approve(companyId, branchId, item.id));
   }, [companyId, branchId, item?.id, runWorkflowAction]);
 
   const postAdjustment = useCallback(() => {
     if (!companyId || !branchId || !item?.id) return;
-
-    void runWorkflowAction(() =>
-      adjustmentApi.post(companyId, branchId, item.id)
-    );
+    void runWorkflowAction(() => adjustmentApi.post(companyId, branchId, item.id));
   }, [companyId, branchId, item?.id, runWorkflowAction]);
 
   const rejectAdjustment = useCallback(
     (note: string) => {
       if (!companyId || !branchId || !item?.id) return;
-
-      void runWorkflowAction(() =>
-        adjustmentApi.reject(companyId, branchId, item.id, note)
-      );
+      void runWorkflowAction(() => adjustmentApi.reject(companyId, branchId, item.id, note));
     },
-    [companyId, branchId, item?.id, runWorkflowAction]
+    [companyId, branchId, item?.id, runWorkflowAction],
   );
 
   const reverseAdjustment = useCallback(
     (reason: string) => {
       if (!companyId || !branchId || !item?.id) return;
-
-      void runWorkflowAction(() =>
-        adjustmentApi.reverse(companyId, branchId, item.id, reason)
-      );
+      void runWorkflowAction(() => adjustmentApi.reverse(companyId, branchId, item.id, reason));
     },
-    [companyId, branchId, item?.id, runWorkflowAction]
+    [companyId, branchId, item?.id, runWorkflowAction],
   );
 
   if (!companyId || !branchId) {
     return (
       <div className="page">
         <div className="alert alert-warn">
-          Company or branch scope is missing. Please select a company and branch,
-          then try again.
+          Company or branch scope is missing. Please select a company and branch.
         </div>
 
         {adjustmentBasePath && (
           <button type="button" className="btn" onClick={goBack}>
-            ← Back to list
+            ← Back to Adjustments
           </button>
         )}
       </div>
@@ -314,15 +391,8 @@ export default function AdjustmentDetailsPage() {
   if (isLoading) {
     return (
       <div className="page">
-        <div
-          style={{
-            padding: 48,
-            textAlign: "center",
-            color: "var(--text-muted)",
-            fontSize: 13,
-          }}
-        >
-          Loading adjustment…
+        <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
+          Loading stock adjustment…
         </div>
       </div>
     );
@@ -333,12 +403,12 @@ export default function AdjustmentDetailsPage() {
       <div className="page">
         <div className="alert alert-danger">
           {loadError
-            ? getApiError(loadError, "Failed to load adjustment.")
-            : "Adjustment not found."}
+            ? getApiError(loadError, "Failed to load stock adjustment.")
+            : "Stock adjustment not found."}
         </div>
 
         <button type="button" className="btn" onClick={goBack}>
-          ← Back to list
+          ← Back to Adjustments
         </button>
       </div>
     );
@@ -346,55 +416,39 @@ export default function AdjustmentDetailsPage() {
 
   if (modal === "reject") {
     return (
-      <div className="page">
-        <ConfirmModal
-          title="Reject adjustment"
-          body="Provide a reason. This will be visible to the submitter."
-          placeholder="Rejection reason required"
-          requireText
-          confirmLabel="Confirm reject"
-          danger
-          working={working}
-          onConfirm={rejectAdjustment}
-          onCancel={() => {
-            setModal(null);
-            setActionError(null);
-          }}
-        />
-
-        {actionError && (
-          <div className="alert alert-danger" style={{ margin: "0 20px" }}>
-            {actionError}
-          </div>
-        )}
-      </div>
+      <ConfirmModal
+        title="Reject Stock Adjustment"
+        body="Enter a clear reason. The submitter will see this note."
+        placeholder="Reason for rejection"
+        requireText
+        confirmLabel="Reject Adjustment"
+        danger
+        working={working}
+        onConfirm={rejectAdjustment}
+        onCancel={() => {
+          setModal(null);
+          setActionError(null);
+        }}
+      />
     );
   }
 
   if (modal === "reverse") {
     return (
-      <div className="page">
-        <ConfirmModal
-          title="Reverse adjustment"
-          body="This writes counter-entries to FIFO and inventory ledger. This action cannot be undone."
-          placeholder="Reason for reversal required"
-          requireText
-          confirmLabel="Confirm reverse"
-          danger
-          working={working}
-          onConfirm={reverseAdjustment}
-          onCancel={() => {
-            setModal(null);
-            setActionError(null);
-          }}
-        />
-
-        {actionError && (
-          <div className="alert alert-danger" style={{ margin: "0 20px" }}>
-            {actionError}
-          </div>
-        )}
-      </div>
+      <ConfirmModal
+        title="Reverse Stock Adjustment"
+        body="This will create counter entries in inventory and cannot be undone."
+        placeholder="Reason for reversal"
+        requireText
+        confirmLabel="Reverse Adjustment"
+        danger
+        working={working}
+        onConfirm={reverseAdjustment}
+        onCancel={() => {
+          setModal(null);
+          setActionError(null);
+        }}
+      />
     );
   }
 
@@ -402,31 +456,20 @@ export default function AdjustmentDetailsPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Inventory · Adjustments</div>
+          <div className="page-kicker">Inventory · Stock Control</div>
 
           <div
             className="page-title"
-            style={{ display: "flex", alignItems: "center", gap: 10 }}
+            style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}
           >
-            {item.adjustmentNo || "Adjustment"}
-            <span className={STATUS_BADGE[status]}>{status}</span>
+            {item.adjustmentNo || "Stock Adjustment"}
+            <span className={STATUS_BADGE[status]}>{friendlyStatus(status)}</span>
           </div>
 
           <div className="page-sub">
-            {item.adjustmentType || "—"}
-            {item.adjustmentDate && <> · {fmtDate(item.adjustmentDate)}</>}
-            {item.referenceNo && (
-              <span
-                style={{
-                  fontFamily: "var(--mono)",
-                  marginLeft: 8,
-                  fontSize: 11,
-                  color: "var(--text-soft)",
-                }}
-              >
-                Ref: {item.referenceNo}
-              </span>
-            )}
+            {friendlyAdjustmentType(item.adjustmentType)}
+            {item.adjustmentDate ? <> · {fmtDate(item.adjustmentDate)}</> : null}
+            {item.referenceNo ? <> · Ref: {item.referenceNo}</> : null}
           </div>
         </div>
 
@@ -435,33 +478,26 @@ export default function AdjustmentDetailsPage() {
         </button>
       </div>
 
-      {actionError && <div className="alert alert-danger">{actionError}</div>}
+      {actionError ? <div className="alert alert-danger">{actionError}</div> : null}
 
-      {item.rejectionNote && (
+      {item.rejectionNote ? (
         <div className="alert alert-danger">
           <strong>Rejected:</strong> {item.rejectionNote}
         </div>
-      )}
+      ) : null}
 
-      {item.reverseReason && (
+      {item.reverseReason ? (
         <div className="alert alert-warn">
           <strong>Reversed:</strong> {item.reverseReason}
         </div>
-      )}
+      ) : null}
 
-      {item.hasHighVariance && (
+      {item.hasHighVariance ? (
         <div className="alert alert-warn">
-          <i
-            className="ti ti-alert-triangle"
-            aria-hidden
-            style={{ marginRight: 6 }}
-          />
-          High variance detected —{" "}
-          {item.highestVariancePercent?.toFixed(1) ?? "0.0"}% on one or more
-          lines.
-          {status === "Submitted" && " Manager approval required before posting."}
+          High variance detected on {totals.highVarianceLines || "one or more"} line(s). Highest
+          variance: {Number(item.highestVariancePercent ?? 0).toFixed(1)}%.
         </div>
-      )}
+      ) : null}
 
       <AdjustmentWorkflowActionBar
         status={status}
@@ -474,59 +510,33 @@ export default function AdjustmentDetailsPage() {
         onReverse={canReverse(status) ? () => setModal("reverse") : undefined}
       />
 
-      <div
-        className="kpi-grid"
-        style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 20 }}
-      >
+      <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 20 }}>
         <div className="kpi">
-          <div className="kpi-label">Lines</div>
+          <div className="kpi-label">Items Adjusted</div>
           <div className="kpi-val">{item.lines?.length ?? 0}</div>
-          <div className="kpi-sub">adjustment lines</div>
+          <div className="kpi-sub">inventory items included</div>
         </div>
 
         <div className="kpi">
-          <div className="kpi-label">Net variance qty</div>
-          <div
-            className="kpi-val"
-            style={{
-              color:
-                netVariance < 0
-                  ? "var(--danger)"
-                  : netVariance > 0
-                    ? "var(--success)"
-                    : "var(--text)",
-            }}
-          >
-            {netVariance >= 0 ? "+" : ""}
-            {fmtQty(netVariance)}
+          <div className="kpi-label">Quantity Difference</div>
+          <div className="kpi-val" style={{ color: valueTone(totals.netQty) }}>
+            {signedQty(totals.netQty)}
           </div>
-          <div className="kpi-sub">base units</div>
+          <div className="kpi-sub">{qtyImpactText(totals.netQty)}</div>
         </div>
 
         <div className="kpi">
-          <div className="kpi-label">Total value</div>
-          <div className="kpi-val">{fmtMoney(totals.amount)}</div>
-          <div className="kpi-sub">adjustment impact</div>
-
-          {item.hasHighVariance && (
-            <div className="kpi-badge badge-warn">
-              ⚠ {item.highestVariancePercent?.toFixed(1) ?? "0.0"}% variance
-            </div>
-          )}
+          <div className="kpi-label">Stock Value Impact</div>
+          <div className="kpi-val" style={{ color: valueTone(totals.valueImpact) }}>
+            {signedMoney(totals.valueImpact)}
+          </div>
+          <div className="kpi-sub">{impactText(totals.valueImpact)}</div>
         </div>
 
         <div className="kpi">
-          <div className="kpi-label">Approval</div>
-          <div className="kpi-val">
-            {status === "Submitted" ? "Pending" : status}
-          </div>
-          <div className="kpi-sub">
-            {status === "Submitted" ? "awaiting review" : "no action needed"}
-          </div>
-
-          {status === "Submitted" && (
-            <div className="kpi-badge badge-warn">Action needed</div>
-          )}
+          <div className="kpi-label">Workflow Status</div>
+          <div className="kpi-val">{friendlyStatus(status)}</div>
+          <div className="kpi-sub">{statusMessage(status)}</div>
         </div>
       </div>
 
@@ -534,14 +544,14 @@ export default function AdjustmentDetailsPage() {
         <div
           style={{
             fontSize: 12,
-            fontWeight: 600,
+            fontWeight: 700,
             color: "var(--text-muted)",
             letterSpacing: "0.06em",
             textTransform: "uppercase",
-            marginBottom: 12,
+            marginBottom: 14,
           }}
         >
-          Header information
+          Adjustment Summary
         </div>
 
         <div
@@ -551,20 +561,26 @@ export default function AdjustmentDetailsPage() {
             gap: 20,
           }}
         >
-          <InfoField label="Adjustment type" value={item.adjustmentType} />
-          <InfoField label="Date" value={fmtDate(item.adjustmentDate)} />
-          <InfoField label="Reference no" value={item.referenceNo} />
-          <InfoField label="Reason" value={item.reason} />
-          <InfoField label="Remarks" value={item.remarks} />
-          <InfoField label="Submitted at" value={fmtDate(item.submittedAt)} />
-          <InfoField label="Approved at" value={fmtDate(item.approvedAt)} />
-          <InfoField label="Posted at" value={fmtDate(item.postedAt)} />
+          <InfoField label="Adjustment Type" value={friendlyAdjustmentType(item.adjustmentType)} />
+          <InfoField label="Adjustment Date" value={fmtDate(item.adjustmentDate)} />
+          <InfoField label="Reference No." value={item.referenceNo} />
+          <InfoField label="Status" value={friendlyStatus(status)} />
 
-          {item.rejectionNote && (
-            <div style={{ gridColumn: "span 4" }}>
-              <InfoField label="Rejection note" value={item.rejectionNote} />
-            </div>
-          )}
+          <InfoField label="Reason" value={item.reason} wide />
+          <InfoField label="Remarks" value={item.remarks} wide />
+
+          <InfoField label="Submitted At" value={fmtDateTime(item.submittedAt)} />
+          <InfoField label="Approved At" value={fmtDateTime(item.approvedAt)} />
+          <InfoField label="Posted At" value={fmtDateTime(item.postedAt)} />
+          <InfoField label="Reversed At" value={fmtDateTime(item.reversedAt)} />
+
+          {item.rejectionNote ? (
+            <InfoField label="Rejection Note" value={item.rejectionNote} wide />
+          ) : null}
+
+          {item.reverseReason ? (
+            <InfoField label="Reverse Reason" value={item.reverseReason} wide />
+          ) : null}
         </div>
       </div>
 
@@ -574,13 +590,13 @@ export default function AdjustmentDetailsPage() {
             padding: "12px 16px",
             borderBottom: "1px solid var(--border)",
             fontSize: 12,
-            fontWeight: 600,
+            fontWeight: 700,
             color: "var(--text-muted)",
             letterSpacing: "0.06em",
             textTransform: "uppercase",
           }}
         >
-          Adjustment lines
+          Stock Adjustment Lines
         </div>
 
         <table className="table">
@@ -589,12 +605,12 @@ export default function AdjustmentDetailsPage() {
               <th>#</th>
               <th>Item</th>
               <th>UOM</th>
-              <th style={{ textAlign: "right" }}>System qty</th>
-              <th style={{ textAlign: "right" }}>Counted qty</th>
-              <th style={{ textAlign: "right" }}>Adjustment</th>
-              <th style={{ textAlign: "right" }}>Unit cost</th>
-              <th style={{ textAlign: "right" }}>Amount</th>
-              <th style={{ textAlign: "right" }}>Variance %</th>
+              <th style={{ textAlign: "right" }}>Expected Qty</th>
+              <th style={{ textAlign: "right" }}>Actual Qty</th>
+              <th style={{ textAlign: "right" }}>Difference</th>
+              <th style={{ textAlign: "right" }}>Unit Cost</th>
+              <th style={{ textAlign: "right" }}>Value Impact</th>
+              <th style={{ textAlign: "right" }}>Variance</th>
               <th>Notes</th>
             </tr>
           </thead>
@@ -602,16 +618,8 @@ export default function AdjustmentDetailsPage() {
           <tbody>
             {(item.lines ?? []).length === 0 ? (
               <tr>
-                <td
-                  colSpan={10}
-                  style={{
-                    padding: 48,
-                    textAlign: "center",
-                    color: "var(--text-soft)",
-                    fontSize: 13,
-                  }}
-                >
-                  No lines on this adjustment.
+                <td colSpan={10} style={{ padding: 48, textAlign: "center", color: "var(--text-soft)" }}>
+                  No stock adjustment lines found.
                 </td>
               </tr>
             ) : (
@@ -622,67 +630,35 @@ export default function AdjustmentDetailsPage() {
 
                 return (
                   <tr key={line.id ?? `${line.itemId}-${index}`}>
-                    <td
-                      style={{
-                        fontSize: 11,
-                        color: "var(--text-muted)",
-                        fontFamily: "var(--mono)",
-                        width: 36,
-                      }}
-                    >
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
                       {line.lineNo ?? index + 1}
                     </td>
 
                     <td>
-                      <div style={{ fontWeight: 500, fontSize: 13 }}>
-                        {line.itemName || line.itemId}
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>
+                        {line.itemName || "Unknown Item"}
                       </div>
 
-                      {line.batchNo && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "var(--text-soft)",
-                            fontFamily: "var(--mono)",
-                            marginTop: 1,
-                          }}
-                        >
+                      {line.batchNo ? (
+                        <div style={{ fontSize: 11, color: "var(--text-soft)", marginTop: 2 }}>
                           Batch: {line.batchNo}
                         </div>
-                      )}
+                      ) : null}
 
-                      {line.expiryDate && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "var(--text-soft)",
-                            marginTop: 1,
-                          }}
-                        >
-                          Exp: {fmtDate(line.expiryDate)}
+                      {line.expiryDate ? (
+                        <div style={{ fontSize: 11, color: "var(--text-soft)", marginTop: 2 }}>
+                          Expiry: {fmtDate(line.expiryDate)}
                         </div>
-                      )}
+                      ) : null}
                     </td>
 
-                    <td style={{ fontSize: 13 }}>{line.uomName || line.uomId}</td>
+                    <td>{line.uomName || "—"}</td>
 
-                    <td
-                      style={{
-                        textAlign: "right",
-                        fontFamily: "var(--mono)",
-                        fontSize: 12,
-                      }}
-                    >
+                    <td style={{ textAlign: "right", fontFamily: "var(--mono)" }}>
                       {fmtQty(line.systemQty)}
                     </td>
 
-                    <td
-                      style={{
-                        textAlign: "right",
-                        fontFamily: "var(--mono)",
-                        fontSize: 12,
-                      }}
-                    >
+                    <td style={{ textAlign: "right", fontFamily: "var(--mono)" }}>
                       {fmtQty(line.countedQty)}
                     </td>
 
@@ -690,27 +666,14 @@ export default function AdjustmentDetailsPage() {
                       style={{
                         textAlign: "right",
                         fontFamily: "var(--mono)",
-                        fontSize: 12,
-                        fontWeight: adjustmentQty !== 0 ? 600 : 400,
-                        color:
-                          adjustmentQty < 0
-                            ? "var(--danger)"
-                            : adjustmentQty > 0
-                              ? "var(--success)"
-                              : "var(--text-muted)",
+                        fontWeight: 700,
+                        color: valueTone(adjustmentQty),
                       }}
                     >
-                      {adjustmentQty >= 0 ? "+" : ""}
-                      {fmtQty(adjustmentQty)}
+                      {signedQty(adjustmentQty)}
                     </td>
 
-                    <td
-                      style={{
-                        textAlign: "right",
-                        fontFamily: "var(--mono)",
-                        fontSize: 12,
-                      }}
-                    >
+                    <td style={{ textAlign: "right", fontFamily: "var(--mono)" }}>
                       {fmtMoney(line.unitCost)}
                     </td>
 
@@ -718,43 +681,24 @@ export default function AdjustmentDetailsPage() {
                       style={{
                         textAlign: "right",
                         fontFamily: "var(--mono)",
-                        fontSize: 12,
-                        fontWeight: 500,
+                        fontWeight: 700,
+                        color: valueTone(amount),
                       }}
                     >
-                      {fmtMoney(amount)}
+                      {signedMoney(amount)}
                     </td>
 
                     <td style={{ textAlign: "right" }}>
                       {line.isHighVariance ? (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: "var(--warn)",
-                            fontWeight: 600,
-                          }}
-                        >
-                          <i
-                            className="ti ti-alert-triangle"
-                            aria-hidden
-                            style={{ fontSize: 10, marginRight: 2 }}
-                          />
-                          {variance.toFixed(1)}%
+                        <span style={{ color: "var(--warn)", fontWeight: 700 }}>
+                          ⚠ {variance.toFixed(1)}%
                         </span>
                       ) : (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontFamily: "var(--mono)",
-                            color: "var(--text-muted)",
-                          }}
-                        >
-                          {variance.toFixed(1)}%
-                        </span>
+                        <span style={{ color: "var(--text-muted)" }}>{variance.toFixed(1)}%</span>
                       )}
                     </td>
 
-                    <td style={{ fontSize: 12, color: "var(--text-soft)" }}>
+                    <td style={{ color: "var(--text-soft)", fontSize: 12 }}>
                       {line.notes || "—"}
                     </td>
                   </tr>
@@ -763,18 +707,10 @@ export default function AdjustmentDetailsPage() {
             )}
           </tbody>
 
-          {(item.lines ?? []).length > 0 && (
+          {(item.lines ?? []).length > 0 ? (
             <tfoot>
               <tr style={{ background: "var(--surface-2)" }}>
-                <td
-                  colSpan={5}
-                  style={{
-                    padding: "8px 12px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "var(--text-muted)",
-                  }}
-                >
+                <td colSpan={5} style={{ fontWeight: 700 }}>
                   Totals
                 </td>
 
@@ -782,19 +718,11 @@ export default function AdjustmentDetailsPage() {
                   style={{
                     textAlign: "right",
                     fontFamily: "var(--mono)",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    padding: "8px 12px",
-                    color:
-                      netVariance < 0
-                        ? "var(--danger)"
-                        : netVariance > 0
-                          ? "var(--success)"
-                          : "var(--text)",
+                    fontWeight: 700,
+                    color: valueTone(totals.netQty),
                   }}
                 >
-                  {netVariance >= 0 ? "+" : ""}
-                  {fmtQty(netVariance)}
+                  {signedQty(totals.netQty)}
                 </td>
 
                 <td />
@@ -803,18 +731,17 @@ export default function AdjustmentDetailsPage() {
                   style={{
                     textAlign: "right",
                     fontFamily: "var(--mono)",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    padding: "8px 12px",
+                    fontWeight: 700,
+                    color: valueTone(totals.valueImpact),
                   }}
                 >
-                  {fmtMoney(totals.amount)}
+                  {signedMoney(totals.valueImpact)}
                 </td>
 
                 <td colSpan={2} />
               </tr>
             </tfoot>
-          )}
+          ) : null}
         </table>
       </div>
     </div>

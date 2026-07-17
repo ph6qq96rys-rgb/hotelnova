@@ -7,7 +7,7 @@ import type {
   ReverseGrnRequest,
 } from "../types/grn.types";
 
-export type GrnStatus = "DRAFT" | "POSTED" | "REVERSED" | "CANCELLED" | "ALL";
+import {GrnStatus,GrnStatusFilter} from "../helpers/grn.status";
 
 export type GrnScope =
   | string
@@ -17,7 +17,7 @@ export type GrnScope =
     };
 
 export interface GrnListParams {
-  status?: GrnStatus;
+  status?: GrnStatusFilter;
   from?: string | Date | null;
   to?: string | Date | null;
   q?: string | null;
@@ -42,12 +42,17 @@ export type GrnIdentityResult = {
   draftId?: string;
 };
 
-function unwrap<T>(payload: unknown): T {
-  const value = payload as ApiEnvelope<T> | null | undefined;
+type DraftRequestWithBranch = CreateGrnDraftRequest & {
+  branchId?: string | null;
+  receivingBranchId?: string | null;
+};
 
-  if (value?.data !== undefined) return value.data;
-  if (value?.result !== undefined) return value.result;
-  if (value?.items !== undefined) return value.items;
+function unwrap<T>(payload: unknown): T {
+  const envelope = payload as ApiEnvelope<T> | null | undefined;
+
+  if (envelope?.data !== undefined) return envelope.data;
+  if (envelope?.result !== undefined) return envelope.result;
+  if (envelope?.items !== undefined) return envelope.items;
 
   return payload as T;
 }
@@ -56,8 +61,10 @@ function unwrapArray<T>(payload: unknown): T[] {
   const value = unwrap<T[] | PagedResult<T>>(payload);
 
   if (Array.isArray(value)) return value;
-  if (value && Array.isArray((value as PagedResult<T>).items)) {
-    return (value as PagedResult<T>).items ?? [];
+
+  if (value && typeof value === "object") {
+    const paged = value as PagedResult<T>;
+    if (Array.isArray(paged.items)) return paged.items;
   }
 
   return [];
@@ -68,135 +75,144 @@ function cleanText(value: unknown): string {
 }
 
 function cleanNullable(value: unknown): string | null {
-  const cleaned = cleanText(value);
-  return cleaned.length ? cleaned : null;
+  const text = cleanText(value);
+  return text.length > 0 ? text : null;
 }
 
-function assertRequired(value: unknown, label: string): string {
-  const cleaned = cleanText(value);
+function requireText(value: unknown, label: string): string {
+  const text = cleanText(value);
 
-  if (!cleaned) {
+  if (!text) {
     throw new Error(`${label} is required.`);
   }
 
-  return cleaned;
+  return text;
 }
 
-function assertPositiveNumber(value: unknown, label: string): number {
-  const number = Number(value);
+function requirePositiveNumber(value: unknown, label: string): number {
+  const numeric = Number(value);
 
-  if (!Number.isFinite(number) || number <= 0) {
+  if (!Number.isFinite(numeric) || numeric <= 0) {
     throw new Error(`${label} must be greater than zero.`);
   }
 
-  return number;
+  return numeric;
 }
 
-function assertNonNegativeNumber(value: unknown, label: string): number {
-  const number = Number(value);
+function requireNonNegativeNumber(value: unknown, label: string): number {
+  const numeric = Number(value);
 
-  if (!Number.isFinite(number) || number < 0) {
+  if (!Number.isFinite(numeric) || numeric < 0) {
     throw new Error(`${label} cannot be negative.`);
   }
 
-  return number;
+  return numeric;
 }
 
-function toIso(value?: string | Date | null): string | undefined {
+function toDateParam(value?: string | Date | null): string | undefined {
   if (!value) return undefined;
 
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
   }
 
-  const cleaned = value.trim();
-  return cleaned.length ? cleaned : undefined;
+  const text = value.trim();
+  return text ? text : undefined;
 }
 
-function cleanParams(params: Record<string, string | undefined>) {
+function cleanParams<T extends object>(params: T): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(params).filter(
-      ([, value]) => value !== undefined && value.trim().length > 0,
-    ),
+    Object.entries(params).filter(([, value]) => {
+      if (value === undefined || value === null) return false;
+      if (typeof value === "string") return value.trim().length > 0;
+      return true;
+    }),
   );
 }
 
-function resolveScope(scope: GrnScope): { companyId: string; branchId?: string | null } {
+function resolveScope(scope: GrnScope): { companyId: string; branchId: string | null } {
   if (typeof scope === "string") {
     return {
-      companyId: assertRequired(scope, "Company"),
+      companyId: requireText(scope, "Company"),
+      branchId: null,
     };
   }
 
   return {
-    companyId: assertRequired(scope.companyId, "Company"),
+    companyId: requireText(scope.companyId, "Company"),
     branchId: cleanNullable(scope.branchId),
   };
 }
 
-function base(scope: GrnScope): string {
-  const resolved = resolveScope(scope);
-  const companyId = encodeURIComponent(resolved.companyId);
+function grnBase(scope: GrnScope): string {
+  const { companyId, branchId } = resolveScope(scope);
+  const encodedCompanyId = encodeURIComponent(companyId);
 
-  if (resolved.branchId) {
-    return `/companies/${companyId}/branches/${encodeURIComponent(
-      resolved.branchId,
-    )}/grns`;
+  if (branchId) {
+    return `/companies/${encodedCompanyId}/branches/${encodeURIComponent(branchId)}/grns`;
   }
 
-  return `/companies/${companyId}/grns`;
+  return `/companies/${encodedCompanyId}/grns`;
 }
 
 function inventoryItemBase(scope: GrnScope): string {
-  const resolved = resolveScope(scope);
-  const companyId = encodeURIComponent(resolved.companyId);
+  const { companyId, branchId } = resolveScope(scope);
+  const encodedCompanyId = encodeURIComponent(companyId);
 
-  if (resolved.branchId) {
-    return `/companies/${companyId}/branches/${encodeURIComponent(
-      resolved.branchId,
+  if (branchId) {
+    return `/companies/${encodedCompanyId}/branches/${encodeURIComponent(
+      branchId,
     )}/inventory-master/items`;
   }
 
-  return `/companies/${companyId}/inventory-master/items`;
+  return `/companies/${encodedCompanyId}/inventory-master/items`;
+}
+
+function resolveBranchId(scope: GrnScope, body: DraftRequestWithBranch): string {
+  const { branchId: scopedBranchId } = resolveScope(scope);
+
+  return requireText(
+    body.branchId ?? body.receivingBranchId ?? scopedBranchId,
+    "Receiving branch",
+  );
 }
 
 function validateReverseRequest(body: ReverseGrnRequest): ReverseGrnRequest {
   return {
     ...body,
-    reason: assertRequired(body.reason, "Reversal reason"),
+    reason: requireText(body.reason, "Reversal reason"),
   };
 }
 
-function validateDraftRequest(body: CreateGrnDraftRequest): CreateGrnDraftRequest {
-  const receivingLocationId = assertRequired(
-    body.receivingLocationId,
-    "Receiving location",
-  );
-
-  const receivedDate = assertRequired(body.receivedDate, "Received date");
+function validateDraftRequest(
+  scope: GrnScope,
+  body: DraftRequestWithBranch,
+): DraftRequestWithBranch {
+  const branchId = resolveBranchId(scope, body);
+  const receivingLocationId = requireText(body.receivingLocationId, "Receiving warehouse");
+  const receivedDate = requireText(body.receivedDate, "Received date");
 
   if (!Array.isArray(body.lines) || body.lines.length === 0) {
-    throw new Error("At least one GRN line is required.");
+    throw new Error("Add at least one item before saving the goods receipt.");
   }
 
   return {
     ...body,
+    branchId,
+    receivingBranchId: branchId,
     receivingLocationId,
     receivedDate,
-    supplierName: cleanText(body.supplierName),
+    supplierName: cleanNullable(body.supplierName),
     notes: cleanNullable(body.notes),
     lines: body.lines.map((line, index) => {
       const lineNo = index + 1;
 
       return {
         ...line,
-        itemId: assertRequired(line.itemId, `Line ${lineNo} item`),
-        uomId: assertRequired(line.uomId, `Line ${lineNo} UOM`),
-        quantity: assertPositiveNumber(line.quantity, `Line ${lineNo} quantity`),
-        unitCost: assertNonNegativeNumber(
-          line.unitCost,
-          `Line ${lineNo} unit cost`,
-        ),
+        itemId: requireText(line.itemId, `Line ${lineNo} item`),
+        uomId: requireText(line.uomId, `Line ${lineNo} UOM`),
+        quantity: requirePositiveNumber(line.quantity, `Line ${lineNo} quantity`),
+        unitCost: requireNonNegativeNumber(line.unitCost, `Line ${lineNo} unit cost`),
         batchNo: cleanNullable(line.batchNo),
         expiryDate: cleanNullable(line.expiryDate),
         notes: cleanNullable(line.notes),
@@ -206,66 +222,63 @@ function validateDraftRequest(body: CreateGrnDraftRequest): CreateGrnDraftReques
 }
 
 export const grnApi = {
-  async list(scope: GrnScope, params?: GrnListParams): Promise<GrnListDto[]> {
-    const response = await http.get(base(scope), {
+  async list(scope: GrnScope, params: GrnListParams = {}): Promise<GrnListDto[]> {
+    const response = await http.get(grnBase(scope), {
       params: cleanParams({
-        status:
-          params?.status && params.status !== "ALL"
-            ? String(params.status)
-            : undefined,
-        from: toIso(params?.from),
-        to: toIso(params?.to),
-        q: params?.q?.trim() || undefined,
+        status: params.status && params.status !== "ALL" ? params.status : undefined,
+        from: toDateParam(params.from),
+        to: toDateParam(params.to),
+        q: params.q,
       }),
     });
 
-    return unwrapArray<GrnListDto>(response.data);
+    return unwrapArray<GrnListDto>(response);
   },
 
   async getById(scope: GrnScope, grnId: string): Promise<GrnDetailDto> {
-    const id = assertRequired(grnId, "GRN id");
+    const id = requireText(grnId, "GRN id");
+    const response = await http.get(`${grnBase(scope)}/${encodeURIComponent(id)}`);
 
-    const response = await http.get(`${base(scope)}/${encodeURIComponent(id)}`);
-
-    return unwrap<GrnDetailDto>(response.data);
+    return unwrap<GrnDetailDto>(response);
   },
 
   async createDraft(
     scope: GrnScope,
-    body: CreateGrnDraftRequest,
+    body: DraftRequestWithBranch,
   ): Promise<GrnDetailDto & GrnIdentityResult> {
-    const response = await http.post(base(scope), validateDraftRequest(body));
+    const response = await http.post(grnBase(scope), validateDraftRequest(scope, body));
 
-    return unwrap<GrnDetailDto & GrnIdentityResult>(response.data);
+    return unwrap<GrnDetailDto & GrnIdentityResult>(response);
   },
 
   async updateDraft(
     scope: GrnScope,
     draftId: string,
-    body: CreateGrnDraftRequest,
+    body: DraftRequestWithBranch,
   ): Promise<GrnDetailDto & GrnIdentityResult> {
-    const id = assertRequired(draftId, "Draft id");
+    const id = requireText(draftId, "Draft id");
 
     const response = await http.put(
-      `${base(scope)}/${encodeURIComponent(id)}`,
-      validateDraftRequest(body),
+      `${grnBase(scope)}/${encodeURIComponent(id)}`,
+      validateDraftRequest(scope, body),
     );
 
-    return unwrap<GrnDetailDto & GrnIdentityResult>(response.data);
+    return unwrap<GrnDetailDto & GrnIdentityResult>(response);
   },
 
   async postDraft(
     scope: GrnScope,
     draftId: string,
   ): Promise<GrnDetailDto & GrnIdentityResult> {
-    const id = assertRequired(draftId, "Draft id");
+    const id = requireText(draftId, "Draft id");
+    const response = await http.post(`${grnBase(scope)}/${encodeURIComponent(id)}/post`, {});
 
-    const response = await http.post(
-      `${base(scope)}/${encodeURIComponent(id)}/post`,
-      {},
-    );
+    return unwrap<GrnDetailDto & GrnIdentityResult>(response);
+  },
 
-    return unwrap<GrnDetailDto & GrnIdentityResult>(response.data);
+  // Backward-compatible alias for pages/components that still call grnApi.post(...).
+  async post(scope: GrnScope, grnId: string): Promise<GrnDetailDto & GrnIdentityResult> {
+    return this.postDraft(scope, grnId);
   },
 
   async reverseById(
@@ -273,29 +286,16 @@ export const grnApi = {
     grnId: string,
     body: ReverseGrnRequest,
   ): Promise<void> {
-    const id = assertRequired(grnId, "GRN id");
+    const id = requireText(grnId, "GRN id");
 
     await http.post(
-      `${base(scope)}/${encodeURIComponent(id)}/reverse`,
-      validateReverseRequest(body),
-    );
-  },
-
-  async reverseByBatch(
-    scope: GrnScope,
-    batchNo: string,
-    body: ReverseGrnRequest,
-  ): Promise<void> {
-    const batch = assertRequired(batchNo, "Batch number");
-
-    await http.post(
-      `${base(scope)}/reverse-by-batch/${encodeURIComponent(batch)}`,
+      `${grnBase(scope)}/${encodeURIComponent(id)}/reverse`,
       validateReverseRequest(body),
     );
   },
 
   async findByNumber(scope: GrnScope, grnNumber: string): Promise<GrnListDto | null> {
-    const q = grnNumber.trim();
+    const q = cleanText(grnNumber);
     if (!q) return null;
 
     const rows = await grnApi.list(scope, {
@@ -306,20 +306,59 @@ export const grnApi = {
     return (
       rows.find(
         (row) =>
-          String(row.grnNumber ?? "").trim().toLowerCase() === q.toLowerCase(),
+          cleanText(row.grnNumber ?? row.grnNo).toLowerCase() === q.toLowerCase(),
       ) ??
       rows[0] ??
       null
     );
   },
 
+  async requestReversal(
+  scope: GrnScope,
+  grnId: string,
+  body: ReverseGrnRequest,
+): Promise<void> {
+  const id = requireText(grnId, "GRN id");
+
+  await http.post(
+    `${grnBase(scope)}/${encodeURIComponent(id)}/request-reversal`,
+    validateReverseRequest(body),
+  );
+},
+
+async approveReversal(scope: GrnScope, grnId: string): Promise<void> {
+  const id = requireText(grnId, "GRN id");
+
+  await http.post(
+    `${grnBase(scope)}/${encodeURIComponent(id)}/approve-reversal`,
+    {},
+  );
+},
+
+async rejectReversal(
+  scope: GrnScope,
+  grnId: string,
+  body: { reason?: string | null },
+): Promise<void> {
+  const id = requireText(grnId, "GRN id");
+
+  await http.post(
+    `${grnBase(scope)}/${encodeURIComponent(id)}/reject-reversal`,
+    {
+      reason: cleanNullable(body.reason),
+    },
+  );
+},
+
   async getItemUoms(scope: GrnScope, itemId: string): Promise<ItemUomDto[]> {
-    const id = assertRequired(itemId, "Item id");
+    const id = requireText(itemId, "Item id");
 
     const response = await http.get(
       `${inventoryItemBase(scope)}/${encodeURIComponent(id)}/uoms`,
     );
 
-    return unwrapArray<ItemUomDto>(response.data);
+    return unwrapArray<ItemUomDto>(response);
   },
 };
+
+export type { GrnStatus, GrnStatusFilter };

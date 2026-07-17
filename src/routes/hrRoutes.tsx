@@ -23,6 +23,7 @@ import EmployeeConfirmPage from "../features/hr/pages/Employees/EmployeeConfirmP
 import EmployeeTerminatePage from "../features/hr/pages/Employees/Employeeterminatepage";
 
 import AttendancePage from "../features/hr/pages/attendance/AttendancePage";
+import BranchAttendanceQrGeneratorPage from "../features/hr/pages/attendance/BranchAttendanceQrGeneratorPage";
 
 import LeaveRequestFormPage from "../features/hr/pages/leave/LeaveRequestFormPage";
 import LeaveBalancePage from "../features/hr/pages/leave/LeaveBalancePage";
@@ -73,7 +74,7 @@ export function getHrRoutes(): AppRoute[] {
       label: "Employees",
       element: <EmployeeListPage />,
       icon: <UserCheck size={18} />,
-      nav: true,
+      nav: false,
       section: HR_SECTION,
       order: 20,
     },
@@ -113,7 +114,7 @@ export function getHrRoutes(): AppRoute[] {
       label: "Payroll",
       element: <PayrollListPage />,
       icon: <CreditCard size={18} />,
-      nav: true,
+      nav: false,
       section: HR_SECTION,
       order: 30,
     },
@@ -141,7 +142,7 @@ export function getHrRoutes(): AppRoute[] {
       label: "Leave",
       element: <LeaveListPage />,
       icon: <CalendarOff size={18} />,
-      nav: true,
+      nav: false,
       section: HR_SECTION,
       order: 40,
     },
@@ -163,9 +164,18 @@ export function getHrRoutes(): AppRoute[] {
       label: "Attendance",
       element: <AttendancePage />,
       icon: <Clock size={18} />,
-      nav: true,
+      nav: false,
       section: HR_SECTION,
       order: 50,
+    },
+    {
+      path: "hr/attendance/qr-generator",
+      label: "Attendance QR Generator",
+      element: <BranchAttendanceQrGeneratorPage />,
+      icon: <Clock size={18} />,
+      nav: false,
+      section: HR_SECTION,
+      order: 55,
     },
 
     {
@@ -173,7 +183,7 @@ export function getHrRoutes(): AppRoute[] {
       label: "Recruitment",
       element: <RecruitmentPage />,
       icon: <Briefcase size={18} />,
-      nav: true,
+      nav: false,
       section: HR_SECTION,
       order: 60,
     },
@@ -201,7 +211,7 @@ export function getHrRoutes(): AppRoute[] {
       label: "Performance",
       element: <PerformancePage />,
       icon: <Star size={18} />,
-      nav: true,
+      nav: false,
       section: HR_SECTION,
       order: 70,
     },
@@ -229,7 +239,7 @@ export function getHrRoutes(): AppRoute[] {
       label: "Training",
       element: <TrainingPage />,
       icon: <School size={18} />,
-      nav: true,
+      nav: false,
       section: HR_SECTION,
       order: 80,
     },

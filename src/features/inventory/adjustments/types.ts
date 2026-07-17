@@ -11,8 +11,6 @@ export type AdjustmentType =
   | "Spoilage"
   | "Other";
 
-// Matches backend DocStatus exactly. Unknown/Cancelled removed — they do not
-// exist in the server enum and normalizeAdjustmentStatus never returns them.
 export type AdjustmentStatus =
   | "Draft"
   | "Submitted"
@@ -21,177 +19,204 @@ export type AdjustmentStatus =
   | "Reversed"
   | "Rejected";
 
-// ── Read DTOs (from backend) ──────────────────────────────────────────────────
+// ── Read DTOs ────────────────────────────────────────────────────────────────
 
 export type InventoryAdjustmentLineDto = {
-  variancePercent:   number;
-  lineNo:            number;
-  isHighVariance:    any;
-  id?:               string;
-  itemId:            string;
-  itemName?:         string;
+  id?: string;
+  lineNo: number;
+
+  itemId: string;
+  itemName?: string;
+  stockLocationId?: string;
   stockLocationName?: string;
-  stockLocationId?:  string;
 
-  // Counting UOM (user-facing)
-  uomId:             string;
-  uomName?:          string;
-  systemQty:         number;
-  countedQty:        number;
-  adjustmentQty:     number;
+  uomId: string;
+  uomName?: string;
+  systemQty: number;
+  countedQty: number;
+  adjustmentQty: number;
 
-  // Base UOM (FIFO / posting)
-  baseUomId:         string;
-  baseUomName?:      string;
-  conversionFactor:  number;
-  isBaseUnit:        boolean;
-  systemQtyBase:     number;
-  countedQtyBase:    number;
+  baseUomId: string;
+  baseUomName?: string;
+  conversionFactor: number;
+  isBaseUnit: boolean;
+  systemQtyBase: number;
+  countedQtyBase: number;
   adjustmentQtyBase: number;
 
-  // Cost
-  unitCost:          number;   // per base unit
-  unitCostDisplay:   number;   // per counting unit
-  lineAmount:        number;
+  unitCost: number;
+  unitCostDisplay: number;
+  lineAmount: number;
 
-  // FIFO / batch
-  fifoLotId:         string;
-  batchNo?:          string;
-  expiryDate?:       string;
-  notes?:            string;
+  fifoLotId: string;
+  batchNo?: string;
+  expiryDate?: string;
+
+  variancePercent: number;
+  isHighVariance: boolean;
+  notes?: string;
 };
 
 export type InventoryAdjustmentDto = {
-  id:                     string;
-  companyId:              string;
-  branchId:               string;
-  locationId?:            string;
-  adjustmentNo:           string;
-  adjustmentDate:         string;
-  adjustmentType:         string;
-  docStatus:              string;
-  referenceNo?:           string;
-  reason?:                string;
-  remarks?:               string;
+  id: string;
+  companyId: string;
+  branchId: string;
 
-  // Totals
-  totalSystemQty:         number;
-  totalCountedQty:        number;
-  totalAdjustmentQty:     number;
-  totalAdjustmentValue?:  number;
-  hasHighVariance:        boolean;
+  /**
+   * Must be the real StockLocation.Id, not BranchStockLocation.Id.
+   */
+  locationId?: string;
+
+  locationName?: string;
+  stockLocationName?: string;
+
+  adjustmentNo: string;
+  adjustmentDate: string;
+  adjustmentType: AdjustmentType | string;
+  docStatus: AdjustmentStatus | string;
+  referenceNo?: string;
+  reason?: string;
+  remarks?: string;
+
+  totalSystemQty: number;
+  totalCountedQty: number;
+  totalAdjustmentQty: number;
+  totalAdjustmentValue?: number;
+  hasHighVariance: boolean;
   highestVariancePercent: number;
 
-  // Workflow timestamps
-  createdAt:              string;
-  submittedAt?:           string;
-  approvedAt?:            string;
-  postedAt?:              string;
-  reversedAt?:            string;
-  rejectedAt?:            string;
-  rejectionNote?:         string;
-  reverseReason?:         string;
+  createdAt: string;
+  submittedAt?: string;
+  approvedAt?: string;
+  postedAt?: string;
+  reversedAt?: string;
+  rejectedAt?: string;
+  rejectionNote?: string;
+  reverseReason?: string;
 
   lines: InventoryAdjustmentLineDto[];
 };
 
-// ── Candidates (adjustment line picker) ───────────────────────────────────────
+// ── Candidates ───────────────────────────────────────────────────────────────
 
 export type AdjustmentCandidateDto = {
-  itemId:          string;
-  itemName:        string;
-  itemCode?:       string;
-  sku?:            string;
-  locationId:      string;
-  locationName:    string;
-
-  // Counting UOM (user-facing)
-  uomId:           string;
-  uomName:         string;
-  systemQty:       number;   // in counting UOM
-  systemQtyBase:   number;   // in base UOM
-  availableQty:    number;   // raw FIFO remaining (base)
-  unitCost:        number;   // per base unit
-  unitCostDisplay: number;   // per counting unit
-
-  // Base UOM
-  baseUomId:       string;
-  baseUomName:     string;
+  itemId: string;
+  itemName: string;
+  itemCode?: string;
+  sku?: string;
 
   /**
-   * Conversion factor: how many base units make one counting unit.
-   * The backend InventoryAdjustmentService returns this as `conversionFactor`.
-   * The legacy type called it `toBaseFactor`.
-   * Both are present so old and new code compile without changes.
+   * Real StockLocation.Id.
    */
-  toBaseFactor:        number;
-  conversionFactor:    number;   // alias — same value, new field name
+  locationId: string;
 
-  // FIFO lot
-  fifoLotId:       string;
-  batchNo?:        string;
-  expiryDate?:     string;
-  receivedAt:      string;
+  locationName: string;
 
-  /** Derived client-side as uomId === baseUomId. Kept optional for compat. */
-  isBaseUnit?:     boolean;
+  uomId: string;
+  uomName: string;
+  systemQty: number;
+  systemQtyBase: number;
+  availableQty: number;
+
+  unitCost: number;
+  unitCostDisplay: number;
+
+  baseUomId: string;
+  baseUomName: string;
+
+  toBaseFactor: number;
+  conversionFactor: number;
+
+  fifoLotId: string;
+  batchNo?: string;
+  expiryDate?: string;
+  receivedAt: string;
+
+  isBaseUnit?: boolean;
 };
 
-// ── FIFO item lookup (legacy lookup endpoint) ─────────────────────────────────
+// ── Stock locations ──────────────────────────────────────────────────────────
 
-export type AdjustmentFifoItemDto = {
-  fifoLotId:        string;
-  id:               string;
-  itemId:           string;
-  name:             string;
-  itemName:         string;
-  code?:            string;
-  sku?:             string;
-  defaultUomId:     string;
-  baseUomId:        string;
-  defaultUomName:   string;
-  baseUomName:      string;
-  defaultUomCode?:  string;
-  availableQty:     number;
-  unitCost:         number;
-  batchNo?:         string;
-  expiryDate?:      string;
+export type StockLocationOption = {
+  /**
+   * UI-safe value. After normalization, this should be the real StockLocation.Id.
+   */
+  id: string;
+
+  /**
+   * Real StockLocation.Id expected by backend adjustment validation.
+   */
+  stockLocationId?: string;
+
+  /**
+   * Branch assignment id from BranchStockLocation / BranchLocation.
+   * Never send this as adjustment locationId.
+   */
+  branchLocationId?: string;
+
+  /**
+   * Legacy alias.
+   */
+  locationId?: string;
+
+  name: string;
+  stockLocationName?: string;
+  locationName?: string;
+  code?: string | null;
+
+  branchId?: string;
+  isActive?: boolean;
+  canAdjust?: boolean;
+
+  canConsumeFrom?: boolean;
+  canReceiveTo?: boolean;
+  canTransferFrom?: boolean;
+  canTransferTo?: boolean;
+
+  isDefaultReceiving?: boolean;
+  isDefaultIssue?: boolean;
 };
 
-// ── Write commands (to backend) ───────────────────────────────────────────────
+// ── Write commands ───────────────────────────────────────────────────────────
 
 export type AdjustmentLineDraftItem = {
-  fifoLotId:  string;
-  itemId:     string;
-  uomId:      string;
-  systemQty:  number;
+  fifoLotId: string;
+  itemId: string;
+  uomId: string;
+  systemQty: number;
   countedQty: number;
-  unitCost:   number;
-  notes?:     string;
+  unitCost: number;
+  notes?: string;
 };
 
 export type CreateAdjustmentDraftCommand = {
-  locationId?:    string;
+  /**
+   * Must be real StockLocation.Id.
+   */
+  locationId?: string;
+
   adjustmentDate?: string;
-  adjustmentType: string;
-  referenceNo?:   string;
-  reason?:        string;
-  remarks?:       string;
-  lines:          AdjustmentLineDraftItem[];
+  adjustmentType: AdjustmentType | string;
+  referenceNo?: string;
+  reason?: string;
+  remarks?: string;
+  lines: AdjustmentLineDraftItem[];
 };
 
-// Alias so new code using the consolidated command names compiles without
-// touching types.ts again.
 export type CreateAdjustmentCommand = CreateAdjustmentDraftCommand;
 
 export type UpdateAdjustmentDraftCommand = {
-  locationId?:    string;
-  referenceNo?:   string;
-  reason?:        string;
-  remarks?:       string;
-  adjustmentType?: string;
+  /**
+   * Must be real StockLocation.Id.
+   */
+  locationId?: string;
+
+  referenceNo?: string;
+  reason?: string;
+  remarks?: string;
+  adjustmentType?: AdjustmentType | string;
   adjustmentDate?: string | null;
-  highVarianceThresholdPercent?:    number;
+  highVarianceThresholdPercent?: number;
   managerApprovalThresholdPercent?: number;
   lines: AdjustmentLineDraftItem[];
 };
@@ -206,34 +231,39 @@ export type AdjustmentReverseCommand = {
   reason: string;
 };
 
-// ── Legacy write DTOs (kept for backward compat) ─────────────────────────────
+// ── Legacy DTOs ──────────────────────────────────────────────────────────────
 
 export type CreateInventoryAdjustmentDto = {
   adjustmentDate: string;
-  branchId:       Guid;
-  locationId:     Guid;
+  branchId: Guid;
+
+  /**
+   * Must be real StockLocation.Id.
+   */
+  locationId: Guid;
+
   adjustmentType: AdjustmentType;
-  reason?:        string | null;
-  remarks?:       string | null;
-  lines:          InventoryAdjustmentLineDto[];
+  reason?: string | null;
+  remarks?: string | null;
+  lines: InventoryAdjustmentLineDto[];
 };
 
 export interface CreateAdjustmentFromSivDto {
   adjustmentDate: string;
-  remarks?:       string;
+  remarks?: string;
   lines: {
-    sivLineId:  string;
+    sivLineId: string;
     countedQty: number;
   }[];
 }
 
 export interface UpdateAdjustmentCountDto {
   adjustmentDate: string;
-  remarks?:       string;
+  remarks?: string;
   lines: {
-    lineId:     string;
+    lineId: string;
     countedQty: number;
-    notes?:     string;
+    notes?: string;
   }[];
 }
 
@@ -242,47 +272,62 @@ export interface AdjustmentActionDto {
 }
 
 export type ManualAdjustmentCreateDto = {
-  branchId:      string;
-  locationId:    string;
+  branchId: string;
+
+  /**
+   * Must be real StockLocation.Id.
+   */
+  locationId: string;
+
   adjustmentDate: string;
-  remarks?:      string;
+  remarks?: string;
   lines: {
-    fifoLotId:     string;
-    itemId:        string;
-    uomId:         string;
-    batchNo?:      string | null;
-    expiryDate?:   string | null;
-    systemQty:     number;
-    countedQty:    number;
+    fifoLotId: string;
+    itemId: string;
+    uomId: string;
+    batchNo?: string | null;
+    expiryDate?: string | null;
+    systemQty: number;
+    countedQty: number;
     adjustmentQty: number;
-    unitCost:      number;
-    notes?:        string | null;
+    unitCost: number;
+    notes?: string | null;
   }[];
 };
 
-// ── Misc ──────────────────────────────────────────────────────────────────────
+// ── Legacy lookup DTOs ───────────────────────────────────────────────────────
 
-export type InventoryItemOption = {
-  id:             string;
-  code?:          string | null;
-  name:           string;
-  sku:            string | null;
-  itemName:       string | null;
-  fifoLotId:      string;
-  defaultUomId:   string;
-  defaultUomCode: string;
+export type AdjustmentFifoItemDto = {
+  fifoLotId: string;
+  id: string;
+  itemId: string;
+  name: string;
+  itemName: string;
+  code?: string;
+  sku?: string;
+  defaultUomId: string;
+  baseUomId: string;
   defaultUomName: string;
-  batchNo?:       string | null;
-  expiryDate?:    string | null;
-  availableQty:   number;
-  unitCost:       number;
+  baseUomName: string;
+  defaultUomCode?: string;
+  availableQty: number;
+  unitCost: number;
+  batchNo?: string;
+  expiryDate?: string;
 };
 
-export type StockLocationOption = {
-  id:                  string;
-  name:                string;
-  code?:               string | null;
-  isActive?:           boolean;
-  isDefaultReceiving?: boolean;
-  isDefaultIssue?:     boolean;
+export type InventoryItemOption = {
+  id: string;
+  code?: string | null;
+  name: string;
+  sku: string | null;
+  itemName: string | null;
+  fifoLotId: string;
+  defaultUomId: string;
+  defaultUomCode: string;
+  defaultUomName: string;
+  batchNo?: string | null;
+  expiryDate?: string | null;
+  availableQty: number;
+  unitCost: number;
 };

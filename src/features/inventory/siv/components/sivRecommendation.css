@@ -1,0 +1,68 @@
+.siv-approval-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 24px;
+  align-items: start;
+}
+
+.siv-recommendation-card {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border: 1px solid #d8d8d8;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff;
+}
+
+.siv-recommendation-header,
+.siv-recommendation-line > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.siv-recommendation-lines {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.siv-recommendation-line {
+  border-top: 1px solid #e5e5e5;
+  padding-top: 12px;
+}
+
+.siv-recommendation-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.siv-recommendation-metrics div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.siv-recommendation-metrics dt {
+  color: #555;
+}
+
+.siv-recommendation-metrics dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .siv-approval-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .siv-recommendation-card {
+    position: static;
+    max-height: none;
+  }
+}

@@ -1,15 +1,18 @@
 ﻿// src/routes/AppRoutes.tsx
 
 import type { ReactNode } from "react";
-import { Navigate, Route, Routes, useParams } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 
-import RequireAuth from "../auth/RequireAuth";
 import RequireCompany from "../auth/RequireCompany";
 import { loadAuth } from "../auth/auth.storage";
+import { loadPlatformAuth } from "../auth/platform-auth.storage";
+import { loadWorkspaceAuth } from "../auth/workspace-auth.storage";
+
 
 import AppShell from "../layouts/AppShell";
 
 import LoginPage from "../pages/LoginPage";
+import SystemAdminLoginPage from "../pages/system-admin/SystemAdminLoginPage";
 import RegisterPage from "../pages/RegisterPage";
 import ForgotPasswordPage from "../pages/ForgotPasswordPage";
 import ResetPasswordPage from "../pages/ResetPasswordPage";
@@ -28,9 +31,20 @@ import { getHrRoutes } from "./hrRoutes";
 import { getPostRoutes } from "./posRoutes";
 import { organizationRoutes } from "./organizationRoutes";
 
-import type { AppRoute } from "./sales-cogsroute";
+import type { AppRouteLike } from "./routeDefConfig";
+import TelegramMiniAppDashboard from "../features/telegram-miniapp/TelegramMiniAppDashboard";
 
 const COMPANY_ONBOARDING_PATH = "companies/onboarding";
+const USER_LOGIN_PATH = "/login";
+const SYSTEM_ADMIN_LOGIN_PATH = "/system-admin-login";
+const PLATFORM_HOME_PATH = "/platform/tenants";
+
+type AuthLike = {
+  accessToken?: string | null;
+  companyId?: string | null;
+  roles?: string[] | null;
+  permissions?: string[] | null;
+};
 
 export default function AppRoutes() {
   const grnRoutes = useGrnRoutes();
@@ -38,63 +52,67 @@ export default function AppRoutes() {
   const hrRoutes = getHrRoutes();
   const posRoutes = getPostRoutes();
 
-  const protectedCompanyRoutes = companyRoutes.filter((route) => {
-    const path = normalizeRoutePath(route.path ?? "");
-    return path !== COMPANY_ONBOARDING_PATH && path !== "onboarding";
-  }) as AppRoute[];
+  const protectedCompanyRoutes = (companyRoutes as AppRouteLike[]).filter(
+    (route) => {
+      const path = normalizeRoutePath(route.path ?? "");
+      return path !== COMPANY_ONBOARDING_PATH && path !== "onboarding";
+    }
+  );
 
   const allCompanyRoutes = dedupeRoutes([
-    ...(routeConfig as AppRoute[]),
-    ...inventoryMasterRoutes,
+    ...(routeConfig as AppRouteLike[]),
+    ...(inventoryMasterRoutes as AppRouteLike[]),
     ...protectedCompanyRoutes,
-    ...organizationRoutes,
-    ...grnRoutes,
-    ...salesRoutes,
-    ...(hrRoutes as AppRoute[]),
-    ...(posRoutes as AppRoute[]),
+    ...(organizationRoutes as AppRouteLike[]),
+    ...(grnRoutes as AppRouteLike[]),
+    ...(salesRoutes as AppRouteLike[]),
+    ...(hrRoutes as AppRouteLike[]),
+    ...(posRoutes as AppRouteLike[]),
   ]);
 
   return (
     <Routes>
-      {/* Public */}
-      <Route path="/login" element={<LoginPage />} />
+      <Route path={USER_LOGIN_PATH} element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/telegram-miniapp" element={<TelegramMiniAppDashboard />} />
+      <Route path={SYSTEM_ADMIN_LOGIN_PATH} element={<SystemAdminLoginPage />} />
+      <Route path="/telegram" element={<Navigate to="/telegram-miniapp" replace />} />
 
-      {/* Platform workspace */}
       <Route
         path="/platform"
         element={
-          <RequireAuth>
+          <RequirePlatformAdmin>
             <AppShell />
-          </RequireAuth>
+          </RequirePlatformAdmin>
         }
       >
-        <Route index element={<Navigate to="/platform/tenants" replace />} />
+        <Route index element={<Navigate to={PLATFORM_HOME_PATH} replace />} />
         <Route path="tenants" element={<PlatformTenantsPage />} />
       </Route>
 
-      {/* System admin workspace */}
       <Route
         path="/system-admin"
         element={
-          <RequireAuth>
+          <RequirePlatformAdmin>
             <AppShell />
-          </RequireAuth>
+          </RequirePlatformAdmin>
         }
       >
-        <Route index element={<Navigate to="/system-admin/companies" replace />} />
+        <Route
+          index
+          element={<Navigate to="/system-admin/companies" replace />}
+        />
         <Route path="companies" element={<SystemAdminCompaniesPage />} />
       </Route>
 
-      {/* Onboarding routes */}
       <Route
         path="/companies/onboarding"
         element={
-          <RequireAuth>
+          <RequireWorkspaceAuth>
             <AppShell />
-          </RequireAuth>
+          </RequireWorkspaceAuth>
         }
       >
         <Route index element={<CompanyOnboardingModule />} />
@@ -103,9 +121,9 @@ export default function AppRoutes() {
       <Route
         path="/companies/:companyId/onboarding"
         element={
-          <RequireAuth>
+          <RequireWorkspaceAuth>
             <AppShell />
-          </RequireAuth>
+          </RequireWorkspaceAuth>
         }
       >
         <Route index element={<CompanyOnboardingModule />} />
@@ -114,23 +132,22 @@ export default function AppRoutes() {
       <Route
         path="/companies/:companyId/branches/:branchId/onboarding"
         element={
-          <RequireAuth>
+          <RequireWorkspaceAuth>
             <AppShell />
-          </RequireAuth>
+          </RequireWorkspaceAuth>
         }
       >
         <Route index element={<CompanyOnboardingModule />} />
       </Route>
 
-      {/* Tenant company workspace */}
       <Route
         path="/companies/:companyId"
         element={
-          <RequireAuth>
+          <RequireWorkspaceAuth>
             <RequireCompany>
               <AppShell />
             </RequireCompany>
-          </RequireAuth>
+          </RequireWorkspaceAuth>
         }
       >
         <Route index element={<CompanyDashboardRedirect />} />
@@ -147,32 +164,143 @@ export default function AppRoutes() {
   );
 }
 
+function RequirePlatformAdmin({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  const auth = getPlatformAuth();
+
+  if (!auth?.accessToken || !hasSystemAdminRole(auth.roles)) {
+    const returnUrl = `${location.pathname}${location.search}${location.hash}`;
+
+    return (
+      <Navigate
+        to={`${SYSTEM_ADMIN_LOGIN_PATH}?returnUrl=${encodeURIComponent(returnUrl)}`}
+        replace
+      />
+    );
+  }
+
+  return <>{children}</>;
+}
+
+function RequireWorkspaceAuth({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  const auth = getWorkspaceAuth();
+
+  if (!auth?.accessToken) {
+    const returnUrl = `${location.pathname}${location.search}${location.hash}`;
+
+    return (
+      <Navigate
+        to={`${USER_LOGIN_PATH}?returnUrl=${encodeURIComponent(returnUrl)}`}
+        replace
+      />
+    );
+  }
+
+  return <>{children}</>;
+}
+
 function CompanyDashboardRedirect() {
   const { companyId } = useParams();
 
   if (!companyId) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={USER_LOGIN_PATH} replace />;
   }
 
   return <Navigate to={`/companies/${companyId}/dashboard`} replace />;
 }
 
 function GlobalRedirect() {
-  const auth = loadAuth();
+  const platformAuth = getPlatformAuth();
 
-  if (!auth?.accessToken) {
-    return <Navigate to="/login" replace />;
+  if (platformAuth?.accessToken && hasSystemAdminRole(platformAuth.roles)) {
+    return <Navigate to={PLATFORM_HOME_PATH} replace />;
   }
 
-  if (hasSystemAdminRole(auth.roles)) {
-    return <Navigate to="/platform/tenants" replace />;
+  const workspaceAuth = getWorkspaceAuth();
+
+  if (workspaceAuth?.accessToken && workspaceAuth.companyId) {
+    return (
+      <Navigate
+        to={`/companies/${workspaceAuth.companyId}/dashboard`}
+        replace
+      />
+    );
   }
 
-  if (auth.companyId) {
-    return <Navigate to={`/companies/${auth.companyId}/dashboard`} replace />;
+  return <Navigate to={USER_LOGIN_PATH} replace />;
+}
+
+function RouteGuard({
+  route,
+  children,
+}: {
+  route: AppRouteLike;
+  children: ReactNode;
+}) {
+  const auth = getWorkspaceAuth();
+  const roles = auth?.roles ?? [];
+  const permissions = auth?.permissions ?? [];
+
+  if (!route.permissions?.length && !route.roles?.length) {
+    return <>{children}</>;
   }
 
-  return <Navigate to="/login" replace />;
+  // A delegated tenant session may intentionally contain the system-admin role.
+  // Keep this behavior for backward compatibility with the existing route model.
+  if (hasSystemAdminRole(roles)) {
+    return <>{children}</>;
+  }
+
+  if (hasCompanyAdminRole(roles) && isSecurityRoute(route)) {
+    return <>{children}</>;
+  }
+
+  if (route.roles?.length) {
+    const allowedByRole = route.roles.some((role) => hasRole(roles, role));
+
+    if (!allowedByRole) {
+      return <AccessDenied />;
+    }
+  }
+
+  if (route.permissions?.length) {
+    const allowedByPermission = route.permissions.some((permission) =>
+      hasPermission(permissions, permission)
+    );
+
+    if (!allowedByPermission) {
+      return <AccessDenied />;
+    }
+  }
+
+  return <>{children}</>;
+}
+
+function isSecurityRoute(route: AppRouteLike): boolean {
+  const section = String(route.section ?? route.menu?.section ?? "").toLowerCase();
+  const path = String(route.path ?? "").toLowerCase();
+
+  return section === "security" || path === "users" || path.startsWith("security/");
+}
+
+function AccessDenied() {
+  const { companyId } = useParams();
+
+  return (
+    <div style={{ padding: 24 }}>
+      <h2 style={{ margin: 0, fontSize: 20 }}>Access denied</h2>
+      <p style={{ marginTop: 8, color: "#64748b" }}>
+        You do not have permission to access this page.
+      </p>
+
+      {companyId ? (
+        <a href={`/companies/${companyId}/dashboard`}>Go to dashboard</a>
+      ) : (
+        <a href={USER_LOGIN_PATH}>Go to login</a>
+      )}
+    </div>
+  );
 }
 
 function CompanyRouteNotFound() {
@@ -188,18 +316,22 @@ function CompanyRouteNotFound() {
       {companyId ? (
         <a href={`/companies/${companyId}/dashboard`}>Go to dashboard</a>
       ) : (
-        <a href="/login">Go to login</a>
+        <a href={USER_LOGIN_PATH}>Go to login</a>
       )}
     </div>
   );
 }
 
 function GlobalRouteNotFound() {
-  const auth = loadAuth();
+  const platformAuth = getPlatformAuth();
+  const workspaceAuth = getWorkspaceAuth();
 
-  const fallback = auth?.companyId
-    ? `/companies/${auth.companyId}/dashboard`
-    : "/login";
+  const fallback =
+    platformAuth?.accessToken && hasSystemAdminRole(platformAuth.roles)
+      ? PLATFORM_HOME_PATH
+      : workspaceAuth?.companyId
+        ? `/companies/${workspaceAuth.companyId}/dashboard`
+        : USER_LOGIN_PATH;
 
   return (
     <div style={{ padding: 24 }}>
@@ -213,8 +345,44 @@ function GlobalRouteNotFound() {
   );
 }
 
+function getPlatformAuth(): AuthLike | null {
+  const platformAuth = loadPlatformAuth();
+
+  if (platformAuth?.accessToken) {
+    return platformAuth;
+  }
+
+  // Migration fallback: keep existing system-admin sessions working until the
+  // system-admin login has fully moved to platform-auth.storage.
+  const legacyAuth = loadAuth();
+
+  if (legacyAuth?.accessToken && hasSystemAdminRole(legacyAuth.roles)) {
+    return legacyAuth;
+  }
+
+  return null;
+}
+
+function getWorkspaceAuth(): AuthLike | null {
+  const workspaceAuth = loadWorkspaceAuth();
+
+  if (workspaceAuth?.accessToken) {
+    return workspaceAuth;
+  }
+
+  // Migration fallback: preserve the existing user-login flow while it still
+  // writes to auth.storage. Never expose a legacy system-admin session here.
+  const legacyAuth = loadAuth();
+
+  if (legacyAuth?.accessToken && !hasSystemAdminRole(legacyAuth.roles)) {
+    return legacyAuth;
+  }
+
+  return null;
+}
+
 function renderRoutes(
-  routes: AppRoute[],
+  routes: readonly AppRouteLike[],
   namespace: string,
   parentPath = "",
   depth = 0
@@ -227,7 +395,11 @@ function renderRoutes(
         <Route
           key={routeKey}
           index
-          element={route.element as ReactNode}
+          element={
+            <RouteGuard route={route}>
+              {route.element as ReactNode}
+            </RouteGuard>
+          }
         />
       );
     }
@@ -242,19 +414,28 @@ function renderRoutes(
       <Route
         key={routeKey}
         path={path}
-        element={route.element as ReactNode}
+        element={
+          <RouteGuard route={route}>
+            {route.element as ReactNode}
+          </RouteGuard>
+        }
       >
         {Array.isArray(route.children)
-          ? renderRoutes(route.children, namespace, path, depth + 1)
+          ? renderRoutes(
+              route.children as AppRouteLike[],
+              namespace,
+              path,
+              depth + 1
+            )
           : null}
       </Route>
     );
   });
 }
 
-function dedupeRoutes(routes: AppRoute[]): AppRoute[] {
+function dedupeRoutes(routes: readonly AppRouteLike[]): AppRouteLike[] {
   const seen = new Set<string>();
-  const result: AppRoute[] = [];
+  const result: AppRouteLike[] = [];
 
   for (const route of routes) {
     const key = route.index
@@ -297,7 +478,7 @@ function normalizeCompanyChildPath(path?: string): string | null {
 }
 
 function buildRouteKey(
-  route: AppRoute,
+  route: AppRouteLike,
   namespace: string,
   parentPath: string,
   depth: number,
@@ -319,4 +500,33 @@ function hasSystemAdminRole(roles?: string[] | null): boolean {
     const normalized = role.trim().toUpperCase();
     return normalized === "SYSTEMADMIN" || normalized === "SYSADMIN";
   });
+}
+
+function hasCompanyAdminRole(roles?: string[] | null): boolean {
+  return (roles ?? []).some((role) => {
+    const normalized = role.trim().toUpperCase();
+    return normalized === "COMPANYADMIN";
+  });
+}
+
+function hasRole(
+  roles: string[] | null | undefined,
+  requiredRole: string
+): boolean {
+  const required = requiredRole.trim().toUpperCase();
+
+  return (roles ?? []).some(
+    (role) => role.trim().toUpperCase() === required
+  );
+}
+
+function hasPermission(
+  permissions: string[] | null | undefined,
+  requiredPermission: string
+): boolean {
+  const required = requiredPermission.trim().toLowerCase();
+
+  return (permissions ?? []).some(
+    (permission) => permission.trim().toLowerCase() === required
+  );
 }

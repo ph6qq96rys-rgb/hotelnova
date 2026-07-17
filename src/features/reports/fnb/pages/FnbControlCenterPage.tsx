@@ -1,291 +1,208 @@
 import { useEffect, useMemo, useState } from "react";
+
 import { useAppScope } from "../../../../app/useAppScope";
-import {
-  getFnbReport,
-  type FnbReportDto,
-  type FnbReportKey,
-  type FnbReportRow,
-} from "../api/fnbReportsApi";
+import { useErpNavigate } from "../../../../routes/useErpNavigation";
+
+import { FnbReportFilters } from "../components/FnbReportFilters";
+import { FnbReportKpis } from "../components/FnbReportKpis";
+import { FnbReportSidebar } from "../components/FnbReportSidebar";
+import { FnbReportTable } from "../components/FnbReportTable";
+import { useFnbReport } from "../hooks/useFnbReport";
+import { useFnbReportCatalog } from "../hooks/useFnbReportCatalog";
+import { useStockLocations } from "../hooks/useStockLocations";
+import { exportRowsToCsv } from "../utils/fnbReportExport";
+
 import "./fnb-reports.css";
 
-const REPORTS: { key: FnbReportKey; label: string; group: string }[] = [
-  { key: "kitchen-consumption", label: "Daily Kitchen Consumption", group: "Consumption" },
-  { key: "bar-consumption", label: "Bar Consumption", group: "Consumption" },
-  { key: "cogs", label: "COGS", group: "Consumption" },
-  { key: "inventory-valuation", label: "Inventory Valuation", group: "Stock Control" },
-  { key: "negative-inventory", label: "Negative Inventory", group: "Stock Control" },
-  { key: "dead-stock", label: "Dead Stock", group: "Stock Control" },
-  { key: "fifo-aging", label: "FIFO Aging", group: "Stock Control" },
-  { key: "stock-turnover", label: "Stock Turnover", group: "Stock Control" },
-  { key: "theoretical-vs-actual", label: "Theoretical vs Actual", group: "Performance" },
-  { key: "variance", label: "Variance", group: "Performance" },
-  { key: "fast-moving-items", label: "Fast Moving Items", group: "Performance" },
-  { key: "production-yield", label: "Production Yield", group: "Performance" },
-];
-
-const today = () => new Date().toISOString().slice(0, 10);
-
-function fmt(n?: number | null, dp = 2) {
-  return Number(n ?? 0).toLocaleString(undefined, {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
-}
-
-function errorText(e: any) {
-  return (
-    e?.response?.data?.message ||
-    e?.response?.data?.title ||
-    e?.message ||
-    "Failed to load report."
-  );
+function getTodayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export default function FnbControlCenterPage() {
   const { companyId, branchId } = useAppScope();
+  const erpNav = useErpNavigate();
 
-  const [report, setReport] = useState<FnbReportKey>("kitchen-consumption");
-  const [from, setFrom] = useState(today());
-  const [to, setTo] = useState(today());
-  const [search, setSearch] = useState("");
+  const [reportKey, setReportKey] = useState("inventory-valuation");
+  const [from, setFrom] = useState(getTodayIsoDate);
+  const [to, setTo] = useState(getTodayIsoDate);
   const [locationId, setLocationId] = useState("");
   const [days, setDays] = useState(30);
+  const [search, setSearch] = useState("");
 
-  const [data, setData] = useState<FnbReportDto | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const catalog = useFnbReportCatalog(companyId, branchId);
+  const locations = useStockLocations(companyId, branchId);
 
-  async function load() {
-    if (!companyId || !branchId) return;
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const res = await getFnbReport({
-        companyId,
-        branchId,
-        report,
-        from,
-        to,
-        locationId: locationId || null,
-        days: report === "dead-stock" ? days : null,
-      });
-
-      setData(res);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const selectedReport = useMemo(
+    () =>
+      catalog.items.find((report) => report.key === reportKey) ??
+      catalog.items[0],
+    [catalog.items, reportKey],
+  );
 
   useEffect(() => {
-    void load();
-  }, [companyId, branchId, report, from, to, locationId, days]);
+    if (!selectedReport && catalog.items.length > 0) {
+      setReportKey(catalog.items[0].key);
+    }
+  }, [catalog.items, selectedReport]);
 
-  const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const all = data?.rows ?? [];
+  const report = useFnbReport({
+    companyId,
+    branchId,
+    reportKey,
+    from,
+    to,
+    locationId: locationId || null,
+    days: reportKey === "dead-stock" ? days : null,
+  });
 
-    if (!q) return all;
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const rows = report.data?.rows ?? [];
 
-    return all.filter(
-      (x) =>
-        x.itemName?.toLowerCase().includes(q) ||
-        x.itemCode?.toLowerCase().includes(q) ||
-        x.locationName?.toLowerCase().includes(q) ||
-        x.categoryName?.toLowerCase().includes(q)
+    if (!query) return rows;
+
+    return rows.filter((row) =>
+      [
+        row.itemName,
+        row.itemCode,
+        row.locationName,
+        row.categoryName,
+        row.uomName,
+        row.bucket,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query)),
     );
-  }, [data, search]);
+  }, [report.data?.rows, search]);
 
-  const selected = REPORTS.find((x) => x.key === report);
+  const handleReportSelect = (key: string) => {
+    setReportKey(key);
+    setSearch("");
+    report.clear();
+  };
 
-  if (!companyId || !branchId) {
+  const handleExport = () => {
+    exportRowsToCsv({
+      filename: `${report.data?.reportKey ?? reportKey}-${from}-to-${to}.csv`,
+      rows: filteredRows,
+    });
+  };
+
+  const handleOpenInventory = () => {
+    if (!companyId) return;
+    erpNav(`/companies/${companyId}/inventory-master/items`);
+  };
+
+  const handleRowOpen = (row: { itemId?: string | null }) => {
+    if (!row.itemId || !companyId) return;
+    erpNav(`/companies/${companyId}/inventory/items/${row.itemId}`);
+  };
+
+  if (!companyId) {
     return (
       <div className="fnb-page">
-        <div className="fnb-empty">Select company and branch to continue.</div>
+        <div className="fnb-empty-card">
+          <h2>Company scope required</h2>
+          <p>Select a company before opening F&amp;B reports.</p>
+        </div>
       </div>
     );
   }
+
+  const branchRequired = !branchId;
 
   return (
     <div className="fnb-page">
       <header className="fnb-header">
         <div>
           <p className="fnb-kicker">ERP Reports</p>
-          <h1 className="fnb-title">F&B Control Center</h1>
+          <h1 className="fnb-title">F&amp;B Control Center</h1>
           <p className="fnb-subtitle">
-            Kitchen, bar, COGS, valuation, variance, FIFO aging, turnover, and production yield.
+            Consumption, COGS, valuation, variance, FIFO aging, stock turnover,
+            and production yield.
           </p>
         </div>
 
-        <button className="fnb-btn fnb-btn--primary" onClick={load} disabled={loading}>
-          {loading ? "Loading…" : "Refresh"}
-        </button>
+        <div className="fnb-header-actions">
+          <button type="button" className="fnb-btn" onClick={handleOpenInventory}>
+            Inventory
+          </button>
+
+          <button
+            type="button"
+            className="fnb-btn fnb-btn--primary"
+            onClick={report.run}
+            disabled={
+              branchRequired ||
+              report.loading ||
+              catalog.loading ||
+              !selectedReport
+            }
+          >
+            {report.loading ? "Running…" : "Run Report"}
+          </button>
+        </div>
       </header>
 
-      {error && <div className="fnb-alert">{error}</div>}
+      {branchRequired ? (
+        <div className="fnb-alert">
+          Select a branch to run branch-scoped F&amp;B reports.
+        </div>
+      ) : null}
+
+      {catalog.error ? <div className="fnb-alert">{catalog.error}</div> : null}
+      {report.error ? <div className="fnb-alert">{report.error}</div> : null}
 
       <section className="fnb-shell">
-        <aside className="fnb-sidebar">
-          {["Consumption", "Stock Control", "Performance"].map((group) => (
-            <div key={group} className="fnb-menu-group">
-              <div className="fnb-menu-group__title">{group}</div>
-              {REPORTS.filter((x) => x.group === group).map((item) => (
-                <button
-                  key={item.key}
-                  className={`fnb-menu-item ${report === item.key ? "is-active" : ""}`}
-                  onClick={() => setReport(item.key)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </aside>
+        <FnbReportSidebar
+          reports={catalog.items}
+          selected={reportKey}
+          loading={catalog.loading}
+          onSelect={handleReportSelect}
+        />
 
         <main className="fnb-main">
-          <div className="fnb-panel">
-            <div>
-              <p className="fnb-section-kicker">{selected?.group}</p>
-              <h2 className="fnb-section-title">{data?.reportName ?? selected?.label}</h2>
-            </div>
-
-            <div className="fnb-filters">
-              <input className="fnb-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-              <input className="fnb-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-              <input
-                className="fnb-input"
-                placeholder="Location ID optional"
-                value={locationId}
-                onChange={(e) => setLocationId(e.target.value)}
+          {selectedReport ? (
+            <>
+              <FnbReportFilters
+                report={selectedReport}
+                from={from}
+                to={to}
+                locationId={locationId}
+                days={days}
+                search={search}
+                locations={locations.items}
+                loadingLocations={locations.loading}
+                onFromChange={setFrom}
+                onToChange={setTo}
+                onLocationChange={setLocationId}
+                onDaysChange={setDays}
+                onSearchChange={setSearch}
+                onRun={report.run}
+                onExport={handleExport}
+                running={report.loading || branchRequired}
               />
-              {report === "dead-stock" && (
-                <input
-                  className="fnb-input"
-                  type="number"
-                  min={1}
-                  value={days}
-                  onChange={(e) => setDays(Number(e.target.value || 30))}
-                />
-              )}
-            </div>
-          </div>
 
-          <div className="fnb-kpi-grid">
-            <div className="fnb-kpi">
-              <span>Total Qty</span>
-              <strong>{fmt(data?.summary.totalQty)}</strong>
-            </div>
-            <div className="fnb-kpi">
-              <span>Total Value</span>
-              <strong>{fmt(data?.summary.totalValue)}</strong>
-            </div>
-            <div className="fnb-kpi">
-              <span>Items</span>
-              <strong>{fmt(data?.summary.itemCount, 0)}</strong>
-            </div>
-            <div className="fnb-kpi">
-              <span>Rows Shown</span>
-              <strong>{fmt(rows.length, 0)}</strong>
-            </div>
-          </div>
-
-          <div className="fnb-table-card">
-            <div className="fnb-table-toolbar">
-              <div>
-                <strong>Report Detail</strong>
-                <p>Grouped by item, location, and movement value.</p>
-              </div>
-              <input
-                className="fnb-input"
-                placeholder="Search item, code, location..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+              <FnbReportKpis
+                kpis={report.data?.kpis ?? []}
+                rowsShown={filteredRows.length}
               />
-            </div>
 
-            <ReportTable report={report} rows={rows} loading={loading} />
-          </div>
+              <FnbReportTable
+                columns={report.data?.columns ?? []}
+                rows={filteredRows}
+                loading={report.loading}
+                onRowOpen={handleRowOpen}
+              />
+            </>
+          ) : (
+            <div className="fnb-empty-card">
+              <h2>No reports available</h2>
+              <p>The F&amp;B report catalog is empty.</p>
+            </div>
+          )}
         </main>
       </section>
-    </div>
-  );
-}
-
-function ReportTable({
-  report,
-  rows,
-  loading,
-}: {
-  report: FnbReportKey;
-  rows: FnbReportRow[];
-  loading: boolean;
-}) {
-  const isVariance = report === "variance" || report === "theoretical-vs-actual";
-  const isAging = report === "fifo-aging" || report === "dead-stock";
-  const isStock = report === "inventory-valuation" || report === "negative-inventory";
-
-  return (
-    <div className="fnb-table-wrap">
-      <table className="fnb-table">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Location</th>
-            {isStock && <th className="num">Closing Qty</th>}
-            {isVariance && <th className="num">Theoretical</th>}
-            {isVariance && <th className="num">Actual</th>}
-            {isVariance && <th className="num">Variance</th>}
-            {isAging && <th>Bucket</th>}
-            {isAging && <th className="num">Days</th>}
-            {!isVariance && <th className="num">Qty</th>}
-            <th className="num">Unit Cost</th>
-            <th className="num">Value</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {loading ? (
-            <tr>
-              <td colSpan={10} className="fnb-empty">Loading report…</td>
-            </tr>
-          ) : rows.length === 0 ? (
-            <tr>
-              <td colSpan={10} className="fnb-empty">No data found.</td>
-            </tr>
-          ) : (
-            rows.map((row) => (
-              <tr key={`${row.itemId}-${row.locationId ?? "all"}-${row.bucket ?? ""}`}>
-                <td>
-                  <strong>{row.itemName}</strong>
-                  <span>{row.itemCode || "—"} · {row.uomName || "—"}</span>
-                </td>
-                <td>{row.locationName ?? "All"}</td>
-
-                {isStock && <td className="num">{fmt(row.closingQty)}</td>}
-
-                {isVariance && <td className="num">{fmt(row.theoreticalQty)}</td>}
-                {isVariance && <td className="num">{fmt(row.actualQty)}</td>}
-                {isVariance && (
-                  <td className={`num ${row.varianceQty < 0 ? "is-danger" : ""}`}>
-                    {fmt(row.varianceQty)}
-                  </td>
-                )}
-
-                {isAging && <td>{row.bucket ?? "—"}</td>}
-                {isAging && <td className="num">{fmt(row.daysSinceLastMovement, 0)}</td>}
-
-                {!isVariance && <td className="num">{fmt(row.qty)}</td>}
-
-                <td className="num">{fmt(row.unitCost, 4)}</td>
-                <td className="num">{fmt(row.value)}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
     </div>
   );
 }

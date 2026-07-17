@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { http } from "../../../../api/http";
 import { useAppScope } from "../../../../app/useAppScope";
 import { stockTransfersApi } from "../api/stockTransfersApi";
+import { locationsApi } from "../api/locationsApi";
+import { buildStockTransferPaths } from "../routing/stockTransferRoutes";
+import { clean, dateOnlyToUtcIso, getApiError, isoToDateOnly } from "../utils/apiUtils";
+import { normalizeStockTransferStatus, canEditTransfer, canSubmitTransfer, canCancelTransfer, canPostTransfer } from "../utils/stockTransferStatus";
 import type { ItemLookupDto, UomLookupDto } from "../api/stockTransfersApi";
 import {
   STOCK_TRANSFER_STATUS,
@@ -60,86 +63,35 @@ type FieldErrors = {
   lineErrors?: Record<number, Partial<Record<keyof FormLine, string>>>;
 };
 
-const clean = (value: unknown): string => String(value ?? "").trim();
 const norm = (value: unknown): string => clean(value).toLowerCase();
 const newKey = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-function isoToDateOnly(value: string | null | undefined): string {
-  const cleanValue = clean(value);
-  if (!cleanValue) return "";
-  return cleanValue.includes("T") ? cleanValue.slice(0, 10) : cleanValue;
-}
 
-function dateOnlyToUtcIso(dateOnly: string): string | null {
-  if (!dateOnly) return null;
 
-  const [year, month, day] = dateOnly.split("-").map(Number);
 
-  if (!year || !month || !day) return null;
-
-  return new Date(Date.UTC(year, month - 1, day)).toISOString();
-}
 
 function apiErr(error: unknown): string {
-  const err = error as any;
-  const data = err?.response?.data;
-
-  if (typeof data === "string") return data;
-
-  return (
-    data?.message ??
-    data?.title ??
-    data?.detail ??
-    err?.message ??
-    "Request failed"
-  );
+  return getApiError(error);
 }
 
-const STATUS_VALUES = new Set<StockTransferStatus>(
-  Object.values(STOCK_TRANSFER_STATUS)
-);
-
 function normalizeStatus(raw: unknown): StockTransferStatus {
-  if (STATUS_VALUES.has(raw as StockTransferStatus)) {
-    return raw as StockTransferStatus;
-  }
-
-  const value = norm(raw);
-
-  if (value === "draft") return STOCK_TRANSFER_STATUS.Draft;
-  if (value === "submitted") return STOCK_TRANSFER_STATUS.Submitted;
-  if (value === "approved") return STOCK_TRANSFER_STATUS.Approved;
-  if (value === "rejected") return STOCK_TRANSFER_STATUS.Rejected;
-  if (value === "posted") return STOCK_TRANSFER_STATUS.Posted;
-  if (value === "reversed") return STOCK_TRANSFER_STATUS.Reversed;
-  if (value === "cancelled" || value === "canceled") {
-    return STOCK_TRANSFER_STATUS.Cancelled;
-  }
-
-  return STOCK_TRANSFER_STATUS.Draft;
+  return normalizeStockTransferStatus(raw);
 }
 
 function canEdit(status: StockTransferStatus) {
-  return (
-    status === STOCK_TRANSFER_STATUS.Draft ||
-    status === STOCK_TRANSFER_STATUS.Rejected
-  );
+  return canEditTransfer(status);
 }
 
 function canSubmit(status: StockTransferStatus) {
-  return canEdit(status);
+  return canSubmitTransfer(status);
 }
 
 function canCancel(status: StockTransferStatus) {
-  return (
-    status === STOCK_TRANSFER_STATUS.Draft ||
-    status === STOCK_TRANSFER_STATUS.Submitted ||
-    status === STOCK_TRANSFER_STATUS.Approved
-  );
+  return canCancelTransfer(status);
 }
 
 function canPost(status: StockTransferStatus) {
-  return status === STOCK_TRANSFER_STATUS.Approved;
+  return canPostTransfer(status);
 }
 
 async function listLocations(
@@ -147,17 +99,13 @@ async function listLocations(
   branchId: string,
   signal?: AbortSignal
 ): Promise<StockLocationDto[]> {
-  const response = await http.get(
-    `/companies/${companyId}/branches/${branchId}/stock-locations`,
-    { signal }
-  );
-
-  const data = response.data;
-
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.items)) return data.items;
-
-  return [];
+  return locationsApi.list({
+    companyId,
+    branchId,
+    activeOnly: true,
+    capability: "Any",
+    signal,
+  }) as Promise<StockLocationDto[]>;
 }
 
 export default function StockTransferEditPage() {
@@ -195,17 +143,7 @@ export default function StockTransferEditPage() {
   const loading = pageState.status === "loading";
   const busy = loading || saving || acting !== null;
 
-  const paths = useMemo<TransferPaths | null>(() => {
-    if (!companyId) return null;
-
-    const base = `/companies/${companyId}/inventory/stock-transfers`;
-
-    return {
-      list: base,
-      detail: (transferId: string) => `${base}/${transferId}`,
-      edit: (transferId: string) => `${base}/${transferId}/edit`,
-    };
-  }, [companyId]);
+  const paths = useMemo<TransferPaths | null>(() => buildStockTransferPaths(companyId), [companyId]);
 
   const go = useCallback(
     (path: string, replace = false) => {

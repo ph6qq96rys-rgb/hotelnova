@@ -4,11 +4,17 @@
 // Debounced search, status filter tabs, sortable columns, pagination.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate }                                 from "react-router-dom";
+import { useErpNavigate }                             from "../../../../routes/useErpNavigation";
 import { useAppScope }                                 from "../../../../app/useAppScope";
 import { sivApi }                                      from "../api/sivApi";
 import {
-  normalizeStatus, STATUS_BADGE, STATUS_OPTIONS,
+  sivApprovalPath,
+  sivCreatePath,
+  sivDraftPath,
+  sivOpenPath,
+} from "../utils/sivWorkflowRoutes";
+import {
+  normalizeStatus, STATUS_BADGE,
   mapToListItem, fmtDate, fmtQty, getApiError,
   type SivListItemDto, type PagedResult,
 }                                                      from "../types/sivTypes";
@@ -67,7 +73,7 @@ const STATUS_TABS = [
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function SivListPage() {
-  const nav = useNavigate();
+  const nav = useErpNavigate();
   const { companyId, branchId } = useAppScope();
 
   const [filters,  setFilters]  = useState<FilterState>(DEFAULT_FILTERS);
@@ -79,11 +85,13 @@ export default function SivListPage() {
   const [err,      setErr]      = useState<string | null>(null);
 
   const debouncedQ = useDebouncedValue(filters.q);
+  const hasInvalidDateRange =
+    Boolean(filters.dateFrom && filters.dateTo) && filters.dateFrom > filters.dateTo;
 
   // ── Load ───────────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
-    if (!companyId) return;
+    if (!companyId || hasInvalidDateRange) return;
     setLoading(true);
     setErr(null);
     try {
@@ -105,7 +113,7 @@ export default function SivListPage() {
   }, [
     companyId, branchId, debouncedQ,
     filters.docStatus, filters.dateFrom, filters.dateTo,
-    filters.pageSize, page,
+    filters.pageSize, page, hasInvalidDateRange,
   ]);
 
   useEffect(() => { void load(); }, [load]);
@@ -141,14 +149,42 @@ export default function SivListPage() {
   }
 
   function openRow(row: SivListItemDto) {
-    const s = normalizeStatus(row.docStatus);
-    if (s === "Draft" || s === "ChangesRequested") {
-      nav(`/companies/${companyId}/siv/drafts/${row.id}/edit`);
-    } else if (s === "Submitted") {
-      nav(`/companies/${companyId}/siv/approval/${row.id}`);
-    } else {
-      nav(`/companies/${companyId}/siv/${row.id}`);
+    if (!companyId || !row.id) return;
+
+    const status = normalizeStatus(row.docStatus);
+
+    if (status === "Draft" || status === "ChangesRequested") {
+      const rowBranchId = row.branchId || branchId || "";
+
+      if (!rowBranchId) {
+        setErr("A branch is required to open this SIV draft.");
+        return;
+      }
+
+      nav(sivDraftPath(companyId, rowBranchId, row.id));
+      return;
     }
+
+    if (status === "Submitted") {
+      nav(sivApprovalPath(companyId, row.id));
+      return;
+    }
+
+    nav(sivOpenPath(companyId, row.id));
+  }
+
+  function openCreatePage() {
+    if (!companyId) {
+      setErr("Select a company before creating an SIV.");
+      return;
+    }
+
+    if (!branchId) {
+      setErr("Select a branch before creating an SIV.");
+      return;
+    }
+
+    nav(sivCreatePath(companyId, branchId));
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -167,8 +203,8 @@ export default function SivListPage() {
         </div>
         <button
           className="btn btn-primary"
-          disabled={!companyId}
-          onClick={() => nav(`/companies/${companyId}/siv/drafts/new`)}
+          disabled={!companyId || !branchId}
+          onClick={openCreatePage}
         >
           + New SIV
         </button>
@@ -315,7 +351,7 @@ export default function SivListPage() {
               <button
                 className="btn"
                 onClick={() => void load()}
-                disabled={loading}
+                disabled={loading || hasInvalidDateRange}
                 style={{ whiteSpace: "nowrap" }}
               >
                 {loading ? "Loading…" : "↺ Refresh"}
@@ -326,10 +362,14 @@ export default function SivListPage() {
       </div>
 
       {/* ── Error ── */}
-      {err && <div className="alert alert-danger">{err}</div>}
+      {hasInvalidDateRange && (
+        <div className="alert alert-warn" role="alert">Date from cannot be after Date to.</div>
+      )}
+      {err && <div className="alert alert-danger" role="alert">{err}</div>}
 
       {/* ── Table ── */}
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card siv-table-card" style={{ padding: 0 }}>
+        <div className="siv-table-scroll">
         <table className="table">
           <thead>
             <tr>
@@ -374,9 +414,7 @@ export default function SivListPage() {
                   {!filters.docStatus && !filters.q && (
                     <span
                       style={{ color: "var(--accent)", cursor: "pointer" }}
-                      onClick={() =>
-                        nav(`/companies/${companyId}/siv/drafts/new`)
-                      }
+                      onClick={openCreatePage}
                     >
                       Create one →
                     </span>
@@ -506,6 +544,8 @@ export default function SivListPage() {
             )}
           </tbody>
         </table>
+
+        </div>
 
         {/* Pagination footer */}
         <div

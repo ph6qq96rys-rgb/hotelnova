@@ -1,9 +1,12 @@
 ﻿// src/features/inventory/stockTransfers/pages/StockTransferDetailPage.tsx
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
 import { stockTransfersApi } from "../api/stockTransfersApi";
+import { buildStockTransferPaths } from "../routing/stockTransferRoutes";
+import { getApiError } from "../utils/apiUtils";
+import { normalizeStockTransferStatus, canEditTransfer, canSubmitTransfer, canApproveTransfer, canPostTransfer, canCancelTransfer } from "../utils/stockTransferStatus";
 import {
   STOCK_TRANSFER_STATUS,
   type StockTransferDetailDto,
@@ -27,10 +30,7 @@ function money(n?: number | null) {
 }
 
 function apiErr(e: unknown): string {
-  const err  = e as any;
-  const data = err?.response?.data;
-  if (typeof data === "string") return data;
-  return data?.message ?? data?.title ?? err?.message ?? "Request failed";
+  return getApiError(e);
 }
 
 // ── Status normalisation ──────────────────────────────────────────────────────
@@ -272,6 +272,7 @@ export default function StockTransferDetailPage() {
   const nav = useNavigate();
   const { id } = useParams<{ id: string }>();
   const { companyId, branchId } = useAppScope();
+  const paths = useMemo(() => buildStockTransferPaths(companyId), [companyId]);
 
   const [data,         setData]         = useState<StockTransferDetailDto | null>(null);
   const [loading,      setLoading]      = useState(false);
@@ -329,12 +330,12 @@ export default function StockTransferDetailPage() {
 
   // FIX: normalizeStatus applied so comparisons work regardless of whether
   // the API returns "Submitted", "submitted", or a numeric code.
-  const status     = normalizeStatus(data?.status);
-  const canEdit    = status === STOCK_TRANSFER_STATUS.Draft    || status === STOCK_TRANSFER_STATUS.Rejected;
-  const canSubmit  = status === STOCK_TRANSFER_STATUS.Draft;
-  const canApprove = status === STOCK_TRANSFER_STATUS.Submitted;
-  const canPost    = status === STOCK_TRANSFER_STATUS.Approved;
-  const canCancel  = status === STOCK_TRANSFER_STATUS.Draft    || status === STOCK_TRANSFER_STATUS.Submitted;
+  const status     = normalizeStockTransferStatus(data?.status);
+  const canEdit    = canEditTransfer(status);
+  const canSubmit  = canSubmitTransfer(status);
+  const canApprove = canApproveTransfer(status);
+  const canPost    = canPostTransfer(status);
+  const canCancel  = canCancelTransfer(status);
 
   const stepIndex  = ["Draft","Submitted","Approved","Posted"].indexOf(status);
   const totalQty   = data?.items.reduce((s, l) => s + (l.quantity  ?? 0), 0) ?? 0;
@@ -362,7 +363,7 @@ export default function StockTransferDetailPage() {
             {data && <StatusBadge status={status} />}
             {canEdit && (
               <button
-                onClick={() => nav(`/inventory/stock-transfers/${id}/edit`)}
+                onClick={() => paths && nav(paths.edit(id!))}
                 style={{
                   fontSize: 12, padding: "4px 12px", borderRadius: 8,
                   border: "1px solid #e2e8f0", background: "#f8fafc",
@@ -382,7 +383,7 @@ export default function StockTransferDetailPage() {
             }}>
             {loading ? "…" : "↻ Refresh"}
           </button>
-          <button onClick={() => nav("/inventory/stock-transfers")}
+          <button onClick={() => paths && nav(paths.list)}
             style={{
               padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0",
               background: "#f8fafc", cursor: "pointer", fontSize: 13, color: "#475569",
@@ -608,7 +609,7 @@ export default function StockTransferDetailPage() {
 
         {canEdit && (
           <ActionBtn label="✎ Edit" busy={busy} name="edit" variant="secondary"
-            onClick={() => nav(`/inventory/stock-transfers/${id}/edit`)} />
+            onClick={() => paths && nav(paths.edit(id!))} />
         )}
         {canSubmit && (
           <ActionBtn label="Submit for Approval" busy={busy} name="submit" variant="primary"

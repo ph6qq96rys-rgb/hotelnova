@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { posApi } from "../api/posApi";
+import { useAppScope } from "../../../app/useAppScope";
+import { extractApiError } from "../utils/posUtils";
 import type { Guid, SaleInventoryConsumptionDto } from "../types/posTypes";
 import { Card, money, Spinner } from "./posUi";
 
@@ -8,6 +10,7 @@ export function SaleInventoryConsumptionPanel({
 }: {
   saleId: Guid;
 }) {
+  const { companyId, branchId } = useAppScope();
   const [rows, setRows] = useState<SaleInventoryConsumptionDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -22,14 +25,12 @@ export function SaleInventoryConsumptionPanel({
       setError("");
 
       try {
-        const data = await posApi.saleInventoryConsumption(saleId);
+        const data = await posApi.saleInventoryConsumption({ companyId, branchId }, saleId);
         if (!cancelled) setRows(data);
       } catch (err) {
         if (!cancelled) {
           setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load inventory consumption."
+            extractApiError(err, "Failed to load inventory consumption.")
           );
         }
       } finally {
@@ -42,7 +43,7 @@ export function SaleInventoryConsumptionPanel({
     return () => {
       cancelled = true;
     };
-  }, [saleId]);
+  }, [saleId, companyId, branchId]);
 
   const totalCost = rows.reduce((sum, x) => sum + x.totalCost, 0);
 

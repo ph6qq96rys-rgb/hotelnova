@@ -1,93 +1,208 @@
-﻿import { http } from "../../../../api/http";
+﻿// src/features/inventory/stock-transfers/api/stockTransfersApi.ts
+
+import { http } from "../../../../api/http";
 import type {
-  StockTransferListDto,
+  CreateStockTransferRequest,
   StockTransferDetailDto,
+  StockTransferListDto,
   StockTransferStatus,
   UpdateStockTransferRequest,
-  CreateStockTransferRequest,
 } from "../types";
+import { unwrapArray } from "../utils/apiUtils";
+import { normalizeItemLookup, normalizeUom } from "../mapping/stockTransferMappers";
 
 export type ItemLookupDto = {
-  id:            string;
-  code?:         string | null;
-  sku?:          string | null;   // API returns sku, not code
-  name?:         string | null;
-  label?:        string | null;
+  id: string;
+  code?: string | null;
+  sku?: string | null;
+  name?: string | null;
+  label?: string | null;
   defaultUomId?: string | null;
-  baseUomId?:    string | null;
-  uoms?:         Array<{ uomId: string; code?: string | null; name?: string | null }>;
+  baseUomId?: string | null;
+  uoms?: Array<{
+    uomId: string;
+    code?: string | null;
+    name?: string | null;
+  }>;
 };
 
 export type UomLookupDto = {
-  id:    string;
+  id: string;
   code?: string | null;
   name?: string | null;
+  label: string;
 };
 
-const base = (companyId: string, branchId: string) =>
-  `/companies/${companyId}/branches/${branchId}/stock-transfers`;
+type WorkflowReason = {
+  reason?: string | null;
+  note?: string | null;
+};
+
+function path(value: string): string {
+  return encodeURIComponent(value.trim());
+}
+
+const root = (companyId: string, branchId: string) =>
+  `/companies/${path(companyId)}/branches/${path(branchId)}/stock-transfers`;
+
+const inventoryMaster = (companyId: string) =>
+  `/companies/${path(companyId)}/inventory-master`;
+
+function isItemLookupDto(value: ItemLookupDto | null): value is ItemLookupDto {
+  return Boolean(value?.id);
+}
+
+function toUomLookupDto(value: ReturnType<typeof normalizeUom>): UomLookupDto | null {
+  if (!value?.id) return null;
+
+  return {
+    id: value.id,
+    code: value.code ?? null,
+    name: value.name ?? null,
+    label: value.label,
+  };
+}
+
+function isUomLookupDto(value: UomLookupDto | null): value is UomLookupDto {
+  return Boolean(value?.id);
+}
 
 export const stockTransfersApi = {
+  catalog: {
+    async items(companyId: string): Promise<ItemLookupDto[]> {
+      const response = await http.get(`${inventoryMaster(companyId)}/items`);
 
-  // ── Lookups ───────────────────────────────────────────────────────────────
-  // Both endpoints live under /inventory-master (company-scoped, no branchId)
+      return unwrapArray<unknown>(response)
+        .map(normalizeItemLookup)
+        .filter(isItemLookupDto);
+    },
 
-  listItems: (companyId: string) =>
-    http
-      .get<ItemLookupDto[]>(`/companies/${companyId}/inventory-master/items`)
-      .then((r) => r.data ?? []),
+    async uoms(companyId: string): Promise<UomLookupDto[]> {
+      const response = await http.get(`${inventoryMaster(companyId)}/uoms`);
 
-  listUoms: (companyId: string) =>
-    http
-      .get<UomLookupDto[]>(`/companies/${companyId}/inventory-master/uoms`)
-      .then((r) => r.data ?? []),
+      return unwrapArray<unknown>(response)
+        .map(normalizeUom)
+        .map(toUomLookupDto)
+        .filter(isUomLookupDto);
+    },
+  },
 
-  // ── Stock transfers ───────────────────────────────────────────────────────
-
-  list: (companyId: string, branchId: string, status?: StockTransferStatus | null) =>
-    http
-      .get<StockTransferListDto[]>(base(companyId, branchId), {
+  documents: {
+    async list(
+      companyId: string,
+      branchId: string,
+      status?: StockTransferStatus | null
+    ): Promise<StockTransferListDto[]> {
+      const response = await http.get(root(companyId, branchId), {
         params: { status: status ?? undefined },
-      })
-      .then((r) => r.data),
+      });
+
+      return unwrapArray<StockTransferListDto>(response);
+    },
+
+    async get(
+      companyId: string,
+      branchId: string,
+      id: string
+    ): Promise<StockTransferDetailDto> {
+      const response = await http.get<StockTransferDetailDto>(
+        `${root(companyId, branchId)}/${path(id)}`
+      );
+
+      return response.data;
+    },
+
+    async create(
+      companyId: string,
+      branchId: string,
+      body: CreateStockTransferRequest
+    ): Promise<string> {
+      const response = await http.post<string>(root(companyId, branchId), body);
+      return response.data;
+    },
+
+    async update(
+      companyId: string,
+      branchId: string,
+      id: string,
+      body: UpdateStockTransferRequest
+    ): Promise<void> {
+      await http.put(`${root(companyId, branchId)}/${path(id)}`, body);
+    },
+  },
+
+  workflow: {
+    async submit(companyId: string, branchId: string, id: string): Promise<void> {
+      await http.post(`${root(companyId, branchId)}/${path(id)}/submit`, {});
+    },
+
+    async approve(companyId: string, branchId: string, id: string): Promise<void> {
+      await http.post(`${root(companyId, branchId)}/${path(id)}/approve`, {});
+    },
+
+    async reject(
+      companyId: string,
+      branchId: string,
+      id: string,
+      reason: string
+    ): Promise<void> {
+      await http.post(`${root(companyId, branchId)}/${path(id)}/reject`, {
+        reason,
+      });
+    },
+
+    async post(companyId: string, branchId: string, id: string): Promise<void> {
+      await http.post(`${root(companyId, branchId)}/${path(id)}/post`, {});
+    },
+
+    async cancel(
+      companyId: string,
+      branchId: string,
+      id: string,
+      reason?: string | null
+    ): Promise<void> {
+      const body: WorkflowReason = { reason: reason ?? null };
+      await http.post(`${root(companyId, branchId)}/${path(id)}/cancel`, body);
+    },
+  },
+
+  list: (
+    companyId: string,
+    branchId: string,
+    status?: StockTransferStatus | null
+  ) => stockTransfersApi.documents.list(companyId, branchId, status),
 
   get: (companyId: string, branchId: string, id: string) =>
-    http
-      .get<StockTransferDetailDto>(`${base(companyId, branchId)}/${id}`)
-      .then((r) => r.data),
+    stockTransfersApi.documents.get(companyId, branchId, id),
 
-  create: (companyId: string, branchId: string, body: CreateStockTransferRequest) =>
-    http
-      .post<string>(base(companyId, branchId), body)
-      .then((r) => r.data),
+  create: (
+    companyId: string,
+    branchId: string,
+    body: CreateStockTransferRequest
+  ) => stockTransfersApi.documents.create(companyId, branchId, body),
 
-  update: (companyId: string, branchId: string, id: string, dto: UpdateStockTransferRequest) =>
-    http
-      .put<void>(`${base(companyId, branchId)}/${id}`, dto)
-      .then((r) => r.data),
+  update: (
+    companyId: string,
+    branchId: string,
+    id: string,
+    body: UpdateStockTransferRequest
+  ) => stockTransfersApi.documents.update(companyId, branchId, id, body),
 
   submit: (companyId: string, branchId: string, id: string) =>
-    http
-      .post<void>(`${base(companyId, branchId)}/${id}/submit`, {})
-      .then((r) => r.data),
+    stockTransfersApi.workflow.submit(companyId, branchId, id),
 
   approve: (companyId: string, branchId: string, id: string) =>
-    http
-      .post<void>(`${base(companyId, branchId)}/${id}/approve`, {})
-      .then((r) => r.data),
+    stockTransfersApi.workflow.approve(companyId, branchId, id),
 
   reject: (companyId: string, branchId: string, id: string, reason: string) =>
-    http
-      .post<void>(`${base(companyId, branchId)}/${id}/reject`, { reason })
-      .then((r) => r.data),
+    stockTransfersApi.workflow.reject(companyId, branchId, id, reason),
 
   post: (companyId: string, branchId: string, id: string) =>
-    http
-      .post<void>(`${base(companyId, branchId)}/${id}/post`, {})
-      .then((r) => r.data),
+    stockTransfersApi.workflow.post(companyId, branchId, id),
 
   cancel: (companyId: string, branchId: string, id: string, reason?: string) =>
-    http
-      .post<void>(`${base(companyId, branchId)}/${id}/cancel`, { reason: reason ?? null })
-      .then((r) => r.data),
+    stockTransfersApi.workflow.cancel(companyId, branchId, id, reason),
+
+  listItems: (companyId: string) => stockTransfersApi.catalog.items(companyId),
+  listUoms: (companyId: string) => stockTransfersApi.catalog.uoms(companyId),
 };

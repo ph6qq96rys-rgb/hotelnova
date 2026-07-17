@@ -216,35 +216,38 @@ export const salesApi = {
   },
 
   importExternalSales(
-    companyId: Guid,
-    branchId: Guid,
-    payload: {
-      locationId: Guid;
-      salesDate: string;
-      sourcePlatform: string;
-      file: File;
-      replaceExisting: boolean;
+  companyId: Guid,
+  branchId: Guid,
+  payload: {
+    locationId: Guid;
+    storeId: Guid;
+    salesDate: string;
+    sourcePlatform: string;
+    file: File;
+    replaceExisting: boolean;
+  }
+) {
+  requireGuid("Location ID", payload.locationId);
+  requireGuid("Store ID", payload.storeId);
+
+  const form = new FormData();
+  form.append("locationId", payload.locationId);
+  form.append("storeId", payload.storeId);
+  form.append("salesDate", payload.salesDate);
+  form.append("sourcePlatform", payload.sourcePlatform);
+  form.append("file", payload.file);
+  form.append("replaceExisting", String(payload.replaceExisting));
+
+  return http.post<ImportExternalSalesResultDto>(
+    `${branchBase(companyId, branchId)}/external-sales/import`,
+    form,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
     }
-  ) {
-    requireGuid("Location ID", payload.locationId);
-
-    const form = new FormData();
-    form.append("locationId", payload.locationId);
-    form.append("salesDate", payload.salesDate);
-    form.append("sourcePlatform", payload.sourcePlatform);
-    form.append("file", payload.file);
-    form.append("replaceExisting", String(payload.replaceExisting));
-
-    return http.post<ImportExternalSalesResultDto>(
-      `${branchBase(companyId, branchId)}/external-sales/import`,
-      form,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      }
-    );
-  },
+  );
+},
 
   searchMenuItems(companyId: Guid, branchId: Guid, search = "") {
     return http.get<MenuItemLookupDto[]>(

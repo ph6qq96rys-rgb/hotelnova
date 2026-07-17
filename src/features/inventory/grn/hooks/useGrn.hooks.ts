@@ -1,10 +1,16 @@
 // ─── GRN Custom Hooks ─────────────────────────────────────────────────────────
-// ERP-grade hooks for GRN list, detail, draft editor, and reversal workflows.
+// ERP-grade hooks for GRN list, detail, draft editor, posting, and reversal.
+//
+// Design rules:
+// - grnApi is the only HTTP boundary.
+// - Request mapping uses shared GRN helpers.
+// - GRN create/update/post always uses company + branch scope when available.
+// - Reversal is by GRN id only; batch reversal was removed from the API.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAppScope } from "../../../../app/useAppScope";
 
-import { grnApi } from "../api/grnApi";
+import { useAppScope } from "../../../../app/useAppScope";
+import { grnApi, type GrnIdentityResult, type GrnScope } from "../api/grnApi";
 import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
 import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryItemsApi";
 
@@ -17,6 +23,12 @@ import type {
   ItemVm,
   SelectOption,
 } from "../types/grn.types";
+import type { GrnStatusFilter } from "../helpers/grn.status";
+import {
+  buildCreateGrnRequest,
+  createEmptyGrnDraft,
+  createEmptyGrnLine,
+} from "../helpers/grn.builders";
 
 import {
   buildItemLabelCache,
@@ -24,94 +36,93 @@ import {
   extractApiError,
   normalizeDraftDto,
   toItemVm,
-  todayDateOnly,
   trim,
 } from "../utils/grn.utils";
 
-const createEmptyGrnLine = (): GrnLineDraft => ({
-  itemId: "",
-  uomId: "",
-  quantity: 1,
-  unitCost: 0,
-  batchNo: "",
-  expiryDate: null,
-  notes: "",
-});
+/* -------------------------------------------------------------------------- */
+/* Shared helpers                                                              */
+/* -------------------------------------------------------------------------- */
 
-function toUtcDateOnlyIso(value: string | null | undefined): string {
-  if (!value) return new Date().toISOString();
+function buildScope(companyId?: string | null, branchId?: string | null): GrnScope | null {
+  const cleanCompanyId = trim(companyId);
+  if (!cleanCompanyId) return null;
 
-  const [year, month, day] = value.split("-").map(Number);
+  const cleanBranchId = trim(branchId);
 
-  if (!year || !month || !day) {
-    return new Date().toISOString();
-  }
-
-  return new Date(Date.UTC(year, month - 1, day)).toISOString();
-}
-
-function toNullableUtcDateOnlyIso(value: string | null | undefined): string | null {
-  if (!value) return null;
-
-  const [year, month, day] = value.split("-").map(Number);
-
-  if (!year || !month || !day) {
-    return null;
-  }
-
-  return new Date(Date.UTC(year, month - 1, day)).toISOString();
-}
-
-function buildGrnDraftRequest(form: GrnDraft): CreateGrnDraftRequest {
   return {
-    receivingLocationId: form.locationId,
-    supplierName: trim(form.supplierName),
-    receivedDate: toUtcDateOnlyIso(form.receivedDate),
-    notes: trim(form.notes),
-    lines: form.lines.map((line) => ({
-      itemId: line.itemId,
-      uomId: line.uomId,
-      quantity: Number(line.quantity) || 0,
-      unitCost: Number(line.unitCost) || 0,
-      batchNo: trim(line.batchNo),
-      expiryDate: toNullableUtcDateOnlyIso(line.expiryDate),
-      notes: trim(line.notes),
-    })),
-  };
+    companyId: cleanCompanyId,
+    ...(cleanBranchId ? { branchId: cleanBranchId } : {}),
+  } as GrnScope;
 }
 
-// ── useGrnList ────────────────────────────────────────────────────────────────
+function buildDraftRequest(
+  form: GrnDraft,
+  companyId?: string | null,
+  branchId?: string | null,
+): CreateGrnDraftRequest {
+  return buildCreateGrnRequest(form, {
+    companyId: trim(companyId) || undefined,
+    branchId: trim(branchId) || undefined,
+  });
+}
+
+function getCreatedId(value: GrnIdentityResult | null | undefined): string | undefined {
+  return value?.id ?? value?.grnId ?? value?.draftId ?? undefined;
+}
+
+/* -------------------------------------------------------------------------- */
+/* useGrnList                                                                  */
+/* -------------------------------------------------------------------------- */
+
+export interface UseGrnListOptions {
+  status?: GrnStatusFilter;
+  from?: string | Date | null;
+  to?: string | Date | null;
+  q?: string | null;
+}
 
 export interface UseGrnListResult {
   rows: GrnListDto[];
   loading: boolean;
   error: string | null;
-  refresh: () => void;
+  refresh: () => Promise<void>;
 }
 
-export function useGrnList(): UseGrnListResult {
-  const { companyId } = useAppScope();
+export function useGrnList(options: UseGrnListOptions = {}): UseGrnListResult {
+  const { companyId, branchId } = useAppScope();
 
   const [rows, setRows] = useState<GrnListDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const scope = useMemo(() => buildScope(companyId, branchId), [companyId, branchId]);
+
   const load = useCallback(async () => {
-    if (!companyId) return;
+    if (!scope) {
+      setRows([]);
+      setError(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const data = await grnApi.list(companyId);
+      const data = await grnApi.list(scope, {
+        status: options.status === "ALL" ? undefined : options.status,
+        from: options.from ?? undefined,
+        to: options.to ?? undefined,
+        q: trim(options.q) || undefined,
+      });
+
       setRows(Array.isArray(data) ? data : []);
     } catch (err) {
-      setError(extractApiError(err, "Failed to load GRNs"));
       setRows([]);
+      setError(extractApiError(err, "Failed to load goods receipts."));
     } finally {
       setLoading(false);
     }
-  }, [companyId]);
+  }, [scope, options.status, options.from, options.to, options.q]);
 
   useEffect(() => {
     void load();
@@ -125,38 +136,46 @@ export function useGrnList(): UseGrnListResult {
   };
 }
 
-// ── useGrnDetail ──────────────────────────────────────────────────────────────
+/* -------------------------------------------------------------------------- */
+/* useGrnDetail                                                                */
+/* -------------------------------------------------------------------------- */
 
 export interface UseGrnDetailResult {
   value: GrnDetailDto | null;
   loading: boolean;
   error: string | null;
-  refresh: () => void;
+  refresh: () => Promise<void>;
 }
 
-export function useGrnDetail(grnId: string | undefined): UseGrnDetailResult {
-  const { companyId } = useAppScope();
+export function useGrnDetail(grnId: string | null | undefined): UseGrnDetailResult {
+  const { companyId, branchId } = useAppScope();
 
   const [value, setValue] = useState<GrnDetailDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const scope = useMemo(() => buildScope(companyId, branchId), [companyId, branchId]);
+
   const load = useCallback(async () => {
-    if (!companyId || !grnId) return;
+    if (!scope || !grnId) {
+      setValue(null);
+      setError(null);
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const data = await grnApi.getById(companyId, grnId);
+      const data = await grnApi.getById(scope, grnId);
       setValue(data);
     } catch (err) {
-      setError(extractApiError(err, "Failed to load GRN"));
       setValue(null);
+      setError(extractApiError(err, "Failed to load goods receipt."));
     } finally {
       setLoading(false);
     }
-  }, [companyId, grnId]);
+  }, [scope, grnId]);
 
   useEffect(() => {
     void load();
@@ -170,24 +189,144 @@ export function useGrnDetail(grnId: string | undefined): UseGrnDetailResult {
   };
 }
 
-// ── useGrnDraftEditor ─────────────────────────────────────────────────────────
+/* -------------------------------------------------------------------------- */
+/* useGrnLookups                                                               */
+/* -------------------------------------------------------------------------- */
 
-export interface UseGrnDraftEditorResult {
-  form: GrnDraft;
-  setHeader: (patch: Partial<GrnDraft>) => void;
-  addLine: () => void;
-  updateLine: (idx: number, patch: Partial<GrnLineDraft>) => void;
-  removeLine: (idx: number) => void;
-  subtotal: number;
-
+export interface UseGrnLookupsResult {
   warehouseOptions: SelectOption<string>[];
   warehousesLoading: boolean;
+  warehouseError: string | null;
 
   itemOptions: SelectOption<string>[];
   itemById: Map<string, ItemVm>;
   itemLabelById: Record<string, string>;
   uomLabelById: Record<string, string>;
   itemsLoading: boolean;
+  itemError: string | null;
+
+  refreshWarehouses: () => Promise<void>;
+  refreshItems: () => Promise<void>;
+}
+
+type StockLocationRow = {
+  id?: string | null;
+  name?: string | null;
+  code?: string | null;
+  locationType?: string | null;
+  canReceive?: boolean | null;
+  canReceiveGrn?: boolean | null;
+  isActive?: boolean | null;
+};
+
+export function useGrnLookups(): UseGrnLookupsResult {
+  const { companyId, branchId } = useAppScope();
+
+  const [warehouseOptions, setWarehouseOptions] = useState<SelectOption<string>[]>([]);
+  const [warehousesLoading, setWarehousesLoading] = useState(false);
+  const [warehouseError, setWarehouseError] = useState<string | null>(null);
+
+  const [itemsRaw, setItemsRaw] = useState<ItemVm[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [itemError, setItemError] = useState<string | null>(null);
+
+  const refreshWarehouses = useCallback(async () => {
+    if (!companyId || !branchId) {
+      setWarehouseOptions([]);
+      setWarehouseError(null);
+      return;
+    }
+
+    setWarehousesLoading(true);
+    setWarehouseError(null);
+
+    try {
+      const rows = (await stockLocationsApi.list(companyId, branchId)) as StockLocationRow[];
+
+      const options = (rows ?? [])
+        .filter((row) => Boolean(row.id) && row.isActive !== false)
+        .map((row) => ({
+          value: String(row.id),
+          label: trim(row.name) || trim(row.code) || "Receiving warehouse",
+        }));
+
+      setWarehouseOptions(options);
+    } catch (err) {
+      setWarehouseOptions([]);
+      setWarehouseError(extractApiError(err, "Failed to load receiving warehouses."));
+    } finally {
+      setWarehousesLoading(false);
+    }
+  }, [companyId, branchId]);
+
+  const refreshItems = useCallback(async () => {
+    if (!companyId) {
+      setItemsRaw([]);
+      setItemError(null);
+      return;
+    }
+
+    setItemsLoading(true);
+    setItemError(null);
+
+    try {
+      const data = await inventoryItemsApi.list(companyId);
+      setItemsRaw((data ?? []).map(toItemVm));
+    } catch (err) {
+      setItemsRaw([]);
+      setItemError(extractApiError(err, "Failed to load inventory items."));
+    } finally {
+      setItemsLoading(false);
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    void refreshWarehouses();
+  }, [refreshWarehouses]);
+
+  useEffect(() => {
+    void refreshItems();
+  }, [refreshItems]);
+
+  const itemById = useMemo(() => new Map(itemsRaw.map((item) => [item.id, item])), [itemsRaw]);
+
+  const itemOptions = useMemo<SelectOption<string>[]>(
+    () => itemsRaw.map((item) => ({ value: item.id, label: item.label })),
+    [itemsRaw],
+  );
+
+  const itemLabelById = useMemo(() => buildItemLabelCache(itemsRaw), [itemsRaw]);
+  const uomLabelById = useMemo(() => buildUomLabelCache(itemsRaw), [itemsRaw]);
+
+  return {
+    warehouseOptions,
+    warehousesLoading,
+    warehouseError,
+
+    itemOptions,
+    itemById,
+    itemLabelById,
+    uomLabelById,
+    itemsLoading,
+    itemError,
+
+    refreshWarehouses,
+    refreshItems,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* useGrnDraftEditor                                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface UseGrnDraftEditorResult extends UseGrnLookupsResult {
+  form: GrnDraft;
+  setHeader: (patch: Partial<GrnDraft>) => void;
+  addLine: () => void;
+  updateLine: (idx: number, patch: Partial<GrnLineDraft>) => void;
+  removeLine: (idx: number) => void;
+  resetDraft: () => void;
+  subtotal: number;
 
   saving: boolean;
   posting: boolean;
@@ -195,7 +334,7 @@ export interface UseGrnDraftEditorResult {
   postError: string | null;
   saveSuccess: string | null;
 
-  saveDraft: () => Promise<void>;
+  saveDraft: () => Promise<string | null>;
   postGrn: () => Promise<string | null>;
 
   isEdit: boolean;
@@ -203,25 +342,25 @@ export interface UseGrnDraftEditorResult {
   draftError: string | null;
 }
 
-export function useGrnDraftEditor(
-  draftId: string | undefined
-): UseGrnDraftEditorResult {
+export function useGrnDraftEditor(draftId: string | null | undefined): UseGrnDraftEditorResult {
   const { companyId, branchId } = useAppScope();
-  const isEdit = Boolean(draftId);
+  const lookups = useGrnLookups();
 
-  const [form, setForm] = useState<GrnDraft>({
-    locationId: "",
-    receivedDate: todayDateOnly(),
-    supplierName: "",
-    notes: "",
-    lines: [],
-  });
+  const isEdit = Boolean(draftId);
+  const scope = useMemo(() => buildScope(companyId, branchId), [companyId, branchId]);
+
+  const [form, setForm] = useState<GrnDraft>(() => createEmptyGrnDraft());
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+
+  const [saving, setSaving] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [postError, setPostError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
   const setHeader = useCallback((patch: Partial<GrnDraft>) => {
-    setForm((current) => ({
-      ...current,
-      ...patch,
-    }));
+    setForm((current) => ({ ...current, ...patch }));
   }, []);
 
   const addLine = useCallback(() => {
@@ -231,118 +370,51 @@ export function useGrnDraftEditor(
     }));
   }, []);
 
-  const updateLine = useCallback(
-    (idx: number, patch: Partial<GrnLineDraft>) => {
-      setForm((current) => {
-        if (idx < 0 || idx >= current.lines.length) return current;
+  const updateLine = useCallback((idx: number, patch: Partial<GrnLineDraft>) => {
+    setForm((current) => {
+      if (idx < 0 || idx >= current.lines.length) return current;
 
-        const lines = current.lines.map((line, index) =>
-          index === idx ? { ...line, ...patch } : line
-        );
-
-        return {
-          ...current,
-          lines,
-        };
-      });
-    },
-    []
-  );
-
-  const removeLine = useCallback((idx: number) => {
-    setForm((current) => ({
-      ...current,
-      lines: current.lines.filter((_, index) => index !== idx),
-    }));
+      return {
+        ...current,
+        lines: current.lines.map((line, index) =>
+          index === idx ? { ...line, ...patch } : line,
+        ),
+      };
+    });
   }, []);
 
-  const subtotal = useMemo(() => {
-    return form.lines.reduce((sum, line) => {
-      return sum + (Number(line.quantity) || 0) * (Number(line.unitCost) || 0);
-    }, 0);
-  }, [form.lines]);
+  const removeLine = useCallback((idx: number) => {
+    setForm((current) => {
+      const lines = current.lines.filter((_, index) => index !== idx);
 
-  const [warehouseOptions, setWarehouseOptions] = useState<SelectOption<string>[]>([]);
-  const [warehousesLoading, setWarehousesLoading] = useState(false);
+      return {
+        ...current,
+        lines: lines.length > 0 ? lines : [createEmptyGrnLine()],
+      };
+    });
+  }, []);
 
-  useEffect(() => {
-    if (!companyId || !branchId) return;
+  const resetDraft = useCallback(() => {
+    setForm(createEmptyGrnDraft());
+    setDraftError(null);
+    setSaveError(null);
+    setPostError(null);
+    setSaveSuccess(null);
+  }, []);
 
-    let cancelled = false;
-
-    setWarehousesLoading(true);
-
-    stockLocationsApi
-      .list(companyId, branchId)
-      .then((rows) => {
-        if (cancelled) return;
-
-        const options = (rows ?? []).map((row: { id: string; name?: string }) => ({
-          value: String(row.id),
-          label: trim(row.name) || "Warehouse",
-        }));
-
-        setWarehouseOptions(options);
-      })
-      .catch(() => {
-        if (!cancelled) setWarehouseOptions([]);
-      })
-      .finally(() => {
-        if (!cancelled) setWarehousesLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [companyId, branchId]);
-
-  const [itemsRaw, setItemsRaw] = useState<ItemVm[]>([]);
-  const [itemsLoading, setItemsLoading] = useState(false);
+  const subtotal = useMemo(
+    () =>
+      form.lines.reduce(
+        (sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.unitCost) || 0),
+        0,
+      ),
+    [form.lines],
+  );
 
   useEffect(() => {
-    if (!companyId) return;
-
-    let cancelled = false;
-
-    setItemsLoading(true);
-
-    inventoryItemsApi
-      .list(companyId)
-      .then((data) => {
-        if (cancelled) return;
-        setItemsRaw((data ?? []).map(toItemVm));
-      })
-      .catch(() => {
-        if (!cancelled) setItemsRaw([]);
-      })
-      .finally(() => {
-        if (!cancelled) setItemsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [companyId]);
-
-  const itemById = useMemo(() => {
-    return new Map(itemsRaw.map((item) => [item.id, item]));
-  }, [itemsRaw]);
-
-  const itemOptions = useMemo<SelectOption<string>[]>(() => {
-    return itemsRaw.map((item) => ({
-      value: item.id,
-      label: item.label,
-    }));
-  }, [itemsRaw]);
-
-  const itemLabelById = useMemo(() => buildItemLabelCache(itemsRaw), [itemsRaw]);
-  const uomLabelById = useMemo(() => buildUomLabelCache(itemsRaw), [itemsRaw]);
-
-  const [draftLoading, setDraftLoading] = useState(false);
-  const [draftError, setDraftError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isEdit || !companyId || !draftId) return;
+    if (!isEdit || !scope || !draftId) {
+      return;
+    }
 
     let cancelled = false;
 
@@ -350,101 +422,92 @@ export function useGrnDraftEditor(
     setDraftError(null);
 
     grnApi
-      .getById(companyId, draftId)
+      .getById(scope, draftId)
       .then((dto) => {
-        if (cancelled) return;
-        setForm(normalizeDraftDto(dto));
+        if (!cancelled) {
+          setForm(normalizeDraftDto(dto));
+        }
       })
       .catch((err) => {
         if (!cancelled) {
-          setDraftError(extractApiError(err, "Failed to load draft"));
+          setDraftError(extractApiError(err, "Failed to load goods receipt draft."));
         }
       })
       .finally(() => {
-        if (!cancelled) setDraftLoading(false);
+        if (!cancelled) {
+          setDraftLoading(false);
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [isEdit, companyId, draftId]);
+  }, [isEdit, scope, draftId]);
 
-  const [saving, setSaving] = useState(false);
-  const [posting, setPosting] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [postError, setPostError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-
-  const saveDraft = useCallback(async () => {
-    if (!companyId) return;
+  const saveDraft = useCallback(async (): Promise<string | null> => {
+    if (!scope || !companyId) return null;
 
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
 
     try {
-      const request = buildGrnDraftRequest(form);
+      const request = buildDraftRequest(form, companyId, branchId);
 
-      if (form.id) {
-        await grnApi.updateDraft(companyId, form.id, request);
-        setSaveSuccess("Draft updated.");
-      } else {
-        const result = await grnApi.createDraft(companyId, request);
-        const newId = result?.id ?? result?.draftId;
+      const result = form.id
+        ? await grnApi.updateDraft(scope, form.id, request)
+        : await grnApi.createDraft(scope, request);
 
-        if (newId) {
-          setForm((current) => ({
-            ...current,
-            id: newId,
-          }));
-        }
+      const id = getCreatedId(result);
 
-        setSaveSuccess("Draft saved.");
+      if (id) {
+        setForm((current) => ({ ...current, id }));
       }
+
+      setSaveSuccess(form.id ? "Goods receipt draft updated." : "Goods receipt draft saved.");
+      return id ?? form.id ?? null;
     } catch (err) {
-      setSaveError(extractApiError(err, "Failed to save draft"));
+      setSaveError(extractApiError(err, "Failed to save goods receipt draft."));
+      return null;
     } finally {
       setSaving(false);
     }
-  }, [companyId, form]);
+  }, [scope, companyId, branchId, form]);
 
   const postGrn = useCallback(async (): Promise<string | null> => {
-    if (!companyId) return null;
+    if (!scope || !companyId) return null;
 
     setPosting(true);
     setPostError(null);
 
     try {
-      const request = buildGrnDraftRequest(form);
-
+      const request = buildDraftRequest(form, companyId, branchId);
       let draftIdToPost = form.id;
 
       if (!draftIdToPost) {
-        const draft = await grnApi.createDraft(companyId, request);
-        draftIdToPost = draft?.id ?? draft?.draftId;
+        const draft = await grnApi.createDraft(scope, request);
+        draftIdToPost = getCreatedId(draft);
 
         if (draftIdToPost) {
-          setForm((current) => ({
-            ...current,
-            id: draftIdToPost,
-          }));
+          setForm((current) => ({ ...current, id: draftIdToPost }));
         }
+      } else {
+        await grnApi.updateDraft(scope, draftIdToPost, request);
       }
 
       if (!draftIdToPost) {
-        throw new Error("Could not obtain draft ID.");
+        throw new Error("Unable to identify the goods receipt draft to post.");
       }
 
-      const posted = await grnApi.postDraft(companyId, draftIdToPost);
-
-      return posted?.id ?? posted?.grnId ?? null;
+      const posted = await grnApi.postDraft(scope, draftIdToPost);
+      return getCreatedId(posted) ?? draftIdToPost;
     } catch (err) {
-      setPostError(extractApiError(err, "Failed to post GRN"));
+      setPostError(extractApiError(err, "Failed to post goods receipt."));
       return null;
     } finally {
       setPosting(false);
     }
-  }, [companyId, form]);
+  }, [scope, companyId, branchId, form]);
 
   return {
     form,
@@ -452,16 +515,10 @@ export function useGrnDraftEditor(
     addLine,
     updateLine,
     removeLine,
+    resetDraft,
     subtotal,
 
-    warehouseOptions,
-    warehousesLoading,
-
-    itemOptions,
-    itemById,
-    itemLabelById,
-    uomLabelById,
-    itemsLoading,
+    ...lookups,
 
     saving,
     posting,
@@ -478,126 +535,77 @@ export function useGrnDraftEditor(
   };
 }
 
-// ── useGrnReverse ─────────────────────────────────────────────────────────────
+/* -------------------------------------------------------------------------- */
+/* useGrnReversal                                                              */
+/* -------------------------------------------------------------------------- */
 
-export interface UseGrnReverseResult {
-  grnNumber: string;
-  setGrnNumber: (value: string) => void;
-  batchNo: string;
-  setBatchNo: (value: string) => void;
+export interface UseGrnReversalResult {
   reason: string;
   setReason: (value: string) => void;
   busy: boolean;
-  message: string | null;
-  tone: "success" | "error" | null;
+  error: string | null;
+  success: string | null;
   canSubmit: boolean;
-  onReverse: () => Promise<void>;
-  onClear: () => void;
+  reverse: () => Promise<boolean>;
+  reset: () => void;
 }
 
-export function useGrnReverse(): UseGrnReverseResult {
-  const { companyId } = useAppScope();
+export function useGrnReversal(
+  grn: Pick<GrnDetailDto, "id"> | null | undefined,
+  onReversed?: () => Promise<void> | void,
+): UseGrnReversalResult {
+  const { companyId, branchId } = useAppScope();
+  const scope = useMemo(() => buildScope(companyId, branchId), [companyId, branchId]);
 
-  const [grnNumber, setGrnNumberState] = useState("");
-  const [batchNo, setBatchNoState] = useState("");
   const [reason, setReason] = useState("");
-
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [tone, setTone] = useState<"success" | "error" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  const cleanedGrnNumber = trim(grnNumber);
-  const cleanedBatchNo = trim(batchNo);
   const cleanedReason = trim(reason);
+  const canSubmit = Boolean(scope && grn?.id && cleanedReason.length >= 10 && !busy);
 
-  const canSubmit = Boolean(
-    companyId &&
-      (cleanedGrnNumber || cleanedBatchNo) &&
-      cleanedReason.length >= 5
-  );
-
-  const setGrnNumber = useCallback((value: string) => {
-    setGrnNumberState(value);
-    if (trim(value)) setBatchNoState("");
-  }, []);
-
-  const setBatchNo = useCallback((value: string) => {
-    setBatchNoState(value);
-    if (trim(value)) setGrnNumberState("");
-  }, []);
-
-  const onClear = useCallback(() => {
-    setGrnNumberState("");
-    setBatchNoState("");
+  const reset = useCallback(() => {
     setReason("");
-    setMessage(null);
-    setTone(null);
+    setError(null);
+    setSuccess(null);
   }, []);
 
-  const onReverse = useCallback(async () => {
-    if (!companyId) return;
+  const reverse = useCallback(async (): Promise<boolean> => {
+    if (!scope || !grn?.id) return false;
 
-    setMessage(null);
-    setTone(null);
+    setError(null);
+    setSuccess(null);
 
-    if (!cleanedGrnNumber && !cleanedBatchNo) {
-      setTone("error");
-      setMessage("Enter a GRN number or batch number.");
-      return;
-    }
-
-    if (cleanedReason.length < 5) {
-      setTone("error");
-      setMessage("Reversal reason is required and must be at least 5 characters.");
-      return;
+    if (cleanedReason.length < 10) {
+      setError("Enter a clear reversal reason of at least 10 characters.");
+      return false;
     }
 
     setBusy(true);
 
     try {
-      if (cleanedGrnNumber) {
-        const found = await grnApi.findByNumber(companyId, cleanedGrnNumber);
-        const id = found?.id;
-
-        if (!id) {
-          throw new Error("GRN number was not found.");
-        }
-
-        await grnApi.reverseById(companyId, String(id), {
-          reason: cleanedReason,
-        });
-      } else {
-        await grnApi.reverseByBatch(companyId, cleanedBatchNo, {
-          reason: cleanedReason,
-        });
-      }
-
-      setTone("success");
-      setMessage("GRN reversal submitted successfully.");
-
-      setGrnNumberState("");
-      setBatchNoState("");
+      await grnApi.reverseById(scope, grn.id, { reason: cleanedReason });
+      setSuccess("Goods receipt reversed successfully.");
       setReason("");
+      await onReversed?.();
+      return true;
     } catch (err) {
-      setTone("error");
-      setMessage(extractApiError(err, "Failed to reverse GRN"));
+      setError(extractApiError(err, "Failed to reverse goods receipt."));
+      return false;
     } finally {
       setBusy(false);
     }
-  }, [companyId, cleanedGrnNumber, cleanedBatchNo, cleanedReason]);
+  }, [scope, grn?.id, cleanedReason, onReversed]);
 
   return {
-    grnNumber,
-    setGrnNumber,
-    batchNo,
-    setBatchNo,
     reason,
     setReason,
     busy,
-    message,
-    tone,
+    error,
+    success,
     canSubmit,
-    onReverse,
-    onClear,
+    reverse,
+    reset,
   };
 }

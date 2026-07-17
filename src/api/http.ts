@@ -6,15 +6,33 @@
 // - Uses VITE_API_BASE_URL when provided.
 // - Defaults to "/api" for Docker/Nginx reverse proxy.
 // - NEVER falls back to localhost.
-// - Sends X-Tenant-Id as tenant SLUG, not companyId.
-// - Sends company/branch headers only after login.
-// - Attaches Bearer token for protected requests.
-// - Handles 401 with single-flight refresh and retry.
+// - Uses one Axios client for both platform and workspace requests.
+// - Selects the correct token from the request URL.
+// - Platform requests never carry tenant/company/branch headers.
+// - Workspace requests carry X-Tenant-Id as the tenant slug.
+// - Handles 401 responses with scope-aware, single-flight refresh and retry.
+// - Keeps legacy auth.storage support during the split-auth migration.
 
 import axios, { AxiosError } from "axios";
 import type { InternalAxiosRequestConfig } from "axios";
 
-import { clearAuth, loadAuth, saveAuth } from "../auth/auth.storage";
+import {
+  clearAuth,
+  loadAuth,
+  saveAuth,
+} from "../auth/auth.storage";
+import {
+  clearPlatformAuth,
+  loadPlatformAuth,
+  savePlatformAuth,
+  type PlatformAuth,
+} from "../auth/platform-auth.storage";
+import {
+  clearWorkspaceAuth,
+  loadWorkspaceAuth,
+  saveWorkspaceAuth,
+  type WorkspaceAuth,
+} from "../auth/workspace-auth.storage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API Base URL
@@ -23,7 +41,9 @@ import { clearAuth, loadAuth, saveAuth } from "../auth/auth.storage";
 function cleanBaseUrl(value: string): string {
   const trimmed = value.trim();
 
-  if (!trimmed || trimmed === "/") return "/api";
+  if (!trimmed || trimmed === "/") {
+    return "/api";
+  }
 
   return trimmed.replace(/\/$/, "");
 }
@@ -41,8 +61,23 @@ function resolveApiBase(): string {
 export const API_BASE = resolveApiBase();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tenant / Company / Branch Resolution
+// Shared Types / Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+type AuthScope = "platform" | "workspace";
+
+type SessionAuth = {
+  accessToken: string | null;
+  refreshToken: string | null;
+  expiresAt: string | null;
+  roles?: string[] | null;
+  permissions?: string[] | null;
+  companyId?: string | null;
+  companyName?: string | null;
+  tenantSlug?: string | null;
+  branchId?: string | null;
+  branchName?: string | null;
+};
 
 function clean(value: unknown): string | null {
   return typeof value === "string" && value.trim()
@@ -50,24 +85,17 @@ function clean(value: unknown): string | null {
     : null;
 }
 
-export function resolveTenantSlug(): string | null {
-  const auth = loadAuth();
+function hasSystemAdminRole(
+  roles: string[] | null | undefined,
+): boolean {
+  return (roles ?? []).some((role) => {
+    const normalized = role.trim().toUpperCase();
 
-  const stored =
-    auth?.tenantSlug ??
-    localStorage.getItem("tenantSlug") ??
-    sessionStorage.getItem("tenantSlug") ??
-    null;
-
-  return clean(stored)?.toLowerCase() ?? null;
-}
-
-export function resolveCompanyId(): string | null {
-  return clean(loadAuth()?.companyId);
-}
-
-export function resolveBranchId(): string | null {
-  return clean(loadAuth()?.branchId);
+    return (
+      normalized === "SYSTEMADMIN" ||
+      normalized === "SYSADMIN"
+    );
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,21 +111,39 @@ export const http = axios.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Endpoint Helpers
+// Endpoint / Scope Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getUrlPath(url?: string): string {
-  if (!url) return "";
+  if (!url) {
+    return "";
+  }
 
   try {
-    if (url.startsWith("http")) {
+    if (/^https?:\/\//i.test(url)) {
       return new URL(url).pathname;
     }
   } catch {
-    // keep original URL below
+    // Use the original URL below.
   }
 
-  return url;
+  const withoutQuery = url.split("?")[0]?.split("#")[0] ?? "";
+  return withoutQuery.startsWith("/") ? withoutQuery : `/${withoutQuery}`;
+}
+
+function isPlatformEndpoint(url?: string): boolean {
+  const path = getUrlPath(url).toLowerCase();
+
+  return (
+    path === "/platform" ||
+    path.startsWith("/platform/") ||
+    path === "/api/platform" ||
+    path.startsWith("/api/platform/")
+  );
+}
+
+function resolveRequestScope(url?: string): AuthScope {
+  return isPlatformEndpoint(url) ? "platform" : "workspace";
 }
 
 function isAuthEndpoint(url?: string): boolean {
@@ -121,17 +167,92 @@ function isAuthEndpoint(url?: string): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Authentication Resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getPlatformAuth(): SessionAuth | null {
+  const platformAuth = loadPlatformAuth();
+
+  if (clean(platformAuth?.accessToken)) {
+    return platformAuth;
+  }
+
+  // Temporary compatibility with sessions created before auth was split.
+  const legacyAuth = loadAuth();
+
+  if (
+    clean(legacyAuth?.accessToken) &&
+    hasSystemAdminRole(legacyAuth?.roles)
+  ) {
+    return legacyAuth;
+  }
+
+  return null;
+}
+
+function getWorkspaceAuth(): SessionAuth | null {
+  const workspaceAuth = loadWorkspaceAuth();
+
+  if (clean(workspaceAuth?.accessToken)) {
+    return workspaceAuth;
+  }
+
+  // Temporary compatibility with tenant sessions created before auth was split.
+  const legacyAuth = loadAuth();
+
+  if (!clean(legacyAuth?.accessToken)) {
+    return null;
+  }
+
+  // Never treat an unscoped legacy platform token as a workspace session.
+  if (
+    hasSystemAdminRole(legacyAuth?.roles) &&
+    !clean(legacyAuth?.companyId) &&
+    !clean(legacyAuth?.tenantSlug)
+  ) {
+    return null;
+  }
+
+  return legacyAuth;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenant / Company / Branch Resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function resolveTenantSlug(): string | null {
+  const workspaceAuth = getWorkspaceAuth();
+
+  const stored =
+    workspaceAuth?.tenantSlug ??
+    localStorage.getItem("tenantSlug") ??
+    sessionStorage.getItem("tenantSlug") ??
+    null;
+
+  return clean(stored)?.toLowerCase() ?? null;
+}
+
+export function resolveCompanyId(): string | null {
+  return clean(getWorkspaceAuth()?.companyId);
+}
+
+export function resolveBranchId(): string | null {
+  return clean(getWorkspaceAuth()?.branchId);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Token Extraction
 // ─────────────────────────────────────────────────────────────────────────────
 
 function extractToken(
   data: unknown,
-  field: "accessToken" | "refreshToken"
+  field: "accessToken" | "refreshToken",
 ): string | null {
-  if (!data || typeof data !== "object") return null;
+  if (!data || typeof data !== "object") {
+    return null;
+  }
 
   const root = data as Record<string, unknown>;
-
   const nestedToken = root.token;
 
   if (nestedToken && typeof nestedToken === "object") {
@@ -174,31 +295,45 @@ function extractToken(
 }
 
 function extractExpiresAt(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
+  if (!data || typeof data !== "object") {
+    return null;
+  }
 
   const root = data as Record<string, unknown>;
 
-  if (typeof root.expiresAt === "string" && root.expiresAt.trim()) {
-    return root.expiresAt.trim();
-  }
-
-  const nestedToken = root.token;
-
-  if (nestedToken && typeof nestedToken === "object") {
-    const value = (nestedToken as Record<string, unknown>).expiresAt;
+  for (const field of ["expiresAt", "expiresAtUtc"] as const) {
+    const value = root[field];
 
     if (typeof value === "string" && value.trim()) {
       return value.trim();
     }
   }
 
+  const nestedToken = root.token;
+
+  if (nestedToken && typeof nestedToken === "object") {
+    const tokenObject = nestedToken as Record<string, unknown>;
+
+    for (const field of ["expiresAt", "expiresAtUtc"] as const) {
+      const value = tokenObject[field];
+
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+  }
+
   const innerData = root.data;
 
   if (innerData && typeof innerData === "object") {
-    const value = (innerData as Record<string, unknown>).expiresAt;
+    const dataObject = innerData as Record<string, unknown>;
 
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
+    for (const field of ["expiresAt", "expiresAtUtc"] as const) {
+      const value = dataObject[field];
+
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
     }
   }
 
@@ -209,25 +344,77 @@ function extractExpiresAt(data: unknown): string | null {
 // Auth Event
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function dispatchUnauthenticated(): void {
-  window.dispatchEvent(new CustomEvent("auth:unauthenticated"));
+export function dispatchUnauthenticated(scope?: AuthScope): void {
+  window.dispatchEvent(
+    new CustomEvent("auth:unauthenticated", {
+      detail: scope ? { scope } : undefined,
+    }),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Header Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+function asHeaders(
+  config: InternalAxiosRequestConfig,
+): Record<string, string> {
+  config.headers ??= {} as typeof config.headers;
+
+  return config.headers as unknown as Record<string, string>;
+}
+
+function removeHeader(
+  headers: Record<string, string>,
+  headerName: string,
+): void {
+  const expected = headerName.toLowerCase();
+
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === expected) {
+      delete headers[key];
+    }
+  }
+}
+
+function setAuthorization(
+  headers: Record<string, string>,
+  accessToken: string | null | undefined,
+): void {
+  removeHeader(headers, "Authorization");
+
+  const token = clean(accessToken);
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+}
+
+function removeTenantHeaders(
+  headers: Record<string, string>,
+): void {
+  removeHeader(headers, "X-Tenant-Id");
+  removeHeader(headers, "X-Tenant-Slug");
+  removeHeader(headers, "X-Company-Id");
+  removeHeader(headers, "X-Branch-Id");
+}
+
 function attachTenantHeaders(
   headers: Record<string, string>,
-  includeScopeHeaders = true
+  includeScopeHeaders = true,
 ): void {
+  // Prevent stale headers from a retried or reused request.
+  removeTenantHeaders(headers);
+
   const tenantSlug = resolveTenantSlug();
 
   if (tenantSlug) {
     headers["X-Tenant-Id"] = tenantSlug;
   }
 
-  if (!includeScopeHeaders) return;
+  if (!includeScopeHeaders) {
+    return;
+  }
 
   const companyId = resolveCompanyId();
   const branchId = resolveBranchId();
@@ -242,20 +429,129 @@ function attachTenantHeaders(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Scope-Specific Persistence
+// ─────────────────────────────────────────────────────────────────────────────
+
+function clearScopeAuth(scope: AuthScope): void {
+  if (scope === "platform") {
+    clearPlatformAuth();
+    return;
+  }
+
+  clearWorkspaceAuth();
+
+  // Preserve legacy behavior for pre-migration workspace sessions.
+  const legacyAuth = loadAuth();
+
+  if (
+    legacyAuth &&
+    !(
+      hasSystemAdminRole(legacyAuth.roles) &&
+      !clean(legacyAuth.companyId) &&
+      !clean(legacyAuth.tenantSlug)
+    )
+  ) {
+    clearAuth();
+  }
+}
+
+function persistRefreshedAuth(
+  scope: AuthScope,
+  currentAuth: SessionAuth,
+  accessToken: string,
+  refreshToken: string | null,
+  expiresAt: string,
+): void {
+  if (scope === "platform") {
+    const nextPlatformAuth: PlatformAuth = {
+      accessToken,
+      refreshToken,
+      expiresAt,
+      roles: currentAuth.roles ?? [],
+      permissions: currentAuth.permissions ?? [],
+    };
+
+    // Platform auth is normally a remembered administrator session.
+    // Existing login code remains responsible for the initial remember choice.
+    savePlatformAuth(nextPlatformAuth, true);
+    return;
+  }
+
+  const companyId = clean(currentAuth.companyId);
+  const companyName = clean(currentAuth.companyName);
+  const tenantSlug = clean(currentAuth.tenantSlug);
+
+  if (!companyId || !companyName || !tenantSlug) {
+    throw new Error(
+      "Cannot persist a refreshed workspace token without company and tenant scope.",
+    );
+  }
+
+  const nextWorkspaceAuth: WorkspaceAuth = {
+    accessToken,
+    refreshToken,
+    expiresAt,
+    companyId,
+    companyName,
+    tenantSlug: tenantSlug.toLowerCase(),
+    branchId: clean(currentAuth.branchId),
+    branchName: clean(currentAuth.branchName),
+    roles: currentAuth.roles ?? [],
+    permissions: currentAuth.permissions ?? [],
+  };
+
+  saveWorkspaceAuth(nextWorkspaceAuth);
+
+  // Keep old application consumers working while they are migrated.
+  const legacyAuth = loadAuth();
+
+  if (
+    legacyAuth &&
+    !(
+      hasSystemAdminRole(legacyAuth.roles) &&
+      !clean(legacyAuth.companyId) &&
+      !clean(legacyAuth.tenantSlug)
+    )
+  ) {
+    saveAuth({
+      ...legacyAuth,
+      accessToken,
+      refreshToken,
+      expiresAt,
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Refresh Token Flow
 // ─────────────────────────────────────────────────────────────────────────────
 
-let refreshPromise: Promise<string | null> | null = null;
+const refreshPromises: Record<
+  AuthScope,
+  Promise<string | null> | null
+> = {
+  platform: null,
+  workspace: null,
+};
 
-async function refreshAccessToken(): Promise<string | null> {
-  if (refreshPromise) return refreshPromise;
+async function refreshAccessToken(
+  scope: AuthScope,
+): Promise<string | null> {
+  const existingPromise = refreshPromises[scope];
 
-  refreshPromise = (async (): Promise<string | null> => {
-    const auth = loadAuth();
+  if (existingPromise) {
+    return existingPromise;
+  }
+
+  const promise = (async (): Promise<string | null> => {
+    const auth =
+      scope === "platform"
+        ? getPlatformAuth()
+        : getWorkspaceAuth();
 
     if (!auth?.refreshToken) {
-      clearAuth();
-      dispatchUnauthenticated();
+      clearScopeAuth(scope);
+      dispatchUnauthenticated(scope);
       return null;
     }
 
@@ -264,7 +560,9 @@ async function refreshAccessToken(): Promise<string | null> {
         "Content-Type": "application/json",
       };
 
-      attachTenantHeaders(headers, true);
+      if (scope === "workspace") {
+        attachTenantHeaders(headers, true);
+      }
 
       const response = await axios.post(
         `${API_BASE}/auth/refresh`,
@@ -274,38 +572,54 @@ async function refreshAccessToken(): Promise<string | null> {
         {
           headers,
           withCredentials: false,
-        }
+        },
       );
 
-      const accessToken = extractToken(response.data, "accessToken");
+      const accessToken = extractToken(
+        response.data,
+        "accessToken",
+      );
+
       const refreshToken =
-        extractToken(response.data, "refreshToken") ?? auth.refreshToken;
-      const expiresAt = extractExpiresAt(response.data) ?? auth.expiresAt;
+        extractToken(response.data, "refreshToken") ??
+        auth.refreshToken;
+
+     const expiresAt =
+          extractExpiresAt(response.data) ??
+          clean(auth.expiresAt);
+
+        if (!expiresAt) {
+          clearScopeAuth(scope);
+          dispatchUnauthenticated(scope);
+          return null;
+        }
 
       if (!accessToken) {
-        clearAuth();
-        dispatchUnauthenticated();
+        clearScopeAuth(scope);
+        dispatchUnauthenticated(scope);
         return null;
       }
 
-      saveAuth({
-        ...auth,
+      persistRefreshedAuth(
+        scope,
+        auth,
         accessToken,
         refreshToken,
         expiresAt,
-      });
+      );
 
       return accessToken;
     } catch {
-      clearAuth();
-      dispatchUnauthenticated();
+      clearScopeAuth(scope);
+      dispatchUnauthenticated(scope);
       return null;
     } finally {
-      refreshPromise = null;
+      refreshPromises[scope] = null;
     }
   })();
 
-  return refreshPromise;
+  refreshPromises[scope] = promise;
+  return promise;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -314,27 +628,39 @@ async function refreshAccessToken(): Promise<string | null> {
 
 http.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    config.headers ??= {} as typeof config.headers;
+    const headers = asHeaders(config);
+    const scope = resolveRequestScope(config.url);
 
-    const headers = config.headers as unknown as Record<string, string>;
+    if (scope === "platform") {
+      // Platform APIs must never receive tenant context.
+      removeTenantHeaders(headers);
+
+      if (!isAuthEndpoint(config.url)) {
+        setAuthorization(
+          headers,
+          getPlatformAuth()?.accessToken,
+        );
+      }
+
+      return config;
+    }
 
     attachTenantHeaders(headers, true);
 
     if (!isAuthEndpoint(config.url)) {
-      const accessToken = loadAuth()?.accessToken;
-
-      if (accessToken) {
-        headers.Authorization = `Bearer ${accessToken}`;
-      }
+      setAuthorization(
+        headers,
+        getWorkspaceAuth()?.accessToken,
+      );
     }
 
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Response Interceptor: 401 → Refresh → Retry
+// Response Interceptor: 401 → Scope-Aware Refresh → Retry
 // ─────────────────────────────────────────────────────────────────────────────
 
 type RetryConfig = InternalAxiosRequestConfig & {
@@ -346,24 +672,41 @@ http.interceptors.response.use(
   async (error: AxiosError) => {
     const original = error.config as RetryConfig | undefined;
 
-    if (!original) return Promise.reject(error);
-    if (error.response?.status !== 401) return Promise.reject(error);
-    if (original._retry) return Promise.reject(error);
-    if (isAuthEndpoint(original.url)) return Promise.reject(error);
+    if (!original) {
+      return Promise.reject(error);
+    }
+
+    if (error.response?.status !== 401) {
+      return Promise.reject(error);
+    }
+
+    if (original._retry) {
+      return Promise.reject(error);
+    }
+
+    if (isAuthEndpoint(original.url)) {
+      return Promise.reject(error);
+    }
 
     original._retry = true;
 
-    const accessToken = await refreshAccessToken();
+    const scope = resolveRequestScope(original.url);
+    const accessToken = await refreshAccessToken(scope);
 
     if (!accessToken) {
       return Promise.reject(error);
     }
 
-    original.headers ??= {} as typeof original.headers;
+    const headers = asHeaders(original);
 
-    const headers = original.headers as unknown as Record<string, string>;
-    headers.Authorization = `Bearer ${accessToken}`;
+    setAuthorization(headers, accessToken);
+
+    if (scope === "platform") {
+      removeTenantHeaders(headers);
+    } else {
+      attachTenantHeaders(headers, true);
+    }
 
     return http.request(original);
-  }
+  },
 );

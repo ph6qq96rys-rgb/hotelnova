@@ -7,6 +7,7 @@ import {
   BarChart3,
   CalendarClock,
   Monitor,
+  RefreshCw,
   ShoppingCart,
   Upload,
 } from "lucide-react";
@@ -29,7 +30,12 @@ import {
 
 import "../components/pos.css";
 
-const TODAY = new Date().toISOString().slice(0, 10);
+const DASHBOARD_PAGE_SIZE = 50;
+const RECENT_SALES_LIMIT = 10;
+
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 type PageState =
   | { status: "idle" }
@@ -46,6 +52,55 @@ type SalesPaths = {
   saleDetail: (saleId: string) => string;
 };
 
+type SalesSummary = {
+  totalSales: number;
+  totalCogs: number;
+  grossProfit: number;
+  margin: number;
+  transactions: number;
+  avgTicket: number;
+  pendingInventory: number;
+  postedInventory: number;
+};
+
+function buildSalesPaths(companyId: string): SalesPaths {
+  const base = `/companies/${companyId}/sales`;
+
+  return {
+    pos: `${base}/pos`,
+    session: `${base}/pos/session`,
+    import: `${base}/import`,
+    register: `${base}/list`,
+    reports: `${base}/reports`,
+    saleDetail: (saleId: string) => `${base}/${saleId}`,
+  };
+}
+
+function formatRefreshText(pageState: PageState, lastLoadedAt: Date | null): string {
+  if (pageState.status === "loading") return "Refreshing dashboard...";
+  if (pageState.status === "error") return "Dashboard refresh failed";
+  if (lastLoadedAt) return `Last refreshed ${lastLoadedAt.toLocaleTimeString()}`;
+  return "Ready for refresh";
+}
+
+function buildSummary(sales: SaleListItemDto[]): SalesSummary {
+  const totalSales = sales.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
+  const totalCogs = sales.reduce((sum, sale) => sum + Number(sale.totalCogs || 0), 0);
+  const grossProfit = totalSales - totalCogs;
+  const transactions = sales.length;
+
+  return {
+    totalSales,
+    totalCogs,
+    grossProfit,
+    margin: totalSales > 0 ? (grossProfit / totalSales) * 100 : 0,
+    transactions,
+    avgTicket: transactions > 0 ? totalSales / transactions : 0,
+    pendingInventory: sales.filter((sale) => !sale.isInventoryPosted).length,
+    postedInventory: sales.filter((sale) => sale.isInventoryPosted).length,
+  };
+}
+
 export default function SalesDashboardPage() {
   const navigate = useNavigate();
   const { companyId, branchId } = useAppScope();
@@ -56,20 +111,12 @@ export default function SalesDashboardPage() {
 
   const requestIdRef = useRef(0);
 
-  const paths = useMemo<SalesPaths | null>(() => {
-    if (!companyId) return null;
+  const paths = useMemo(() => (companyId ? buildSalesPaths(companyId) : null), [companyId]);
+  const summary = useMemo(() => buildSummary(sales), [sales]);
 
-    const base = `/companies/${companyId}/sales`;
-
-    return {
-      pos: `${base}/pos`,
-      session: `${base}/pos/session`,
-      import: `${base}/import`,
-      register: `${base}/list`,
-      reports: `${base}/reports`,
-      saleDetail: (saleId: string) => `${base}/${saleId}`,
-    };
-  }, [companyId]);
+  const loading = pageState.status === "loading";
+  const errorMessage = pageState.status === "error" ? pageState.message : null;
+  const refreshText = formatRefreshText(pageState, lastLoadedAt);
 
   const go = useCallback(
     (path: string) => {
@@ -78,29 +125,26 @@ export default function SalesDashboardPage() {
     [navigate]
   );
 
-  const loading = pageState.status === "loading";
-  const errorMessage = pageState.status === "error" ? pageState.message : null;
-
   const load = useCallback(async () => {
     if (!companyId || !branchId) {
       setSales([]);
       setPageState({
         status: "error",
-        message: "Company and branch context are required to load sales.",
+        message:
+          "Company and branch context are required before the sales dashboard can be loaded.",
       });
       return;
     }
 
     const requestId = ++requestIdRef.current;
-
     setPageState({ status: "loading" });
 
     try {
       const response = await salesApi.list(companyId, branchId, {
         page: 1,
-        pageSize: 50,
-        fromDate: TODAY,
-        toDate: TODAY,
+        pageSize: DASHBOARD_PAGE_SIZE,
+        fromDate: todayIsoDate(),
+        toDate: todayIsoDate(),
       });
 
       if (requestId !== requestIdRef.current) return;
@@ -115,7 +159,10 @@ export default function SalesDashboardPage() {
       setSales([]);
       setPageState({
         status: "error",
-        message: extractApiError(error, "Failed to load sales dashboard."),
+        message: extractApiError(
+          error,
+          "The sales dashboard could not be refreshed. Please retry or contact your system administrator."
+        ),
       });
     }
   }, [companyId, branchId]);
@@ -124,65 +171,26 @@ export default function SalesDashboardPage() {
     void load();
   }, [load]);
 
-  const summary = useMemo(() => {
-    const totalSales = sales.reduce((sum, sale) => {
-      return sum + Number(sale.totalAmount || 0);
-    }, 0);
-
-    const totalCogs = sales.reduce((sum, sale) => {
-      return sum + Number(sale.totalCogs || 0);
-    }, 0);
-
-    const grossProfit = totalSales - totalCogs;
-    const transactions = sales.length;
-    const avgTicket = transactions > 0 ? totalSales / transactions : 0;
-
-    const pendingInventory = sales.filter((sale) => !sale.isInventoryPosted).length;
-    const postedInventory = sales.filter((sale) => sale.isInventoryPosted).length;
-
-    return {
-      totalSales,
-      totalCogs,
-      grossProfit,
-      margin: totalSales > 0 ? (grossProfit / totalSales) * 100 : 0,
-      transactions,
-      avgTicket,
-      pendingInventory,
-      postedInventory,
-    };
-  }, [sales]);
-
   if (!companyId || !branchId || !paths) {
     return (
       <div className="pos-page">
         <Alert tone="warning">
-          Company and branch context are required before opening the sales
-          dashboard.
+          Company and branch context are required before opening the sales control dashboard.
         </Alert>
       </div>
     );
   }
 
-  const statusText = loading
-    ? "Loading..."
-    : errorMessage
-    ? "Failed to load"
-    : lastLoadedAt
-    ? `Updated ${lastLoadedAt.toLocaleTimeString()}`
-    : "Ready";
-
   return (
     <div className="pos-page">
       <div className="pos-topbar">
         <div className="pos-title">
-          <h1>Sales Dashboard</h1>
+          <h1>Sales Control Dashboard</h1>
           <p>
-            Today&apos;s sales, COGS, gross profit, POS sessions, and inventory
-            posting status.
+            Executive view of today&apos;s revenue, COGS, gross profit, cashier activity,
+            and inventory accounting status.
           </p>
-          <p style={{ marginTop: 4, fontSize: 12, opacity: 0.7 }}>
-            {statusText}
-          </p>
+          <p style={{ marginTop: 4, fontSize: 12, opacity: 0.7 }}>{refreshText}</p>
         </div>
 
         <div className="pos-actions">
@@ -191,11 +199,11 @@ export default function SalesDashboardPage() {
           </Button>
 
           <Button onClick={() => go(paths.session)}>
-            <CalendarClock size={16} /> Session
+            <CalendarClock size={16} /> Session Control
           </Button>
 
           <Button onClick={() => go(paths.import)}>
-            <Upload size={16} /> Import
+            <Upload size={16} /> Import Sales
           </Button>
 
           <Button variant="primary" onClick={() => go(paths.register)}>
@@ -211,8 +219,8 @@ export default function SalesDashboardPage() {
       {summary.pendingInventory > 0 ? (
         <Alert tone="warning">
           <AlertTriangle size={16} /> {summary.pendingInventory} sale
-          {summary.pendingInventory !== 1 ? "s" : ""} still need inventory/COGS
-          posting.
+          {summary.pendingInventory !== 1 ? "s" : ""} require inventory and COGS posting
+          before the day can be fully reconciled.
         </Alert>
       ) : null}
 
@@ -237,20 +245,7 @@ export default function SalesDashboardPage() {
   );
 }
 
-function SalesKpis({
-  summary,
-}: {
-  summary: {
-    totalSales: number;
-    totalCogs: number;
-    grossProfit: number;
-    margin: number;
-    transactions: number;
-    avgTicket: number;
-    pendingInventory: number;
-    postedInventory: number;
-  };
-}) {
+function SalesKpis({ summary }: { summary: SalesSummary }) {
   return (
     <div
       style={{
@@ -260,10 +255,10 @@ function SalesKpis({
         marginBottom: 14,
       }}
     >
-      <Kpi label="Today's Sales" value={money(summary.totalSales)} />
-      <Kpi label="COGS" value={money(summary.totalCogs)} />
+      <Kpi label="Net Sales Today" value={money(summary.totalSales)} />
+      <Kpi label="Cost of Goods Sold" value={money(summary.totalCogs)} />
       <Kpi label="Gross Profit" value={money(summary.grossProfit)} />
-      <Kpi label="Margin" value={`${summary.margin.toFixed(1)}%`} />
+      <Kpi label="Gross Margin" value={`${summary.margin.toFixed(1)}%`} />
       <Kpi label="Transactions" value={summary.transactions} />
       <Kpi label="Average Ticket" value={money(summary.avgTicket)} />
       <Kpi label="Inventory Posted" value={summary.postedInventory} />
@@ -283,13 +278,17 @@ function RecentSalesCard({
   onRefresh: () => void;
   onOpenSale: (saleId: string) => void;
 }) {
+  const subtitle = loading
+    ? "Refreshing today&apos;s transaction register"
+    : `${sales.length} transaction${sales.length === 1 ? "" : "s"} recorded today`;
+
   return (
     <Card
-      title="Recent Sales"
-      subtitle={loading ? "Loading..." : `${sales.length} sale(s) today`}
+      title="Recent Sales Activity"
+      subtitle={subtitle}
       action={
         <Button size="sm" onClick={onRefresh} disabled={loading}>
-          Refresh
+          <RefreshCw size={14} /> Refresh
         </Button>
       }
     >
@@ -297,12 +296,12 @@ function RecentSalesCard({
         <table className="pos-table">
           <thead>
             <tr>
-              <th>Sale No</th>
-              <th>Time</th>
-              <th>Status</th>
-              <th>Payment</th>
-              <th style={{ textAlign: "right" }}>Total</th>
-              <th>Inventory</th>
+              <th>Sale No.</th>
+              <th>Transaction Time</th>
+              <th>Sale Status</th>
+              <th>Payment Status</th>
+              <th style={{ textAlign: "right" }}>Net Amount</th>
+              <th>Inventory Accounting</th>
             </tr>
           </thead>
 
@@ -310,7 +309,7 @@ function RecentSalesCard({
             {loading ? (
               <tr>
                 <td colSpan={6} style={{ textAlign: "center", padding: 28 }}>
-                  Loading sales…
+                  Loading today&apos;s sales activity...
                 </td>
               </tr>
             ) : null}
@@ -318,17 +317,18 @@ function RecentSalesCard({
             {!loading && sales.length === 0 ? (
               <tr>
                 <td colSpan={6} style={{ textAlign: "center", padding: 28 }}>
-                  No sales found for today.
+                  No sales transactions have been recorded for today.
                 </td>
               </tr>
             ) : null}
 
             {!loading
-              ? sales.slice(0, 10).map((sale) => (
+              ? sales.slice(0, RECENT_SALES_LIMIT).map((sale) => (
                   <tr
                     key={sale.id}
                     onClick={() => onOpenSale(sale.id)}
                     style={{ cursor: "pointer" }}
+                    title="Open sale detail"
                   >
                     <td style={{ fontFamily: "monospace" }}>{sale.saleNo}</td>
                     <td>{dateTime(sale.soldAtUtc)}</td>
@@ -338,9 +338,7 @@ function RecentSalesCard({
                     <td>
                       <PaymentStatusBadge status={sale.paymentStatus} />
                     </td>
-                    <td style={{ textAlign: "right" }}>
-                      {money(sale.totalAmount)}
-                    </td>
+                    <td style={{ textAlign: "right" }}>{money(sale.totalAmount)}</td>
                     <td>
                       <InventoryBadge posted={sale.isInventoryPosted} />
                     </td>
@@ -354,34 +352,28 @@ function RecentSalesCard({
   );
 }
 
-function QuickActionsCard({
-  paths,
-  go,
-}: {
-  paths: SalesPaths;
-  go: (path: string) => void;
-}) {
+function QuickActionsCard({ paths, go }: { paths: SalesPaths; go: (path: string) => void }) {
   return (
-    <Card title="Quick Actions" subtitle="Restaurant POS workflow">
+    <Card title="Operational Shortcuts" subtitle="Daily sales and POS control workflow">
       <div style={{ display: "grid", gap: 10 }}>
         <Button variant="primary" size="lg" block onClick={() => go(paths.pos)}>
-          <Monitor size={16} /> Start New Order
+          <Monitor size={16} /> Start POS Transaction
         </Button>
 
         <Button block onClick={() => go(paths.session)}>
-          <CalendarClock size={16} /> Open / Close Session
+          <CalendarClock size={16} /> Open / Close Cashier Session
         </Button>
 
         <Button block onClick={() => go(paths.register)}>
-          <ShoppingCart size={16} /> View Sales Register
+          <ShoppingCart size={16} /> Review Sales Register
         </Button>
 
         <Button block onClick={() => go(paths.reports)}>
-          <BarChart3 size={16} /> Sales Reports
+          <BarChart3 size={16} /> Open Sales Reports
         </Button>
 
         <Button block onClick={() => go(paths.import)}>
-          <Upload size={16} /> External POS Import
+          <Upload size={16} /> Import External POS Sales
         </Button>
       </div>
     </Card>

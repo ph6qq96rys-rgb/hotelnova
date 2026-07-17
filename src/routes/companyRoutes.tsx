@@ -1,30 +1,54 @@
-﻿import RequirePermission from "../auth/RequirePermission";
+﻿// src/routes/companyRoutes.tsx
+// Guarded ERP company routes.
+
+import RequirePermission from "../auth/RequirePermission";
+import RequireErpRole from "../auth/RequireErpRole";
 
 import OrgLocationsPage from "../features/org/pages/OrgLocationsPage";
 import CompanyOnboardingModule from "../features/company/onboarding/CompanyOnboardingModule";
 import CompanySettingsPage from "../features/company/onboarding/CompanySettingsPage";
+import BranchOnboardingWizardPage from "../features/company/onboarding/BranchOnboardingWizardPage";
 
 export const companyRoutes = [
   {
     path: "onboarding",
-    element: <CompanyOnboardingModule />,
+    element: (
+      <RequireErpRole roles={["CompanyAdmin", "SystemAdmin"]}>
+        <CompanyOnboardingModule />
+      </RequireErpRole>
+    ),
     nav: false,
     section: "Administration",
   },
-
   {
     path: "settings",
-    element: <CompanySettingsPage />,
+    element: (
+      <RequireErpRole roles={["CompanyAdmin", "SystemAdmin"]}>
+        <CompanySettingsPage />
+      </RequireErpRole>
+    ),
     label: "Company Settings",
     nav: true,
     section: "Administration",
   },
-
+  {
+    path: "branch-onboarding",
+    element: (
+      <RequireErpRole roles={["CompanyAdmin"]}>
+        <BranchOnboardingWizardPage />
+      </RequireErpRole>
+    ),
+    label: "Branch Onboarding",
+    nav: true,
+    section: "Setup",
+  },
   {
     path: "organizations",
     element: (
       <RequirePermission permission="COMPANIES.VIEW">
-        <OrgLocationsPage />
+        <RequireErpRole roles={["CompanyAdmin", "SystemAdmin"]}>
+          <OrgLocationsPage />
+        </RequireErpRole>
       </RequirePermission>
     ),
     label: "Organization Structure",

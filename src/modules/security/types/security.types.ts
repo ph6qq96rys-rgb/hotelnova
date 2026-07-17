@@ -3,11 +3,14 @@
 // Single source of truth for all security module types.
 // No side effects. Safe to import anywhere.
 
-// ── Shared ────────────────────────────────────────────────────────────────────
-
-export type UserStatus = "Active" | "Pending" | "Suspended" | "Disabled" | "Inactive";
-
 export type Nullable<T> = T | null;
+
+export type UserStatus =
+  | "Active"
+  | "Pending"
+  | "Suspended"
+  | "Disabled"
+  | "Inactive";
 
 // ── Paging ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +28,8 @@ export interface PagedResult<T> {
 export interface RoleDto {
   id: string;
   name: string;
+  value?: string | null;
+  normalizedName?: string | null;
   displayName?: string | null;
   description?: string | null;
   userCount?: number;
@@ -34,12 +39,21 @@ export interface RoleDto {
   updatedAtUtc?: string | null;
 }
 
-export interface RoleDetailDto {
-  role: RoleDto;
-  permissionKeys: string[];
+/**
+ * Supports both possible backend shapes:
+ *
+ * 1. Flat RoleDto response:
+ *    { id, name, description, ... }
+ *
+ * 2. Wrapped detail response:
+ *    { role, permissionKeys, permissions, users }
+ */
+export type RoleDetailDto = RoleDto & {
+  role?: RoleDto;
+  permissionKeys?: string[];
   permissions?: PermissionCatalogItem[];
-  users: UserLiteDto[];
-}
+  users?: UserLiteDto[];
+};
 
 // ── Permission DTOs ───────────────────────────────────────────────────────────
 
@@ -75,9 +89,9 @@ export interface UserAssignmentDto {
   id: string;
   roleId: string;
   roleName: string;
-  branchId: string | null;
-  branchName: string | null;
-  permissionCount: number;
+  branchId?: string | null;
+  branchName?: string | null;
+  permissionCount?: number;
 }
 
 export interface UserDetailDto {
@@ -85,11 +99,11 @@ export interface UserDetailDto {
   email: string;
   fullName: string;
   userName?: string | null;
-  status: UserStatus;
+  status?: UserStatus;
   isActive?: boolean;
   roles?: string[];
   roleNames?: string[];
-  assignments: UserAssignmentDto[];
+  assignments?: UserAssignmentDto[];
 }
 
 // ── Branch / Operational Context DTOs ─────────────────────────────────────────
@@ -102,8 +116,10 @@ export interface BranchLite {
 export interface EmployeeOption {
   id: string;
   employeeCode?: string | null;
+  employeeNo?: string | null;
   fullName: string;
   email?: string | null;
+  workEmail?: string | null;
   branchId?: string | null;
   branchName?: string | null;
   departmentName?: string | null;
@@ -144,7 +160,8 @@ export interface AddAssignmentRequest {
 
 export interface RemoveAssignmentRequest {
   userId: string;
-  assignmentId: string;
+  roleId: string;
+  assignmentId?: string;
 }
 
 export interface SetPermissionsRequest {
@@ -166,6 +183,9 @@ export interface UserQuery {
   pageNumber?: number;
   pageSize?: number;
   branchId?: string | null;
+  storeId?: string | null;
+  stockLocationId?: string | null;
+  role?: string | null;
   isActive?: boolean | null;
 }
 

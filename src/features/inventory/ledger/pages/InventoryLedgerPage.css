@@ -1,0 +1,391 @@
+```css
+.inventory-ledger-page {
+  position: relative;
+  min-width: 0;
+  padding-bottom: 1.5rem;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Fixed summary header                                                       */
+/* -------------------------------------------------------------------------- */
+
+.inventory-ledger-fixed-header {
+  position: sticky;
+  top: var(--app-header-height, 0);
+  z-index: 40;
+
+  box-sizing: border-box;
+  width: 100%;
+
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+
+  background:
+    color-mix(
+      in srgb,
+      var(--page-bg, #ffffff) 94%,
+      transparent
+    );
+
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+  backdrop-filter: blur(12px);
+}
+
+/*
+ * Sticky positioning is preferred over fixed positioning here.
+ * It prevents the page content from depending on a manually maintained
+ * header-height variable.
+ */
+.inventory-ledger-content {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Page header                                                                */
+/* -------------------------------------------------------------------------- */
+
+.inventory-ledger-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+
+  margin-bottom: 1rem;
+}
+
+.inventory-ledger-page-header > :first-child {
+  min-width: 0;
+}
+
+.inventory-ledger-header-kpi {
+  flex: 0 0 auto;
+  min-width: 10rem;
+}
+
+.inventory-ledger-kpi-grid {
+  margin-bottom: 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Search and filters                                                         */
+/* -------------------------------------------------------------------------- */
+
+.inventory-ledger-search-card {
+  min-width: 0;
+}
+
+.inventory-ledger-filter-panel {
+  display: grid;
+  grid-template-columns:
+    minmax(11rem, 1.25fr)
+    minmax(11rem, 1.25fr)
+    minmax(10rem, 1fr)
+    minmax(11rem, 1fr)
+    minmax(9rem, 0.8fr)
+    minmax(9rem, 0.8fr);
+
+  gap: 0.875rem;
+  align-items: start;
+
+  margin-top: 1rem;
+}
+
+.inventory-ledger-filter-panel .form-field {
+  min-width: 0;
+}
+
+.inventory-ledger-filter-panel .form-control {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.inventory-ledger-search-card .form-help {
+  display: none;
+}
+
+.inventory-ledger-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+
+  margin-top: 0.875rem;
+  padding-top: 0.875rem;
+
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.inventory-ledger-card-action {
+  flex: 0 0 auto;
+}
+
+.inventory-ledger-alert {
+  margin-top: 0.75rem;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Ledger table                                                               */
+/* -------------------------------------------------------------------------- */
+
+.inventory-ledger-table-wrap {
+  width: 100%;
+  min-width: 0;
+  margin-top: 1rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Empty states                                                               */
+/* -------------------------------------------------------------------------- */
+
+.inventory-ledger-empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+
+  padding: 2rem 1.25rem;
+
+  color: var(--text-muted, #64748b);
+}
+
+.inventory-ledger-empty-state .card-title {
+  color: var(--text-primary, #0f172a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Pagination footer                                                          */
+/* -------------------------------------------------------------------------- */
+
+.inventory-ledger-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+
+  margin-top: 1rem;
+
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+}
+
+.inventory-ledger-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Audit guidance                                                             */
+/* -------------------------------------------------------------------------- */
+
+.inventory-ledger-help {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 20;
+
+  background:
+    color-mix(
+      in srgb,
+      var(--page-bg, #ffffff) 94%,
+      transparent
+    );
+
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.inventory-ledger-help-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Large desktop                                                              */
+/* -------------------------------------------------------------------------- */
+
+@media (min-width: 1500px) {
+  .inventory-ledger-fixed-header {
+    padding-inline: 1.5rem;
+  }
+
+  .inventory-ledger-filter-panel {
+    grid-template-columns:
+      minmax(12rem, 1.4fr)
+      minmax(12rem, 1.4fr)
+      minmax(11rem, 1.1fr)
+      minmax(12rem, 1.1fr)
+      minmax(9.5rem, 0.8fr)
+      minmax(9.5rem, 0.8fr);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Laptop                                                                     */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 1280px) {
+  .inventory-ledger-filter-panel {
+    grid-template-columns: repeat(
+      3,
+      minmax(0, 1fr)
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tablet                                                                     */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 960px) {
+  .inventory-ledger-fixed-header {
+    top: var(--app-header-height, 0);
+    padding: 1rem;
+  }
+
+  .inventory-ledger-page-header {
+    align-items: stretch;
+  }
+
+  .inventory-ledger-header-kpi {
+    min-width: 9rem;
+  }
+
+  .inventory-ledger-filter-panel {
+    grid-template-columns: repeat(
+      2,
+      minmax(0, 1fr)
+    );
+  }
+
+  .inventory-ledger-help {
+    bottom: 0.5rem;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mobile                                                                     */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 680px) {
+  .inventory-ledger-page {
+    padding-bottom: 0.75rem;
+  }
+
+  .inventory-ledger-fixed-header {
+    position: relative;
+    top: auto;
+    z-index: auto;
+
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .inventory-ledger-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inventory-ledger-header-kpi {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .inventory-ledger-filter-panel {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .inventory-ledger-quick-actions {
+    display: grid;
+    grid-template-columns: repeat(
+      2,
+      minmax(0, 1fr)
+    );
+  }
+
+  .inventory-ledger-quick-actions .btn {
+    width: 100%;
+  }
+
+  .inventory-ledger-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inventory-ledger-footer-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .inventory-ledger-footer-actions > span {
+    grid-column: 1 / -1;
+  }
+
+  .inventory-ledger-footer-actions .btn {
+    width: 100%;
+  }
+
+  .inventory-ledger-help {
+    position: relative;
+    bottom: auto;
+  }
+
+  .inventory-ledger-help-content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inventory-ledger-help-content .btn {
+    width: 100%;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Small mobile                                                               */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 420px) {
+  .inventory-ledger-quick-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reduced motion and browser fallbacks                                       */
+/* -------------------------------------------------------------------------- */
+
+@supports not (
+  background:
+    color-mix(
+      in srgb,
+      white 90%,
+      transparent
+    )
+) {
+  .inventory-ledger-fixed-header,
+  .inventory-ledger-help {
+    background: var(--page-bg, #ffffff);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inventory-ledger-page *,
+  .inventory-ledger-page *::before,
+  .inventory-ledger-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+```

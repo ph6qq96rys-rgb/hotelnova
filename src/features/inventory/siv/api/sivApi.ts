@@ -47,6 +47,18 @@ export interface SivLineDto {
   remarks: string | null;
   batchNo: string | null;
   expiryDate: string | null;
+
+  // Optional FIFO/edit metadata. Returned by newer backends.
+  fifoLayerId?: string | null;
+  inventoryLayerId?: string | null;
+  sourceId?: string | null;
+  sourceNumber?: string | null;
+  grnNumber?: string | null;
+  receiptNumber?: string | null;
+  documentNumber?: string | null;
+  receivedDate?: string | null;
+  availableQty?: number | null;
+  availableBaseQty?: number | null;
 }
 
 export interface SivAuditDto {
@@ -111,13 +123,10 @@ export interface UserStockLocationDto {
   stockLocationId: string;
   stockLocationName: string;
   stockLocationCode?: string | null;
-
   branchId: string;
   branchName?: string | null;
-
   locationType?: string | null;
   isDefault: boolean;
-
   canReceive: boolean;
   canIssue: boolean;
   canTransfer: boolean;
@@ -153,6 +162,9 @@ export interface FifoIssueCandidateDto {
   fifoLayerId: string;
   sourceId: string | null;
   sourceNumber: string | null;
+  grnNumber?: string | null;
+  receiptNumber?: string | null;
+  documentNumber?: string | null;
   itemId?: string;
   itemName?: string | null;
   uomId?: string;
@@ -181,6 +193,7 @@ export interface CreateSivDraftRequest {
   companyId: string;
   branchId: string;
   departmentId?: string | null;
+  requestedByUserId?: string | null;
   fromLocationId: string;
   toLocationId: string;
   issueDate: string;
@@ -228,6 +241,15 @@ export interface ApproveSivLineRequest {
   approvedQty: number;
 }
 
+export interface ApproveSivRequest {
+  rowVersion?: string | null;
+  remarks?: string | null;
+  lines?: ApproveSivLineRequest[] | null;
+
+  overrideReason?: string | null;
+  recommendationEvaluatedAtUtc?: string | null;
+}
+
 export interface IssueSivLineRequest {
   lineId: string;
   issuedQty: number;
@@ -239,45 +261,59 @@ export interface IssueSivLineRequest {
    Routes
 ========================= */
 
-const sivBase = (companyId: string) => `/companies/${companyId}/siv`;
+const companySivBase = (companyId: string) =>
+  `/companies/${encodeURIComponent(companyId)}/siv`;
+
+const branchSivBase = (
+  companyId: string,
+  branchId: string,
+) =>
+  `/companies/${encodeURIComponent(companyId)}` +
+  `/branches/${encodeURIComponent(branchId)}/siv`;
 
 const inventoryBase = (companyId: string) =>
-  `/companies/${companyId}/inventory-items`;
+  `/companies/${encodeURIComponent(companyId)}/inventory-items`;
 
 const currentUserStockLocationsBase = (companyId: string) =>
-  `/companies/${companyId}/users/me/stock-locations`;
+  `/companies/${encodeURIComponent(companyId)}/users/me/stock-locations`;
 
 /* =========================
    Helpers
 ========================= */
 
-function cleanParams(params: Record<string, unknown>): Record<string, unknown> {
+type QueryParams = Record<string, unknown>;
+
+function cleanParams<TParams extends object>(params: TParams): QueryParams {
   return Object.fromEntries(
-    Object.entries(params).filter(([, value]) => {
-      return value !== undefined && value !== null && value !== "";
-    })
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
   );
 }
 
 function unwrap<T>(response: unknown): T {
-  return (((response as any)?.data ?? response) as T);
+  return (((response as { data?: unknown })?.data ?? response) as T);
 }
 
-function normalizeArray<T>(value: unknown): T[] {
-  const data = unwrap<unknown>(value);
+function normalizeArray<T>(response: unknown): T[] {
+  const data = unwrap<unknown>(response);
 
   if (Array.isArray(data)) return data as T[];
 
-  const obj = data as any;
+  const obj = data as {
+    items?: unknown;
+    data?: unknown;
+    results?: unknown;
+    value?: unknown;
+  };
 
-  if (Array.isArray(obj?.items)) return obj.items as T[];
-  if (Array.isArray(obj?.data)) return obj.data as T[];
-  if (Array.isArray(obj?.results)) return obj.results as T[];
+  if (Array.isArray(obj.items)) return obj.items as T[];
+  if (Array.isArray(obj.data)) return obj.data as T[];
+  if (Array.isArray(obj.results)) return obj.results as T[];
+  if (Array.isArray(obj.value)) return obj.value as T[];
 
   return [];
 }
 
-function sivListParams(params: GetSivListParams = {}): Record<string, unknown> {
+function sivListParams(params: GetSivListParams = {}): QueryParams {
   return cleanParams({
     branchId: params.branchId,
     departmentId: params.departmentId,
@@ -292,9 +328,7 @@ function sivListParams(params: GetSivListParams = {}): Record<string, unknown> {
   });
 }
 
-function inventorySearchParams(
-  params: SearchInventoryItemsParams = {}
-): Record<string, unknown> {
+function inventorySearchParams(params: SearchInventoryItemsParams = {}): QueryParams {
   return cleanParams({
     context: "Issue",
     branchId: params.branchId,
@@ -303,9 +337,7 @@ function inventorySearchParams(
   });
 }
 
-function stockLocationParams(
-  params: StockLocationQueryParams = {}
-): Record<string, unknown> {
+function stockLocationParams(params: StockLocationQueryParams = {}): QueryParams {
   return cleanParams({
     branchId: params.branchId,
     locationType: params.locationType,
@@ -318,169 +350,215 @@ function stockLocationParams(
   });
 }
 
-function fifoLotParams(itemId: string, locationId: string): Record<string, unknown> {
+function fifoLotParams(itemId: string, locationId: string): QueryParams {
   return cleanParams({ itemId, locationId });
 }
 
 /* =========================
    SIV CRUD / Workflow
+   Public contract: all functions return DTO/data directly.
+   Components must never use `.data`.
 ========================= */
 
-function getList(companyId: string, params: GetSivListParams = {}) {
-  return http.get<unknown>(sivBase(companyId), {
+async function getList(
+  companyId: string,
+  params: GetSivListParams = {},
+): Promise<SivListItemDto[]> {
+  const response = await http.get<unknown>(companySivBase(companyId), {
     params: sivListParams(params),
   });
+
+  return normalizeArray<SivListItemDto>(response);
 }
 
-function getById(companyId: string, sivId: string) {
-  return http.get<SivDetailsDto>(`${sivBase(companyId)}/${sivId}`);
+async function getById(companyId: string, sivId: string): Promise<SivDetailsDto> {
+  const response = await http.get<SivDetailsDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}`);
+  return unwrap<SivDetailsDto>(response);
 }
 
-function createDraft(companyId: string, body: CreateSivDraftRequest) {
-  return http.post<SivActionResultDto>(`${sivBase(companyId)}/drafts`, {
-    ...body,
-    companyId,
-  });
+async function createDraft(
+  companyId: string,
+  branchId: string,
+  body: CreateSivDraftRequest,
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(
+    `${branchSivBase(companyId, branchId)}/drafts`,
+    body,
+  );
+
+  return unwrap<SivActionResultDto>(response);
 }
 
-function updateDraft(
+async function updateDraft(
+  companyId: string,
+  branchId: string,
+  sivId: string,
+  body: UpdateSivDraftRequest,
+): Promise<SivActionResultDto> {
+  const response = await http.put<SivActionResultDto>(
+    `${branchSivBase(companyId, branchId)}` +
+      `/drafts/${encodeURIComponent(sivId)}`,
+    body,
+  );
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+export interface SubmitSivRequest {
+  rowVersion?: string | null;
+  remarks?: string | null;
+}
+
+async function submit(
+  companyId: string,
+  branchId: string,
+  sivId: string,
+  body: SubmitSivRequest,
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(
+    `${branchSivBase(companyId, branchId)}` +
+      `/${encodeURIComponent(sivId)}/submit`,
+    body,
+  );
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+async function approve(
   companyId: string,
   sivId: string,
-  body: UpdateSivDraftRequest
-) {
-  return http.put<SivActionResultDto>(
-    `${sivBase(companyId)}/drafts/${sivId}`,
+  request: ApproveSivRequest,
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(
+    `${companySivBase(companyId)}` +
+      `/${encodeURIComponent(sivId)}/approve`,
+    request,
+  );
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+
+
+async function reject(
+  companyId: string,
+  sivId: string,
+  body: { rowVersion?: string | null; remarks: string },
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/reject`, {
+    companyId,
+    sivId,
+    ...body,
+  });
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+async function requestChanges(
+  companyId: string,
+  sivId: string,
+  body: { rowVersion?: string | null; remarks: string },
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(
+    `${companySivBase(companyId)}/${encodeURIComponent(sivId)}/request-changes`,
     {
-      ...body,
       companyId,
       sivId,
-    }
+      ...body,
+    },
   );
+
+  return unwrap<SivActionResultDto>(response);
 }
 
-function submit(
-  companyId: string,
-  sivId: string,
-  body: { rowVersion?: string | null; remarks?: string | null }
-) {
-  return http.post<SivActionResultDto>(
-    `${sivBase(companyId)}/${sivId}/submit`,
-    { companyId, sivId, ...body }
-  );
-}
-
-function approve(
-  companyId: string,
-  sivId: string,
-  body: {
-    rowVersion?: string | null;
-    remarks?: string | null;
-    lines?: ApproveSivLineRequest[] | null;
-  }
-) {
-  return http.post<SivActionResultDto>(
-    `${sivBase(companyId)}/${sivId}/approve`,
-    { companyId, sivId, ...body }
-  );
-}
-
-function reject(
-  companyId: string,
-  sivId: string,
-  body: { rowVersion?: string | null; remarks: string }
-) {
-  return http.post<SivActionResultDto>(
-    `${sivBase(companyId)}/${sivId}/reject`,
-    { companyId, sivId, ...body }
-  );
-}
-
-function requestChanges(
-  companyId: string,
-  sivId: string,
-  body: { rowVersion?: string | null; remarks: string }
-) {
-  return http.post<SivActionResultDto>(
-    `${sivBase(companyId)}/${sivId}/request-changes`,
-    { companyId, sivId, ...body }
-  );
-}
-
-function issue(
+async function issue(
   companyId: string,
   sivId: string,
   body: {
     rowVersion?: string | null;
     remarks?: string | null;
     lines?: IssueSivLineRequest[] | null;
-  }
-) {
-  return http.post<SivActionResultDto>(
-    `${sivBase(companyId)}/${sivId}/issue`,
-    { companyId, sivId, ...body }
-  );
+  },
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/issue`, {
+    companyId,
+    sivId,
+    ...body,
+  });
+
+  return unwrap<SivActionResultDto>(response);
 }
 
-function post(companyId: string, sivId: string, body: PostSivRequest = {}) {
-  return http.post<SivActionResultDto>(
-    `${sivBase(companyId)}/${sivId}/post`,
-    body
-  );
-}
-
-function reverse(
+async function post(
   companyId: string,
   sivId: string,
-  body: { rowVersion?: string | null; reason: string }
-) {
-  return http.post<SivActionResultDto>(
-    `${sivBase(companyId)}/${sivId}/reverse`,
-    { companyId, sivId, ...body }
-  );
+  body: PostSivRequest = {},
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/post`, body);
+  return unwrap<SivActionResultDto>(response);
 }
 
-function getFifoPreview(companyId: string, sivId: string, lineId: string) {
-  return http.get<SivLineFifoPreviewDto>(
-    `${sivBase(companyId)}/${sivId}/lines/${lineId}/fifo-preview`
+async function reverse(
+  companyId: string,
+  sivId: string,
+  body: { rowVersion?: string | null; reason: string },
+): Promise<SivActionResultDto> {
+  const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/reverse`, {
+    companyId,
+    sivId,
+    ...body,
+  });
+
+  return unwrap<SivActionResultDto>(response);
+}
+
+async function getFifoPreview(
+  companyId: string,
+  sivId: string,
+  lineId: string,
+): Promise<SivLineFifoPreviewDto> {
+  const response = await http.get<SivLineFifoPreviewDto>(
+    `${companySivBase(companyId)}/${encodeURIComponent(sivId)}` +
+      `/lines/${encodeURIComponent(lineId)}/fifo-preview`,
   );
+
+  return unwrap<SivLineFifoPreviewDto>(response);
 }
 
 /* =========================
    Inventory Search
 ========================= */
 
-function searchInventoryItems(
+async function searchInventoryItems(
   companyId: string,
-  params: SearchInventoryItemsParams = {}
-) {
-  return http.get<InventoryItemSearchResult[]>(
-    `${inventoryBase(companyId)}/search`,
-    {
-      params: inventorySearchParams(params),
-    }
-  );
+  params: SearchInventoryItemsParams = {},
+): Promise<InventoryItemSearchResult[]> {
+  const response = await http.get<InventoryItemSearchResult[]>(`${inventoryBase(companyId)}/search`, {
+    params: inventorySearchParams(params),
+  });
+
+  return normalizeArray<InventoryItemSearchResult>(response);
 }
 
-function getStockLocations(
+async function getStockLocations(
   companyId: string,
-  params: StockLocationQueryParams = {}
-) {
-  return http.get<LocationOption[]>(
-    `${inventoryBase(companyId)}/stock-locations`,
-    {
-      params: stockLocationParams({
-        isActive: true,
-        ...params,
-      }),
-    }
-  );
+  params: StockLocationQueryParams = {},
+): Promise<LocationOption[]> {
+  const response = await http.get<LocationOption[]>(`${inventoryBase(companyId)}/stock-locations`, {
+    params: stockLocationParams({
+      isActive: true,
+      ...params,
+    }),
+  });
+
+  return normalizeArray<LocationOption>(response);
 }
 
 /**
- * Legacy helper.
- * Use getMyIssueLocations() for permission-aware SIV source selection.
+ * Legacy branch-level location APIs.
+ * Prefer current-user stock-location APIs when the backend supports them.
  */
-function getIssueLocations(companyId: string, branchId?: string) {
+function getIssueLocations(companyId: string, branchId?: string): Promise<LocationOption[]> {
   return getStockLocations(companyId, {
     branchId,
     canIssue: true,
@@ -488,11 +566,7 @@ function getIssueLocations(companyId: string, branchId?: string) {
   });
 }
 
-/**
- * Legacy helper.
- * Use getMyDestinationLocations() for permission-aware SIV destination selection.
- */
-function getConsumptionLocations(companyId: string, branchId?: string) {
+function getConsumptionLocations(companyId: string, branchId?: string): Promise<LocationOption[]> {
   return getStockLocations(companyId, {
     branchId,
     canReceive: true,
@@ -500,87 +574,68 @@ function getConsumptionLocations(companyId: string, branchId?: string) {
   });
 }
 
-function getItemFifoLots(companyId: string, itemId: string, locationId: string) {
-  return http.get<FifoIssueCandidateDto[]>(
+async function getItemFifoLots(
+  companyId: string,
+  itemId: string,
+  locationId: string,
+): Promise<FifoIssueCandidateDto[]> {
+  const response = await http.get<FifoIssueCandidateDto[]>(
     `${inventoryBase(companyId)}/fifo-issue-candidates`,
     {
       params: fifoLotParams(itemId, locationId),
-    }
+    },
   );
+
+  return normalizeArray<FifoIssueCandidateDto>(response);
 }
 
 /* =========================
    Current User Stock Locations
-   ERP-grade many-to-many access
 ========================= */
 
-async function getMyStockLocations(
-  companyId: string
-): Promise<UserStockLocationDto[]> {
-  const response = await http.get<UserStockLocationDto[]>(
-    currentUserStockLocationsBase(companyId)
-  );
-
+async function getMyStockLocations(companyId: string): Promise<UserStockLocationDto[]> {
+  const response = await http.get<UserStockLocationDto[]>(currentUserStockLocationsBase(companyId));
   return normalizeArray<UserStockLocationDto>(response);
 }
 
 async function getMyBranchStockLocations(
   companyId: string,
-  branchId?: string | null
+  branchId?: string | null,
 ): Promise<UserStockLocationDto[]> {
   const rows = await getMyStockLocations(companyId);
-
-  if (!branchId) return rows;
-
-  return rows.filter((location) => location.branchId === branchId);
+  return branchId ? rows.filter((location) => location.branchId === branchId) : rows;
 }
 
 async function getMyIssueLocations(
   companyId: string,
-  branchId?: string | null
+  branchId?: string | null,
 ): Promise<UserStockLocationDto[]> {
   const rows = await getMyBranchStockLocations(companyId, branchId);
-
-  return rows.filter(
-    (location) => location.canIssue || location.canTransfer
-  );
+  return rows.filter((location) => location.canIssue || location.canTransfer);
 }
 
 async function getMyDestinationLocations(
   companyId: string,
-  branchId?: string | null
+  branchId?: string | null,
 ): Promise<UserStockLocationDto[]> {
   const rows = await getMyBranchStockLocations(companyId, branchId);
-
-  return rows.filter(
-    (location) => location.canReceive || location.canTransfer
-  );
+  return rows.filter((location) => location.canReceive || location.canTransfer);
 }
 
 async function getMyDefaultDestinationLocation(
   companyId: string,
-  branchId?: string | null
+  branchId?: string | null,
 ): Promise<UserStockLocationDto | null> {
   const destinations = await getMyDestinationLocations(companyId, branchId);
-
-  return (
-    destinations.find((location) => location.isDefault) ??
-    destinations[0] ??
-    null
-  );
+  return destinations.find((location) => location.isDefault) ?? destinations[0] ?? null;
 }
 
 async function getMyDefaultIssueLocation(
   companyId: string,
-  branchId?: string | null
+  branchId?: string | null,
 ): Promise<UserStockLocationDto | null> {
   const sources = await getMyIssueLocations(companyId, branchId);
-
-  return (
-    sources.find((location) => location.isDefault) ??
-    sources[0] ??
-    null
-  );
+  return sources.find((location) => location.isDefault) ?? sources[0] ?? null;
 }
 
 /* =========================
@@ -606,12 +661,9 @@ export const sivApi = {
   searchInventoryItems,
 
   getStockLocations,
-
-  // Legacy branch-level location APIs.
   getIssueLocations,
   getConsumptionLocations,
 
-  // ERP-grade current-user many-to-many stock-location APIs.
   getMyStockLocations,
   getMyBranchStockLocations,
   getMyIssueLocations,

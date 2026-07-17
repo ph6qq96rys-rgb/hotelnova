@@ -43,6 +43,7 @@ import MenuItemCreatePage from "../features/production/pages/MenuItemCreatePage"
 import MenuItemDetailPage from "../features/production/pages/MenuItemDetailPage";
 import MenuCategoriesPage from "../features/production/pages/MenuCategoriesPage";
 import MenuEngineeringPage from "../features/production/pages/MenuEngineeringPage";
+import MenuItemListPage from "../features/production/pages/MenuItemsListPage";
 
 import FnbControlCenterPage from "../features/reports/fnb/pages/FnbControlCenterPage";
 import OrgLocationsPage from "../features/org/pages/OrgLocationsPage";
@@ -58,6 +59,7 @@ export type AppRoute = RouteObject & {
   roles?: string[];
   permissions?: string[];
   order?: number;
+  hidden?: boolean;
   menu?: {
     label?: string;
     section?: string;
@@ -69,7 +71,7 @@ export const appPaths = {
   dashboard: "dashboard",
 
   users: "users",
-  rolesPermissions: "roles-permissions",
+  rolesPermissions: "security/roles-permissions",
 
   orgLocations: "org",
   companyOnboarding: "onboarding",
@@ -93,6 +95,7 @@ export const appPaths = {
   menuCategories: "production/menu/categories",
   menuItemNew: "production/menu/items/new",
   menuItemDetail: "production/menu/items/:id",
+  menuItemsList: "production/menu/items",
   recipeManagement: "production/recipes",
   menuItemRecipe: "production/menu/items/:id/recipe",
   productionBatches: "production/batches",
@@ -154,6 +157,12 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Setup",
     order: 20,
+    permissions: [
+      "company.view",
+      "company.manage",
+      "onboarding.view",
+      "onboarding.manage",
+    ],
   },
 
   {
@@ -161,9 +170,15 @@ export const routeConfig: AppRoute[] = [
     label: "Branch Onboarding",
     element: <CompanyOnboardingModule />,
     icon: <ClipboardList size={18} />,
-    nav: false,
+    nav: true,
     section: "Setup",
     order: 30,
+    permissions: [
+      "company.view",
+      "company.manage",
+      "onboarding.view",
+      "onboarding.manage",
+    ],
   },
 
   {
@@ -172,8 +187,14 @@ export const routeConfig: AppRoute[] = [
     element: <UsersPage />,
     icon: <Users size={18} />,
     nav: true,
-    section: "Identity",
+    section: "Security",
     order: 10,
+    permissions: [
+      "users.view",
+      "users.manage",
+      "security.view",
+      "security.manage",
+    ],
   },
 
   {
@@ -182,8 +203,14 @@ export const routeConfig: AppRoute[] = [
     element: <RolesPermissionsPage />,
     icon: <Shield size={18} />,
     nav: true,
-    section: "Identity",
+    section: "Security",
     order: 20,
+    permissions: [
+      "security.view",
+      "security.manage",
+      "roles.view",
+      "roles.manage",
+    ],
   },
 
   {
@@ -194,6 +221,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 40,
+    permissions: ["inventory.view", "inventory.manage", "settings.manage"],
   },
 
   {
@@ -204,12 +232,14 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 50,
+   // permissions: ["inventory.view", "inventory.manage", "stock-transfers.view"],
   },
 
   {
     path: appPaths.stockTransferNew,
     element: <StockTransferCreatePage />,
     nav: false,
+    //permissions: ["inventory.manage", "stock-transfers.manage"],
   },
 
   {
@@ -217,18 +247,21 @@ export const routeConfig: AppRoute[] = [
     label: "Transfer Approvals",
     element: <StockTransferApprovalsPage />,
     nav: false,
+   // permissions: ["inventory.approve", "stock-transfers.approve"],
   },
 
   {
     path: appPaths.stockTransferDetail,
     element: <StockTransferDetailPage />,
     nav: false,
+   // permissions: ["inventory.view", "stock-transfers.view"],
   },
 
   {
     path: appPaths.stockTransferEdit,
     element: <StockTransferEditPage />,
     nav: false,
+    //permissions: ["inventory.manage", "stock-transfers.manage"],
   },
 
   {
@@ -239,36 +272,42 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 60,
+    //permissions: ["inventory.view", "inventory.manage", "adjustments.view"],
   },
 
   {
     path: appPaths.adjustmentNew,
     element: <AdjustmentDraftEditorPage />,
     nav: false,
+    //permissions: ["inventory.manage", "adjustments.manage"],
   },
 
   {
     path: appPaths.adjustmentDraft,
     element: <AdjustmentDraftEditorPage />,
     nav: false,
+    //permissions: ["inventory.manage", "adjustments.manage"],
   },
 
   {
     path: appPaths.adjustmentEdit,
     element: <AdjustmentDraftEditorPage />,
     nav: false,
+    //permissions: ["inventory.manage", "adjustments.manage"],
   },
 
   {
     path: appPaths.adjustmentDetail,
     element: <AdjustmentDetailsPage />,
     nav: false,
+    //permissions: ["inventory.view", "adjustments.view"],
   },
 
   {
     path: appPaths.adjustmentApprove,
     element: <AdjustmentApprovalPage />,
     nav: false,
+    //permissions: ["inventory.approve", "adjustments.approve"],
   },
 
   {
@@ -279,6 +318,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 10,
+    //permissions: ["production.view", "menu.view"],
   },
 
   {
@@ -289,16 +329,25 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 20,
+   // permissions: ["production.manage", "menu.manage"],
   },
 
   {
     path: appPaths.menuItemDetail,
     label: "Menu Configuration",
     element: <MenuItemDetailPage />,
-    nav: false,
+    nav: true,
     section: "Production",
+    //permissions: ["production.view", "menu.view"],
   },
-
+{
+    path: appPaths.menuItemsList,
+    label: "Menu Items",
+    element: <MenuItemListPage />,
+    nav: true,
+    section: "Production",
+    //permissions: ["production.view", "menu.view"],
+  },
   {
     path: appPaths.recipeManagement,
     label: "Recipe Management",
@@ -307,6 +356,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 30,
+    //permissions: ["production.view", "recipes.view"],
   },
 
   {
@@ -315,6 +365,7 @@ export const routeConfig: AppRoute[] = [
     element: <RecipeEditorPage />,
     nav: false,
     section: "Production",
+    //permissions: ["production.manage", "recipes.manage"],
   },
 
   {
@@ -325,6 +376,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 40,
+    //permissions: ["production.view", "production-batches.view"],
   },
 
   {
@@ -333,6 +385,7 @@ export const routeConfig: AppRoute[] = [
     element: <ProductionBatchPage />,
     nav: false,
     section: "Production",
+    //permissions: ["production.manage", "production-batches.manage"],
   },
 
   {
@@ -341,6 +394,7 @@ export const routeConfig: AppRoute[] = [
     element: <ProductionBatchPage />,
     nav: false,
     section: "Production",
+    //permissions: ["production.view", "production-batches.view"],
   },
 
   {
@@ -351,6 +405,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 50,
+    //permissions: ["production.view", "menu-engineering.view"],
   },
 
   {
@@ -361,6 +416,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Reports",
     order: 10,
+    //permissions: ["reports.view", "reports.fnb.view"],
   },
 
   {
@@ -371,6 +427,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Telegram Bot",
     order: 10,
+   // permissions: ["telegram.view", "telegram.manage"],
   },
 
   {
@@ -379,7 +436,8 @@ export const routeConfig: AppRoute[] = [
     element: <SettingsPage />,
     icon: <Settings size={18} />,
     nav: true,
-    section: "System",
-    order: 10,
+    section: "Security",
+    order: 30,
+    permissions: ["settings.view", "settings.manage", "security.manage"],
   },
 ];

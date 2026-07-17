@@ -15,11 +15,28 @@ import type {
 
 import { http, resolveBranchId, resolveCompanyId } from "../../../api/http";
 
+export type PosScope = {
+  companyId: Guid;
+  branchId: Guid;
+};
+
 export type PosDashboardDto = {
   openSessionCount: number;
   todaySales: number;
   todayOrders: number;
   pendingCogsCount: number;
+};
+
+export type PosStoreDto = {
+  id: Guid;
+  companyId: Guid;
+  branchId: Guid;
+  code?: string | null;
+  name: string;
+  addressLine?: string | null;
+  isActive: boolean;
+  issueStockLocationId?: Guid | null;
+  issueStockLocationName?: string | null;
 };
 
 type ListResponse<T> =
@@ -28,14 +45,29 @@ type ListResponse<T> =
       items?: T[];
       data?: T[];
       results?: T[];
+      value?: T[];
     };
 
+function extractList<T>(response: ListResponse<T> | null | undefined): T[] {
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response.items)) return response.items;
+  if (Array.isArray(response.data)) return response.data;
+  if (Array.isArray(response.results)) return response.results;
+  if (Array.isArray(response.value)) return response.value;
+  return [];
+}
+
 function requireValue(name: string, value: string | null | undefined): string {
-  if (!value) {
-    throw new Error(`${name} is missing. Please select company and branch again.`);
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    throw new Error(
+      `${name} is missing. Please select company, branch, and POS store again.`
+    );
   }
 
-  return value;
+  return text;
 }
 
 export function getCompanyId(): Guid {
@@ -46,11 +78,67 @@ export function getBranchId(): Guid {
   return requireValue("Branch ID", resolveBranchId());
 }
 
-function branchPrefix(): string {
-  return `/companies/${getCompanyId()}/branches/${getBranchId()}`;
+function readStoredValue(...keys: string[]): string | null {
+  for (const key of keys) {
+    const local = localStorage.getItem(key);
+    if (local?.trim()) return local.trim();
+
+    const session = sessionStorage.getItem(key);
+    if (session?.trim()) return session.trim();
+  }
+
+  return null;
 }
 
-function query(params: Record<string, string | number | boolean | null | undefined>): string {
+export function getStoreId(): Guid {
+  return requireValue(
+    "POS/store ID",
+    readStoredValue("storeId", "posStoreId", "activeStoreId")
+  );
+}
+
+export function tryGetStoreId(): Guid | null {
+  return readStoredValue("storeId", "posStoreId", "activeStoreId");
+}
+
+export function setActiveStore(storeId: Guid, storeName?: string): void {
+  const id = requireValue("POS/store ID", storeId);
+
+  for (const storage of [localStorage, sessionStorage]) {
+    storage.setItem("storeId", id);
+    storage.setItem("posStoreId", id);
+    storage.setItem("activeStoreId", id);
+
+    if (storeName?.trim()) {
+      storage.setItem("storeName", storeName.trim());
+    }
+  }
+}
+
+export function clearActiveStore(): void {
+  for (const storage of [localStorage, sessionStorage]) {
+    storage.removeItem("storeId");
+    storage.removeItem("posStoreId");
+    storage.removeItem("activeStoreId");
+    storage.removeItem("storeName");
+  }
+}
+
+function normalizeScope(scope?: Partial<PosScope>): PosScope {
+  return {
+    companyId: requireValue("Company ID", scope?.companyId || resolveCompanyId()),
+    branchId: requireValue("Branch ID", scope?.branchId || resolveBranchId()),
+  };
+}
+
+function branchPrefix(scope?: Partial<PosScope>): string {
+  const resolved = normalizeScope(scope);
+  return `/companies/${resolved.companyId}/branches/${resolved.branchId}`;
+}
+
+function query(
+  params: Record<string, string | number | boolean | null | undefined>
+): string {
   const qs = new URLSearchParams();
 
   for (const [key, value] of Object.entries(params)) {
@@ -63,66 +151,96 @@ function query(params: Record<string, string | number | boolean | null | undefin
   return text ? `?${text}` : "";
 }
 
-function unwrapList<T>(response: ListResponse<T> | null | undefined): T[] {
-  if (!response) return [];
-  if (Array.isArray(response)) return response;
-  if (Array.isArray(response.items)) return response.items;
-  if (Array.isArray(response.data)) return response.data;
-  if (Array.isArray(response.results)) return response.results;
-  return [];
-}
-
-async function get<T>(path: string): Promise<T> {
-  const response = await http.get<T>(`${branchPrefix()}${path}`);
+async function get<T>(scope: Partial<PosScope> | undefined, path: string): Promise<T> {
+  const response = await http.get<T>(`${branchPrefix(scope)}${path}`);
   return response.data;
 }
 
-async function getList<T>(path: string): Promise<T[]> {
-  const response = await http.get<ListResponse<T>>(`${branchPrefix()}${path}`);
-  return unwrapList<T>(response.data);
+async function getList<T>(scope: Partial<PosScope> | undefined, path: string): Promise<T[]> {
+  const response = await http.get<ListResponse<T>>(`${branchPrefix(scope)}${path}`);
+  return extractList<T>(response.data);
 }
 
-async function post<T>(path: string, body?: unknown): Promise<T> {
-  const response = await http.post<T>(`${branchPrefix()}${path}`, body ?? {});
+async function post<T>(scope: Partial<PosScope> | undefined, path: string, body?: unknown): Promise<T> {
+  const response = await http.post<T>(`${branchPrefix(scope)}${path}`, body ?? {});
   return response.data;
+}
+
+function normalizeStore(store: PosStoreDto): PosStoreDto {
+  return {
+    ...store,
+    id: String(store.id ?? "").trim(),
+    companyId: String(store.companyId ?? "").trim(),
+    branchId: String(store.branchId ?? "").trim(),
+    code: store.code ?? null,
+    name: String(store.name ?? "").trim(),
+    addressLine: store.addressLine ?? null,
+    isActive: store.isActive !== false,
+    issueStockLocationId: store.issueStockLocationId ?? null,
+    issueStockLocationName: store.issueStockLocationName ?? null,
+  };
+}
+
+function normalizeOpenSessionRequest(
+  body: OpenSessionRequest
+): OpenSessionRequest {
+  return {
+    ...body,
+    storeId: body.storeId || getStoreId(),
+    cashierName: String(body.cashierName ?? "").trim(),
+    terminal: String(body.terminal ?? "POS-1").trim() || "POS-1",
+    openingFloat: Number(body.openingFloat ?? 0),
+  };
+}
+
+function normalizeCreateSaleRequest(body: CreateSaleRequest): CreateSaleRequest {
+  return {
+    ...body,
+    companyId: body.companyId || getCompanyId(),
+    branchId: body.branchId || getBranchId(),
+    storeId: body.storeId || getStoreId(),
+  };
 }
 
 export const posApi = {
-  currentSession: (): Promise<PosSessionDto | null> =>
-    get<PosSessionDto | null>("/pos-sessions/current"),
+  currentSession: (scope: PosScope): Promise<PosSessionDto | null> =>
+    get<PosSessionDto | null>(scope, "/pos-sessions/current"),
 
-  openSession: (body: OpenSessionRequest): Promise<PosSessionDto> =>
-    post<PosSessionDto>("/pos-sessions/open", body),
+  stores: async (scope: PosScope): Promise<PosStoreDto[]> => {
+    const rows = await getList<PosStoreDto>(scope, "/stores");
+    return rows.map(normalizeStore).filter((x) => x.id && x.name && x.isActive !== false);
+  },
 
-  closeSession: (sessionId: Guid, body: CloseSessionRequest): Promise<PosSessionDto> =>
-    post<PosSessionDto>(`/pos-sessions/${sessionId}/close`, body),
+  openSession: (scope: PosScope, body: OpenSessionRequest): Promise<PosSessionDto> =>
+    post<PosSessionDto>(scope, "/pos-sessions/open", normalizeOpenSessionRequest(body)),
 
-  xReport: (sessionId: Guid): Promise<SessionReportDto> =>
-    get<SessionReportDto>(`/pos-sessions/${sessionId}/x-report`),
+  closeSession: (scope: PosScope, sessionId: Guid, body: CloseSessionRequest): Promise<PosSessionDto> =>
+    post<PosSessionDto>(scope, `/pos-sessions/${sessionId}/close`, {
+      ...body,
+      closingFloat: Number(body.closingFloat ?? 0),
+    }),
 
-  zReport: (sessionId: Guid): Promise<SessionReportDto> =>
-    post<SessionReportDto>(`/pos-sessions/${sessionId}/z-report`),
+  xReport: (scope: PosScope, sessionId: Guid): Promise<SessionReportDto> =>
+    get<SessionReportDto>(scope, `/pos-sessions/${sessionId}/x-report`),
 
-  menuItems: (q = "", activeOnly = true): Promise<MenuItemDto[]> =>
-    getList<MenuItemDto>(`/menu/items${query({ q, activeOnly })}`),
+  zReport: (scope: PosScope, sessionId: Guid): Promise<SessionReportDto> =>
+    post<SessionReportDto>(scope, `/pos-sessions/${sessionId}/z-report`),
 
-  dashboard: (): Promise<PosDashboardDto> =>
-    get<PosDashboardDto>("/pos/dashboard"),
+  menuItems: (scope: PosScope, q = "", activeOnly = true): Promise<MenuItemDto[]> =>
+    getList<MenuItemDto>(scope, `/menu/items${query({ q, activeOnly })}`),
 
-  createSale: (body: CreateSaleRequest): Promise<SaleDto> =>
-    post<SaleDto>("/sales", body),
+  dashboard: (scope: PosScope): Promise<PosDashboardDto> =>
+    get<PosDashboardDto>(scope, "/pos/dashboard"),
 
-  postSaleCogs: (saleId: Guid): Promise<void> =>
-    post<void>(`/sales/${saleId}/post-cogs`),
+  createSale: (scope: PosScope, body: CreateSaleRequest): Promise<SaleDto> =>
+    post<SaleDto>(scope, "/sales", normalizeCreateSaleRequest(body)),
 
-  postBulkCogs: (fromDate?: string, toDate?: string): Promise<BulkPostCogsResultDto> =>
-    post<BulkPostCogsResultDto>(
-      `/sales/post-cogs/bulk${query({ fromDate, toDate })}`
-    ),
-    saleInventoryConsumption: (
-  saleId: Guid
-): Promise<SaleInventoryConsumptionDto[]> =>
-  getList<SaleInventoryConsumptionDto>(
-    `/sales/${saleId}/inventory-consumption`
-  ),
+  postSaleCogs: (scope: PosScope, saleId: Guid): Promise<void> =>
+    post<void>(scope, `/sales/${saleId}/post-cogs`),
+
+  postBulkCogs: (scope: PosScope, fromDate?: string, toDate?: string): Promise<BulkPostCogsResultDto> =>
+    post<BulkPostCogsResultDto>(scope, `/sales/post-cogs/bulk${query({ fromDate, toDate })}`),
+
+  saleInventoryConsumption: (scope: PosScope, saleId: Guid): Promise<SaleInventoryConsumptionDto[]> =>
+    getList<SaleInventoryConsumptionDto>(scope, `/sales/${saleId}/inventory-consumption`),
 };

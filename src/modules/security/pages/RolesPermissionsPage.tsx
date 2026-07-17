@@ -1,9 +1,9 @@
 // src/modules/security/pages/RolesPermissionsPage.tsx
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import { useAppScope } from "../../../app/useAppScope";
 import { useAuth } from "../../../auth/AuthProvider";
-import "./roles-permissions.css";
 
 import {
   securityApi,
@@ -20,6 +20,7 @@ import {
   userInitials,
 } from "../utils/security.utils";
 
+import "./roles-permissions.css";
 
 type Tab = "matrix" | "members" | "overview";
 
@@ -31,6 +32,10 @@ function sortRoles(roles: RoleDto[]): RoleDto[] {
   );
 }
 
+function clean(value?: string | null): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function permissionLabel(permission: PermissionCatalogItem): string {
   return permission.name || permission.key;
 }
@@ -40,7 +45,7 @@ function permissionKey(permission: PermissionCatalogItem): string {
 }
 
 function roleName(role?: RoleDto | null): string {
-  return role?.name ?? "No role selected";
+  return role?.displayName || role?.name || "No role selected";
 }
 
 function userRoles(user: UserDto): string[] {
@@ -49,28 +54,80 @@ function userRoles(user: UserDto): string[] {
     .map(String);
 }
 
-export default function RolesPermissionsPage() {
+function hasAnyRole(user: any, roleNames: string[]): boolean {
+  const normalized = new Set(roleNames.map((x) => x.toLowerCase()));
 
+  return (((user?.roles ?? user?.roleNames ?? []) as string[]) || [])
+    .filter(Boolean)
+    .map((x) => String(x).toLowerCase())
+    .some((role) => normalized.has(role));
+}
+
+function roleMatchesUser(role: RoleDto, user: UserDto): boolean {
+  const targetNames = [role.name, role.displayName]
+    .map((x) => clean(x).toLowerCase())
+    .filter(Boolean);
+
+  if (targetNames.length === 0) return false;
+
+  return userRoles(user).some((x) =>
+    targetNames.includes(clean(x).toLowerCase())
+  );
+}
+
+function EmptyState({
+  title,
+  text,
+}: {
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="rp-shell">
+      <div className="rp-empty">
+        <strong>{title}</strong>
+        <span>{text}</span>
+      </div>
+    </div>
+  );
+}
+
+export default function RolesPermissionsPage() {
   const { companyId } = useAppScope();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth() as any;
+
+  const isSystemAdmin = hasAnyRole(user, ["SystemAdmin", "SysAdmin"]);
+  const isCompanyAdmin = hasAnyRole(user, ["CompanyAdmin"]);
 
   const canView =
-    hasPermission("roles.view") ||
-    hasPermission("users.view") ||
-    hasPermission("security.view");
+    Boolean(companyId) &&
+    (isSystemAdmin ||
+      isCompanyAdmin ||
+      hasPermission?.("security.view") ||
+      hasPermission?.("roles.view") ||
+      hasPermission?.("users.view"));
 
   const canManage =
-    hasPermission("roles.manage") ||
-    hasPermission("security.manage");
+    Boolean(companyId) &&
+    (isSystemAdmin ||
+      isCompanyAdmin ||
+      hasPermission?.("security.manage") ||
+      hasPermission?.("roles.manage"));
 
   const [roles, setRoles] = useState<RoleDto[]>([]);
   const [permissions, setPermissions] = useState<PermissionCatalogItem[]>([]);
   const [users, setUsers] = useState<UserDto[]>([]);
 
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
-  const selectedRole = roles.find((x) => x.id === selectedRoleId) ?? null;
 
-  const [originalPermissionKeys, setOriginalPermissionKeys] = useState<string[]>([]);
+  const selectedRole = useMemo(
+    () => roles.find((x) => x.id === selectedRoleId) ?? null,
+    [roles, selectedRoleId]
+  );
+
+  const [originalPermissionKeys, setOriginalPermissionKeys] = useState<string[]>(
+    []
+  );
   const [stagedPermissionKeys, setStagedPermissionKeys] = useState<string[]>([]);
 
   const [tab, setTab] = useState<Tab>("matrix");
@@ -86,93 +143,127 @@ export default function RolesPermissionsPage() {
   const [loading, setLoading] = useState(true);
   const [roleLoading, setRoleLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isSystemRole = Boolean(selectedRole?.isSystem);
-  const isDirty = isPermissionsDirty(originalPermissionKeys, stagedPermissionKeys);
+  const isDirty = isPermissionsDirty(
+    originalPermissionKeys,
+    stagedPermissionKeys
+  );
+
+  const canEditSelectedRole = canManage && Boolean(selectedRole) && !isSystemRole;
 
   const stagedSet = useMemo(
     () => new Set(stagedPermissionKeys),
     [stagedPermissionKeys]
   );
 
-  async function loadWorkspace(preferredRoleId?: string) {
-    if (!companyId) return;
+  const loadRolePermissions = useCallback(
+    async (roleId: string, signal?: AbortSignal) => {
+      if (!companyId) return;
 
-    setLoading(true);
-    setError(null);
+      setRoleLoading(true);
+      setError(null);
 
-    try {
-      const [roleList, permissionList, userList] = await Promise.all([
-        securityApi.listRoles(companyId),
-        securityApi.listPermissions(companyId),
-        securityApi.listUsers(companyId),
-      ]);
+      try {
+        const assigned = await securityApi.getRolePermissions(
+          companyId,
+          roleId,
+          signal
+        );
 
-      const orderedRoles = sortRoles(roleList ?? []);
+        const keys = assigned.map(permissionKey).sort();
 
-      setRoles(orderedRoles);
-      setPermissions(permissionList ?? []);
-      setUsers(userList ?? []);
+        setOriginalPermissionKeys(keys);
+        setStagedPermissionKeys(keys);
+      } catch (e) {
+        if ((e as any)?.name === "CanceledError") return;
 
-      setSelectedRoleId(
-        preferredRoleId ||
-          selectedRoleId ||
-          orderedRoles[0]?.id ||
-          null
-      );
-    } catch (e) {
-      setError(extractSecurityError(e, "Failed to load security workspace."));
-    } finally {
-      setLoading(false);
-    }
-  }
+        setError(extractSecurityError(e, "Failed to load role permissions."));
+        setOriginalPermissionKeys([]);
+        setStagedPermissionKeys([]);
+      } finally {
+        setRoleLoading(false);
+      }
+    },
+    [companyId]
+  );
 
-  async function loadRolePermissions(roleId: string) {
-    if (!companyId) return;
+  const loadWorkspace = useCallback(
+    async (preferredRoleId?: string, signal?: AbortSignal) => {
+      if (!companyId || !canView) return;
 
-    setRoleLoading(true);
-    setError(null);
+      setLoading(true);
+      setError(null);
 
-    try {
-      const assigned = await securityApi.getRolePermissions(companyId, roleId);
-      const keys = assigned.map(permissionKey).sort();
+      try {
+        const [roleList, permissionList, userList] = await Promise.all([
+          securityApi.listRoles(companyId, signal),
+          securityApi.listPermissions(companyId, signal),
+          securityApi.listUsers(companyId, signal),
+        ]);
 
-      setOriginalPermissionKeys(keys);
-      setStagedPermissionKeys(keys);
-    } catch (e) {
-      setError(extractSecurityError(e, "Failed to load role permissions."));
-      setOriginalPermissionKeys([]);
-      setStagedPermissionKeys([]);
-    } finally {
-      setRoleLoading(false);
-    }
-  }
+        const orderedRoles = sortRoles(roleList ?? []);
+
+        setRoles(orderedRoles);
+        setPermissions(permissionList ?? []);
+        setUsers(userList ?? []);
+
+        setSelectedRoleId((current) => {
+          if (preferredRoleId && orderedRoles.some((x) => x.id === preferredRoleId)) {
+            return preferredRoleId;
+          }
+
+          if (current && orderedRoles.some((x) => x.id === current)) {
+            return current;
+          }
+
+          return orderedRoles[0]?.id ?? null;
+        });
+      } catch (e) {
+        if ((e as any)?.name === "CanceledError") return;
+
+        setError(extractSecurityError(e, "Failed to load security workspace."));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [companyId, canView]
+  );
 
   useEffect(() => {
-    if (canView && companyId) {
-      void loadWorkspace();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canView, companyId]);
+    if (!companyId || !canView) return;
+
+    const controller = new AbortController();
+
+    void loadWorkspace(undefined, controller.signal);
+
+    return () => controller.abort();
+  }, [companyId, canView, loadWorkspace]);
 
   useEffect(() => {
-    if (selectedRoleId && companyId) {
-      void loadRolePermissions(selectedRoleId);
-    }
-  }, [selectedRoleId, companyId]);
+    if (!selectedRoleId || !companyId || !canView) return;
+
+    const controller = new AbortController();
+
+    void loadRolePermissions(selectedRoleId, controller.signal);
+
+    return () => controller.abort();
+  }, [selectedRoleId, companyId, canView, loadRolePermissions]);
 
   const filteredRoles = useMemo(() => {
     const q = roleSearch.trim().toLowerCase();
 
     return sortRoles(
-      roles.filter((role) =>
-        !q ||
-        `${role.name} ${role.description ?? ""}`
+      roles.filter((role) => {
+        if (!q) return true;
+
+        return `${role.name} ${role.displayName ?? ""} ${role.description ?? ""}`
           .toLowerCase()
-          .includes(q)
-      )
+          .includes(q);
+      })
     );
   }, [roles, roleSearch]);
 
@@ -180,36 +271,36 @@ export default function RolesPermissionsPage() {
     const q = permissionSearch.trim().toLowerCase();
 
     return groupPermissions(
-      permissions.filter((permission) =>
-        !q ||
-        `${permission.key} ${permission.name ?? ""} ${(permission as any).category ?? ""} ${permission.group ?? ""} ${permission.description ?? ""}`
+      permissions.filter((permission) => {
+        if (!q) return true;
+
+        return `${permission.key} ${permission.name ?? ""} ${
+          permission.category ?? ""
+        } ${permission.group ?? ""} ${permission.description ?? ""}`
           .toLowerCase()
-          .includes(q)
-      )
+          .includes(q);
+      })
     );
   }, [permissions, permissionSearch]);
 
   const roleMembers = useMemo(() => {
     if (!selectedRole) return [];
-
-    return users.filter((user) =>
-      userRoles(user).some(
-        (role) => role.toLowerCase() === selectedRole.name.toLowerCase()
-      )
-    );
+    return users.filter((item) => roleMatchesUser(selectedRole, item));
   }, [users, selectedRole]);
 
   const assignableUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
+    const memberIds = new Set(roleMembers.map((x) => x.id));
 
     return users
-      .filter((user) => !roleMembers.some((member) => member.id === user.id))
-      .filter((user) =>
-        !q ||
-        `${userDisplayName(user)} ${user.email ?? ""}`
+      .filter((item) => !memberIds.has(item.id))
+      .filter((item) => {
+        if (!q) return true;
+
+        return `${userDisplayName(item)} ${item.email ?? ""}`
           .toLowerCase()
-          .includes(q)
-      );
+          .includes(q);
+      });
   }, [users, roleMembers, userSearch]);
 
   const riskyPermissions = useMemo(
@@ -220,26 +311,38 @@ export default function RolesPermissionsPage() {
     [stagedPermissionKeys]
   );
 
-  function selectRole(roleId: string) {
-    if (isDirty && !window.confirm("Discard unsaved permission changes?")) return;
+  function clearMessages() {
+    setNotice(null);
+    setError(null);
+  }
 
+  function selectRole(roleId: string) {
+    if (roleId === selectedRoleId) return;
+
+    if (isDirty && !window.confirm("Discard unsaved permission changes?")) {
+      return;
+    }
+
+    clearMessages();
     setSelectedRoleId(roleId);
     setTab("matrix");
-    setNotice(null);
   }
 
   function togglePermission(key: string) {
-    if (!canManage || isSystemRole) return;
+    if (!canEditSelectedRole) return;
 
     setStagedPermissionKeys((current) => {
       const next = new Set(current);
-      next.has(key) ? next.delete(key) : next.add(key);
+
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+
       return [...next].sort();
     });
   }
 
   function toggleGroup(keys: string[]) {
-    if (!canManage || isSystemRole) return;
+    if (!canEditSelectedRole) return;
 
     const allSelected = keys.every((key) => stagedSet.has(key));
 
@@ -247,7 +350,8 @@ export default function RolesPermissionsPage() {
       const next = new Set(current);
 
       for (const key of keys) {
-        allSelected ? next.delete(key) : next.add(key);
+        if (allSelected) next.delete(key);
+        else next.add(key);
       }
 
       return [...next].sort();
@@ -255,11 +359,10 @@ export default function RolesPermissionsPage() {
   }
 
   async function savePermissions() {
-    if (!companyId || !selectedRole || selectedRole.isSystem) return;
+    if (!companyId || !selectedRole || !canEditSelectedRole) return;
 
     setSaving(true);
-    setError(null);
-    setNotice(null);
+    clearMessages();
 
     try {
       await securityApi.setRolePermissions(
@@ -278,6 +381,9 @@ export default function RolesPermissionsPage() {
   }
 
   function openCreateRole() {
+    if (!canManage) return;
+
+    clearMessages();
     setEditingRole(null);
     setRoleFormName("");
     setRoleFormDescription("");
@@ -285,6 +391,9 @@ export default function RolesPermissionsPage() {
   }
 
   function openEditRole(role: RoleDto) {
+    if (!canManage || role.isSystem) return;
+
+    clearMessages();
     setEditingRole(role);
     setRoleFormName(role.name);
     setRoleFormDescription(role.description ?? "");
@@ -292,7 +401,7 @@ export default function RolesPermissionsPage() {
   }
 
   async function saveRole() {
-    if (!companyId) return;
+    if (!companyId || !canManage) return;
 
     const name = roleFormName.trim();
 
@@ -302,10 +411,12 @@ export default function RolesPermissionsPage() {
     }
 
     setSaving(true);
-    setError(null);
+    clearMessages();
 
     try {
       if (editingRole) {
+        if (editingRole.isSystem) return;
+
         await securityApi.updateRole(companyId, editingRole.id, {
           name,
           displayName: name,
@@ -314,13 +425,13 @@ export default function RolesPermissionsPage() {
 
         await loadWorkspace(editingRole.id);
       } else {
-        await securityApi.createRole(companyId, {
+        const created = await securityApi.createRole(companyId, {
           name,
           displayName: name,
           description: roleFormDescription.trim() || null,
         });
 
-        await loadWorkspace();
+        await loadWorkspace(created?.id);
       }
 
       setDrawerOpen(false);
@@ -333,11 +444,12 @@ export default function RolesPermissionsPage() {
   }
 
   async function deleteRole(role: RoleDto) {
-    if (!companyId || role.isSystem) return;
-    if (!window.confirm(`Delete role "${role.name}"?`)) return;
+    if (!companyId || !canManage || role.isSystem) return;
+
+    if (!window.confirm(`Delete role "${roleName(role)}"?`)) return;
 
     setSaving(true);
-    setError(null);
+    clearMessages();
 
     try {
       await securityApi.deleteRole(companyId, role.id);
@@ -351,13 +463,13 @@ export default function RolesPermissionsPage() {
   }
 
   async function assignUser(userId: string) {
-    if (!companyId || !selectedRole || selectedRole.isSystem) return;
+    if (!companyId || !selectedRole || !canEditSelectedRole) return;
 
     setSaving(true);
-    setError(null);
+    clearMessages();
 
     try {
-      await securityApi.addUserToRole(companyId, selectedRole.id, userId);
+      await securityApi.addUserToRole(companyId, selectedRole.name, userId);
       await loadWorkspace(selectedRole.id);
       setNotice("User assigned.");
     } catch (e) {
@@ -368,13 +480,13 @@ export default function RolesPermissionsPage() {
   }
 
   async function removeUser(userId: string) {
-    if (!companyId || !selectedRole || selectedRole.isSystem) return;
+    if (!companyId || !selectedRole || !canEditSelectedRole) return;
 
     setSaving(true);
-    setError(null);
+    clearMessages();
 
     try {
-      await securityApi.removeUserFromRole(companyId, selectedRole.id, userId);
+      await securityApi.removeUserFromRole(companyId, selectedRole.name, userId);
       await loadWorkspace(selectedRole.id);
       setNotice("User removed.");
     } catch (e) {
@@ -384,14 +496,30 @@ export default function RolesPermissionsPage() {
     }
   }
 
+  function closeDrawer() {
+    if (saving) return;
+
+    setDrawerOpen(false);
+    setEditingRole(null);
+    setRoleFormName("");
+    setRoleFormDescription("");
+  }
+
+  if (!companyId) {
+    return (
+      <EmptyState
+        title="No company selected"
+        text="Select a company workspace before managing company roles and permissions."
+      />
+    );
+  }
+
   if (!canView) {
     return (
-      <div className="rp-shell">
-        <div className="rp-empty">
-          <strong>Access denied</strong>
-          <span>You do not have permission to view Security Administration.</span>
-        </div>
-      </div>
+      <EmptyState
+        title="Access denied"
+        text="You need CompanyAdmin, SystemAdmin, or security/role view permission to access this page."
+      />
     );
   }
 
@@ -399,18 +527,32 @@ export default function RolesPermissionsPage() {
     <div className="rp-shell">
       <header className="rp-header">
         <div>
-          <div className="rp-kicker">ERP Security Workspace</div>
-          <h1>Security Administration</h1>
-          <p>Tenant-scoped roles, permission governance, and user access assignment.</p>
+          <div className="rp-kicker">Company Security Workspace</div>
+          <h1>Roles & Permissions</h1>
+          <p>
+            Company-scoped roles, permission governance, and user access
+            assignment.
+          </p>
         </div>
 
         <div className="rp-actions">
-          <span className={`rp-badge ${companyId ? "success" : "danger"}`}>
-            {companyId ? "Company scoped" : "Missing company"}
-          </span>
+          <span className="rp-badge success">Company scoped</span>
+
+          {isSystemAdmin ? (
+            <span className="rp-badge warning">SystemAdmin acting in company</span>
+          ) : null}
+
+          {isCompanyAdmin ? (
+            <span className="rp-badge success">CompanyAdmin</span>
+          ) : null}
 
           {canManage && (
-            <button className="rp-btn primary" onClick={openCreateRole}>
+            <button
+              type="button"
+              className="rp-btn primary"
+              onClick={openCreateRole}
+              disabled={saving}
+            >
               + New role
             </button>
           )}
@@ -421,10 +563,24 @@ export default function RolesPermissionsPage() {
       {error && <div className="rp-alert danger">{error}</div>}
 
       <section className="rp-kpis">
-        <div><span>Roles</span><strong>{roles.length}</strong></div>
-        <div><span>Permissions</span><strong>{permissions.length}</strong></div>
-        <div><span>Assignments</span><strong>{roles.reduce((s, r) => s + (r.userCount ?? 0), 0)}</strong></div>
-        <div><span>Protected</span><strong>{roles.filter((r) => r.isSystem).length}</strong></div>
+        <div>
+          <span>Roles</span>
+          <strong>{roles.length}</strong>
+        </div>
+        <div>
+          <span>Permissions</span>
+          <strong>{permissions.length}</strong>
+        </div>
+        <div>
+          <span>Assignments</span>
+          <strong>
+            {roles.reduce((sum, role) => sum + (role.userCount ?? 0), 0)}
+          </strong>
+        </div>
+        <div>
+          <span>Protected</span>
+          <strong>{roles.filter((role) => role.isSystem).length}</strong>
+        </div>
       </section>
 
       <section className="rp-grid">
@@ -439,6 +595,7 @@ export default function RolesPermissionsPage() {
             value={roleSearch}
             onChange={(e) => setRoleSearch(e.target.value)}
             placeholder="Search roles..."
+            disabled={saving}
           />
 
           <div className="rp-list">
@@ -451,11 +608,22 @@ export default function RolesPermissionsPage() {
                 <button
                   key={role.id}
                   type="button"
-                  className={`rp-role ${role.id === selectedRoleId ? "active" : ""}`}
+                  className={`rp-role ${
+                    role.id === selectedRoleId ? "active" : ""
+                  }`}
                   onClick={() => selectRole(role.id)}
+                  disabled={saving}
                 >
-                  <strong>{role.name}</strong>
-                  {role.isSystem && <span className="rp-badge warning">System</span>}
+                  <strong>{roleName(role)}</strong>
+
+                  {role.isSystem && (
+                    <span className="rp-badge warning">System</span>
+                  )}
+
+                  {!role.isSystem && (
+                    <span className="rp-badge success">Company</span>
+                  )}
+
                   <small>{role.description || "No description"}</small>
                   <em>{role.userCount ?? 0} users</em>
                 </button>
@@ -476,20 +644,58 @@ export default function RolesPermissionsPage() {
                 </div>
 
                 <div className="rp-actions">
-                  {selectedRole.isSystem && <span className="rp-badge warning">Read only</span>}
-                  {canManage && !selectedRole.isSystem && (
+                  {selectedRole.isSystem && (
+                    <span className="rp-badge warning">Read only</span>
+                  )}
+
+                  {canEditSelectedRole && (
                     <>
-                      <button className="rp-btn" onClick={() => openEditRole(selectedRole)}>Edit</button>
-                      <button className="rp-btn danger" onClick={() => deleteRole(selectedRole)}>Delete</button>
+                      <button
+                        type="button"
+                        className="rp-btn"
+                        onClick={() => openEditRole(selectedRole)}
+                        disabled={saving}
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        className="rp-btn danger"
+                        onClick={() => deleteRole(selectedRole)}
+                        disabled={saving}
+                      >
+                        Delete
+                      </button>
                     </>
                   )}
                 </div>
               </div>
 
               <nav className="rp-tabs">
-                <button className={tab === "matrix" ? "active" : ""} onClick={() => setTab("matrix")}>Permission Matrix</button>
-                <button className={tab === "members" ? "active" : ""} onClick={() => setTab("members")}>Members ({roleMembers.length})</button>
-                <button className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>Governance</button>
+                <button
+                  type="button"
+                  className={tab === "matrix" ? "active" : ""}
+                  onClick={() => setTab("matrix")}
+                >
+                  Permission Matrix
+                </button>
+
+                <button
+                  type="button"
+                  className={tab === "members" ? "active" : ""}
+                  onClick={() => setTab("members")}
+                >
+                  Members ({roleMembers.length})
+                </button>
+
+                <button
+                  type="button"
+                  className={tab === "overview" ? "active" : ""}
+                  onClick={() => setTab("overview")}
+                >
+                  Governance
+                </button>
               </nav>
 
               {tab === "matrix" && (
@@ -500,28 +706,39 @@ export default function RolesPermissionsPage() {
                       value={permissionSearch}
                       onChange={(e) => setPermissionSearch(e.target.value)}
                       placeholder="Filter permissions..."
+                      disabled={saving}
                     />
                   </div>
 
                   {roleLoading ? (
                     <div className="rp-muted">Loading permissions...</div>
+                  ) : permissionGroups.length === 0 ? (
+                    <div className="rp-muted">No permissions found.</div>
                   ) : (
                     <div className="rp-permission-groups">
                       {permissionGroups.map((group) => {
-                        const keys = group.items.map((p) => p.key);
-                        const selected = keys.filter((key) => stagedSet.has(key)).length;
+                        const keys = group.items.map((item) => item.key);
+                        const selected = keys.filter((key) =>
+                          stagedSet.has(key)
+                        ).length;
 
                         return (
-                          <section key={group.group} className="rp-permission-group">
+                          <section
+                            key={group.group}
+                            className="rp-permission-group"
+                          >
                             <div className="rp-group-head">
                               <div>
                                 <strong>{group.group}</strong>
-                                <span>{selected}/{keys.length} enabled</span>
+                                <span>
+                                  {selected}/{keys.length} enabled
+                                </span>
                               </div>
 
                               <button
+                                type="button"
                                 className="rp-btn mini"
-                                disabled={!canManage || isSystemRole}
+                                disabled={!canEditSelectedRole || saving}
                                 onClick={() => toggleGroup(keys)}
                               >
                                 Toggle group
@@ -530,16 +747,24 @@ export default function RolesPermissionsPage() {
 
                             <div className="rp-permission-list">
                               {group.items.map((permission) => (
-                                <label key={permission.key} className="rp-permission">
+                                <label
+                                  key={permission.key}
+                                  className="rp-permission"
+                                >
                                   <input
                                     type="checkbox"
                                     checked={stagedSet.has(permission.key)}
-                                    disabled={!canManage || isSystemRole}
-                                    onChange={() => togglePermission(permission.key)}
+                                    disabled={!canEditSelectedRole || saving}
+                                    onChange={() =>
+                                      togglePermission(permission.key)
+                                    }
                                   />
+
                                   <span>
                                     <strong>{permissionLabel(permission)}</strong>
-                                    <small>{permission.description || permission.key}</small>
+                                    <small>
+                                      {permission.description || permission.key}
+                                    </small>
                                   </span>
                                 </label>
                               ))}
@@ -561,18 +786,23 @@ export default function RolesPermissionsPage() {
                       {roleMembers.length === 0 ? (
                         <div className="rp-muted">No users assigned.</div>
                       ) : (
-                        roleMembers.map((user) => (
-                          <div key={user.id} className="rp-user">
-                            <div className="rp-avatar">{userInitials(user)}</div>
-                            <div>
-                              <strong>{userDisplayName(user)}</strong>
-                              <small>{user.email}</small>
+                        roleMembers.map((member) => (
+                          <div key={member.id} className="rp-user">
+                            <div className="rp-avatar">
+                              {userInitials(member)}
                             </div>
 
-                            {canManage && !isSystemRole && (
+                            <div>
+                              <strong>{userDisplayName(member)}</strong>
+                              <small>{member.email}</small>
+                            </div>
+
+                            {canEditSelectedRole && (
                               <button
+                                type="button"
                                 className="rp-btn mini danger"
-                                onClick={() => removeUser(user.id)}
+                                onClick={() => removeUser(member.id)}
+                                disabled={saving}
                               >
                                 Remove
                               </button>
@@ -590,24 +820,37 @@ export default function RolesPermissionsPage() {
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
                         placeholder="Search available users..."
+                        disabled={!canEditSelectedRole || saving}
                       />
 
                       <div className="rp-user-list">
-                        {assignableUsers.map((user) => (
-                          <div key={user.id} className="rp-user">
-                            <div className="rp-avatar">{userInitials(user)}</div>
-                            <div>
-                              <strong>{userDisplayName(user)}</strong>
-                              <small>{user.email}</small>
-                            </div>
+                        {assignableUsers.length === 0 ? (
+                          <div className="rp-muted">No available users.</div>
+                        ) : (
+                          assignableUsers.map((item) => (
+                            <div key={item.id} className="rp-user">
+                              <div className="rp-avatar">
+                                {userInitials(item)}
+                              </div>
 
-                            {canManage && !isSystemRole && (
-                              <button className="rp-btn mini" onClick={() => assignUser(user.id)}>
-                                Assign
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                              <div>
+                                <strong>{userDisplayName(item)}</strong>
+                                <small>{item.email}</small>
+                              </div>
+
+                              {canEditSelectedRole && (
+                                <button
+                                  type="button"
+                                  className="rp-btn mini"
+                                  onClick={() => assignUser(item.id)}
+                                  disabled={saving}
+                                >
+                                  Assign
+                                </button>
+                              )}
+                            </div>
+                          ))
+                        )}
                       </div>
                     </section>
                   </div>
@@ -616,18 +859,48 @@ export default function RolesPermissionsPage() {
 
               {tab === "overview" && (
                 <div className="rp-body rp-overview">
-                  <div><span>Permissions</span><strong>{stagedPermissionKeys.length}</strong></div>
-                  <div><span>Members</span><strong>{roleMembers.length}</strong></div>
-                  <div><span>Risk flags</span><strong>{riskyPermissions.length}</strong></div>
-                  <div><span>Role type</span><strong>{selectedRole.isSystem ? "System" : "Tenant"}</strong></div>
+                  <div>
+                    <span>Permissions</span>
+                    <strong>{stagedPermissionKeys.length}</strong>
+                  </div>
+
+                  <div>
+                    <span>Members</span>
+                    <strong>{roleMembers.length}</strong>
+                  </div>
+
+                  <div>
+                    <span>Risk flags</span>
+                    <strong>{riskyPermissions.length}</strong>
+                  </div>
+
+                  <div>
+                    <span>Role type</span>
+                    <strong>{selectedRole.isSystem ? "System" : "Company"}</strong>
+                  </div>
 
                   <section className="rp-governance">
                     <h3>Governance checklist</h3>
+
                     <ul>
-                      <li>{selectedRole.isSystem ? "System role is read-only." : "Tenant role is editable."}</li>
-                      <li>{riskyPermissions.length > 0 ? "High-risk permissions require review." : "No high-risk permission detected."}</li>
-                      <li>Audit log backend feed recommended for go-live.</li>
-                      <li>Separation-of-duties engine recommended for finance and inventory controls.</li>
+                      <li>
+                        {selectedRole.isSystem
+                          ? "System role is read-only in company workspace."
+                          : "Company role is editable within this company."}
+                      </li>
+                      <li>
+                        {riskyPermissions.length > 0
+                          ? "High-risk permissions require review."
+                          : "No high-risk permission detected."}
+                      </li>
+                      <li>
+                        CompanyAdmin can manage only company-scoped roles and
+                        permissions.
+                      </li>
+                      <li>
+                        SystemAdmin actions should be audited as platform admin
+                        acting inside this company.
+                      </li>
                     </ul>
                   </section>
                 </div>
@@ -642,10 +915,25 @@ export default function RolesPermissionsPage() {
           </div>
 
           <div className="rp-side">
-            <div><span>Selected role</span><strong>{roleName(selectedRole)}</strong></div>
-            <div><span>Status</span><strong>{selectedRole?.isSystem ? "Protected" : "Editable"}</strong></div>
-            <div><span>Unsaved changes</span><strong>{isDirty ? "Yes" : "No"}</strong></div>
-            <div><span>Risk permissions</span><strong>{riskyPermissions.length}</strong></div>
+            <div>
+              <span>Selected role</span>
+              <strong>{roleName(selectedRole)}</strong>
+            </div>
+
+            <div>
+              <span>Status</span>
+              <strong>{selectedRole?.isSystem ? "Protected" : "Editable"}</strong>
+            </div>
+
+            <div>
+              <span>Unsaved changes</span>
+              <strong>{isDirty ? "Yes" : "No"}</strong>
+            </div>
+
+            <div>
+              <span>Risk permissions</span>
+              <strong>{riskyPermissions.length}</strong>
+            </div>
           </div>
         </aside>
       </section>
@@ -653,20 +941,25 @@ export default function RolesPermissionsPage() {
       {isDirty && selectedRole && (
         <div className="rp-savebar">
           <span>
-            Unsaved permission changes for <strong>{selectedRole.name}</strong>
+            Unsaved permission changes for <strong>{roleName(selectedRole)}</strong>
           </span>
 
           <div>
             <button
+              type="button"
               className="rp-btn"
-              onClick={() => setStagedPermissionKeys([...originalPermissionKeys])}
+              onClick={() =>
+                setStagedPermissionKeys([...originalPermissionKeys])
+              }
+              disabled={saving}
             >
               Reset
             </button>
 
             <button
+              type="button"
               className="rp-btn primary"
-              disabled={saving || !canManage || isSystemRole}
+              disabled={saving || !canEditSelectedRole}
               onClick={savePermissions}
             >
               {saving ? "Saving..." : "Save changes"}
@@ -676,11 +969,17 @@ export default function RolesPermissionsPage() {
       )}
 
       {drawerOpen && (
-        <div className="rp-overlay" onClick={() => setDrawerOpen(false)}>
+        <div className="rp-overlay" onClick={closeDrawer}>
           <div className="rp-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="rp-drawer-head">
               <strong>{editingRole ? "Edit role" : "Create role"}</strong>
-              <button className="rp-btn mini" onClick={() => setDrawerOpen(false)}>
+
+              <button
+                type="button"
+                className="rp-btn mini"
+                onClick={closeDrawer}
+                disabled={saving}
+              >
                 Close
               </button>
             </div>
@@ -692,6 +991,7 @@ export default function RolesPermissionsPage() {
                 value={roleFormName}
                 onChange={(e) => setRoleFormName(e.target.value)}
                 placeholder="Inventory Manager"
+                disabled={saving}
               />
             </label>
 
@@ -702,15 +1002,26 @@ export default function RolesPermissionsPage() {
                 value={roleFormDescription}
                 onChange={(e) => setRoleFormDescription(e.target.value)}
                 placeholder="Describe this role..."
+                disabled={saving}
               />
             </label>
 
             <div className="rp-drawer-actions">
-              <button className="rp-btn" onClick={() => setDrawerOpen(false)}>
+              <button
+                type="button"
+                className="rp-btn"
+                onClick={closeDrawer}
+                disabled={saving}
+              >
                 Cancel
               </button>
 
-              <button className="rp-btn primary" disabled={saving} onClick={saveRole}>
+              <button
+                type="button"
+                className="rp-btn primary"
+                disabled={saving || !roleFormName.trim()}
+                onClick={saveRole}
+              >
                 {saving ? "Saving..." : "Save"}
               </button>
             </div>

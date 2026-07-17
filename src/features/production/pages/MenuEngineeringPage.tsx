@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppScope } from "../../../app/useAppScope";
 import { CAT_META, menuEngineeringApi } from "../api/menuEngineeringApi";
 import type { AnalysisResponse, CategorySummary, MenuEngineeringItem } from "../api/menuEngineeringApi";
-import "../production.css";
+import "../layout/production.css";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

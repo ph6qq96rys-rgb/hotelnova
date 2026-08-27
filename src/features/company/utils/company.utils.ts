@@ -2,8 +2,10 @@
 
 import type { BranchUserDto, StockLocationType } from "../types/company.types";
 import { CompanyStatus } from "../types/company.types";
+import { toUserFriendlyError } from "../../../shared/errors/errorMessage.utils";
+import { formatAppDate } from "../../../shared/datetime/dateFormat";
 
-// ── String helpers ────────────────────────────────────────────────────────────
+// String helpers
 
 export function trimOrNull(v: string | null | undefined): string | null {
   const t = (v ?? "").trim();
@@ -11,11 +13,10 @@ export function trimOrNull(v: string | null | undefined): string | null {
 }
 
 export function fmtDate(iso?: string | null): string {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleDateString(); } catch { return "—"; }
+  return formatAppDate(iso);
 }
 
-// ── Status helpers ────────────────────────────────────────────────────────────
+// Status helpers
 
 export function companyStatusLabel(s: CompanyStatus): string {
   return { [CompanyStatus.Draft]: "Draft", [CompanyStatus.Active]: "Active",
@@ -32,10 +33,10 @@ export function companyStatusTone(s: CompanyStatus): "ok" | "warn" | "danger" | 
 export function stockLocationTypeLabel(t: StockLocationType | string | number | null | undefined): string {
   if (typeof t === "string") return t;
   const map: Record<number, string> = { 1: "Warehouse", 2: "Kitchen", 3: "Bar", 4: "Transit", 5: "WIP", 6: "Store" };
-  return (typeof t === "number" ? map[t] : null) ?? "—";
+  return (typeof t === "number" ? map[t] : null) ?? "-";
 }
 
-// ── User helpers ──────────────────────────────────────────────────────────────
+// User helpers
 
 export function branchUserDisplayName(u: BranchUserDto): string {
   return (
@@ -47,14 +48,8 @@ export function branchUserDisplayName(u: BranchUserDto): string {
   );
 }
 
-// ── Error extraction ──────────────────────────────────────────────────────────
+// Error extraction
 
 export function extractApiError(e: unknown, fallback = "An unexpected error occurred."): string {
-  const err = e as any;
-  return (
-    err?.response?.data?.message ??
-    err?.response?.data?.title   ??
-    err?.message                 ??
-    fallback
-  );
+  return toUserFriendlyError(e, fallback);
 }

@@ -2,7 +2,6 @@ import {
   BarChart3,
   ClipboardList,
   LayoutDashboard,
-  ReceiptText,
   ShoppingCart,
   Upload,
 } from "lucide-react";
@@ -44,6 +43,7 @@ export const salesRoutes: AppRoute[] = [
     nav: true,
     section: "Sales",
     order: 10,
+    permissions: ["sales.view"],
   },
   {
     path: "sales/list",
@@ -53,15 +53,6 @@ export const salesRoutes: AppRoute[] = [
     nav: false,
     section: "Sales",
     order: 20,
-  },
-  {
-    path: "sales/new",
-    label: "New Sale",
-    element: <SalesListPage />,
-    icon: <ReceiptText size={18} />,
-    nav: false,
-    section: "Sales",
-    order: 25,
   },
   {
   path: "digital-menu",

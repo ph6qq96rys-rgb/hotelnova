@@ -103,7 +103,6 @@ export default function RolesPermissionsPage() {
     Boolean(companyId) &&
     (isSystemAdmin ||
       isCompanyAdmin ||
-      hasPermission?.("security.view") ||
       hasPermission?.("roles.view") ||
       hasPermission?.("users.view"));
 
@@ -111,7 +110,6 @@ export default function RolesPermissionsPage() {
     Boolean(companyId) &&
     (isSystemAdmin ||
       isCompanyAdmin ||
-      hasPermission?.("security.manage") ||
       hasPermission?.("roles.manage"));
 
   const [roles, setRoles] = useState<RoleDto[]>([]);
@@ -146,6 +144,7 @@ export default function RolesPermissionsPage() {
 
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [memberLoadError, setMemberLoadError] = useState<string | null>(null);
 
   const isSystemRole = Boolean(selectedRole?.isSystem);
   const isDirty = isPermissionsDirty(
@@ -202,7 +201,16 @@ export default function RolesPermissionsPage() {
         const [roleList, permissionList, userList] = await Promise.all([
           securityApi.listRoles(companyId, signal),
           securityApi.listPermissions(companyId, signal),
-          securityApi.listUsers(companyId, signal),
+          securityApi.listUsers(companyId, signal).catch((error) => {
+            setMemberLoadError(
+              extractSecurityError(
+                error,
+                "User membership could not be loaded."
+              )
+            );
+
+            return [] as UserDto[];
+          }),
         ]);
 
         const orderedRoles = sortRoles(roleList ?? []);
@@ -210,6 +218,10 @@ export default function RolesPermissionsPage() {
         setRoles(orderedRoles);
         setPermissions(permissionList ?? []);
         setUsers(userList ?? []);
+
+        if ((userList ?? []).length > 0) {
+          setMemberLoadError(null);
+        }
 
         setSelectedRoleId((current) => {
           if (preferredRoleId && orderedRoles.some((x) => x.id === preferredRoleId)) {
@@ -372,7 +384,7 @@ export default function RolesPermissionsPage() {
       );
 
       await loadRolePermissions(selectedRole.id);
-      setNotice("Permissions saved.");
+      setNotice("Permissions saved. Affected users must refresh their session or sign in again for access changes to take effect.");
     } catch (e) {
       setError(extractSecurityError(e, "Failed to save permissions."));
     } finally {
@@ -471,7 +483,7 @@ export default function RolesPermissionsPage() {
     try {
       await securityApi.addUserToRole(companyId, selectedRole.name, userId);
       await loadWorkspace(selectedRole.id);
-      setNotice("User assigned.");
+      setNotice("User assigned. The affected user must refresh their session or sign in again for access changes to take effect.");
     } catch (e) {
       setError(extractSecurityError(e, "Failed to assign user."));
     } finally {
@@ -488,7 +500,7 @@ export default function RolesPermissionsPage() {
     try {
       await securityApi.removeUserFromRole(companyId, selectedRole.name, userId);
       await loadWorkspace(selectedRole.id);
-      setNotice("User removed.");
+      setNotice("User removed. The affected user must refresh their session or sign in again for access changes to take effect.");
     } catch (e) {
       setError(extractSecurityError(e, "Failed to remove user."));
     } finally {
@@ -518,7 +530,7 @@ export default function RolesPermissionsPage() {
     return (
       <EmptyState
         title="Access denied"
-        text="You need CompanyAdmin, SystemAdmin, or security/role view permission to access this page."
+        text="You need CompanyAdmin, SystemAdmin, roles.view, or users.view permission to access this page."
       />
     );
   }
@@ -641,6 +653,12 @@ export default function RolesPermissionsPage() {
                 <div>
                   <h2>{roleName(selectedRole)}</h2>
                   <p>{selectedRole.description || "No description provided."}</p>
+                  {!roleLoading && (selectedRole.userCount ?? 0) === 0 && (
+                    <div className="rp-access-note warning">
+                      This role has permissions configured, but no active users
+                      are assigned to it yet.
+                    </div>
+                  )}
                 </div>
 
                 <div className="rp-actions">
@@ -685,6 +703,7 @@ export default function RolesPermissionsPage() {
                   type="button"
                   className={tab === "members" ? "active" : ""}
                   onClick={() => setTab("members")}
+                  disabled={Boolean(memberLoadError)}
                 >
                   Members ({roleMembers.length})
                 </button>
@@ -783,8 +802,19 @@ export default function RolesPermissionsPage() {
                     <section>
                       <h3>Assigned users</h3>
 
-                      {roleMembers.length === 0 ? (
-                        <div className="rp-muted">No users assigned.</div>
+                      {memberLoadError ? (
+                        <div className="rp-empty-inline">
+                          <strong>Membership unavailable</strong>
+                          <span>{memberLoadError}</span>
+                        </div>
+                      ) : roleMembers.length === 0 ? (
+                        <div className="rp-empty-inline">
+                          <strong>No users assigned</strong>
+                          <span>
+                            Permissions on this role will not take effect until
+                            at least one active user is assigned.
+                          </span>
+                        </div>
                       ) : (
                         roleMembers.map((member) => (
                           <div key={member.id} className="rp-user">
@@ -820,11 +850,19 @@ export default function RolesPermissionsPage() {
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
                         placeholder="Search available users..."
-                        disabled={!canEditSelectedRole || saving}
+                        disabled={!canEditSelectedRole || saving || Boolean(memberLoadError)}
                       />
 
                       <div className="rp-user-list">
-                        {assignableUsers.length === 0 ? (
+                        {memberLoadError ? (
+                          <div className="rp-empty-inline">
+                            <strong>User list unavailable</strong>
+                            <span>
+                              User assignment requires access to the company user
+                              directory.
+                            </span>
+                          </div>
+                        ) : assignableUsers.length === 0 ? (
                           <div className="rp-muted">No available users.</div>
                         ) : (
                           assignableUsers.map((item) => (
@@ -898,6 +936,10 @@ export default function RolesPermissionsPage() {
                         permissions.
                       </li>
                       <li>
+                        A user needs both role membership and an active branch
+                        assignment before these permissions become effective.
+                      </li>
+                      <li>
                         SystemAdmin actions should be audited as platform admin
                         acting inside this company.
                       </li>
@@ -923,6 +965,11 @@ export default function RolesPermissionsPage() {
             <div>
               <span>Status</span>
               <strong>{selectedRole?.isSystem ? "Protected" : "Editable"}</strong>
+            </div>
+
+            <div>
+              <span>Effective users</span>
+              <strong>{selectedRole?.userCount ?? 0}</strong>
             </div>
 
             <div>

@@ -338,7 +338,7 @@ export function StoresStep(props: Props) {
       {
         value: "",
         label: defaultIssueLocation
-          ? `Use branch default — ${locationLabel(defaultIssueLocation)}`
+          ? `Use branch default - ${locationLabel(defaultIssueLocation)}`
           : "Use branch default",
       },
       ...issueLocations.map((location) => ({
@@ -455,7 +455,7 @@ export function StoresStep(props: Props) {
   if (loading) {
     return (
       <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "24px 0", color: "#64748b" }}>
-        <Spinner /> Loading POS/stores…
+        <Spinner /> Loading POS/stores...
       </div>
     );
   }
@@ -540,7 +540,7 @@ export function StoresStep(props: Props) {
 
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <Btn variant="primary" disabled={editSaving || props.saving} onClick={() => void saveStore(id)}>
-                    {editSaving ? "Saving…" : "Save POS/store"}
+                    {editSaving ? "Saving..." : "Save POS/store"}
                   </Btn>
                 </div>
               </div>
@@ -584,7 +584,7 @@ export function StoresStep(props: Props) {
                 disabled={!props.companyId || !props.branchId || createSaving || props.saving}
                 onClick={() => void createStore()}
               >
-                {createSaving ? "Adding…" : "Add POS/store"}
+                {createSaving ? "Adding..." : "Add POS/store"}
               </Btn>
             </div>
           </div>

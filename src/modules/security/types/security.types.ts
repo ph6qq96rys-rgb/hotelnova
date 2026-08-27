@@ -12,7 +12,7 @@ export type UserStatus =
   | "Disabled"
   | "Inactive";
 
-// ── Paging ────────────────────────────────────────────────────────────────────
+//  Paging 
 
 export interface PagedResult<T> {
   items: T[];
@@ -23,7 +23,7 @@ export interface PagedResult<T> {
   pageSize: number;
 }
 
-// ── Role DTOs ─────────────────────────────────────────────────────────────────
+//  Role DTOs 
 
 export interface RoleDto {
   id: string;
@@ -55,7 +55,7 @@ export type RoleDetailDto = RoleDto & {
   users?: UserLiteDto[];
 };
 
-// ── Permission DTOs ───────────────────────────────────────────────────────────
+//  Permission DTOs 
 
 export interface PermissionCatalogItem {
   key: string;
@@ -66,7 +66,7 @@ export interface PermissionCatalogItem {
   isDangerous?: boolean;
 }
 
-// ── User DTOs ─────────────────────────────────────────────────────────────────
+//  User DTOs 
 
 export interface UserLiteDto {
   id: string;
@@ -106,7 +106,7 @@ export interface UserDetailDto {
   assignments?: UserAssignmentDto[];
 }
 
-// ── Branch / Operational Context DTOs ─────────────────────────────────────────
+//  Branch / Operational Context DTOs 
 
 export interface BranchLite {
   id: string;
@@ -136,7 +136,7 @@ export interface StockLocationOption {
   isActive?: boolean;
 }
 
-// ── Request shapes: Roles ─────────────────────────────────────────────────────
+//  Request shapes: Roles 
 
 export interface CreateRoleRequest {
   name: string;
@@ -150,7 +150,7 @@ export interface UpdateRoleRequest {
   description?: string | null;
 }
 
-// ── Request shapes: Assignments ───────────────────────────────────────────────
+//  Request shapes: Assignments 
 
 export interface AddAssignmentRequest {
   userId: string;
@@ -174,7 +174,7 @@ export interface SetRolesRequest {
   roleNames: string[];
 }
 
-// ── Request shapes: Queries ───────────────────────────────────────────────────
+//  Request shapes: Queries 
 
 export interface UserQuery {
   q?: string;
@@ -205,7 +205,7 @@ export interface StockLocationQuery {
   pageSize?: number;
 }
 
-// ── Hook state shapes ─────────────────────────────────────────────────────────
+//  Hook state shapes 
 
 export interface RoleAssignment {
   roleId: string;

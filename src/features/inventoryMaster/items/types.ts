@@ -1,11 +1,11 @@
-﻿// src/features/inventoryMaster/items/types.ts
+// src/features/inventoryMaster/items/types.ts
 //
 // Single source of truth for all inventory item domain types.
 // Rules:
-//   • API shapes (DTOs) exactly mirror the backend JSON contract.
-//   • UI view-models are separate types — never reuse a DTO as a form model.
-//   • No Pascal-case property names — the backend serialises camelCase.
-//   • Optional fields use `field?: T` only when the backend genuinely omits
+//   ' API shapes (DTOs) exactly mirror the backend JSON contract.
+//   '-' never reuse a DTO as a form model.
+//   '-' the backend serialises camelCase.
+//   ' Optional fields use `field?: T` only when the backend genuinely omits
 //     the key; nullable fields use `field: T | null`.
 
 import type { ItemType } from "./constants/itemTypes";
@@ -14,7 +14,7 @@ import type { ItemType } from "./constants/itemTypes";
 // Primitives
 // =============================================================================
 
-/** Branded alias — makes Guid intent explicit at call sites. */
+/** Branded alias ' makes Guid intent explicit at call sites. */
 export type Guid = string;
 
 // =============================================================================
@@ -36,7 +36,7 @@ export interface CategoryDto {
 export interface UomDto {
   id:       string;
   name:     string;
-  code:     string;        // canonical — always present from the refactored API
+  code:     string;        // canonical ' always present from the refactored API
   symbol?:  string | null; // legacy alias; prefer `code`
   isBase?:  boolean;
   isActive: boolean;
@@ -91,7 +91,7 @@ export interface ItemUomDto {
 
 /**
  * Full item detail returned by GET /items and GET /items/:id.
- * Also used as the edit seed — every field the form needs is present here.
+ * Also used as the edit seed ' every field the form needs is present here.
  */
 export interface InventoryItemDto {
   id:             string;
@@ -103,19 +103,21 @@ export interface InventoryItemDto {
   categoryId:     string | null;
   baseUomId:      string;
   issueUomId:     string | null;
-  type:           ItemType;
+  type?:          ItemType;
+  itemType?:      ItemType;
   trackInventory: boolean;
   reorderLevel:   number;
   costingMethod:  string | null;
   defaultCost:    number | null;
   defaultPrice:   number | null;
-  allowedUoms:    ItemUomDto[];  // always an array — backend normalises null → []
+  allowedUoms?:   ItemUomDto[];  // request/edit model name
+  uoms?:          ItemUomDto[];  // current API response name from InventoryItemDto.Uoms
   isActive:       boolean;
 }
 
 /**
  * Lightweight projection returned by the list endpoint.
- * Does NOT include allowedUoms — avoids loading conversion grids for
+ * Does NOT include allowedUoms ' avoids loading conversion grids for
  * every row in the register table.
  */
 export interface InventoryItemListDto {
@@ -128,18 +130,20 @@ export interface InventoryItemListDto {
   categoryId:     string | null;
   baseUomId:      string;
   issueUomId:     string | null;
-  type:           ItemType;
+  type?:          ItemType;
+  itemType?:      ItemType;
   trackInventory: boolean;
   reorderLevel:   number;
   defaultCost:    number | null;
   defaultPrice:   number | null;
-  allowedUoms:    ItemUomDto[];
+  allowedUoms?:   ItemUomDto[];  // request/edit model name
+  uoms?:          ItemUomDto[];  // current API response name from InventoryItemDto.Uoms
   isActive:       boolean;
 }
 
 /**
  * POST /items request body.
- * `isActive` is always true on create — the backend enforces this.
+ * `isActive` is always true on create ' the backend enforces this.
  * `companyId` comes from the route, not the body.
  */
 export interface CreateInventoryItemRequest {
@@ -150,7 +154,7 @@ export interface CreateInventoryItemRequest {
   categoryId:     string | null;
   baseUomId:      string;
   type:           ItemType;
-  allowedUoms:    ItemUomDto[];
+  allowedUoms?:   ItemUomDto[];
   trackInventory: boolean;
   reorderLevel:   number;
   costingMethod:  string | null;
@@ -158,7 +162,7 @@ export interface CreateInventoryItemRequest {
   defaultPrice:   number | null;
 }
 
-/** POST /items response — the server-assigned ID. */
+/** POST /items response ' the server-assigned ID. */
 export interface CreateInventoryItemResponse {
   id: string;
 }
@@ -166,7 +170,7 @@ export interface CreateInventoryItemResponse {
 /**
  * PUT /items/:id request body.
  * Includes `isActive` because editing an existing item can change its status.
- * `id` and `companyId` come from the route — excluded from the body.
+ * `id` and `companyId` come from the route ' excluded from the body.
  */
 export interface UpdateInventoryItemRequest
   extends CreateInventoryItemRequest {
@@ -197,10 +201,10 @@ export interface InventorySearchItemDto {
 
 /**
  * Normalises a raw ItemUomDto array before submission:
- *   • Replaces null toBaseFactor with 0 (backend validates > 0, so this
+ *   ' Replaces null toBaseFactor with 0 (backend validates > 0, so this
  *     surfaces a validation error rather than silently sending null).
- *   • Coerces boolean flags from truthy values.
- *   • Filters out rows with no uomId (incomplete rows the user did not fill in).
+ *   ' Coerces boolean flags from truthy values.
+ *   ' Filters out rows with no uomId (incomplete rows the user did not fill in).
  */
 export function mapAllowedUomsToDto(
   rows: ItemUomDto[] | null | undefined,

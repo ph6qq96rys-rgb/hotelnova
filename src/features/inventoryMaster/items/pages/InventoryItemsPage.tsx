@@ -1,9 +1,10 @@
-﻿// src/features/inventory/items/pages/InventoryItemsPage.tsx
+// src/features/inventory/items/pages/InventoryItemsPage.tsx
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import { inventoryItemsApi } from "../api/inventoryItemsApi";
 import { itemTypeLabel } from "../constants/itemTypes";
 import type { InventoryItemDto, UomDto } from "../types";
@@ -26,16 +27,10 @@ type CompanyItemPaths = {
 };
 
 export function extractApiError(error: unknown): string {
-  const e = error as Record<string, any>;
-  const data = e?.response?.data;
-
-  if (!data) return e?.message ?? "Request failed.";
-  if (typeof data === "string") return data;
-  if (data?.errors && data?.title) return `${data.title}: ${JSON.stringify(data.errors)}`;
-  if (data?.message) return String(data.message);
-  if (data?.title) return String(data.title);
-
-  return e?.message ?? "Request failed.";
+  return toUserFriendlyError(
+    error,
+    "Inventory items could not be loaded. Please try again."
+  );
 }
 
 function buildItemPaths(companyId: string): CompanyItemPaths {
@@ -50,7 +45,7 @@ function buildItemPaths(companyId: string): CompanyItemPaths {
 }
 
 function formatUom(uom: UomDto): string {
-  if (!uom) return "—";
+  if (!uom) return "-";
 
   const code = (uom as any).code ?? uom.symbol ?? "";
   return code ? `${uom.name} (${code})` : uom.name;
@@ -121,7 +116,7 @@ function EmptyState({
 }) {
   return (
     <div className="inv-empty">
-      <div className="inv-empty__icon">📦</div>
+      <div className="inv-empty__icon"></div>
       <div className="inv-empty__title">{title}</div>
       <div className="inv-empty__subtitle">{subtitle}</div>
 
@@ -228,7 +223,7 @@ function ConfirmModal({
               opacity: busy ? 0.6 : 1,
             }}
           >
-            {busy ? "Working…" : activating ? "Activate" : "Deactivate"}
+            {busy ? "Working..." : activating ? "Activate" : "Deactivate"}
           </button>
         </div>
       </div>
@@ -280,7 +275,7 @@ export default function InventoryItemsPage() {
       const [fetchedItems, fetchedUoms] = await Promise.all([
         inventoryItemsApi.list(companyId),
         inventoryItemsApi.getUoms(companyId).catch((e: unknown) => {
-          setLookupError(`UOMs could not be loaded — ${extractApiError(e)}`);
+          setLookupError(`UOMs could not be loaded - ${extractApiError(e)}`);
           return [] as UomDto[];
         }),
       ]);
@@ -387,7 +382,7 @@ export default function InventoryItemsPage() {
     return (
       <div className="inv-page">
         <div className="inv-page-guard">
-          <div style={{ fontSize: 32 }}>⚙</div>
+          <div style={{ fontSize: 32 }}></div>
           <div>Select a company to manage inventory items.</div>
         </div>
       </div>
@@ -442,7 +437,7 @@ export default function InventoryItemsPage() {
 
       {itemsError ? (
         <div className="inv-alert inv-alert--error" role="alert">
-          Failed to load items — {itemsError}
+          {itemsError}
           <button
             type="button"
             className="inv-btn inv-btn--sm inv-btn--outline"
@@ -456,7 +451,7 @@ export default function InventoryItemsPage() {
 
       {lookupError ? (
         <div className="inv-alert inv-alert--warn" role="alert">
-          ⚠ {lookupError} — UOM columns may show IDs.
+          Warning: {lookupError} - UOM columns may show IDs.
         </div>
       ) : null}
 
@@ -488,7 +483,7 @@ export default function InventoryItemsPage() {
                 className="inv-search"
                 value={rawQuery}
                 onChange={(e) => setRawQuery(e.target.value)}
-                placeholder="Search items…"
+                placeholder="Search items..."
                 aria-label="Search inventory items"
               />
 
@@ -499,7 +494,7 @@ export default function InventoryItemsPage() {
                   onClick={() => setRawQuery("")}
                   aria-label="Clear search"
                 >
-                  ✕
+                  
                 </button>
               ) : null}
             </div>
@@ -577,12 +572,12 @@ export default function InventoryItemsPage() {
                         </div>
                       </td>
 
-                      <td>{item.type ? itemTypeLabel(item.type as any) : "—"}</td>
-                      <td>{item.sku ?? "—"}</td>
-                      <td>{uomById.get(item.baseUomId) ?? "—"}</td>
-                      <td>{issueUomId ? uomById.get(issueUomId) ?? "—" : "—"}</td>
+                      <td>{item.type ? itemTypeLabel(item.type as any) : "-"}</td>
+                      <td>{item.sku ?? "-"}</td>
+                      <td>{uomById.get(item.baseUomId) ?? "-"}</td>
+                      <td>{issueUomId ? uomById.get(issueUomId) ?? "-" : "-"}</td>
                       <td className="num">
-                        {item.reorderLevel == null ? "—" : String(item.reorderLevel)}
+                        {item.reorderLevel == null ? "-" : String(item.reorderLevel)}
                       </td>
                       <td>{item.trackInventory ? "Yes" : "No"}</td>
                       <td>

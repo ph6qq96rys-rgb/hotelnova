@@ -127,7 +127,7 @@ export function normalizeLocation(row: any): NormalizedStockLocation | null {
     code: code || null,
     name: name || "Stock location",
     isActive,
-    label: code ? `${code} — ${name || "Stock location"}` : name || "Stock location",
+    label: code ? `${code} - ${name || "Stock location"}` : name || "Stock location",
     canTransferFrom,
     canTransferTo,
     canAdjust,

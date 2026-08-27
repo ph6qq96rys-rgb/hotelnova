@@ -133,7 +133,7 @@ export default function EmployeeListPage() {
       <div className="toolbar">
         <input
           className="input"
-          placeholder="Search name, email, number…"
+          placeholder="Search name, email, number..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ width: 260, height: 32, fontSize: 13 }}
@@ -175,7 +175,7 @@ export default function EmployeeListPage() {
           onClick={() => void load()}
           disabled={loading}
         >
-          <i className="ti ti-refresh" /> {loading ? "Loading…" : "Refresh"}
+          <i className="ti ti-refresh" /> {loading ? "Loading..." : "Refresh"}
         </button>
       </div>
 
@@ -207,7 +207,7 @@ export default function EmployeeListPage() {
                     color: "var(--text-muted)",
                   }}
                 >
-                  Loading…
+                  Loading...
                 </td>
               </tr>
             ) : items.length === 0 ? (
@@ -292,7 +292,7 @@ export default function EmployeeListPage() {
                         nav(paths.employeeDetail(emp.id));
                       }}
                     >
-                      Open →
+                      Open to
                     </button>
                   </td>
                 </tr>

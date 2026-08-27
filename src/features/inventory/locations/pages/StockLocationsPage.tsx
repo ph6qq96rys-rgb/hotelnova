@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { stockLocationsApi } from "../api/stockLocationsApi";
 import { useStockLocations } from "../hooks/useStockLocations";
 import StockLocationForm from "../components/StockLocationForm";
@@ -11,7 +11,7 @@ type Modal =
   | { kind: "edit"; item: StockLocationDto };
 
 export default function StockLocationsPage() {
-  // ✅ Replace with your real selection context later (Company onboarding selection)
+  //  Replace with your real selection context later (Company onboarding selection)
   const [companyId, setCompanyId] = useState<string>("");
 
   const [q, setQ] = useState("");

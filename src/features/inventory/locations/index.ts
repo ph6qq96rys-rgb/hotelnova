@@ -1,1 +1,1 @@
-﻿export { default as StockLocationsPage } from "./pages/StockLocationsPage";
+export { default as StockLocationsPage } from "./pages/StockLocationsPage";

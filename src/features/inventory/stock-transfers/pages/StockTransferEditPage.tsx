@@ -621,7 +621,7 @@ function ScopeGuard({
   return (
     <div className="ob-page">
       <div className={`ob-alert ob-alert--${tone}`}>
-        <span className="ob-alert__icon">{tone === "warn" ? "⚠" : "✕"}</span>
+        <span className="ob-alert__icon">{tone === "warn" ? "Warning:" : ""}</span>
         <div>
           <div className="ob-alert__title">{title}</div>
         </div>
@@ -647,7 +647,7 @@ function PageHeader({
     <div className="ob-page-header">
       <div>
         <div className="ob-page-title">
-          Stock Transfer{transferNo ? ` — ${transferNo}` : ""}
+          Stock Transfer{transferNo ? ` - ${transferNo}` : ""}
         </div>
 
         <div
@@ -670,7 +670,7 @@ function PageHeader({
           </span>
 
           {loading ? (
-            <span style={{ fontSize: 12, color: "#64748b" }}>Loading…</span>
+            <span style={{ fontSize: 12, color: "#64748b" }}>Loading...</span>
           ) : null}
         </div>
       </div>
@@ -710,7 +710,7 @@ function PageHeader({
 function RemapWarning() {
   return (
     <div className="ob-alert ob-alert--warn">
-      <span className="ob-alert__icon">⚠</span>
+      <span className="ob-alert__icon">Warning:</span>
       <div>
         <div className="ob-alert__title">Item mapping incomplete</div>
         <div className="ob-alert__msg">
@@ -733,7 +733,7 @@ function MessageAlert({ tone, text }: { tone: MsgTone; text: string }) {
       : "danger";
 
   const icon =
-    tone === "success" ? "✓" : tone === "warn" ? "⚠" : tone === "info" ? "i" : "✕";
+    tone === "success" ? "" : tone === "warn" ? "Warning:" : tone === "info" ? "i" : "";
 
   return (
     <div className={`ob-alert ob-alert--${alertTone}`}>
@@ -778,7 +778,7 @@ function TransferDetailsCard({
       <div className="ob-card-body">
         {loading && !detail ? (
           <div style={{ padding: "12px 0", color: "#94a3b8", fontSize: 13 }}>
-            Loading transfer…
+            Loading transfer...
           </div>
         ) : (
           <div
@@ -795,7 +795,7 @@ function TransferDetailsCard({
               error={errors.fromLocationId}
               options={locationOptions}
               disabled={!editable || busy}
-              placeholder="Select from…"
+              placeholder="Select from..."
               onChange={(value) => onChange({ fromLocationId: value })}
             />
 
@@ -806,7 +806,7 @@ function TransferDetailsCard({
               error={errors.toLocationId}
               options={locationOptions}
               disabled={!editable || busy}
-              placeholder="Select to…"
+              placeholder="Select to..."
               onChange={(value) => onChange({ toLocationId: value })}
             />
 
@@ -945,7 +945,7 @@ function LinesCard({
         <div>
           <div className="ob-card-title">{editable ? "Draft items" : "Items"}</div>
           <div className="ob-card-subtitle">
-            {editable ? "Add, edit, or remove line items." : "Posted items — read-only."}
+            {editable ? "Add, edit, or remove line items." : "Posted items - read-only."}
           </div>
         </div>
 
@@ -964,7 +964,7 @@ function LinesCard({
       <div className="ob-card-body">
         {loading && !detail ? (
           <div style={{ padding: "12px 0", color: "#94a3b8", fontSize: 13 }}>
-            Loading items…
+            Loading items...
           </div>
         ) : !editable && detail ? (
           <ReadOnlyLinesTable items={detail.items} />
@@ -1007,7 +1007,7 @@ function EditableLinesTable({
   if (errors.lines) {
     return (
       <div className="ob-alert ob-alert--danger" style={{ marginBottom: 10 }}>
-        <span className="ob-alert__icon">✕</span>
+        <span className="ob-alert__icon"></span>
         <div>
           <div className="ob-alert__title">{errors.lines}</div>
         </div>
@@ -1113,7 +1113,7 @@ function EditableLineRow({
         >
           {!line.inventoryItemId ? (
             <option value="" disabled>
-              {line._itemCode ? `Remap: ${line._itemCode}` : "Select item…"}
+              {line._itemCode ? `Remap: ${line._itemCode}` : "Select item..."}
             </option>
           ) : null}
 
@@ -1141,7 +1141,7 @@ function EditableLineRow({
         >
           {!line.unitId ? (
             <option value="" disabled>
-              {line._uomText ? `Remap: ${line._uomText}` : "Select UOM…"}
+              {line._uomText ? `Remap: ${line._uomText}` : "Select UOM..."}
             </option>
           ) : null}
 
@@ -1280,9 +1280,9 @@ function ReadOnlyLinesTable({ items }: { items: StockTransferDetailDto["items"] 
               <td style={readOnlyTdStrong}>{item.itemName}</td>
               <td style={readOnlyTd}>{item.uom}</td>
               <td style={readOnlyTdStrong}>{item.quantity}</td>
-              <td style={readOnlyTd}>{item.avgUnitCost ?? "—"}</td>
-              <td style={readOnlyTd}>{item.lineValue ?? "—"}</td>
-              <td style={readOnlyTd}>{(item as any).notes || (item as any).note || "—"}</td>
+              <td style={readOnlyTd}>{item.avgUnitCost ?? "-"}</td>
+              <td style={readOnlyTd}>{item.lineValue ?? "-"}</td>
+              <td style={readOnlyTd}>{(item as any).notes || (item as any).note || "-"}</td>
             </tr>
           ))}
         </tbody>
@@ -1354,7 +1354,7 @@ function ActionBar({
       }}
     >
       <div style={{ fontSize: 12, color: "#64748b" }}>
-        <b>Workflow:</b> Draft → Submit → Approve → Post
+        <b>Workflow:</b> Draft to Submit to Approve to Post
       </div>
 
       <div
@@ -1378,7 +1378,7 @@ function ActionBar({
           onClick={onSave}
           disabled={!editable || busy}
         >
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving..." : "Save"}
         </button>
 
         <button
@@ -1386,7 +1386,7 @@ function ActionBar({
           onClick={onSubmit}
           disabled={!canSubmit(status) || busy}
         >
-          {acting === "submit" ? "Submitting…" : "Submit"}
+          {acting === "submit" ? "Submitting..." : "Submit"}
         </button>
 
         <button
@@ -1394,7 +1394,7 @@ function ActionBar({
           onClick={onCancel}
           disabled={!canCancel(status) || busy}
         >
-          {acting === "cancel" ? "Cancelling…" : "Cancel"}
+          {acting === "cancel" ? "Cancelling..." : "Cancel"}
         </button>
 
         <button
@@ -1402,7 +1402,7 @@ function ActionBar({
           onClick={onPost}
           disabled={!canPost(status) || busy}
         >
-          {acting === "post" ? "Posting…" : "Post"}
+          {acting === "post" ? "Posting..." : "Post"}
         </button>
       </div>
     </div>

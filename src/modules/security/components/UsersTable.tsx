@@ -12,7 +12,7 @@ type UsersTableProps = {
 };
 
 function safe(value?: string | null): string {
-  return value?.trim() || "—";
+  return value?.trim() || "-";
 }
 
 function initials(value?: string | null): string {
@@ -55,7 +55,7 @@ function employeeLabel(user: UserDto): string {
 
   const employeeCode = (user as any).employeeCode ?? null;
 
-  if (employeeName && employeeCode) return `${employeeCode} · ${employeeName}`;
+  if (employeeName && employeeCode) return `${employeeCode} - ${employeeName}`;
   if (employeeName) return employeeName;
   if (employeeCode) return employeeCode;
 
@@ -73,7 +73,7 @@ function locationLabel(user: UserDto): string {
     (user as any).defaultStockLocationCode ??
     null;
 
-  if (name && code) return `${code} · ${name}`;
+  if (name && code) return `${code} - ${name}`;
   return name ?? code ?? "No location";
 }
 
@@ -84,7 +84,7 @@ function warehouseAccessLabel(user: UserDto): string {
   if ((user as any).canApproveWarehouseRequests) flags.push("Approve");
   if ((user as any).canIssueStock) flags.push("Issue");
 
-  return flags.length ? flags.join(" / ") : "—";
+  return flags.length ? flags.join(" / ") : "-";
 }
 
 function StatusPill({
@@ -249,7 +249,7 @@ export default function UsersTable({
 
       {busy && (
         <div className="lux-table__foot" aria-live="polite">
-          Working…
+          Working...
         </div>
       )}
     </div>

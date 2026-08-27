@@ -5,32 +5,41 @@ type Props = {
   report: FnbReportCatalogItemDto;
   from: string;
   to: string;
+  asOfDate: string;
   locationId: string;
   days: number;
   search: string;
   locations: StockLocationOption[];
   loadingLocations: boolean;
   running: boolean;
+  hasRows: boolean;
   onFromChange: (v: string) => void;
   onToChange: (v: string) => void;
+  onAsOfDateChange: (v: string) => void;
   onLocationChange: (v: string) => void;
   onDaysChange: (v: number) => void;
   onSearchChange: (v: string) => void;
   onRun: () => void;
   onExport: () => void;
+  onPrint: () => void;
 };
 
 export function FnbReportFilters(props: Props) {
+  const usesAsOfDate = props.report.supportsAsOfDate;
+  const usesDateRange = props.report.supportsDateRange && !usesAsOfDate;
+
   return (
     <div className="fnb-panel">
-      <div>
-        <p className="fnb-section-kicker">{props.report.category}</p>
-        <h2 className="fnb-section-title">{props.report.name}</h2>
-        <p className="fnb-section-subtitle">{props.report.description}</p>
+      <div className="fnb-panel-heading">
+        <div>
+          <p className="fnb-section-kicker">{props.report.category}</p>
+          <h2 className="fnb-section-title">{props.report.name}</h2>
+          <p className="fnb-section-subtitle">{props.report.description}</p>
+        </div>
       </div>
 
       <div className="fnb-filter-grid">
-        {props.report.supportsDateRange && (
+        {usesDateRange && (
           <>
             <label>
               <span>From</span>
@@ -54,6 +63,18 @@ export function FnbReportFilters(props: Props) {
           </>
         )}
 
+        {usesAsOfDate && (
+          <label>
+            <span>As of</span>
+            <input
+              className="fnb-input"
+              type="date"
+              value={props.asOfDate}
+              onChange={(e) => props.onAsOfDateChange(e.target.value)}
+            />
+          </label>
+        )}
+
         {props.report.supportsLocation && (
           <label>
             <span>Location</span>
@@ -66,7 +87,7 @@ export function FnbReportFilters(props: Props) {
               <option value="">All locations</option>
               {props.locations.map((x) => (
                 <option key={x.id} value={x.id}>
-                  {x.code ? `${x.code} · ${x.name}` : x.name}
+                  {x.code ? `${x.code} - ${x.name}` : x.name}
                 </option>
               ))}
             </select>
@@ -87,7 +108,7 @@ export function FnbReportFilters(props: Props) {
         )}
 
         <label className="fnb-search-field">
-          <span>Search</span>
+          <span>Search current result</span>
           <input
             className="fnb-input"
             placeholder="Item, code, location, category..."
@@ -99,19 +120,30 @@ export function FnbReportFilters(props: Props) {
 
       <div className="fnb-toolbar">
         <button
+          type="button"
           className="fnb-btn fnb-btn--primary"
           onClick={props.onRun}
           disabled={props.running}
         >
-          {props.running ? "Running…" : "Run Report"}
+          {props.running ? "Running..." : "Run Report"}
         </button>
 
         <button
+          type="button"
           className="fnb-btn"
           onClick={props.onExport}
-          disabled={props.running}
+          disabled={props.running || !props.hasRows}
         >
           Export CSV
+        </button>
+
+        <button
+          type="button"
+          className="fnb-btn"
+          onClick={props.onPrint}
+          disabled={props.running || !props.hasRows}
+        >
+          Print
         </button>
       </div>
     </div>

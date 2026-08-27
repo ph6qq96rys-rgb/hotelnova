@@ -7,7 +7,8 @@ export type FnbReportFormat =
   | "number"
   | "currency"
   | "percent"
-  | "date";
+  | "date"
+  | "datetime";
 
 export type FnbReportCatalogItemDto = {
   key: string;
@@ -74,9 +75,14 @@ export type FnbReportDto = {
   reportKey: string;
   reportName: string;
   generatedAtUtc: string;
+  generatedBy?: string | null;
   from: string;
   to: string;
   asOfDate?: string | null;
+  companyName?: string | null;
+  branchName?: string | null;
+  timeZone?: string | null;
+  filterSummary?: string | null;
   currencyCode: string;
   costingMethod: string;
   periodStatus: string;
@@ -119,9 +125,11 @@ function reportParams(query: FnbReportQuery) {
 export async function getFnbReportCatalog(
   companyId: string,
   branchId: string,
+  signal?: AbortSignal,
 ): Promise<FnbReportCatalogDto> {
   const res = await http.get<FnbReportCatalogDto>(
     `/companies/${companyId}/branches/${branchId}/reports/fnb/catalog`,
+    { signal },
   );
 
   return res.data;
@@ -129,11 +137,13 @@ export async function getFnbReportCatalog(
 
 export async function getFnbReport(
   query: FnbReportQuery,
+  signal?: AbortSignal,
 ): Promise<FnbReportDto> {
   const res = await http.get<FnbReportDto>(
     `/companies/${query.companyId}/branches/${query.branchId}/reports/fnb/${query.reportKey}`,
     {
       params: reportParams(query),
+      signal,
     },
   );
 
@@ -146,6 +156,7 @@ export async function getFnbReportDrilldown(
     sourceType?: string | null;
     bucket?: string | null;
   },
+  signal?: AbortSignal,
 ): Promise<FnbReportDrilldownDto> {
   const res = await http.get<FnbReportDrilldownDto>(
     `/companies/${query.companyId}/branches/${query.branchId}/reports/fnb/${query.reportKey}/drilldown`,
@@ -156,6 +167,7 @@ export async function getFnbReportDrilldown(
         sourceType: query.sourceType || undefined,
         bucket: query.bucket || undefined,
       },
+      signal,
     },
   );
 

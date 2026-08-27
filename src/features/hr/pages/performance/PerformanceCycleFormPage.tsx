@@ -135,7 +135,7 @@ export default function PerformanceCycleFormPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Performance</div>
+          <div className="page-kicker">Human Resources - Performance</div>
           <div className="page-title">New Review Cycle</div>
           <div className="page-sub">Set up a performance review period</div>
         </div>

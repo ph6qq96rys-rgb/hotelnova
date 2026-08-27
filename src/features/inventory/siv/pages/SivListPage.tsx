@@ -20,7 +20,7 @@ import {
 }                                                      from "../types/sivTypes";
 import "./siv-draft.css";
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// '-' Helpers '-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-'
 
 function normalizePaged(input: unknown): PagedResult<SivListItemDto> {
   const raw = input as any;
@@ -58,7 +58,7 @@ const DEFAULT_FILTERS: FilterState = {
   q: "", docStatus: "", dateFrom: "", dateTo: "", pageSize: 20,
 };
 
-// Tab config — drives the status filter tabs above the table
+// Tab config ' drives the status filter tabs above the table
 const STATUS_TABS = [
   { value: "",                 label: "All" },
   { value: "Draft",            label: "Draft" },
@@ -70,7 +70,7 @@ const STATUS_TABS = [
   { value: "ChangesRequested", label: "Changes Requested" },
 ];
 
-// ── Component ──────────────────────────────────────────────────────────────────
+// '-' Component '-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-'
 
 export default function SivListPage() {
   const nav = useErpNavigate();
@@ -88,7 +88,7 @@ export default function SivListPage() {
   const hasInvalidDateRange =
     Boolean(filters.dateFrom && filters.dateTo) && filters.dateFrom > filters.dateTo;
 
-  // ── Load ───────────────────────────────────────────────────────────────────
+// Load
 
   const load = useCallback(async () => {
     if (!companyId || hasInvalidDateRange) return;
@@ -118,7 +118,7 @@ export default function SivListPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // ── Derived ────────────────────────────────────────────────────────────────
+  // '-' Derived '-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-'
 
   const { items, totalCount } = result;
   const pageCount = Math.max(1, Math.ceil(totalCount / filters.pageSize));
@@ -187,12 +187,12 @@ export default function SivListPage() {
     nav(sivCreatePath(companyId, branchId));
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+// Render
 
   return (
     <div className="page">
 
-      {/* ── Page header ── */}
+      {/* '-' Page header '-' */}
       <div className="page-header">
         <div>
           <div className="page-kicker">Inventory</div>
@@ -210,7 +210,7 @@ export default function SivListPage() {
         </button>
       </div>
 
-      {/* ── KPI strip ── */}
+      {/* '-' KPI strip '-' */}
       <div
         className="kpi-grid"
         style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}
@@ -237,7 +237,7 @@ export default function SivListPage() {
         </div>
       </div>
 
-      {/* ── Status filter tabs ── */}
+      {/* '-' Status filter tabs '-' */}
       <div
         style={{
           display:      "flex",
@@ -292,7 +292,7 @@ export default function SivListPage() {
         })}
       </div>
 
-      {/* ── Search & date filters ── */}
+      {/* '-' Search & date filters '-' */}
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="card-header">
           <div className="card-title">Filters</div>
@@ -314,7 +314,7 @@ export default function SivListPage() {
                 className="input"
                 value={filters.q}
                 onChange={(e) => patchFilter("q", e.target.value)}
-                placeholder="SIV number, department, location, remarks…"
+                placeholder="SIV number, department, location, remarks'"
               />
             </div>
             <div className="field" style={{ marginBottom: 0 }}>
@@ -354,20 +354,20 @@ export default function SivListPage() {
                 disabled={loading || hasInvalidDateRange}
                 style={{ whiteSpace: "nowrap" }}
               >
-                {loading ? "Loading…" : "↺ Refresh"}
+                {loading ? "Loading..." : "-"}
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Error ── */}
+      {/* '-' Error '-' */}
       {hasInvalidDateRange && (
         <div className="alert alert-warn" role="alert">Date from cannot be after Date to.</div>
       )}
       {err && <div className="alert alert-danger" role="alert">{err}</div>}
 
-      {/* ── Table ── */}
+      {/* '-' Table '-' */}
       <div className="card siv-table-card" style={{ padding: 0 }}>
         <div className="siv-table-scroll">
         <table className="table">
@@ -376,7 +376,7 @@ export default function SivListPage() {
               <th>Document</th>
               <th>Status</th>
               <th>Issue date</th>
-              <th>From → To</th>
+              <th>From  ' To</th>
               <th>Department</th>
               <th>Requested by</th>
               <th style={{ textAlign: "right" }}>Lines</th>
@@ -396,7 +396,7 @@ export default function SivListPage() {
                     fontSize:  13,
                   }}
                 >
-                  Loading…
+                  Loading...
                 </td>
               </tr>
             ) : items.length === 0 ? (
@@ -416,7 +416,7 @@ export default function SivListPage() {
                       style={{ color: "var(--accent)", cursor: "pointer" }}
                       onClick={openCreatePage}
                     >
-                      Create one →
+                      Create one  '
                     </span>
                   )}
                 </td>
@@ -446,9 +446,25 @@ export default function SivListPage() {
                           color:      "var(--accent)",
                         }}
                       >
-                        {row.number || row.id}
+                        {row.number || "Pending SIV number"}
                       </div>
-                      {row.remarks && (
+                      {row.hasRecommendationOverride && (
+                        <div
+                          style={{
+                            display:"inline-flex",
+                            marginTop:4,
+                            padding:"2px 7px",
+                            borderRadius:999,
+                            background:"rgba(245,158,11,.14)",
+                            color:"var(--warn)",
+                            fontSize:10,
+                            fontWeight:700,
+                          }}
+                          title={row.recommendationOverrideReason || "System recommendation was overridden"}
+                        >
+                          Recommendation override
+                        </div>
+                      )}                      {row.remarks && (
                         <div
                           style={{
                             fontSize:     11,
@@ -483,7 +499,7 @@ export default function SivListPage() {
 
                     <td style={{ fontSize: 12 }}>
                       <div style={{ color: "var(--text-muted)" }}>
-                        {row.fromLocationName || "—"}
+                        {row.fromLocationName || "-"}
                       </div>
                       {(row.toLocationName || row.departmentName) && (
                         <div
@@ -493,17 +509,17 @@ export default function SivListPage() {
                             color:     "var(--text-soft)",
                           }}
                         >
-                          → {row.toLocationName || row.departmentName}
+                           ' {row.toLocationName || row.departmentName}
                         </div>
                       )}
                     </td>
 
                     <td style={{ fontSize: 12 }}>
-                      {row.departmentName || "—"}
+                      {row.departmentName || "-"}
                     </td>
 
                     <td style={{ fontSize: 12 }}>
-                      {row.requestedByName || "—"}
+                      {row.requestedByName || "-"}
                     </td>
 
                     <td
@@ -535,7 +551,7 @@ export default function SivListPage() {
                           openRow(row);
                         }}
                       >
-                        Open →
+                        Open  '
                       </button>
                     </td>
                   </tr>
@@ -561,7 +577,7 @@ export default function SivListPage() {
           }}
         >
           <div>
-            Page {page} of {pageCount} · {totalCount} total
+            Page {page} of {pageCount} '- {totalCount} total
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <button
@@ -569,7 +585,7 @@ export default function SivListPage() {
               disabled={page <= 1 || loading}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              ← Prev
+                Prev
             </button>
             <span style={{ padding: "2px 8px", background: "var(--accent-light)", color: "var(--accent)", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
               {page}
@@ -579,7 +595,7 @@ export default function SivListPage() {
               disabled={page >= pageCount || loading}
               onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
             >
-              Next →
+              Next  '
             </button>
           </div>
         </div>

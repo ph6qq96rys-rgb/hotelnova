@@ -14,6 +14,28 @@ export function useUsersQuery(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function upsertUser(user: UserDto): void {
+    if (!user?.id) return;
+
+    setData((current) => {
+      const items = current.items ?? [];
+      const index = items.findIndex((item) => item.id === user.id);
+
+      if (index >= 0) {
+        const nextItems = [...items];
+        nextItems[index] = user;
+        return { ...current, items: nextItems };
+      }
+
+      const pageSize = current.pageSize || filter.pageSize || 20;
+      return {
+        ...current,
+        items: [user, ...items].slice(0, pageSize),
+        total: (current.total ?? items.length) + 1,
+      };
+    });
+  }
+
   useEffect(() => {
     if (!companyId) {
       setData(emptyPage(filter));
@@ -48,5 +70,5 @@ export function useUsersQuery(
     return () => controller.abort();
   }, [companyId, filter, refreshKey]);
 
-  return { data, loading, error, setError };
+  return { data, loading, error, setError, upsertUser };
 }

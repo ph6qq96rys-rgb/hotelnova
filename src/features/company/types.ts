@@ -1,4 +1,4 @@
-﻿
+
 export const CompanyStatus = {
   Inactive: 0,
   Active: 1,
@@ -84,10 +84,34 @@ export type CompanySettingsDto = {
   vatEnabled: boolean;
   vatRate: number;
   pricesIncludeVat: boolean;
+
   invoicePrefix: string;
   receiptPrefix: string;
+  grnPrefix: string;
+  sivPrefix: string;
+  transferPrefix: string;
+  adjustmentPrefix: string;
+  productionPrefix: string;
+
   allowNegativeStock: boolean;
+  requireApprovalForSiv: boolean;
+  autoPostGrn: boolean;
+  autoPostSiv: boolean;
+  enforceIssueLocationMapping: boolean;
+  costingMethod: "FIFO" | "WeightedAverage" | string;
+
   fiscalYearStartMonth: number;
+  baseCurrency: string;
+
+  attendanceEnabled: boolean;
+  overtimeEnabled: boolean;
+
+  telegramEnabled: boolean;
+  telegramAttendanceEnabled: boolean;
+  telegramStockRequestsEnabled: boolean;
+
+  auditInventoryTransactions: boolean;
+  auditFinancialTransactions: boolean;
 };
 
 export type CreateCompanyAdminUserDto = {

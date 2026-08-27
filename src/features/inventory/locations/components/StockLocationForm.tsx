@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import type { CreateStockLocationDto, StockLocationDto, UpdateStockLocationDto } from "../types";
 
 type Props = {

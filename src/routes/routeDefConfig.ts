@@ -11,6 +11,7 @@ import { useSalesRoutes } from "./sales-cogsroute";
 import { getHrRoutes } from "./hrRoutes";
 import { getPostRoutes } from "./posRoutes";
 import { inventoryMasterRoutes } from "./inventoryMasterRoutes";
+import { procurementRoutes } from "./procurementRoutes";
 import { useAppScope } from "../app/useAppScope";
 
 export type AppRouteLike = RouteObject & {
@@ -178,6 +179,7 @@ export function useAppRoutes(): RouteWithHref[] {
       ...(salesRoutes as AppRouteLike[]),
       ...(hrRoutes as AppRouteLike[]),
       ...(posRoutes as AppRouteLike[]),
+      ...(procurementRoutes as AppRouteLike[]),
     ],
     [grnRoutes, salesRoutes, hrRoutes, posRoutes]
   );

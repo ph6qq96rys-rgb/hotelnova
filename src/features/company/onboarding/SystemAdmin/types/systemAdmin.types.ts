@@ -4,6 +4,7 @@ export interface CompanyListItemDto {
   id: string;
   legalName: string;
   tradeName?: string | null;
+  tenantSlug?: string | null;
   defaultCurrency: string;
   timezone: string;
   status: CompanyStatus | string;
@@ -24,4 +25,18 @@ export interface SwitchCompanyContextDto {
   companyId: string;
   companyName: string;
   tenantSlug: string;
+}
+
+export interface SwitchTenantWorkspaceDto {
+  token?: string | null;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  expiresAtUtc?: string | null;
+  companyId?: string | null;
+  companyName?: string | null;
+  branchId?: string | null;
+  branchName?: string | null;
+  tenantSlug?: string | null;
+  roles?: string[];
+  permissions?: string[];
 }

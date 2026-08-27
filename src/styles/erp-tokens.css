@@ -1,7 +1,7 @@
 /* erp-tokens.css
    Shared design tokens for the F&B ERP module.
    Import this before any feature-specific CSS.
-   ─────────────────────────────────────────── */
+    */
 
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -25,7 +25,7 @@
   --erp-text-muted:  #7a7670;
   --erp-text-soft:   #b0aca5;
 
-  /* Accent — warm amber, not blue */
+  /* Accent - warm amber, not blue */
   --erp-accent:      #c17f24;
   --erp-accent-bg:   #fdf3e3;
   --erp-accent-dark: #9a6318;
@@ -68,7 +68,7 @@
   --erp-space-8: 32px;
 }
 
-/* ── Shared primitives ────────────────────────────────────────────────────── */
+/*  Shared primitives  */
 
 /* Page shell */
 .erp-page {
@@ -460,10 +460,10 @@
   .erp-metric  { min-width: 50%; border-bottom: 1px solid var(--erp-border-soft); }
 }
 
-/* ── Input alignment ──────────────────────────────────────────────────────── */
+/*  Input alignment  */
 .erp-input--right { text-align: right; }
 
-/* ── Table footer ─────────────────────────────────────────────────────────── */
+/*  Table footer  */
 .erp-tfoot-label {
   text-align: right;
   font-weight: 700;

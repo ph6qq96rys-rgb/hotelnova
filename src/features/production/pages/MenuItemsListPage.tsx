@@ -48,7 +48,7 @@ export default function MenuItemsListPage() {
     return (
       <div className="p-page">
         <div className="p-guard">
-          <div className="p-guard__icon">☰</div>
+          <div className="p-guard__icon"></div>
           Company or branch context is missing.
         </div>
       </div>
@@ -61,7 +61,7 @@ export default function MenuItemsListPage() {
 
       <div className="p-page-header">
         <div>
-          <p className="p-kicker">ERP Menu Master · Branch Scope</p>
+          <p className="p-kicker">ERP Menu Master - Branch Scope</p>
           <h1 className="p-title">Menu Items</h1>
           <p className="p-subtitle">
             Search, audit, and open branch menu items for POS readiness, recipe costing,
@@ -76,7 +76,7 @@ export default function MenuItemsListPage() {
             disabled={vm.loading}
             type="button"
           >
-            ← Back
+            Back
           </button>
 
           <button
@@ -103,7 +103,7 @@ export default function MenuItemsListPage() {
         <div className="p-alert p-alert--error">
           <span className="p-alert__body">{vm.error}</span>
           <button className="p-dismiss" onClick={() => vm.setError(null)} type="button">
-            ✕
+            
           </button>
         </div>
       )}
@@ -112,7 +112,7 @@ export default function MenuItemsListPage() {
         <div className="p-alert p-alert--success">
           <span className="p-alert__body">{vm.notice}</span>
           <button className="p-dismiss" onClick={() => vm.setNotice(null)} type="button">
-            ✕
+            
           </button>
         </div>
       )}

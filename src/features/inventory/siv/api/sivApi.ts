@@ -1,4 +1,4 @@
-﻿// src/features/inventory/siv/api/sivApi.ts
+// src/features/inventory/siv/api/sivApi.ts
 
 import { http } from "../../../../api/http";
 import type { PostSivRequest } from "../types/sivTypes";
@@ -12,6 +12,7 @@ export interface SivActionResultDto {
   number: string;
   docStatus: string;
   message: string;
+  success?: boolean;
 }
 
 export interface SivListItemDto {
@@ -30,6 +31,12 @@ export interface SivListItemDto {
   totalLines: number;
   totalQuantity: number;
   requestedByName: string;
+  hasRecommendationOverride?: boolean;
+  recommendationOverrideReason?: string | null;
+  recommendationOverriddenAtUtc?: string | null;
+  recommendationDecision?: string | null;
+  recommendationRiskLevel?: string | null;
+  recommendationRiskScore?: number | null;
 }
 
 export interface SivLineDto {
@@ -43,6 +50,7 @@ export interface SivLineDto {
   qty: number;
   requestedQty: number;
   approvedQty: number | null;
+  issuedQty?: number | null;
   issuedBaseQty: number;
   remarks: string | null;
   batchNo: string | null;
@@ -93,6 +101,16 @@ export interface SivDetailsDto {
   rowVersion: string | null;
   lines: SivLineDto[];
   audit: SivAuditDto;
+  hasRecommendationOverride?: boolean;
+  recommendationOverrideReason?: string | null;
+  recommendationOverrideWarnings?: string | null;
+  recommendationSnapshotJson?: string | null;
+  recommendationEvaluatedAtUtc?: string | null;
+  recommendationOverriddenAtUtc?: string | null;
+  recommendationOverriddenByUserId?: string | null;
+  recommendationDecision?: string | null;
+  recommendationRiskLevel?: string | null;
+  recommendationRiskScore?: number | null;
 }
 
 export interface InventoryItemSearchResult {
@@ -293,6 +311,23 @@ function unwrap<T>(response: unknown): T {
   return (((response as { data?: unknown })?.data ?? response) as T);
 }
 
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeSivActionResult(response: unknown): SivActionResultDto {
+  const data = unwrap<unknown>(response);
+  const record = data && typeof data === "object" ? data as Record<string, unknown> : {};
+
+  return {
+    id: stringValue(record.id ?? record.Id ?? record.sivId ?? record.SivId ?? record.documentId ?? record.DocumentId),
+    number: stringValue(record.number ?? record.Number ?? record.sivNo ?? record.SivNo),
+    docStatus: stringValue(record.docStatus ?? record.DocStatus ?? record.status ?? record.Status),
+    message: stringValue(record.message ?? record.Message),
+    success: Boolean(record.success ?? record.Success ?? true),
+  };
+}
+
 function normalizeArray<T>(response: unknown): T[] {
   const data = unwrap<unknown>(response);
 
@@ -386,7 +421,7 @@ async function createDraft(
     body,
   );
 
-  return unwrap<SivActionResultDto>(response);
+  return normalizeSivActionResult(response);
 }
 
 async function updateDraft(
@@ -401,7 +436,7 @@ async function updateDraft(
     body,
   );
 
-  return unwrap<SivActionResultDto>(response);
+  return normalizeSivActionResult(response);
 }
 
 export interface SubmitSivRequest {
@@ -421,7 +456,7 @@ async function submit(
     body,
   );
 
-  return unwrap<SivActionResultDto>(response);
+  return normalizeSivActionResult(response);
 }
 
 async function approve(
@@ -435,7 +470,7 @@ async function approve(
     request,
   );
 
-  return unwrap<SivActionResultDto>(response);
+  return normalizeSivActionResult(response);
 }
 
 
@@ -451,7 +486,7 @@ async function reject(
     ...body,
   });
 
-  return unwrap<SivActionResultDto>(response);
+  return normalizeSivActionResult(response);
 }
 
 async function requestChanges(
@@ -468,7 +503,7 @@ async function requestChanges(
     },
   );
 
-  return unwrap<SivActionResultDto>(response);
+  return normalizeSivActionResult(response);
 }
 
 async function issue(
@@ -486,7 +521,7 @@ async function issue(
     ...body,
   });
 
-  return unwrap<SivActionResultDto>(response);
+  return normalizeSivActionResult(response);
 }
 
 async function post(
@@ -495,7 +530,7 @@ async function post(
   body: PostSivRequest = {},
 ): Promise<SivActionResultDto> {
   const response = await http.post<SivActionResultDto>(`${companySivBase(companyId)}/${encodeURIComponent(sivId)}/post`, body);
-  return unwrap<SivActionResultDto>(response);
+  return normalizeSivActionResult(response);
 }
 
 async function reverse(
@@ -509,7 +544,7 @@ async function reverse(
     ...body,
   });
 
-  return unwrap<SivActionResultDto>(response);
+  return normalizeSivActionResult(response);
 }
 
 async function getFifoPreview(

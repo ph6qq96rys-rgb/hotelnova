@@ -34,7 +34,7 @@ export default function EmployeeTerminatePage() {
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState<string | null>(null);
 
-  // ── Load employee ────────────────────────────────────────────────────────
+  //  Load employee 
 
   const load = useCallback(async () => {
     if (!companyId || !employeeId) return;
@@ -54,7 +54,7 @@ export default function EmployeeTerminatePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Submit ───────────────────────────────────────────────────────────────
+  //  Submit 
 
   async function handleTerminate() {
     if (!companyId || !employeeId || !employee) return;
@@ -66,7 +66,7 @@ export default function EmployeeTerminatePage() {
     try {
       await employeeApi.terminate(companyId, employeeId, {
         terminationDate,
-        reason: notes ? `${reason} — ${notes}` : reason,
+        reason: notes ? `${reason} - ${notes}` : reason,
       });
       nav(`/hr/employees/${employeeId}`);
     } catch (e) {
@@ -76,13 +76,13 @@ export default function EmployeeTerminatePage() {
     }
   }
 
-  // ── States ───────────────────────────────────────────────────────────────
+  //  States 
 
   if (loading) {
     return (
       <div className="page">
         <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>
-          Loading…
+          Loading...
         </div>
       </div>
     );
@@ -93,7 +93,7 @@ export default function EmployeeTerminatePage() {
       <div className="page">
         <div className="alert alert-danger">{error}</div>
         <button className="btn" onClick={() => nav(`/hr/employees/${employeeId}`)}>
-          ← Back to Employee
+          Back to Employee
         </button>
       </div>
     );
@@ -103,16 +103,16 @@ export default function EmployeeTerminatePage() {
 
   const canTerminate = employee.status !== 'Terminated';
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  //  Render 
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Employees</div>
+          <div className="page-kicker">Human Resources - Employees</div>
           <div className="page-title">Terminate Employee</div>
           <div className="page-sub">
-            {employee.fullName} · {employee.employeeNo} · {employee.positionTitle}
+            {employee.fullName} - {employee.employeeNo} - {employee.positionTitle}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -126,21 +126,21 @@ export default function EmployeeTerminatePage() {
             onClick={handleTerminate}
             disabled={saving || !canTerminate || !confirmed}
           >
-            {saving ? 'Terminating…' : 'Terminate Employment'}
+            {saving ? 'Terminating...' : 'Terminate Employment'}
           </button>
           <button
             className="btn"
             onClick={() => nav(`/hr/employees/${employeeId}`)}
             disabled={saving}
           >
-            ← Cancel
+            - Cancel
           </button>
         </div>
       </div>
 
       {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
 
-      {/* ── Employee summary ────────────────────────────────────────────── */}
+      {/*  Employee summary  */}
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 20 }}>
         <div className="kpi">
           <div className="kpi-label">Current Status</div>
@@ -167,7 +167,7 @@ export default function EmployeeTerminatePage() {
         </div>
       </div>
 
-      {/* ── Termination form ────────────────────────────────────────────── */}
+      {/*  Termination form  */}
       <div className="card" style={{ maxWidth: 520 }}>
         <div style={{
           fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
@@ -203,7 +203,7 @@ export default function EmployeeTerminatePage() {
             disabled={!canTerminate || saving}
             style={{ width: '100%', height: 34, fontSize: 13, padding: '0 10px' }}
           >
-            <option value="">— Select reason —</option>
+            <option value="">- Select reason -</option>
             {TERMINATION_REASONS.map(r => (
               <option key={r} value={r}>{r}</option>
             ))}
@@ -221,7 +221,7 @@ export default function EmployeeTerminatePage() {
             onChange={e => setNotes(e.target.value)}
             disabled={!canTerminate || saving}
             rows={3}
-            placeholder="Optional — any additional context or notes"
+            placeholder="Optional - any additional context or notes"
             style={{ width: '100%', fontSize: 13, padding: '8px 10px', resize: 'vertical' }}
           />
         </div>
@@ -239,7 +239,7 @@ export default function EmployeeTerminatePage() {
         }}>
           Terminating <strong>{employee.fullName}</strong> will permanently change their
           status to <strong>Terminated</strong> effective{' '}
-          <strong>{terminationDate ? fmtDate(terminationDate) : '—'}</strong>.
+          <strong>{terminationDate ? fmtDate(terminationDate) : '-'}</strong>.
           This action cannot be undone.
         </div>
 

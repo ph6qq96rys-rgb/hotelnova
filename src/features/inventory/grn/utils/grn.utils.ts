@@ -9,6 +9,7 @@ import type {
  import type { GrnFieldErrors } from "../helpers/grn.validation";
 
 import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 
 // -----------------------------------------------------------------------------
 // Core String Helpers
@@ -102,7 +103,7 @@ export function utcIsoToDateOnly(value?: string | null): string {
 export function fmtDateOnly(value?: string | null): string {
   const raw = trim(value);
 
-  if (!raw) return "—";
+  if (!raw) return "-";
 
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
     return raw.slice(0, 10);
@@ -115,7 +116,7 @@ export function fmtDateOnly(value?: string | null): string {
 export function fmtDateTime(value?: string | null, locale = "en-US"): string {
   const raw = trim(value);
 
-  if (!raw) return "—";
+  if (!raw) return "-";
 
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
@@ -345,9 +346,9 @@ export function toItemVm(dto: InventoryItemDto): ItemVm {
     disabled: uom.disabled,
   }));
 
-  const friendlyName = code ? `${code} — ${name}` : name;
+  const friendlyName = code ? `${code} - ${name}` : name;
   const suffix = shortId(id, 8);
-  const label = suffix ? `${friendlyName} · #${suffix}` : friendlyName;
+  const label = suffix ? `${friendlyName} - #${suffix}` : friendlyName;
 
   return {
     id,
@@ -362,7 +363,7 @@ export function toItemVm(dto: InventoryItemDto): ItemVm {
 }
 
 // -----------------------------------------------------------------------------
-// DTO → Draft Normalization
+// DTO to Draft Normalization
 // -----------------------------------------------------------------------------
 
 export type GrnLineDtoLike = {
@@ -553,21 +554,7 @@ export function extractApiError(
   error: unknown,
   fallback = "An error occurred"
 ): string {
-  const e = error as ApiErrorShape;
-  const data = e.response?.data;
-
-  if (data?.message) return data.message;
-  if (data?.title) return data.title;
-  if (data?.detail) return data.detail;
-
-  if (data?.errors) {
-    const firstError = Object.values(data.errors).flat()[0];
-    if (firstError) return firstError;
-  }
-
-  if (e.message) return e.message;
-
-  return fallback;
+  return toUserFriendlyError(error, fallback);
 }
 
 // -----------------------------------------------------------------------------

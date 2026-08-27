@@ -1,6 +1,6 @@
 // src/features/hr/types/index.ts
 
-// ── Shared ────────────────────────────────────────────────────────────────────
+// Shared
 
 export type Gender         = 'Male' | 'Female' | 'Other';
 export type MaritalStatus  = 'Single' | 'Married' | 'Divorced' | 'Widowed';
@@ -10,7 +10,7 @@ export type PayFrequency   = 'Monthly' | 'BiWeekly' | 'Weekly';
 export type WorkSchedule   = 'Standard' | 'Shift' | 'Flexible' | 'Remote' | 'Hybrid';
 export type PositionLevel  = 'EntryLevel' | 'Junior' | 'MidLevel' | 'Senior' | 'Lead' | 'Manager' | 'Director' | 'VicePresident' | 'CLevel';
 
-// ── Employees ─────────────────────────────────────────────────────────────────
+// Employees
 
 export interface EmployeeListDto {
   id: string;
@@ -27,29 +27,76 @@ export interface EmployeeListDto {
 export interface EmployeeDetailDto {
   id: string;
   employeeNo: string;
+  employeeCode?: string | null;
   fullName: string;
-  gender: Gender;
+  firstName?: string | null;
+  fatherName?: string | null;
+  grandFatherName?: string | null;
+  preferredName?: string | null;
+  gender: Gender | string | null;
   dateOfBirth: string;
-  maritalStatus: MaritalStatus;
+  maritalStatus: MaritalStatus | string | null;
+  nationality?: string | null;
+  companyId?: string | null;
+  branchId?: string | null;
+  branchName?: string | null;
+  departmentId?: string | null;
   departmentName: string;
+  positionId?: string | null;
   positionTitle: string;
-  managerName?: string;
+  managerId?: string | null;
+  managerName?: string | null;
   employmentType: EmploymentType;
   status: EmploymentStatus;
   hireDate: string;
-  confirmationDate?: string;
+  confirmationDate?: string | null;
+  terminationDate?: string | null;
+  terminationReason?: string | null;
   basicSalary: number;
+  payFrequency?: PayFrequency | string | null;
+  workSchedule?: WorkSchedule | string | null;
   workEmail: string;
-  phoneNumber?: string;
-  address?: string;
-  nationalId?: string;
-  taxId?: string;
-  pensionId?: string;
-  bankName?: string;
-  bankAccountNo?: string;
-  yearsOfService: number;
-  employeeCode: string;
-  employeePhotoUrl?: string;
+  personalEmail?: string | null;
+  phoneNumber?: string | null;
+  address?: string | null;
+  city?: string | null;
+  nationalId?: string | null;
+  taxId?: string | null;
+  tinNumber?: string | null;
+  tin?: string | null;
+  pensionId?: string | null;
+  businessLicenseNo?: string | null;
+  businessLicenceNo?: string | null;
+  businessLicenseNumber?: string | null;
+  vatNumber?: string | null;
+  bankName?: string | null;
+  bankAccountNo?: string | null;
+  bankBranch?: string | null;
+  yearsOfService: number | string | null;
+  employeePhotoUrl?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelation?: string | null;
+  hasSystemAccess?: boolean | null;
+  lastLoginAt?: string | null;
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+  telegramChatId?: string | null;
+  telegramUserName?: string | null;
+  telegramLinkedAtUtc?: string | null;
+}
+
+export interface EmployeeDocumentDto {
+  id: string;
+  employeeId: string;
+  documentType: string;
+  fileName: string;
+  fileUrl: string;
+  expiryDate?: string | null;
+  uploadedAt: string;
+  uploadedBy: string;
 }
 
 export interface OrgChartNodeDto {
@@ -81,7 +128,7 @@ export interface Position {
   isActive: boolean;
 }
 
-// ── Payroll ───────────────────────────────────────────────────────────────────
+// Payroll
 
 export type PayrollRunStatus = 'Draft' | 'Processing' | 'Pending' | 'Approved' | 'Paid' | 'Cancelled';
 export type PaySlipStatus    = 'Draft' | 'Generated' | 'Approved' | 'Paid';
@@ -104,6 +151,10 @@ export interface PaySlipDetailDto {
   employeeNo: string;
   employeeName: string;
   periodName: string;
+  tinNumber?: string | null;
+  bankName?: string | null;
+  bankAccountNo?: string | null;
+  bankBranch?: string | null;
   basicSalary: number;
   totalAllowances: number;
   overtimePay: number;
@@ -130,12 +181,14 @@ export interface PaySlipLineDto {
 export interface PaySlipSummaryDto {
   id: string;
   periodName: string;
+  employeeNo?: string | null;
+  employeeName?: string | null;
   grossPay: number;
   netPay: number;
   status: PaySlipStatus;
 }
 
-// ── Leave ─────────────────────────────────────────────────────────────────────
+// Leave
 
 export type LeaveRequestStatus = 'Draft' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'Taken';
 export type LeaveCategory      = 'Annual' | 'Sick' | 'Maternity' | 'Paternity' | 'Bereavement' | 'Study' | 'Unpaid' | 'Compensatory' | 'Other';
@@ -147,9 +200,13 @@ export interface LeaveTypeDto {
   name: string;
   category: LeaveCategory;
   defaultDaysPerYear: number;
+  maxCarryForwardDays: number;
   requiresApproval: boolean;
   requiresDocument: boolean;
   isPaid: boolean;
+  allowNegativeBalance: boolean;
+  minNoticeDays: number;
+  maxConsecutiveDays: number;
 }
 
 export interface LeaveRequestDto {
@@ -188,11 +245,24 @@ export interface LeaveCalendarEntryDto {
   status: LeaveRequestStatus;
 }
 
-// ── Attendance ────────────────────────────────────────────────────────────────
+// Attendance
 
-export type AttendanceStatus = 'Present' | 'Absent' | 'Late' | 'HalfDay' | 'OnLeave' | 'Holiday' | 'WeekOff';
+export type AttendanceStatus = 'Present' | 'Absent' | 'Late' | 'HalfDay' | 'OnLeave' | 'Holiday' | 'WeekOff' | 'EarlyDeparture' | 'MissingPunch' | 'ApprovedException';
 export type ClockMethod      = 'Manual' | 'Biometric' | 'Mobile' | 'Card' | 'Web';
 export type OvertimeStatus   = 'Pending' | 'Approved' | 'Rejected' | 'Processed';
+export type OvertimeCategory =
+  | 'Planned'
+  | 'Emergency'
+  | 'PeakOperations'
+  | 'CustomerDemand'
+  | 'ProductionDelay'
+  | 'EquipmentFailure'
+  | 'InventoryCount'
+  | 'MonthEndClosing'
+  | 'EventSupport'
+  | 'Catering'
+  | 'SpecialProject';
+export type OvertimeEffectiveness = 'Necessary' | 'Useful' | 'Avoidable' | 'Wasteful';
 
 export interface AttendanceRecordDto {
   employeeId: string;
@@ -202,6 +272,24 @@ export interface AttendanceRecordDto {
   clockOut?: string;
   workedHours?: number;
   overtimeHours?: number;
+  overtimeStatus?: OvertimeStatus;
+  overtimeCategory?: OvertimeCategory | string | null;
+  overtimeBusinessJustification?: string | null;
+  overtimeRelatedTask?: string | null;
+  overtimeProject?: string | null;
+  overtimeCostCenter?: string | null;
+  overtimeExpectedOutput?: string | null;
+  overtimeActualOutput?: string | null;
+  overtimeEffectivenessRating?: number | null;
+  overtimeEffectiveness?: OvertimeEffectiveness | string | null;
+  overtimeLaborCost?: number | null;
+  approvalRequired?: boolean;
+  managerApproved?: boolean;
+  hrApproved?: boolean;
+  clockMethod?: ClockMethod;
+  deviceId?: string | null;
+  branchVerified?: boolean | null;
+  geofenceVerified?: boolean | null;
   lateMinutes?: number;
   status: AttendanceStatus;
 }
@@ -213,6 +301,37 @@ export interface AttendanceReportDto {
   onLeave: number;
   averageAttendancePercent: number;
   records: AttendanceRecordDto[];
+}
+
+export interface AttendancePolicyDto {
+  id: string;
+  companyId: string;
+  branchId?: string | null;
+  code: string;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+  timeZoneId: string;
+  standardDailyHours: number;
+  mealBreakMinutes: number;
+  deductMealBreakAutomatically: boolean;
+  lateGraceMinutes: number;
+  earlyDepartureGraceMinutes: number;
+  overtimeThresholdHours: number;
+  requiresOvertimeApproval: boolean;
+  overtimeApprovalThresholdHours: number;
+  overtimeRate: number;
+  duplicateScanGuardMinutes: number;
+  allowManualEntry: boolean;
+  requiresManualEntryApproval: boolean;
+  requireQrClocking: boolean;
+  shiftPatternName?: string | null;
+  rosterGroupName?: string | null;
+  attendanceDeviceName?: string | null;
+  latePolicyName?: string | null;
+  overtimePolicyName?: string | null;
+  holidayCalendarName?: string | null;
+  mealBreakRuleName?: string | null;
 }
 
 export interface ShiftDto {
@@ -237,7 +356,7 @@ export interface OvertimeRequestDto {
   createdAt: string;
 }
 
-// ── Recruitment ───────────────────────────────────────────────────────────────
+// Recruitment
 
 export type JobPostingStatus  = 'Draft' | 'PendingApproval' | 'Published' | 'Closed' | 'OnHold' | 'Cancelled';
 export type ApplicationStatus = 'New' | 'Screening' | 'Shortlisted' | 'Interview' | 'Assessment' | 'Offered' | 'Hired' | 'Rejected' | 'Withdrawn';
@@ -298,7 +417,7 @@ export interface InterviewDto {
   score?: number;
 }
 
-// ── Performance ───────────────────────────────────────────────────────────────
+// Performance
 
 export type CycleType         = 'Annual' | 'SemiAnnual' | 'Quarterly' | 'Probation' | 'PIP';
 export type CycleStatus       = 'Draft' | 'Active' | 'Closed' | 'Archived';
@@ -378,7 +497,7 @@ export interface GoalDto {
   achievementPercent?: number;
 }
 
-// ── Training ──────────────────────────────────────────────────────────────────
+// Training
 
 export type TrainingCategory  = 'Onboarding' | 'Compliance' | 'TechnicalSkills' | 'SoftSkills' | 'Leadership' | 'Safety' | 'ProductKnowledge' | 'Other';
 export type TrainingMode      = 'InPerson' | 'Online' | 'Blended' | 'OnTheJob' | 'External';
@@ -435,7 +554,7 @@ export interface TrainingComplianceDto {
   compliancePercent: number;
 }
 
-// ── Dashboard ─────────────────────────────────────────────────────────────────
+// Dashboard
 
 export interface HRDashboardDto {
   totalEmployees: number;

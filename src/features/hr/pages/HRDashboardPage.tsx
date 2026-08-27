@@ -105,7 +105,7 @@ export default function HRDashboardPage() {
         </div>
 
         <button className="btn" onClick={load} disabled={loading || !companyId}>
-          <i className="ti ti-refresh" /> {loading ? "Loading…" : "Refresh"}
+          <i className="ti ti-refresh" /> {loading ? "Loading..." : "Refresh"}
         </button>
       </div>
 
@@ -293,7 +293,7 @@ export default function HRDashboardPage() {
                       {item.sub}
                     </span>
                   </span>
-                  <span style={{ marginLeft: "auto", color: "var(--text-soft)" }}>→</span>
+                  <span style={{ marginLeft: "auto", color: "var(--text-soft)" }}>to</span>
                 </button>
               ))}
             </div>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAppScope } from "../../../../app/useAppScope";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
+import { formatAppDateTime } from "../../../../shared/datetime/dateFormat";
 
 import { payrollApi } from "../../api/hrApi";
 import type { PayrollRunDto } from "../../types";
@@ -21,6 +22,7 @@ export default function PayrollListPage() {
   const erpNav = useErpNavigate();
 
   const currentYear = new Date().getFullYear();
+  const printedAt = useMemo(() => formatAppDateTime(new Date()), []);
 
   const [items, setItems] = useState<PayrollRunDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -121,14 +123,17 @@ export default function PayrollListPage() {
     <main className="page">
       <header className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Payroll</div>
+          <div className="page-kicker">Human Resources '- Payroll</div>
           <h1 className="page-title">Payroll Management</h1>
           <p className="page-sub">
             Process, approve, and settle company payroll runs.
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div
+          className="payroll-screen-actions"
+          style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+        >
           <select
             className="select"
             value={year}
@@ -151,11 +156,32 @@ export default function PayrollListPage() {
           >
             + New Payroll Run
           </button>
+
+          <button
+            type="button"
+            className="btn"
+            onClick={() => window.print()}
+            disabled={loading}
+          >
+            <i className="ti ti-printer" aria-hidden="true" /> Print
+          </button>
         </div>
       </header>
 
+      <section className="payroll-print-only payroll-print-title">
+        <div>
+          <div className="payroll-print-kicker">Human Resources / Payroll</div>
+          <h1>Payroll Run Register</h1>
+          <p>Payroll year: {year}</p>
+        </div>
+        <div className="payroll-print-meta">
+          <span>Printed</span>
+          <strong>{printedAt}</strong>
+        </div>
+      </section>
+
       <section
-        className="kpi-grid"
+        className="kpi-grid payroll-print-summary"
         style={{
           gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
           marginBottom: 20,
@@ -196,8 +222,8 @@ export default function PayrollListPage() {
         </div>
       )}
 
-      <section className="card" style={{ padding: 0 }}>
-        <table className="table">
+      <section className="card payroll-print-card" style={{ padding: 0 }}>
+        <table className="table payroll-print-table">
           <thead>
             <tr>
               <th>Period</th>
@@ -207,7 +233,7 @@ export default function PayrollListPage() {
               <th style={{ textAlign: "right" }}>Gross Pay</th>
               <th style={{ textAlign: "right" }}>Deductions</th>
               <th style={{ textAlign: "right" }}>Net Pay</th>
-              <th style={{ textAlign: "right" }}>Actions</th>
+              <th className="payroll-screen-only" style={{ textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
 
@@ -245,7 +271,7 @@ export default function PayrollListPage() {
                   </div>
                   <button
                     type="button"
-                    className="btn btn-primary"
+                    className="btn btn-primary payroll-screen-only"
                     style={{ marginTop: 16 }}
                     onClick={goToCreate}
                     disabled={!companyId}
@@ -270,7 +296,7 @@ export default function PayrollListPage() {
                       fontFamily: "var(--mono)",
                     }}
                   >
-                    {fmtDate(run.periodStart)} – {fmtDate(run.periodEnd)}
+                    {fmtDate(run.periodStart)} '" {fmtDate(run.periodEnd)}
                   </td>
 
                   <td>
@@ -290,7 +316,7 @@ export default function PayrollListPage() {
                     {fmtMoney(run.totalNet)}
                   </td>
 
-                  <td style={{ textAlign: "right" }}>
+                  <td className="payroll-screen-only" style={{ textAlign: "right" }}>
                     <div
                       style={{
                         display: "flex",
@@ -338,7 +364,7 @@ export default function PayrollListPage() {
                         disabled={working === run.id}
                         onClick={() => goToDetail(run.id)}
                       >
-                        View →
+                        View  '
                       </button>
                     </div>
                   </td>
@@ -347,6 +373,14 @@ export default function PayrollListPage() {
           </tbody>
         </table>
       </section>
+
+      <div className="payroll-print-only payroll-print-footer">
+        <span>Prepared by HR Payroll</span>
+        <span>Reviewed by ____________________</span>
+        <span>Approved by ____________________</span>
+      </div>
+
+      <PayrollPrintStyles />
     </main>
   );
 }
@@ -356,3 +390,157 @@ const numberCell: React.CSSProperties = {
   fontFamily: "var(--mono)",
   fontSize: 12,
 };
+
+function PayrollPrintStyles() {
+  return (
+    <style>{`
+      .payroll-print-only {
+        display: none;
+      }
+
+      @media print {
+        @page {
+          size: A4 landscape;
+          margin: 12mm;
+        }
+
+        body {
+          background: #fff !important;
+          color: #111827 !important;
+        }
+
+        body * {
+          visibility: hidden;
+        }
+
+        .page,
+        .page * {
+          visibility: visible;
+        }
+
+        .page {
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #fff !important;
+        }
+
+        .page-header,
+        .payroll-screen-only,
+        .payroll-screen-actions,
+        .alert {
+          display: none !important;
+        }
+
+        .payroll-print-only {
+          display: flex !important;
+        }
+
+        .payroll-print-title {
+          align-items: flex-start;
+          justify-content: space-between;
+          border-bottom: 2px solid #111827;
+          padding-bottom: 10px;
+          margin-bottom: 12px;
+        }
+
+        .payroll-print-title h1 {
+          margin: 2px 0 4px;
+          font-size: 22px;
+          line-height: 1.2;
+        }
+
+        .payroll-print-title p,
+        .payroll-print-kicker,
+        .payroll-print-meta {
+          margin: 0;
+          color: #4b5563;
+          font-size: 11px;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+
+        .payroll-print-meta {
+          text-align: right;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .payroll-print-meta strong {
+          color: #111827;
+          font-size: 12px;
+          letter-spacing: 0;
+          text-transform: none;
+        }
+
+        .payroll-print-summary {
+          display: grid !important;
+          grid-template-columns: repeat(4, 1fr) !important;
+          gap: 8px !important;
+          margin-bottom: 12px !important;
+        }
+
+        .payroll-print-summary .kpi {
+          border: 1px solid #d1d5db !important;
+          box-shadow: none !important;
+          padding: 8px 10px !important;
+          break-inside: avoid;
+        }
+
+        .payroll-print-summary .kpi-label,
+        .payroll-print-summary .kpi-sub {
+          color: #4b5563 !important;
+          font-size: 9px !important;
+        }
+
+        .payroll-print-summary .kpi-val {
+          color: #111827 !important;
+          font-size: 14px !important;
+        }
+
+        .payroll-print-card {
+          border: 0 !important;
+          box-shadow: none !important;
+          background: #fff !important;
+        }
+
+        .payroll-print-table {
+          width: 100% !important;
+          border-collapse: collapse !important;
+          font-size: 10px !important;
+        }
+
+        .payroll-print-table th,
+        .payroll-print-table td {
+          border: 1px solid #d1d5db !important;
+          padding: 6px 7px !important;
+          color: #111827 !important;
+          background: #fff !important;
+        }
+
+        .payroll-print-table th {
+          background: #f3f4f6 !important;
+          font-size: 9px !important;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+
+        .payroll-print-table tr {
+          break-inside: avoid;
+        }
+
+        .payroll-print-footer {
+          justify-content: space-between;
+          gap: 18px;
+          border-top: 1px solid #d1d5db;
+          margin-top: 18px;
+          padding-top: 12px;
+          font-size: 10px;
+          color: #374151;
+        }
+      }
+    `}</style>
+  );
+}

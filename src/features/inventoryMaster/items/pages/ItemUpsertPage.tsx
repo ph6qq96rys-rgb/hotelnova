@@ -78,10 +78,10 @@ function ensureBaseRow(
       name: base.name,
       toBaseFactor: 1,
       isBase: true,
-      isPurchase: false,
-      isIssue: false,
-      isRecipe: false,
-      isConsume: false,
+      isPurchase: true,
+      isIssue: true,
+      isRecipe: true,
+      isConsume: true,
       isCount: true,
       isActive: true,
     },
@@ -123,16 +123,23 @@ const EMPTY_MODEL: ItemModel = {
   isActive: true,
 };
 
+function readConfiguredUoms(dto: InventoryItemDto): ItemUomDto[] {
+  const fromEditModel = Array.isArray(dto.allowedUoms) ? dto.allowedUoms : [];
+  const fromApiResponse = Array.isArray(dto.uoms) ? dto.uoms : [];
+
+  return fromEditModel.length > 0 ? fromEditModel : fromApiResponse;
+}
+
 function dtoToModel(dto: InventoryItemDto): ItemModel {
   return {
     name: dto.name ?? "",
     localName: dto.localName ?? "",
     sku: dto.sku ?? "",
     barcode: dto.barcode ?? "",
-    type: dto.type ?? "Ingredient",
+    type: dto.type ?? dto.itemType ?? "Ingredient",
     categoryId: dto.categoryId ?? "",
     baseUomId: dto.baseUomId ?? "",
-    allowedUoms: Array.isArray(dto.allowedUoms) ? dto.allowedUoms : [],
+    allowedUoms: readConfiguredUoms(dto),
     trackInventory: dto.trackInventory ?? true,
     reorderLevel: dto.reorderLevel ?? 0,
     costingMethod: dto.costingMethod ?? "",
@@ -399,7 +406,7 @@ export default function ItemUpsertPage() {
       <div style={S.page}>
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#64748b" }}>
-            Loading…
+            Loading...
           </div>
         </div>
       </div>
@@ -435,7 +442,7 @@ export default function ItemUpsertPage() {
           </button>
 
           <button type="button" style={primaryBtn} onClick={save} disabled={!canSave || saving}>
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Create item"}
+            {saving ? "Saving..." : isEdit ? "Save changes" : "Create item"}
           </button>
         </div>
       </div>
@@ -454,7 +461,7 @@ export default function ItemUpsertPage() {
       {baseUomChanged ? (
         <div style={S.warningCard}>
           <div style={{ fontWeight: 800, fontSize: 12, color: "rgba(120,53,15,1)" }}>
-            ⚠ Base UOM change detected
+            Base UOM change detected
           </div>
           <div style={{ marginTop: 5, fontSize: 12, color: "rgba(120,53,15,1)" }}>
             Changing the base unit on an item with stock transactions may corrupt historical
@@ -544,7 +551,7 @@ export default function ItemUpsertPage() {
               onChange={(e) => set("categoryId", e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, categoryId: true }))}
             >
-              <option value="">Select category…</option>
+              <option value="">Select category...</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -588,8 +595,8 @@ export default function ItemUpsertPage() {
               disabled={!physical}
               onChange={(e) => set("trackInventory", e.target.value === "yes")}
             >
-              <option value="yes">Yes — track stock levels</option>
-              <option value="no">No — non-stock item</option>
+              <option value="yes">Yes - track stock levels</option>
+              <option value="no">No - non-stock item</option>
             </select>
           </div>
 
@@ -615,8 +622,8 @@ export default function ItemUpsertPage() {
               onChange={(e) => set("costingMethod", e.target.value)}
             >
               <option value="">Inherit from company default</option>
-              <option value="AVCO">AVCO — weighted average cost</option>
-              <option value="FIFO">FIFO — first in, first out</option>
+              <option value="AVCO">AVCO - weighted average cost</option>
+              <option value="FIFO">FIFO - first in, first out</option>
               <option value="Standard">Standard cost</option>
             </select>
           </div>
@@ -682,10 +689,10 @@ export default function ItemUpsertPage() {
                   }}
                   onBlur={() => setTouched((t) => ({ ...t, baseUomId: true }))}
                 >
-                  <option value="">Select base unit…</option>
+                  <option value="">Select base unit...</option>
                   {uoms.map((u) => (
                     <option key={u.id} value={u.id}>
-                      {u.code ? `${u.code} — ${u.name}` : u.name}
+                      {u.code ? `${u.code} - ${u.name}` : u.name}
                     </option>
                   ))}
                 </select>
@@ -739,7 +746,7 @@ export default function ItemUpsertPage() {
         </button>
 
         <button type="button" style={primaryBtn} onClick={save} disabled={!canSave || saving}>
-          {saving ? "Saving…" : isEdit ? "Save changes" : "Create item"}
+          {saving ? "Saving..." : isEdit ? "Save changes" : "Create item"}
         </button>
       </div>
     </div>

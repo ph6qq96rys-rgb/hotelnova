@@ -52,6 +52,32 @@ const initialFilters: SalesFilters = {
   toDate: "",
 };
 
+function getRegisterSaleItems(sale: SaleListItemDto) {
+  return Array.isArray(sale.saleItems) ? sale.saleItems : [];
+}
+
+function formatQuantity(value: number): string {
+  const quantity = Number(value || 0);
+
+  return Number.isInteger(quantity)
+    ? quantity.toFixed(0)
+    : quantity.toFixed(2);
+}
+
+function getRegisterItemSummary(sale: SaleListItemDto): string {
+  const saleItems = getRegisterSaleItems(sale);
+
+  if (saleItems.length === 0) {
+    return sale.itemCount > 0
+      ? `${sale.itemCount} item${sale.itemCount === 1 ? "" : "s"}`
+      : "No menu items";
+  }
+
+  return saleItems
+    .map((item) => item.menuItemName || "Unnamed menu item")
+    .join(", ");
+}
+
 export default function SalesListPage() {
   const nav = useErpNavigate();
   const { companyId, branchId } = useAppScope();
@@ -303,14 +329,7 @@ function SalesKpis({
   };
 }) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(5, minmax(140px, 1fr))",
-        gap: 12,
-        marginBottom: 14,
-      }}
-    >
+    <div className="sales-kpi-grid sales-kpi-grid--compact">
       <Kpi label="Page Sales" value={money(kpis.total)} />
       <Kpi label="COGS" value={money(kpis.cogs)} />
       <Kpi label="Gross Profit" value={money(kpis.grossProfit)} />
@@ -337,16 +356,8 @@ function SalesFiltersBar({
   onClear: () => void;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: 10,
-        flexWrap: "wrap",
-        alignItems: "end",
-        marginBottom: 14,
-      }}
-    >
-      <label className="pos-field" style={{ flex: "1 1 220px" }}>
+    <div className="sales-filter-bar">
+      <label className="pos-field">
         <span>Search</span>
         <input
           value={filters.q}
@@ -416,11 +427,12 @@ function SalesTable({
   onOpenSale: (saleId: string) => void;
 }) {
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div className="sales-table-shell">
       <table className="pos-table">
         <thead>
           <tr>
             <th>Sale No</th>
+            <th>Menu Items</th>
             <th>Date</th>
             <th>Status</th>
             <th>Payment</th>
@@ -436,12 +448,8 @@ function SalesTable({
           {loading ? (
             <tr>
               <td
-                colSpan={9}
-                style={{
-                  textAlign: "center",
-                  color: "#6b7280",
-                  padding: 30,
-                }}
+                colSpan={10}
+                className="sales-empty-cell"
               >
                 Loading sales...
               </td>
@@ -451,12 +459,8 @@ function SalesTable({
           {!loading && items.length === 0 ? (
             <tr>
               <td
-                colSpan={9}
-                style={{
-                  textAlign: "center",
-                  color: "#6b7280",
-                  padding: 30,
-                }}
+                colSpan={10}
+                className="sales-empty-cell"
               >
                 No sales found.
               </td>
@@ -470,6 +474,7 @@ function SalesTable({
                   sale.grossProfit ?? total - Number(sale.totalCogs || 0)
                 );
                 const margin = total > 0 ? (profit / total) * 100 : 0;
+                const saleItems = getRegisterSaleItems(sale);
 
                 return (
                   <tr
@@ -477,7 +482,40 @@ function SalesTable({
                     onClick={() => onOpenSale(sale.id)}
                     style={{ cursor: "pointer" }}
                   >
-                    <td style={{ fontFamily: "monospace" }}>{sale.saleNo}</td>
+                    <td className="sales-mono">{sale.saleNo}</td>
+                    <td className="sales-item-cell">
+                      <div
+                        className="sales-item-stack"
+                        title={getRegisterItemSummary(sale)}
+                      >
+                        {saleItems.length > 0 ? (
+                          saleItems.slice(0, 3).map((item) => (
+                            <span className="sales-item-chip" key={item.id}>
+                              <strong>
+                                {item.menuItemName || "Unnamed menu item"}
+                              </strong>
+                              <em>
+                                {formatQuantity(item.quantity)} x {money(item.unitPrice)}
+                              </em>
+                            </span>
+                          ))
+                        ) : (
+                          <span className="sales-item-fallback">
+                            {sale.itemCount > 0
+                              ? `${sale.itemCount} menu item${
+                                  sale.itemCount === 1 ? "" : "s"
+                                }`
+                              : "No menu items"}
+                          </span>
+                        )}
+
+                        {saleItems.length > 3 ? (
+                          <span className="sales-item-more">
+                            +{saleItems.length - 3} more
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
                     <td>{dateTime(sale.soldAtUtc)}</td>
                     <td>
                       <SaleStatusBadge status={sale.status} />
@@ -520,19 +558,12 @@ function PaginationBar({
   onNext: () => void;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginTop: 14,
-      }}
-    >
-      <span style={{ color: "#6b7280", fontSize: 13 }}>
+    <div className="sales-pagination">
+      <span className="sales-pagination__label">
         Page {page} of {totalPages}
       </span>
 
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="sales-pagination__actions">
         <Button disabled={page <= 1 || loading} onClick={onPrevious}>
           Previous
         </Button>

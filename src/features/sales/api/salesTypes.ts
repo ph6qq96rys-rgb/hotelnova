@@ -114,10 +114,23 @@ export interface SaleDto {
   saleNo: string;
   companyId: Guid;
   branchId: Guid;
+  branchName?: string | null;
+  branchCode?: string | null;
   locationId: Guid;
+  storeName?: string | null;
+  storeCode?: string | null;
+  posSessionId?: Guid | null;
   soldAtUtc: string;
+  createdAt?: string;
   status: number;
   paymentStatus: number;
+  sourceType?: number | string;
+  sourceName?: string | null;
+  documentType?: string | null;
+  externalReferenceNo?: string | null;
+  cashierName?: string | null;
+  terminal?: string | null;
+  sessionLabel?: string | null;
   subTotal: number;
   discountAmount: number;
   taxAmount: number;
@@ -141,6 +154,16 @@ export interface SaleListItemDto {
   grossProfit: number;
   isInventoryPosted: boolean;
   itemCount: number;
+  saleItems?: SaleListLineItemDto[];
+}
+
+export interface SaleListLineItemDto {
+  id: Guid;
+  menuItemId: Guid;
+  menuItemName: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
 }
 
 export interface SaleListResponse {

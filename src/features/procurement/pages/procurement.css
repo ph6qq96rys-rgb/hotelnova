@@ -1,0 +1,396 @@
+.prq-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+  color: #101828;
+}
+
+.prq-page-header,
+.prq-section-title,
+.prq-actions,
+.prq-toolbar,
+.prq-total {
+  display: flex;
+  align-items: center;
+}
+
+.prq-page-header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.prq-page-header h1 {
+  margin: 4px 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.prq-page-header p,
+.prq-section-title p,
+.prq-history p {
+  margin: 0;
+  color: #667085;
+}
+
+.prq-kicker {
+  color: #475467;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.prq-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.prq-btn,
+.prq-icon-btn {
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #101828;
+  cursor: pointer;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.prq-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 16px;
+}
+
+.prq-icon-btn {
+  display: grid;
+  min-width: 42px;
+  height: 42px;
+  place-items: center;
+}
+
+.prq-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.prq-btn--primary {
+  border-color: #3538cd;
+  background: #3538cd;
+  color: #fff;
+}
+
+.prq-btn--danger {
+  border-color: #d92d20;
+  color: #b42318;
+}
+
+.prq-alert {
+  border: 1px solid #fda29b;
+  border-radius: 8px;
+  background: #fff1f3;
+  color: #b42318;
+  padding: 14px 16px;
+}
+
+.prq-panel,
+.prq-metrics > div {
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.06);
+}
+
+.prq-panel {
+  padding: 18px;
+}
+
+.prq-metrics {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.prq-metrics > div {
+  padding: 18px;
+}
+
+.prq-metrics span,
+.prq-detail-grid span {
+  display: block;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.prq-metrics strong,
+.prq-detail-grid strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 20px;
+}
+
+.prq-toolbar {
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.prq-toolbar input,
+.prq-toolbar select,
+.prq-form-grid input,
+.prq-form-grid select,
+.prq-form-grid textarea,
+.prq-line input,
+.prq-line select,
+.prq-line textarea,
+.prq-approval textarea {
+  width: 100%;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #101828;
+  font: inherit;
+  padding: 11px 12px;
+}
+
+.prq-toolbar input {
+  flex: 1 1 320px;
+}
+
+.prq-toolbar select {
+  max-width: 220px;
+}
+
+.prq-table-wrap {
+  overflow-x: auto;
+}
+
+.prq-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.prq-table th,
+.prq-table td {
+  border-bottom: 1px solid #eaecf0;
+  padding: 13px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.prq-table th {
+  background: #f8fafc;
+  color: #344054;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.prq-table a {
+  color: #3538cd;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.prq-right {
+  text-align: right !important;
+}
+
+.prq-empty {
+  color: #667085;
+  padding: 28px !important;
+  text-align: center;
+}
+
+.prq-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #3538cd;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 10px;
+}
+
+.prq-chip--approved {
+  background: #dcfae6;
+  color: #067647;
+}
+
+.prq-chip--pendingapproval {
+  background: #fef0c7;
+  color: #93370d;
+}
+
+.prq-chip--rejected,
+.prq-chip--cancelled {
+  background: #fee4e2;
+  color: #b42318;
+}
+
+.prq-chip--returned {
+  background: #f4ebff;
+  color: #6941c6;
+}
+
+.prq-form-grid,
+.prq-detail-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.prq-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #344054;
+  font-weight: 700;
+}
+
+.prq-form-grid textarea,
+.prq-approval textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.prq-span-2 {
+  grid-column: span 2;
+}
+
+.prq-section-title {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.prq-section-title h2,
+.prq-approval h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.prq-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prq-line {
+  display: grid;
+  align-items: start;
+  gap: 10px;
+  grid-template-columns: 160px minmax(220px, 1fr) 110px 120px 140px 130px 42px;
+}
+
+.prq-line textarea {
+  grid-column: 2 / -1;
+  min-height: 72px;
+}
+
+.prq-line strong {
+  padding-top: 11px;
+  text-align: right;
+}
+
+.prq-total {
+  justify-content: flex-end;
+  gap: 18px;
+  border-top: 1px solid #eaecf0;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.prq-approval {
+  display: grid;
+  gap: 14px;
+}
+
+.prq-history {
+  display: grid;
+  gap: 10px;
+}
+
+.prq-history > div {
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.prq-history span {
+  color: #667085;
+  display: block;
+  margin-top: 4px;
+}
+
+
+.prq-reorder-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #f8fafc;
+}
+
+.prq-reorder-panel h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.prq-reorder-panel p,
+.prq-reorder-summary {
+  margin: 0;
+  color: #667085;
+}
+
+.prq-reorder-summary {
+  border-left: 3px solid #3538cd;
+  padding-left: 12px;
+}
+@media (max-width: 900px) {
+  .prq-page {
+    padding: 16px;
+  }
+
+  .prq-page-header,
+  .prq-toolbar,
+  .prq-section-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prq-actions {
+    justify-content: flex-start;
+  }
+
+  .prq-metrics,
+  .prq-form-grid,
+  .prq-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prq-span-2 {
+    grid-column: auto;
+  }
+
+  .prq-line {
+    grid-template-columns: 1fr;
+  }
+
+  .prq-line textarea {
+    grid-column: auto;
+  }
+
+  .prq-line strong {
+    text-align: left;
+  }
+}

@@ -350,17 +350,16 @@ export const onboardingApi = {
   },
 
   async complete(companyId: string, branchId?: string | null): Promise<void> {
-    await this.activateCompany(companyId);
-
-    if (!branchId) return;
-
-    try {
-      await http.post(`/companies/${companyId}/branches/${branchId}/onboarding/complete`, {});
-    } catch (err) {
-      const status = (err as any)?.response?.status ?? (err as any)?.status;
-      if (status === 404) return;
-      throw err;
+    if (branchId) {
+      try {
+        await http.post(`/companies/${companyId}/branches/${branchId}/onboarding/complete`, {});
+      } catch (err) {
+        const status = (err as any)?.response?.status ?? (err as any)?.status;
+        if (status !== 404) throw err;
+      }
     }
+
+    await this.activateCompany(companyId);
   },
 
   async listCompanies(): Promise<CompanyDto[]> {

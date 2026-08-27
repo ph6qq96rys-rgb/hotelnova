@@ -3,8 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import type { WorkspaceAuth } from "../../../../../auth/workspace-auth.storage";
+import { useAppContext } from "../../../../../app/AppContext";
 import { systemAdminApi } from "../api/systemAdminApi";
-import type { CompanyListItemDto } from "../types/systemAdmin.types";
+import type {
+  CompanyListItemDto,
+  SwitchTenantWorkspaceDto,
+} from "../types/systemAdmin.types";
 
 const DEFAULT_PAGE_SIZE = 25;
 
@@ -58,33 +63,80 @@ function companyDisplayName(company: CompanyListItemDto): string {
   return company.tradeName?.trim() || company.legalName || "Company";
 }
 
-function persistCompanyContext(context: {
-  companyId: string;
-  companyName: string;
-  tenantSlug?: string | null;
-}) {
-  localStorage.setItem("companyId", context.companyId);
-  localStorage.setItem("companyName", context.companyName);
+function clean(value: unknown): string | null {
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : null;
+}
 
-  if (context.tenantSlug) {
-    localStorage.setItem("tenantSlug", context.tenantSlug);
-  } else {
-    localStorage.removeItem("tenantSlug");
+function normalizeTenantSlug(value: unknown): string | null {
+  return clean(value)?.toLowerCase() ?? null;
+}
+
+function resolveAccessToken(response: SwitchTenantWorkspaceDto): string {
+  const accessToken =
+    clean(response.accessToken) ??
+    clean(response.token);
+
+  if (!accessToken) {
+    throw new Error("The workspace switch did not return an access token.");
   }
 
-  window.dispatchEvent(
-    new CustomEvent("company:changed", {
-      detail: {
-        companyId: context.companyId,
-        companyName: context.companyName,
-        tenantSlug: context.tenantSlug ?? null,
-      },
-    })
-  );
+  return accessToken;
+}
+
+function toWorkspaceAuth(
+  response: SwitchTenantWorkspaceDto,
+  fallback: {
+    companyId: string;
+    companyName: string;
+    tenantSlug: string;
+  }
+): WorkspaceAuth {
+  const companyId =
+    clean(response.companyId) ?? clean(fallback.companyId);
+  const companyName =
+    clean(response.companyName) ??
+    clean(fallback.companyName) ??
+    "Tenant workspace";
+  const tenantSlug =
+    normalizeTenantSlug(response.tenantSlug) ??
+    normalizeTenantSlug(fallback.tenantSlug);
+  const expiresAt = clean(response.expiresAtUtc);
+
+  if (!companyId) {
+    throw new Error("The workspace switch did not return a company ID.");
+  }
+
+  if (!tenantSlug) {
+    throw new Error("The workspace switch did not return a tenant slug.");
+  }
+
+  if (!expiresAt) {
+    throw new Error("The workspace switch did not return a token expiry.");
+  }
+
+  return {
+    accessToken: resolveAccessToken(response),
+    refreshToken: clean(response.refreshToken),
+    expiresAt,
+    companyId,
+    companyName,
+    tenantSlug,
+    branchId: clean(response.branchId),
+    branchName: clean(response.branchName),
+    roles: Array.isArray(response.roles)
+      ? response.roles.filter(Boolean).map(String)
+      : [],
+    permissions: Array.isArray(response.permissions)
+      ? response.permissions.filter(Boolean).map(String)
+      : [],
+  };
 }
 
 export default function SystemAdminCompaniesPage() {
   const navigate = useNavigate();
+  const { setWorkspace } = useAppContext();
 
   const [pageState, setPageState] = useState<PageState>(() => emptyPage());
   const [busy, setBusy] = useState(false);
@@ -160,14 +212,30 @@ export default function SystemAdminCompaniesPage() {
       const companyId = context.companyId || company.id;
       const companyName =
         context.companyName || companyDisplayName(company);
+      const tenantSlug =
+        normalizeTenantSlug(context.tenantSlug) ??
+        normalizeTenantSlug(company.tenantSlug);
 
-      persistCompanyContext({
+      if (!tenantSlug) {
+        throw new Error(
+          "This company is missing its tenant workspace slug."
+        );
+      }
+
+      const delegatedAuth =
+        await systemAdminApi.switchTenantWorkspace(tenantSlug);
+
+      const workspaceAuth = toWorkspaceAuth(delegatedAuth, {
         companyId,
         companyName,
-        tenantSlug: context.tenantSlug,
+        tenantSlug,
       });
 
-      navigate(`/companies/${companyId}/dashboard`, { replace: true });
+      setWorkspace(workspaceAuth);
+
+      navigate(`/companies/${workspaceAuth.companyId}/dashboard`, {
+        replace: true,
+      });
     } catch (err) {
       setError(extractError(err, "Failed to switch company context."));
     } finally {
@@ -207,7 +275,7 @@ export default function SystemAdminCompaniesPage() {
           disabled={busy}
           onClick={() => void load()}
         >
-          {busy ? "Refreshing…" : "Refresh"}
+          {busy ? "Refreshing..." : "Refresh"}
         </button>
       </div>
 
@@ -273,7 +341,7 @@ export default function SystemAdminCompaniesPage() {
             <tbody>
               {busy ? (
                 <tr>
-                  <td colSpan={7}>Loading company workspaces…</td>
+                  <td colSpan={7}>Loading company workspaces...</td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
@@ -285,13 +353,13 @@ export default function SystemAdminCompaniesPage() {
                     <td>
                       <strong>{company.legalName}</strong>
                       <div style={{ fontSize: 12, opacity: 0.7 }}>
-                        {company.id}
+                        {company.tradeName || company.legalName}
                       </div>
                     </td>
 
-                    <td>{company.tradeName || "—"}</td>
-                    <td>{company.defaultCurrency || "—"}</td>
-                    <td>{company.timezone || "—"}</td>
+                    <td>{company.tradeName || "-"}</td>
+                    <td>{company.defaultCurrency || "-"}</td>
+                    <td>{company.timezone || "-"}</td>
 
                     <td>
                       <span className={statusClass(company)}>
@@ -311,7 +379,7 @@ export default function SystemAdminCompaniesPage() {
                         onClick={() => void handleOpenWorkspace(company)}
                       >
                         {switchingId === company.id
-                          ? "Opening…"
+                          ? "Opening..."
                           : "Open workspace"}
                       </button>
                     </td>

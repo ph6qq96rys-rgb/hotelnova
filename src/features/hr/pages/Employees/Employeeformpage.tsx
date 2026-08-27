@@ -6,14 +6,19 @@ import { useParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
-import { branchApi, employeeApi, orgStructureApi } from "../../api/hrApi";
+import {
+  branchApi,
+  employeeApi,
+  orgStructureApi,
+  type EmployeeManagerLookupDto,
+} from "../../api/hrApi";
 import type {
   DepartmentDto,
   EmployeeDetailDto,
   EmploymentStatus,
   PositionDto,
 } from "../../types/index";
-import { fmtDate, getApiError } from "../../utils/hrUtils";
+import { getApiError } from "../../utils/hrUtils";
 
 import styles from "./EmployeeFormPage.module.css";
 
@@ -33,6 +38,9 @@ type EmployeeDetailWithOptionalFields = EmployeeDetailDto & {
   businessLicenseNumber?: NullableString;
   vatNumber?: NullableString;
   pensionId?: NullableString;
+  bankName?: NullableString;
+  bankAccountNo?: NullableString;
+  bankBranch?: NullableString;
 };
 
 interface BranchDto {
@@ -61,6 +69,9 @@ interface EmployeeFormValues {
   hireDate: string;
   employmentType: string;
   payFrequency: string;
+  bankName: string;
+  bankAccountNo: string;
+  bankBranch: string;
   workEmail: string;
   status: EmploymentStatus;
   basicSalary: number | "";
@@ -92,6 +103,9 @@ const EMPTY: EmployeeFormValues = {
   hireDate: todayIso(),
   employmentType: "FullTime",
   payFrequency: "Monthly",
+  bankName: "",
+  bankAccountNo: "",
+  bankBranch: "",
   workEmail: "",
   status: "Probation",
   basicSalary: "",
@@ -172,6 +186,22 @@ function parseIsoDate(value: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function toDateInputValue(value?: string | null): string {
+  if (!value) return "";
+
+  const trimmed = value.trim();
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+  if (isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+
+  const slashDate = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (slashDate) return `${slashDate[3]}-${slashDate[2]}-${slashDate[1]}`;
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  return parsed.toISOString().slice(0, 10);
+}
+
 function ageOn(dateOfBirth: string, onDate = new Date()): number | null {
   const dob = parseIsoDate(dateOfBirth);
   if (!dob) return null;
@@ -224,16 +254,17 @@ function validate(values: EmployeeFormValues): FieldErrors {
 function fromDto(dto: EmployeeDetailDto): EmployeeFormValues {
   const source = dto as EmployeeDetailWithOptionalFields;
   const names = dto.fullName?.split(" ").filter(Boolean) ?? [];
+  const hasNameParts = Boolean(dto.firstName || dto.fatherName || dto.grandFatherName);
   return {
     ...EMPTY,
     branchId: source.branchId ?? "",
-    firstName: names[0] ?? "",
-    fatherName: names[1] ?? "",
-    grandFatherName: names.slice(2).join(" "),
+    firstName: hasNameParts ? dto.firstName ?? "" : names[0] ?? "",
+    fatherName: hasNameParts ? dto.fatherName ?? "" : names[1] ?? "",
+    grandFatherName: hasNameParts ? dto.grandFatherName ?? "" : names.slice(2).join(" "),
     gender: dto.gender ?? EMPTY.gender,
-    dateOfBirth: dto.dateOfBirth ? fmtDate(dto.dateOfBirth) : "",
+    dateOfBirth: toDateInputValue(dto.dateOfBirth),
     phoneNumber: dto.phoneNumber ?? "",
-    tinNumber: source.tinNumber ?? source.tin ?? "",
+    tinNumber: source.tinNumber ?? source.tin ?? dto.taxId ?? "",
     nationalId: source.nationalId ?? "",
     businessLicenseNo: source.businessLicenseNo ?? source.businessLicenceNo ?? source.businessLicenseNumber ?? "",
     vatNumber: source.vatNumber ?? "",
@@ -241,13 +272,24 @@ function fromDto(dto: EmployeeDetailDto): EmployeeFormValues {
     departmentId: source.departmentId ?? "",
     positionId: source.positionId ?? "",
     managerId: source.managerId ?? "",
-    hireDate: dto.hireDate ? fmtDate(dto.hireDate) : EMPTY.hireDate,
+    hireDate: toDateInputValue(dto.hireDate) || EMPTY.hireDate,
     employmentType: dto.employmentType ?? EMPTY.employmentType,
     payFrequency: source.payFrequency ?? EMPTY.payFrequency,
+    bankName: source.bankName ?? "",
+    bankAccountNo: source.bankAccountNo ?? "",
+    bankBranch: source.bankBranch ?? "",
     workEmail: dto.workEmail ?? "",
     status: dto.status ?? EMPTY.status,
     basicSalary: dto.basicSalary ?? "",
   };
+}
+
+function managerName(manager: EmployeeManagerLookupDto): string {
+  return manager.name ?? manager.fullName ?? "Unnamed manager";
+}
+
+function managerEmployeeNo(manager: EmployeeManagerLookupDto): string | null {
+  return manager.employeeNo ?? manager.employeeCode ?? null;
 }
 
 function getFullName(values: EmployeeFormValues): string {
@@ -287,7 +329,7 @@ function Field({
       <label className={`${styles.label} ${error ? styles.labelError : ""}`}>
         {label}
         {required ? <span className={styles.required}>*</span> : null}
-        {hint && !error ? <span className={styles.hint}>— {hint}</span> : null}
+        {hint && !error ? <span className={styles.hint}>- {hint}</span> : null}
       </label>
       {children}
       {error ? (
@@ -304,7 +346,7 @@ function DetailRow({ label, value, warn }: { label: string; value: React.ReactNo
   return (
     <div className={styles.detailRow}>
       <span>{label}</span>
-      <strong className={warn ? styles.warnText : ""}>{value || "—"}</strong>
+      <strong className={warn ? styles.warnText : ""}>{value || "-"}</strong>
     </div>
   );
 }
@@ -327,13 +369,22 @@ export default function EmployeeFormPage() {
   const [branches, setBranches] = useState<BranchDto[]>([]);
   const [departments, setDepartments] = useState<DepartmentDto[]>([]);
   const [positions, setPositions] = useState<PositionDto[]>([]);
+  const [managers, setManagers] = useState<EmployeeManagerLookupDto[]>([]);
 
   const branchOptions = useMemo(() => ensureArray<BranchDto>(branches).filter((b) => b?.id && b.isActive !== false).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")), [branches]);
   const departmentOptions = useMemo(() => ensureArray<DepartmentDto>(departments).sort((a, b) => a.name.localeCompare(b.name)), [departments]);
   const positionOptions = useMemo(() => ensureArray<PositionDto>(positions).sort((a, b) => String(a.title ?? "").localeCompare(String(b.title ?? ""))), [positions]);
+  const managerOptions = useMemo(
+    () =>
+      ensureArray<EmployeeManagerLookupDto>(managers)
+        .filter((manager) => manager?.id && manager.id !== employeeId)
+        .sort((a, b) => managerName(a).localeCompare(managerName(b))),
+    [employeeId, managers]
+  );
   const selectedBranch = useMemo(() => branchOptions.find((x) => x.id === values.branchId), [branchOptions, values.branchId]);
   const selectedDepartment = useMemo(() => departmentOptions.find((x) => x.id === values.departmentId), [departmentOptions, values.departmentId]);
   const selectedPosition = useMemo(() => positionOptions.find((x) => x.id === values.positionId), [positionOptions, values.positionId]);
+  const selectedManager = useMemo(() => managerOptions.find((x) => x.id === values.managerId), [managerOptions, values.managerId]);
   const fullName = getFullName(values);
 
   const validationBySection = useMemo(() => {
@@ -398,6 +449,12 @@ export default function EmployeeFormPage() {
         if (cancelled) return;
         setBranches(ensureArray<BranchDto>(branchList));
         setDepartments(ensureArray<DepartmentDto>(departmentList));
+        const lookupResponse = await employeeApi.registrationLookups(companyId, {
+          includeManagers: true,
+          pageSize: 200,
+        });
+        if (cancelled) return;
+        setManagers(lookupResponse.managers ?? []);
         if (dto) {
           const formValues = fromDto(dto);
           setValues(formValues);
@@ -499,7 +556,9 @@ export default function EmployeeFormPage() {
       gender: values.gender || null,
       dateOfBirth: values.dateOfBirth || null,
       phoneNumber: cleanText(values.phoneNumber),
+      tin: cleanText(values.tinNumber),
       tinNumber: cleanText(values.tinNumber),
+      taxId: cleanText(values.tinNumber),
       nationalId: cleanText(values.nationalId),
       businessLicenseNo: cleanText(values.businessLicenseNo),
       vatNumber: cleanText(values.vatNumber),
@@ -520,15 +579,14 @@ export default function EmployeeFormPage() {
     const compensationPayload = {
       basicSalary: salary,
       payFrequency: values.payFrequency,
+      bankName: cleanText(values.bankName),
+      bankAccountNo: cleanText(values.bankAccountNo),
+      bankBranch: cleanText(values.bankBranch),
     };
 
     try {
       if (isEdit && employeeId) {
-        await Promise.all([
-          employeeApi.updatePersonalInfo(companyId, employeeId, personalPayload),
-          employeeApi.updateEmployment(companyId, employeeId, employmentPayload),
-          employeeApi.updateCompensation(companyId, employeeId, compensationPayload),
-        ]);
+        await employeeApi.updateRegistration(companyId, employeeId, { ...personalPayload, ...employmentPayload, ...compensationPayload });
         erpNav(`hr/employees/${employeeId}`, { replace: true });
         return;
       }
@@ -659,10 +717,19 @@ export default function EmployeeFormPage() {
               <section className={styles.panel}>
                 <header className={styles.panelHeader}><h2>Organization Assignment</h2><p>Branch, department, position, reporting, and employment lifecycle.</p></header>
                 <div className={styles.formGrid3}>
-                  <Field label="Branch" required error={fieldErrs.branchId} fieldKey="branchId"><select className={selectClass("branchId")} value={values.branchId} onChange={(e) => void handleBranchChange(e.target.value)}><option value="">— Select branch —</option>{branchOptions.map((b) => <option key={b.id} value={b.id}>{b.code ? `${b.name} (${b.code})` : b.name}</option>)}</select></Field>
-                  <Field label="Department" required error={fieldErrs.departmentId} fieldKey="departmentId"><select className={selectClass("departmentId")} value={values.departmentId} onChange={(e) => void handleDepartmentChange(e.target.value)}><option value="">— Select department —</option>{departmentOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
-                  <Field label="Position" required error={fieldErrs.positionId} hint={!values.departmentId ? "select department first" : undefined} fieldKey="positionId"><select className={selectClass("positionId")} value={values.positionId} disabled={!values.departmentId} onChange={(e) => set("positionId", e.target.value)}><option value="">{values.departmentId ? "— Select position —" : "Select department first"}</option>{positionOptions.map((p) => <option key={p.id} value={p.id}>{p.title}{(p as any).level ? ` · ${(p as any).level}` : ""}</option>)}</select></Field>
-                  <Field label="Manager ID" hint="optional" fieldKey="managerId"><input className={inputClass("managerId")} value={values.managerId} onChange={(e) => set("managerId", e.target.value)} /></Field>
+                  <Field label="Branch" required error={fieldErrs.branchId} fieldKey="branchId"><select className={selectClass("branchId")} value={values.branchId} onChange={(e) => void handleBranchChange(e.target.value)}><option value="">- Select branch -</option>{branchOptions.map((b) => <option key={b.id} value={b.id}>{b.code ? `${b.name} (${b.code})` : b.name}</option>)}</select></Field>
+                  <Field label="Department" required error={fieldErrs.departmentId} fieldKey="departmentId"><select className={selectClass("departmentId")} value={values.departmentId} onChange={(e) => void handleDepartmentChange(e.target.value)}><option value="">- Select department -</option>{departmentOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+                  <Field label="Position" required error={fieldErrs.positionId} hint={!values.departmentId ? "select department first" : undefined} fieldKey="positionId"><select className={selectClass("positionId")} value={values.positionId} disabled={!values.departmentId} onChange={(e) => set("positionId", e.target.value)}><option value="">{values.departmentId ? "- Select position -" : "Select department first"}</option>{positionOptions.map((p) => <option key={p.id} value={p.id}>{p.title}{(p as any).level ? ` - ${(p as any).level}` : ""}</option>)}</select></Field>
+                  <Field label="Reporting manager" hint="optional" fieldKey="managerId">
+                    <select className={selectClass("managerId")} value={values.managerId} onChange={(e) => set("managerId", e.target.value)}>
+                      <option value="">No reporting manager</option>
+                      {managerOptions.map((manager) => (
+                        <option key={manager.id} value={manager.id}>
+                          {[managerEmployeeNo(manager), managerName(manager), manager.departmentName].filter(Boolean).join(" - ")}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
                   <Field label="Hire date" required error={fieldErrs.hireDate} fieldKey="hireDate"><input type="date" className={inputClass("hireDate")} value={values.hireDate} onChange={(e) => set("hireDate", e.target.value)} /></Field>
                   <Field label="Employment type" required error={fieldErrs.employmentType} fieldKey="employmentType"><select className={selectClass("employmentType")} value={values.employmentType} onChange={(e) => set("employmentType", e.target.value)}>{EMPLOYMENT_TYPES.map((x) => <option key={x} value={x}>{labelize(x)}</option>)}</select></Field>
                   <Field label="Employment status" required error={fieldErrs.status} fieldKey="status" className={styles.span3}><div className={styles.statusRow}>{STATUS_OPTIONS.map((x) => <button key={x} type="button" className={`${styles.statusPill} ${values.status === x ? styles.statusPillActive : ""}`} onClick={() => set("status", x)}>{labelize(x)}</button>)}</div></Field>
@@ -672,10 +739,13 @@ export default function EmployeeFormPage() {
 
             {activeSection === "payroll" ? (
               <section className={styles.panel}>
-                <header className={styles.panelHeader}><h2>Payroll Profile</h2><p>Salary and payroll control attributes. API payload remains unchanged.</p></header>
+                <header className={styles.panelHeader}><h2>Payroll Profile</h2><p>Salary, payment account, and payroll control attributes.</p></header>
                 <div className={styles.formGrid2}>
                   <Field label="Basic salary" required error={fieldErrs.basicSalary} fieldKey="basicSalary"><div className={styles.moneyWrap}><span>ETB</span><input type="number" min={0} step={0.01} className={inputClass("basicSalary")} value={values.basicSalary} onChange={(e) => set("basicSalary", e.target.value === "" ? "" : Number(e.target.value))} /></div></Field>
                   <Field label="Pay frequency" required error={fieldErrs.payFrequency} fieldKey="payFrequency"><select className={selectClass("payFrequency")} value={values.payFrequency} onChange={(e) => set("payFrequency", e.target.value)}>{PAY_FREQUENCIES.map((x) => <option key={x} value={x}>{labelize(x)}</option>)}</select></Field>
+                  <Field label="Bank name" hint="optional" fieldKey="bankName"><input className={inputClass("bankName")} value={values.bankName} onChange={(e) => set("bankName", e.target.value)} /></Field>
+                  <Field label="Bank account no." hint="optional" fieldKey="bankAccountNo"><input className={inputClass("bankAccountNo")} value={values.bankAccountNo} onChange={(e) => set("bankAccountNo", e.target.value)} /></Field>
+                  <Field label="Bank branch" hint="optional" fieldKey="bankBranch"><input className={inputClass("bankBranch")} value={values.bankBranch} onChange={(e) => set("bankBranch", e.target.value)} /></Field>
                 </div>
               </section>
             ) : null}
@@ -712,7 +782,7 @@ export default function EmployeeFormPage() {
 
                 {activeSection === "review" ? (
                   <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={saving}>
-                    {saving ? "Submitting…" : isEdit ? "Submit Changes" : "Submit Employee"}
+                    {saving ? "Submitting..." : isEdit ? "Submit Changes" : "Submit Employee"}
                   </button>
                 ) : (
                   <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={saving} onClick={goToNextSection}>
@@ -733,6 +803,7 @@ export default function EmployeeFormPage() {
             <DetailRow label="Branch" value={selectedBranch?.name || "Required"} warn={!selectedBranch} />
             <DetailRow label="Department" value={selectedDepartment?.name || "Required"} warn={!selectedDepartment} />
             <DetailRow label="Position" value={selectedPosition?.title || "Required"} warn={!selectedPosition} />
+            <DetailRow label="Manager" value={selectedManager ? `${managerEmployeeNo(selectedManager) ? `${managerEmployeeNo(selectedManager)} - ` : ""}${managerName(selectedManager)}` : "No manager assigned"} />
             <DetailRow label="Payroll" value={values.basicSalary !== "" ? `${values.basicSalary} / ${labelize(values.payFrequency)}` : "Required"} warn={values.basicSalary === ""} />
           </section>
           <section className={styles.sideCard}>

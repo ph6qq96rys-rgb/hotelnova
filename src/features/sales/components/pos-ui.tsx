@@ -1,4 +1,5 @@
 import type React from "react";
+import { toUserFriendlyError } from "../../../shared/errors/errorMessage.utils";
 import { PAYMENT_STATUS, SALE_STATUS } from "../api/salesTypes";
 
 export const money = (n: number | null | undefined) =>
@@ -12,15 +13,10 @@ export const number = (n: number | null | undefined) =>
   new Intl.NumberFormat().format(Number(n ?? 0));
 
 export const dateTime = (value?: string | null) =>
-  value ? new Date(value).toLocaleString() : "—";
+  value ? new Date(value).toLocaleString() : "-";
 
 export function extractApiError(e: unknown, fallback = "Request failed.") {
-  const err = e as any;
-  const data = err?.response?.data;
-  if (typeof data === "string") return data;
-  if (typeof data?.error === "string") return data.error;
-  if (typeof data?.message === "string") return data.message;
-  return err?.message ?? fallback;
+  return toUserFriendlyError(e, fallback);
 }
 
 export function Button({
@@ -101,7 +97,7 @@ export function Modal({
       <div className="pos-modal" style={{ maxWidth: width }}>
         <header className="pos-modal__header">
           <strong>{title}</strong>
-          <button type="button" onClick={onClose}>×</button>
+          <button type="button" onClick={onClose}></button>
         </header>
         <div className="pos-modal__body">{children}</div>
       </div>

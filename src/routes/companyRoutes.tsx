@@ -1,4 +1,4 @@
-﻿// src/routes/companyRoutes.tsx
+// src/routes/companyRoutes.tsx
 // Guarded ERP company routes.
 
 import RequirePermission from "../auth/RequirePermission";
@@ -7,7 +7,6 @@ import RequireErpRole from "../auth/RequireErpRole";
 import OrgLocationsPage from "../features/org/pages/OrgLocationsPage";
 import CompanyOnboardingModule from "../features/company/onboarding/CompanyOnboardingModule";
 import CompanySettingsPage from "../features/company/onboarding/CompanySettingsPage";
-import BranchOnboardingWizardPage from "../features/company/onboarding/BranchOnboardingWizardPage";
 
 export const companyRoutes = [
   {
@@ -28,19 +27,9 @@ export const companyRoutes = [
       </RequireErpRole>
     ),
     label: "Company Settings",
-    nav: true,
+    nav: false,
     section: "Administration",
-  },
-  {
-    path: "branch-onboarding",
-    element: (
-      <RequireErpRole roles={["CompanyAdmin"]}>
-        <BranchOnboardingWizardPage />
-      </RequireErpRole>
-    ),
-    label: "Branch Onboarding",
-    nav: true,
-    section: "Setup",
+    permissions: ["settings.view"],
   },
   {
     path: "organizations",
@@ -54,5 +43,6 @@ export const companyRoutes = [
     label: "Organization Structure",
     nav: true,
     section: "Administration",
+    permissions: ["companies.update"],
   },
 ];

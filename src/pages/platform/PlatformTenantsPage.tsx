@@ -1,11 +1,21 @@
 // src/features/platform/PlatformTenantsPage.tsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  ArrowRight,
+  Building2,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
 
 import { http } from "../../api/http";
 import type { WorkspaceAuth } from "../../auth/workspace-auth.storage";
 import { useAppContext } from "../../app/AppContext";
+
+import "../../styles/platform-tenants.css";
 
 type TenantDto = {
   companyId: string;
@@ -170,70 +180,86 @@ export default function PlatformTenantsPage() {
     useState<TenantDto[]>([]);
   const [error, setError] =
     useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    const controller = new AbortController();
+  async function loadTenants(active?: () => boolean): Promise<void> {
+    try {
+      setLoading(true);
+      setError(null);
 
-    async function loadTenants(): Promise<void> {
-      try {
-        setLoading(true);
-        setError(null);
+      const response = await http.get<TenantDto[]>(
+        "/platform/tenants",
+      );
 
-        const response = await http.get<TenantDto[]>(
-          "/platform/tenants",
-          {
-            signal: controller.signal,
-          },
-        );
+      if (active && !active()) {
+        return;
+      }
 
-        if (controller.signal.aborted) {
-          return;
-        }
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : [];
 
-        const rows = Array.isArray(response.data)
-          ? response.data
-          : [];
-
-        setTenants(
-          rows.filter(
-            (tenant) =>
-              Boolean(clean(tenant.companyId)) &&
-              Boolean(
-                normalizeTenantSlug(
-                  tenant.tenantSlug,
-                ),
+      setTenants(
+        rows.filter(
+          (tenant) =>
+            Boolean(clean(tenant.companyId)) &&
+            Boolean(
+              normalizeTenantSlug(
+                tenant.tenantSlug,
               ),
-          ),
-        );
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return;
-        }
+            ),
+        ),
+      );
+    } catch (error) {
+      if (active && !active()) {
+        return;
+      }
 
-        console.error(
-          "Failed to load tenant workspaces",
+      console.error(
+        "Failed to load tenant workspaces",
+        error,
+      );
+
+      setError(
+        getErrorMessage(
           error,
-        );
-
-        setError(
-          getErrorMessage(
-            error,
-            "Failed to load tenant workspaces.",
-          ),
-        );
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
+          "Failed to load tenant workspaces.",
+        ),
+      );
+    } finally {
+      if (!active || active()) {
+        setLoading(false);
       }
     }
+  }
 
-    void loadTenants();
+  useEffect(() => {
+    let active = true;
+
+    void loadTenants(() => active);
 
     return () => {
-      controller.abort();
+      active = false;
     };
   }, []);
+
+  const filteredTenants = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+
+    if (!needle) {
+      return tenants;
+    }
+
+    return tenants.filter((tenant) => {
+      return [
+        tenant.name,
+        tenant.tenantSlug,
+        tenant.companyId,
+      ].some((value) =>
+        value?.toLowerCase().includes(needle),
+      );
+    });
+  }, [query, tenants]);
 
   async function openWorkspace(
     tenant: TenantDto,
@@ -319,53 +345,105 @@ export default function PlatformTenantsPage() {
     }
   }
 
-  return (
-    <div
-      style={{
-        width: "100%",
-        maxWidth: 1200,
-        margin: "0 auto",
-        padding: 24,
-      }}
-    >
-      <header style={{ marginBottom: 24 }}>
-        <h1 style={{ marginBottom: 8 }}>
-          Platform Tenant Management
-        </h1>
+  function startNewTenant(): void {
+    navigate("/companies/onboarding", {
+      replace: false,
+    });
+  }
 
-        <p style={{ margin: 0, opacity: 0.72 }}>
-          Select a tenant workspace to administer.
-        </p>
+  return (
+    <div className="platform-tenants-page">
+      <header className="platform-tenants-hero">
+        <div>
+          <p className="platform-tenants-eyebrow">
+            Platform administration
+          </p>
+
+          <h1>Tenant workspaces</h1>
+
+          <p>
+            Select an active tenant to enter its ERP workspace with delegated
+            system-administrator access.
+          </p>
+        </div>
+
+        <div className="platform-tenants-actions">
+          <button
+            type="button"
+            className="platform-tenants-primary"
+            onClick={startNewTenant}
+          >
+            <Plus size={16} aria-hidden="true" />
+            New tenant
+          </button>
+
+          <button
+            type="button"
+            className="platform-tenants-refresh"
+            onClick={() => void loadTenants()}
+            disabled={loading}
+          >
+            <RefreshCw size={16} aria-hidden="true" />
+            Refresh
+          </button>
+        </div>
       </header>
 
       {error && (
         <div
           role="alert"
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            border: "1px solid #dc2626",
-            borderRadius: 8,
-            background: "#fef2f2",
-            color: "#991b1b",
-          }}
+          className="platform-tenants-alert"
         >
           {error}
         </div>
       )}
 
+      <section className="platform-tenants-metrics" aria-label="Tenant summary">
+        <article>
+          <span>Total tenants</span>
+          <strong>{tenants.length}</strong>
+          <small>active registry entries</small>
+        </article>
+
+        <article>
+          <span>Available now</span>
+          <strong>{filteredTenants.length}</strong>
+          <small>matching current filter</small>
+        </article>
+
+        <article>
+          <span>Access scope</span>
+          <strong>System</strong>
+          <small>tenant switch requires SystemAdmin</small>
+        </article>
+      </section>
+
+      <section className="platform-tenants-toolbar">
+        <label className="platform-tenants-search">
+          <Search size={18} aria-hidden="true" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search tenant, workspace, or company id"
+          />
+        </label>
+      </section>
+
       {loading ? (
-        <div>Loading tenants...</div>
+        <div className="platform-tenants-state">
+          Loading tenant registry...
+        </div>
       ) : tenants.length === 0 ? (
-        <div>No active tenants found.</div>
+        <div className="platform-tenants-state">
+          No active tenants found.
+        </div>
+      ) : filteredTenants.length === 0 ? (
+        <div className="platform-tenants-state">
+          No tenants match this search.
+        </div>
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gap: 16,
-          }}
-        >
-          {tenants.map((tenant) => {
+        <div className="platform-tenants-grid">
+          {filteredTenants.map((tenant) => {
             const normalizedSlug =
               normalizeTenantSlug(
                 tenant.tenantSlug,
@@ -377,46 +455,32 @@ export default function PlatformTenantsPage() {
             return (
               <article
                 key={tenant.companyId}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent:
-                    "space-between",
-                  gap: 16,
-                  padding: 20,
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
-                  background: "#ffffff",
-                }}
+                className="platform-tenant-card"
               >
-                <div style={{ minWidth: 0 }}>
-                  <h2
-                    style={{
-                      margin: 0,
-                      fontSize: 18,
-                    }}
-                  >
-                    {tenant.name}
-                  </h2>
-
-                  <div
-                    style={{
-                      marginTop: 4,
-                      opacity: 0.7,
-                    }}
-                  >
-                    {tenant.tenantSlug}
+                <div className="platform-tenant-card__main">
+                  <div className="platform-tenant-card__icon">
+                    <Building2 size={20} aria-hidden="true" />
                   </div>
 
-                  <div
-                    style={{
-                      marginTop: 4,
-                      opacity: 0.52,
-                      fontSize: 12,
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    Company ID: {tenant.companyId}
+                  <div className="platform-tenant-card__copy">
+                    <div className="platform-tenant-card__title-row">
+                      <h2>{tenant.name}</h2>
+                      <span>
+                        <ShieldCheck size={14} aria-hidden="true" />
+                        Active
+                      </span>
+                    </div>
+
+                    <dl>
+                      <div>
+                        <dt>Workspace</dt>
+                        <dd>{tenant.tenantSlug}</dd>
+                      </div>
+                      <div>
+                        <dt>Registry ID</dt>
+                        <dd>{tenant.companyId}</dd>
+                      </div>
+                    </dl>
                   </div>
                 </div>
 
@@ -427,10 +491,14 @@ export default function PlatformTenantsPage() {
                   }
                   disabled={Boolean(switching)}
                   aria-busy={isOpening}
+                  className="platform-tenant-card__action"
                 >
-                  {isOpening
-                    ? "Opening..."
-                    : "Open Workspace"}
+                  <span>
+                    {isOpening
+                      ? "Opening"
+                      : "Open workspace"}
+                  </span>
+                  <ArrowRight size={16} aria-hidden="true" />
                 </button>
               </article>
             );

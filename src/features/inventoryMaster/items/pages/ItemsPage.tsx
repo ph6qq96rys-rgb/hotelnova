@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import { itemsApi } from "../api/itemsApi";
 
 type ApiError = {
@@ -63,55 +64,11 @@ function normalizeItem(row: ItemApiRow): ItemRow | null {
 }
 
 function extractApiError(error: any): ApiError {
-  const status: number | undefined = error?.response?.status;
-  const data = error?.response?.data;
-
-  if (!error?.response) {
-    const message = String(error?.message ?? "");
-    const isNetwork =
-      error?.code === "ERR_NETWORK" ||
-      error?.code === "ECONNREFUSED" ||
-      message.toLowerCase().includes("network");
-
-    return {
-      summary: isNetwork
-        ? "Cannot reach the server. Check whether the API is running."
-        : message || "An unexpected error occurred.",
-    };
-  }
-
-  const detail =
-    data?.error ?? data?.message ?? data?.title ?? data?.detail ?? data?.inner;
-
-  if (status === 400) {
-    return { summary: "Bad request. The server rejected the item query.", detail };
-  }
-
-  if (status === 401) {
-    return { summary: "Unauthorized. Please sign in again.", detail };
-  }
-
-  if (status === 403) {
-    return {
-      summary: "Access denied. Your user may not have item permission.",
-      detail,
-    };
-  }
-
-  if (status === 404) {
-    return { summary: "Items endpoint not found. Check the API route.", detail };
-  }
-
-  if (status === 429) {
-    return { summary: "Too many requests. Please wait and try again.", detail };
-  }
-
-  if (status != null && status >= 500) {
-    return { summary: `Server error (${status}). Check API logs.`, detail };
-  }
-
   return {
-    summary: detail ?? error?.message ?? "Failed to load items.",
+    summary: toUserFriendlyError(
+      error,
+      "Inventory items could not be loaded. Please try again."
+    ),
   };
 }
 
@@ -225,12 +182,12 @@ export default function ItemsPage() {
   }, [items]);
 
   const rightStatus = isLoading
-    ? "Loading…"
+    ? "Loading..."
     : error
-    ? `Failed · ${new Date().toLocaleTimeString()}`
+    ? `Failed - ${new Date().toLocaleTimeString()}`
     : lastLoadedAt
     ? `Updated ${lastLoadedAt.toLocaleTimeString()}`
-    : "—";
+    : "-";
 
   if (!companyId || !paths) {
     return (
@@ -304,7 +261,7 @@ export default function ItemsPage() {
             <label style={labelStyle}>Search</label>
             <input
               style={inputStyle}
-              placeholder="Search items…"
+              placeholder="Search items..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -498,8 +455,7 @@ function ErrorBanner({ error, onRetry }: { error: ApiError; onRetry: () => void 
           style={{
             opacity: 0.8,
             marginTop: 4,
-            fontFamily: "monospace",
-            fontSize: 11.5,
+            fontSize: 13,
             wordBreak: "break-word",
           }}
         >
@@ -540,7 +496,7 @@ function ItemTableRow({
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 800, color: "#0f172a" }}>{item.name}</div>
             <div style={{ fontSize: 12, opacity: 0.7 }}>
-              {item.category !== "-" ? item.category : "No category"} •{" "}
+              {item.category !== "-" ? item.category : "No category"} -{" "}
               {item.baseUom !== "-" ? `Base: ${item.baseUom}` : "No base UOM"}
             </div>
           </div>
@@ -657,7 +613,7 @@ function EmptyState({
 }) {
   return (
     <div style={{ padding: "22px 10px", textAlign: "center" }}>
-      <div style={{ fontSize: 34 }}>📦</div>
+      <div style={{ fontSize: 34 }}></div>
       <div style={{ marginTop: 10, fontSize: 14, fontWeight: 900, color: "#0f172a" }}>
         {title}
       </div>

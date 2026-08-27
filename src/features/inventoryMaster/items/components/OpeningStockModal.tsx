@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openingStockApi } from "../api/openingStockApi";
 import { http }            from "../../../../api/http";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+//  Types 
 
 interface UomOption      { id: string; code: string; name: string; }
 interface LocationLite   { id: string; name: string; }
@@ -23,7 +23,7 @@ interface Props {
   baseUomId: string;
 }
 
-// ── Error helper ──────────────────────────────────────────────────────────────
+//  Error helper 
 
 function extractError(e: unknown, fallback: string): string {
   const err  = e as any;
@@ -32,7 +32,7 @@ function extractError(e: unknown, fallback: string): string {
   return data?.message ?? err?.message ?? fallback;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+//  Component 
 
 export default function OpeningStockModal({
   open, onClose, companyId, itemId, itemName, uoms, baseUomId,
@@ -134,13 +134,13 @@ export default function OpeningStockModal({
     uomId, unitCost, asOfDate, note, onClose,
   ]);
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  //  Render 
 
   return (
     <div className="inv-modal-overlay">
       <div className="inv-modal">
 
-        {/* ── Header ── */}
+        {/*  Header  */}
         <div className="inv-modal__head">
           <div className="inv-modal__title">Add Opening Stock</div>
           <div className="inv-modal__subtitle">
@@ -151,12 +151,12 @@ export default function OpeningStockModal({
           </div>
         </div>
 
-        {/* ── Body ── */}
+        {/*  Body  */}
         <div className="inv-modal__body">
 
           {loadError && (
             <div className="inv-alert inv-alert--warn" style={{ marginBottom: 14 }}>
-              ⚠ {loadError}
+              Warning: {loadError}
             </div>
           )}
 
@@ -177,7 +177,7 @@ export default function OpeningStockModal({
                 onChange={e => setLocationId(e.target.value)}
                 disabled={saving}
               >
-                <option value="">Select location…</option>
+                <option value="">Select location...</option>
                 {locations.map(l => (
                   <option key={l.id} value={l.id}>{l.name}</option>
                 ))}
@@ -223,7 +223,7 @@ export default function OpeningStockModal({
               >
                 {uoms.map(u => (
                   <option key={u.id} value={u.id}>
-                    {u.code} — {u.name}
+                    {u.code} - {u.name}
                   </option>
                 ))}
               </select>
@@ -260,7 +260,7 @@ export default function OpeningStockModal({
           </div>
         </div>
 
-        {/* ── Footer ── */}
+        {/*  Footer  */}
         <div className="inv-modal__foot">
           <button
             className="inv-btn inv-btn--outline"
@@ -274,7 +274,7 @@ export default function OpeningStockModal({
             onClick={submit}
             disabled={!canSave || saving}
           >
-            {saving ? "Saving…" : "Post opening stock"}
+            {saving ? "Saving..." : "Post opening stock"}
           </button>
         </div>
 

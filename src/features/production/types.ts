@@ -1,11 +1,11 @@
-﻿// =============================================================================
+// =============================================================================
 // Production / Inventory shared types
 // Aligned to C# DTOs in RestaurantFNB.Application.Production.Recipes.Dtos
 // =============================================================================
 
 export type Guid = string;
 
-// ── Catalog lookups ───────────────────────────────────────────────────────────
+//  Catalog lookups 
 //
 //  Used by RecipeEditorPage, MenuItemDetailPage, and lookup fetchers.
 
@@ -31,10 +31,10 @@ export type CatalogMenuItem = {
   isActive: boolean;
 };
 
-// ── Menu items ────────────────────────────────────────────────────────────────
+//  Menu items 
 //
-//  MenuItemLite — used in dropdowns (ProductionBatchPage, RecipeEditorPage).
-//  CreateMenuItemRequest — payload for menuItemsApi.create.
+//  MenuItemLite - used in dropdowns (ProductionBatchPage, RecipeEditorPage).
+//  CreateMenuItemRequest - payload for menuItemsApi.create.
 
 export type MenuItemLite = {
   id: Guid;
@@ -51,7 +51,7 @@ export type CreateMenuItemRequest = {
   isActive: boolean;
 };
 
-// ── Stock locations ───────────────────────────────────────────────────────────
+//  Stock locations 
 
 export type LocationLite = {
   id: Guid;
@@ -59,14 +59,14 @@ export type LocationLite = {
   isActive: boolean;
 };
 
-// ── Recipe ────────────────────────────────────────────────────────────────────
+//  Recipe 
 //
-//  RecipeLineDto — shape returned by GET /production/recipes/by-menu-item/:id
-//  RecipeDto     — full recipe envelope returned by the same endpoint
+//  RecipeLineDto - shape returned by GET /production/recipes/by-menu-item/:id
+//  RecipeDto     - full recipe envelope returned by the same endpoint
 //
 //  NOTE: the line field is `qty` on the wire (RecipeLineDto.qty) but the
 //  upsert request uses `qtyPerMenuUnit` to match the C# UpsertRecipeLineRequest
-//  record. These are intentionally different — one is a read DTO, the other
+//  record. These are intentionally different - one is a read DTO, the other
 //  is a write request.
 
 export type RecipeLineDto = {
@@ -86,7 +86,7 @@ export type UpsertRecipeLineRequest = {
   id?: Guid | null;
   itemId: Guid;
   uomId: Guid;
-  qtyPerMenuUnit: number;   // matches C# QtyPerMenuUnit — NOT "qty"
+  qtyPerMenuUnit: number;   // matches C# QtyPerMenuUnit - NOT "qty"
   wastePct?: number | null;
   isActive?: boolean;
   notes?: string | null;
@@ -94,7 +94,7 @@ export type UpsertRecipeLineRequest = {
 
 
 
-// ── Recipe editor (branch-scoped get/save via recipeEditorApi) ────────────────
+//  Recipe editor (branch-scoped get/save via recipeEditorApi) 
 //
 //  Used by RecipeEditorPage and recipeEditorApi.
 
@@ -133,12 +133,12 @@ export type SaveMenuItemRecipeEditorRequest = {
   }[];
 };
 
-// ── Production batch ──────────────────────────────────────────────────────────
+//  Production batch 
 //
 //  Used by ProductionBatchPage and productionBatchesApi.
 
 // C# ProductionBatchStatus enum: Draft=2, Approved=3, Posted=4, Reversed=5.
-// Typed as number — use normaliseStatus() in components for display labels.
+// Typed as number - use normaliseStatus() in components for display labels.
 export type ProductionStatus = 2 | 3 | 4 | 5;
 
 export type ProductionLineVm = {
@@ -159,7 +159,7 @@ export type CreateProductionBatchRequest = {
   plannedQty: number;
   issueLocationId: Guid;
   outputLocationId: Guid;
-  producedAtUtc: string;   // ISO datetime — C# DateTime ProducedAtUtc
+  producedAtUtc: string;   // ISO datetime - C# DateTime ProducedAtUtc
   notes?: string | null;
 };
 
@@ -193,10 +193,11 @@ export type ApplyRecipeRequest = {
 };
 
 export type RecipeMode = "directSale" | "production";
+export type RecipeModeWire = RecipeMode | "DirectSale" | "Production" | 1 | 2;
 
 export type UpsertRecipeRequest = {
   menuItemId: string;
-  mode: RecipeMode;
+  mode: RecipeModeWire;
   notes?: string | null;
   isActive: boolean;
   outputItemId?: string | null;
@@ -215,7 +216,7 @@ export type UpsertRecipeRequest = {
 export type RecipeDto = {
   id: string;
   menuItemId: string;
-  mode: RecipeMode;
+  mode: RecipeModeWire;
   outputItemId?: string | null;
   outputUomId?: string | null;
   notes?: string | null;

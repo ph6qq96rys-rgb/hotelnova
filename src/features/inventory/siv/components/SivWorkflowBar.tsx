@@ -1,7 +1,7 @@
 // src/features/inventory/siv/components/SivWorkflowBar.tsx
 //
 // Horizontal workflow progress bar shown at the top of SivDetailsPage and
-// SivApprovalPage. Shows Draft → Submitted → Approved → Issued → Posted
+// SivApprovalPage. Shows Draft to Submitted to Approved to Issued to Posted
 // with the responsible role labelled under each step.
 
 import { WORKFLOW_TRACK, WORKFLOW_ROLES, workflowStep } from "../types/sivTypes";
@@ -69,7 +69,7 @@ export default function SivWorkflowBar({ status }: Props) {
                   flexShrink:   0,
                 }}
               >
-                {done ? "✓" : i + 1}
+                {done ? "" : i + 1}
               </div>
               <div style={{ textAlign: "center", minWidth: 70 }}>
                 <div

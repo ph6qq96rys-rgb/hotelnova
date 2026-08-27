@@ -44,6 +44,7 @@ type AttendanceQrPayload = {
 };
 
 const ATTENDANCE_SCAN_ENDPOINT = "/api/telegram/miniapp/attendance/scan";
+const ATTENDANCE_TIME_ZONE = "Africa/Addis_Ababa";
 
 const DEFAULT_MESSAGE: MessageState = {
   type: "info",
@@ -207,7 +208,7 @@ export default function TelegramAttendanceScannerPage() {
           </div>
 
           <div style={styles.heroIconWrap} aria-hidden="true">
-            <div style={styles.heroIcon}>⌗</div>
+            <div style={styles.heroIcon}></div>
           </div>
         </header>
 
@@ -219,7 +220,7 @@ export default function TelegramAttendanceScannerPage() {
             <span style={styles.cornerTopRight} />
             <span style={styles.cornerBottomLeft} />
             <span style={styles.cornerBottomRight} />
-            <span style={styles.qrGlyph}>▦</span>
+            <span style={styles.qrGlyph}></span>
           </div>
 
           <button
@@ -232,7 +233,7 @@ export default function TelegramAttendanceScannerPage() {
             }}
           >
             <span style={styles.buttonIcon} aria-hidden="true">
-              {loading ? "⏳" : "📷"}
+              {loading ? "" : ""}
             </span>
             {loading ? "Processing attendance..." : "Scan Branch QR"}
           </button>
@@ -268,7 +269,7 @@ const Notice = memo(function Notice({
     >
       <span style={styles.noticeIcon} aria-hidden="true">
         {message.type === "success"
-          ? "✓"
+          ? ""
           : message.type === "error"
             ? "!"
             : "i"}
@@ -297,7 +298,7 @@ const AttendanceResultCard = memo(function AttendanceResultCard({
           }}
           aria-hidden="true"
         >
-          {isClockOut ? "↗" : "✓"}
+          {isClockOut ? "" : ""}
         </div>
 
         <div>
@@ -456,6 +457,7 @@ function formatAttendanceTime(value?: string): string {
   return date.toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: ATTENDANCE_TIME_ZONE,
   });
 }
 

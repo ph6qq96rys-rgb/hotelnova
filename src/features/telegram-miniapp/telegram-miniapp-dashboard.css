@@ -256,6 +256,14 @@
   color: #6b7280;
 }
 
+.tg-mini-empty__diagnostic {
+  margin-top: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #9ca3af;
+  overflow-wrap: anywhere;
+}
+
 .tg-mini-primary,
 .tg-link-form button {
   width: 100%;

@@ -6,6 +6,7 @@ import type {
   CompanyListItemDto,
   PagedResult,
   SwitchCompanyContextDto,
+  SwitchTenantWorkspaceDto,
 } from "../types/systemAdmin.types";
 
 const SYSTEM_ADMIN_BASE = "/system-admin";
@@ -80,6 +81,25 @@ export const systemAdminApi = {
       .post<SwitchCompanyContextDto>(
         `${SYSTEM_ADMIN_BASE}/companies/${encodeURIComponent(
           companyId
+        )}/switch`,
+        {},
+        { signal }
+      )
+      .then(data);
+  },
+
+  switchTenantWorkspace(
+    tenantSlug: string,
+    signal?: AbortSignal
+  ): Promise<SwitchTenantWorkspaceDto> {
+    if (!tenantSlug?.trim()) {
+      return Promise.reject(new Error("Tenant workspace is required."));
+    }
+
+    return http
+      .post<SwitchTenantWorkspaceDto>(
+        `/platform/tenants/${encodeURIComponent(
+          tenantSlug.trim().toLowerCase()
         )}/switch`,
         {},
         { signal }

@@ -27,7 +27,7 @@ export function FnbReportSidebar({
     <aside className="fnb-sidebar">
       <h3>Reports</h3>
 
-      {loading ? <p className="fnb-muted">Loading reports…</p> : null}
+      {loading ? <p className="fnb-muted">Loading reports...</p> : null}
 
       {Object.entries(groupedReports).map(([category, items]) => (
         <div key={category} className="fnb-sidebar-group">

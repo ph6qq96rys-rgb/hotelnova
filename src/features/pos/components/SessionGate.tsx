@@ -45,7 +45,7 @@ function storeLabel(store: PosStoreOption): string {
   const code = store.code?.trim();
   const name = store.name?.trim();
 
-  if (code && name) return `${code} · ${name}`;
+  if (code && name) return `${code} - ${name}`;
   if (name) return name;
   if (code) return code;
   return store.id;
@@ -141,7 +141,7 @@ export function SessionGate({
           color: "#71717A",
         }}
       >
-        <Spinner /> Loading POS session…
+        <Spinner /> Loading POS session...
       </div>
     );
   }
@@ -269,11 +269,11 @@ export function SessionBanner({
 
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 14, fontWeight: 700 }}>
-          {session.terminal || "POS-1"} · {session.cashierName || "Cashier"}
+          {session.terminal || "POS-1"} - {session.cashierName || "Cashier"}
         </div>
 
         <div style={{ color: "#71717A", fontSize: 12 }}>
-          {session.storeName ? `${session.storeName} · ` : ""}
+          {session.storeName ? `${session.storeName} - ` : ""}
           Opened {new Date(session.openedAtUtc).toLocaleString()}
         </div>
       </div>

@@ -57,7 +57,7 @@ function round2(value: number): number {
 }
 
 function durationText(openedAtUtc?: string): string {
-  if (!openedAtUtc) return "—";
+  if (!openedAtUtc) return "-";
 
   const opened = new Date(openedAtUtc).getTime();
   const minutes = Math.max(0, Math.floor((Date.now() - opened) / 60000));
@@ -229,11 +229,14 @@ export function PosSessionPage() {
   }
 
   async function openSession(
+    gateStoreId: string,
     cashierName: string,
     terminal: string,
     openingFloat: string | number,
   ): Promise<void> {
-    if (!storeId) {
+    const resolvedStoreId = gateStoreId || storeId;
+
+    if (!resolvedStoreId) {
       setMessage({ tone: "error", text: "Select a POS location before starting a cashier session." });
       return;
     }
@@ -256,7 +259,7 @@ export function PosSessionPage() {
 
     try {
       await sessionState.open({
-        storeId,
+        storeId: resolvedStoreId,
         cashierName: cashierName.trim(),
         terminal: terminal.trim() || DEFAULT_TERMINAL,
         openingFloat: amount,
@@ -365,7 +368,7 @@ export function PosSessionPage() {
 
               {sessionState.session && (
                 <div className="erp-field-grid">
-                  <Field label="Cashier" value={sessionState.session.cashierName || "—"} />
+                  <Field label="Cashier" value={sessionState.session.cashierName || "-"} />
                   <Field label="Terminal" value={sessionState.session.terminal || DEFAULT_TERMINAL} />
                   <Field label="Opened At" value={new Date(sessionState.session.openedAtUtc).toLocaleString()} />
                   <Field label="Session Duration" value={durationText(sessionState.session.openedAtUtc)} />
@@ -466,7 +469,7 @@ export function PosSessionPage() {
                 </div>
                 <div className={hasVariance ? "warning" : ""}>
                   <span>Cash Difference</span>
-                  <strong>{cashVariance == null ? "—" : money(cashVariance)}</strong>
+                  <strong>{cashVariance == null ? "-" : money(cashVariance)}</strong>
                 </div>
               </div>
 
@@ -501,7 +504,7 @@ export function PosSessionPage() {
                     <Field label="Cash Sales" value={money(report.cashSales)} />
                     <Field label="Card / Other Payments" value={money(report.cardSales)} />
                     <Field label="Expected Drawer Balance" value={money(report.expectedCash)} />
-                    <Field label="System Cash Difference" value={report.cashVariance == null ? "—" : money(report.cashVariance)} />
+                    <Field label="System Cash Difference" value={report.cashVariance == null ? "-" : money(report.cashVariance)} />
                   </div>
 
                   <div className="erp-reconciliation-banner">

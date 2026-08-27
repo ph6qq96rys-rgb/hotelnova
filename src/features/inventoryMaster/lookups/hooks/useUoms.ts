@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import { lookupsApi } from "../api/lookupsApi";
 import type { UomDto } from "../types";
 
@@ -16,7 +17,10 @@ export function useUoms(companyId: string) {
     lookupsApi
       .uoms(companyId)
       .then(r => setUoms((r.data ?? []).filter(x => x.isActive)))
-      .catch(err => setError(err?.message ?? "Failed to load UoMs"))
+      .catch(err => setError(toUserFriendlyError(
+        err,
+        "Units of measure could not be loaded. Please try again."
+      )))
       .finally(() => setLoading(false));
   }, [companyId]);
 

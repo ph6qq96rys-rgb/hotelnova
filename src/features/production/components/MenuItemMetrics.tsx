@@ -1,7 +1,7 @@
 import type { MenuItemDto } from "../types";
 
 function money(value?: number | null): string {
-  if (value == null || Number.isNaN(Number(value))) return "—";
+  if (value == null || Number.isNaN(Number(value))) return "-";
 
   return Number(value).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -35,7 +35,7 @@ export default function MenuItemMetrics({ item }: { item: MenuItemDto }) {
   const marginPct =
     sellingPrice && cost != null && Number(sellingPrice) > 0
       ? `${(((Number(sellingPrice) - Number(cost)) / Number(sellingPrice)) * 100).toFixed(1)}%`
-      : "—";
+      : "-";
 
   const posReady = Boolean(
     item.isActive === true &&
@@ -50,7 +50,7 @@ export default function MenuItemMetrics({ item }: { item: MenuItemDto }) {
       <Metric label="Recipe Cost" value={money(cost)} />
       <Metric
         label="Gross Margin"
-        value={marginValue == null ? "—" : `${money(marginValue)} · ${marginPct}`}
+        value={marginValue == null ? "-" : `${money(marginValue)} - ${marginPct}`}
       />
       <Metric label="Units Sold" value={item.unitsSold ?? 0} />
       <Metric

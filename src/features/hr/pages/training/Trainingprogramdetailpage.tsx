@@ -14,7 +14,7 @@ import { getApiError } from '../../utils/hrUtils';
 function Field({ label, value }: { label: string; value?: string | number | null | boolean }) {
   const display = typeof value === 'boolean'
     ? (value ? 'Yes' : 'No')
-    : value ?? '—';
+    : value ?? '-';
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
@@ -96,7 +96,7 @@ export default function TrainingProgramDetailPage() {
     return (
       <div className="page">
         <div className="alert alert-danger">{error}</div>
-        <button className="btn" onClick={() => nav('/hr/training')}>← Back</button>
+        <button className="btn" onClick={() => nav('/hr/training')}>Back</button>
       </div>
     );
   }
@@ -110,10 +110,10 @@ export default function TrainingProgramDetailPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Training</div>
+          <div className="page-kicker">Human Resources - Training</div>
           <div className="page-title">{program.title}</div>
           <div className="page-sub">
-            {program.code} · {program.category} · {program.mode}
+            {program.code} - {program.category} - {program.mode}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -123,7 +123,7 @@ export default function TrainingProgramDetailPage() {
           <button className="btn btn-primary" onClick={() => setShowSchedule(true)}>
             + Schedule Session
           </button>
-          <button className="btn" onClick={() => nav('/hr/training')}>← Back</button>
+          <button className="btn" onClick={() => nav('/hr/training')}>Back</button>
         </div>
       </div>
 
@@ -151,7 +151,7 @@ export default function TrainingProgramDetailPage() {
               : avgCompliance >= 60  ? 'var(--warn)'
               : 'var(--danger)',
           }}>
-            {avgCompliance != null ? `${avgCompliance.toFixed(0)}%` : '—'}
+            {avgCompliance != null ? `${avgCompliance.toFixed(0)}%` : '-'}
           </div>
         </div>
         <div className="kpi">

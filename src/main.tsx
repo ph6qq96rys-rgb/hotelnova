@@ -9,7 +9,7 @@ import AppRoutes from "./routes/AppRoutes";
 
 import "./styles/global.css";
 
-// Created at module level — must NOT be inside a component or render call,
+// Created at module level - must NOT be inside a component or render call,
 // otherwise a new client is created on every render and the cache is wiped.
 const queryClient = new QueryClient({
   defaultOptions: {

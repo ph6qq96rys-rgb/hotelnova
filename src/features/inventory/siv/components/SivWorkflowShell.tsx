@@ -1,6 +1,6 @@
-﻿// src/features/inventory/siv/components/SivWorkflowShell.tsx
+// src/features/inventory/siv/components/SivWorkflowShell.tsx
 // Removed: dark-only lux-page background, hardcoded rgba colors, inline <style>
-// Now uses global.css — wrap in .page so the content area tokens apply
+// Now uses global.css - wrap in .page so the content area tokens apply
 
 import type { ReactNode } from "react";
 
@@ -18,7 +18,7 @@ export default function SivWorkflowShell({ title, subtitle, badge, actions, chil
       {/* Header */}
       <div className="page-header">
         <div>
-          <div className="page-kicker">Inventory · SIV</div>
+          <div className="page-kicker">Inventory - SIV</div>
           <div className="page-title">{title}</div>
           {subtitle && <div className="page-sub">{subtitle}</div>}
         </div>

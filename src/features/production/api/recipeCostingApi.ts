@@ -5,7 +5,7 @@
 
 import { http } from "../../../api/http";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+//  Types 
 
 export interface RecipeLineCostDto {
   lineId:          string;
@@ -31,7 +31,7 @@ export interface RecipeCostDto {
   foodCostPct:           number | null;
 }
 
-// ── API ───────────────────────────────────────────────────────────────────────
+//  API 
 
 export const recipeCostingApi = {
   /** Fetch the latest stored cost snapshot. */

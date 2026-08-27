@@ -1,4 +1,4 @@
-﻿// src/features/organization/components/CompanyForm.tsx
+// src/features/organization/components/CompanyForm.tsx
 
 import { useMemo, useState } from "react";
 import type { CompanyDto, CreateCompanyDto, UpdateCompanyDto } from "../types";
@@ -127,7 +127,7 @@ export default function CompanyForm(props: Props) {
         </button>
 
         <button type="submit" className="btn btn-primary" disabled={saving || !canSubmit}>
-          {saving ? "Saving…" : isCreate ? "Create" : "Save"}
+          {saving ? "Saving..." : isCreate ? "Create" : "Save"}
         </button>
       </div>
     </form>

@@ -81,7 +81,7 @@ export function UsersFilters({
             {key === "branchId" ? "Branch ID" : key === "storeId" ? "Store/POS ID" : "Stock location ID"}
             <input
               className="lux-input"
-              placeholder="Optional id…"
+              placeholder="Optional id..."
               value={filter[key] ?? ""}
               onChange={(event) =>
                 setFilter((current) => ({

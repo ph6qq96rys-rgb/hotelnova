@@ -1,4 +1,4 @@
-﻿// src/api/identity/identityTypes.ts
+// src/api/identity/identityTypes.ts
 
 export type PagedResult<T> = {
   items: T[];
@@ -19,16 +19,31 @@ export type UserDto = {
   email?: string | null;
 
   isActive: boolean;
+  scope?: string | null;
 
   roles?: string[];
   roleNames?: string[];
 
+  employee?: {
+    id: string;
+    employeeCode?: string | null;
+    employeeNo?: string | null;
+    fullName?: string | null;
+    phoneNumber?: string | null;
+    companyId?: string | null;
+    branchId?: string | null;
+    departmentId?: string | null;
+    departmentName?: string | null;
+  } | null;
+
   branchId?: string | null;
+  branchIds?: string[];
   branchName?: string | null;
 
   storeId?: string | null;
   storeName?: string | null;
 
+  companyEmployeeId?: string | null;
   employeeId?: string | null;
   employeeCode?: string | null;
   employeeName?: string | null;
@@ -40,6 +55,7 @@ export type UserDto = {
   defaultStockLocationId?: string | null;
   defaultStockLocationCode?: string | null;
   defaultStockLocationName?: string | null;
+  stockLocationIds?: string[];
 
   allowedStockLocationIds?: string[];
 
@@ -73,11 +89,15 @@ export type CreateUserRequest = {
   roles?: string[];
   roleNames?: string[];
 
+  scope?: string | null;
   branchId?: string | null;
+  branchIds?: string[];
   storeId?: string | null;
 
+  companyEmployeeId?: string | null;
   employeeId?: string | null;
   stockLocationId?: string | null;
+  stockLocationIds?: string[];
   allowedStockLocationIds?: string[];
 
   isActive?: boolean;
@@ -100,11 +120,15 @@ export type UpdateUserRequest = {
   roles?: string[];
   roleNames?: string[];
 
+  scope?: string | null;
   branchId?: string | null;
+  branchIds?: string[];
   storeId?: string | null;
 
+  companyEmployeeId?: string | null;
   employeeId?: string | null;
   stockLocationId?: string | null;
+  stockLocationIds?: string[];
   allowedStockLocationIds?: string[];
 
   canSubmitWarehouseRequests?: boolean;

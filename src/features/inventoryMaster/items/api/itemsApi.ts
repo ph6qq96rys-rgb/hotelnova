@@ -7,7 +7,7 @@ import type {
 } from "../types";
 
 /**
- * UI-friendly payloads (don’t force forms to provide id/companyId).
+ * UI-friendly payloads (don't force forms to provide id/companyId).
  * API layer will enrich them to match backend DTOs.
  */
 export type CreateInventoryItemBody = Omit<CreateInventoryItemRequest, "id" | "companyId">;

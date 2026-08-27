@@ -19,7 +19,7 @@ export enum StockLocationType {
 
 export type BranchRole = "BranchAdmin" | "Staff";
 
-// ── Company ───────────────────────────────────────────────────────────────────
+// Company
 
 export interface CompanyDto {
   id:              string;
@@ -68,7 +68,7 @@ export interface UpdateCompanyDto {
   status?:          CompanyStatus;
 }
 
-// ── Branch ────────────────────────────────────────────────────────────────────
+// Branch
 
 export interface BranchDto {
   id:           string;
@@ -90,7 +90,7 @@ export interface CreateBranchDto {
   isMain:       boolean;
 }
 
-// ── Store ─────────────────────────────────────────────────────────────────────
+// Store
 
 export interface StoreDto {
   id:                           string;
@@ -108,7 +108,7 @@ export interface CreateStoreDto {
   branchId?: string|null;
 }
 
-// ── Stock Location ────────────────────────────────────────────────────────────
+// Stock Location
 
 export interface StockLocation {
   id:                 string;
@@ -134,19 +134,43 @@ export interface CreateStockLocationDto {
   canProduce:  boolean;
 }
 
-// ── Settings ──────────────────────────────────────────────────────────────────
+// Settings
 
 export interface CompanySettingsDto {
-  vatEnabled:           boolean;
-  vatRate:              number;
-  pricesIncludeVat:     boolean;
-  invoicePrefix:        string;
-  receiptPrefix:        string;
-  allowNegativeStock:   boolean;
+  vatEnabled: boolean;
+  vatRate: number;
+  pricesIncludeVat: boolean;
+
+  invoicePrefix: string;
+  receiptPrefix: string;
+  grnPrefix: string;
+  sivPrefix: string;
+  transferPrefix: string;
+  adjustmentPrefix: string;
+  productionPrefix: string;
+
+  allowNegativeStock: boolean;
+  requireApprovalForSiv: boolean;
+  autoPostGrn: boolean;
+  autoPostSiv: boolean;
+  enforceIssueLocationMapping: boolean;
+  costingMethod: "FIFO" | "WeightedAverage" | string;
+
   fiscalYearStartMonth: number;
+  baseCurrency: string;
+
+  attendanceEnabled: boolean;
+  overtimeEnabled: boolean;
+
+  telegramEnabled: boolean;
+  telegramAttendanceEnabled: boolean;
+  telegramStockRequestsEnabled: boolean;
+
+  auditInventoryTransactions: boolean;
+  auditFinancialTransactions: boolean;
 }
 
-// ── Users ─────────────────────────────────────────────────────────────────────
+// Users
 
 export interface CreateCompanyAdminUserDto {
   userName:  string;
@@ -176,12 +200,12 @@ export interface CreateBranchUserFormValue {
   role:      BranchRole;
 }
 
-// ── Wizard view-models ────────────────────────────────────────────────────────
+// Wizard view-models
 
 export type BranchVm = BranchDto;
 export type StoreVm  = StoreDto;
 
-// ── Legacy aliases ────────────────────────────────────────────────────────────
+// Legacy aliases
 // Old files imported `Store` and `CreateStockLocationPayload` from `../types`.
 // These aliases keep them compiling without changes.
 export type Store = StoreDto;
@@ -191,9 +215,16 @@ export type OnboardingReadinessDto = {
   hasBranch?: boolean;
   hasStockLocation?: boolean;
   hasStockLocations?: boolean;
+  hasTransitLocation?: boolean;
   hasStore?: boolean;
   hasStores?: boolean;
+  hasUser?: boolean;
+  hasUserBranchAssignment?: boolean;
+  hasUserStockLocationAssignment?: boolean;
+  hasCompanyAdmin?: boolean;
   hasBranchAdmin?: boolean;
   storesMappedToIssueLocations?: boolean;
+  canActivate?: boolean;
   canFinish?: boolean;
+  missingItems?: string[];
 };

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { stockLocationsApi } from "../api/stockLocationsApi";
 import type { StockLocationDto, StockLocationFilter } from "../types";
 

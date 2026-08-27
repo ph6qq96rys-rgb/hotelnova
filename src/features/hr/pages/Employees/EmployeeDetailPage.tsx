@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
+import { useAuth } from "../../../../auth/AuthProvider";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
 import { employeeApi } from "../../api/hrApi";
-import type { EmployeeDetailDto } from "../../types";
-import { fmtDate, fmtMoney, getApiError } from "../../utils/hrUtils";
+import type { EmployeeDetailDto, EmployeeDocumentDto } from "../../types";
+import { fmtDate, fmtDateTime, fmtMoney, getApiError } from "../../utils/hrUtils";
 
 import styles from "./EmployeeDetailPage.module.css";
 
@@ -58,6 +59,31 @@ type EmployeeDetailView = EmployeeDetailDto & {
   emergencyContactRelation?: Maybe<string>;
 };
 
+type EmployeeDocumentFormState = {
+  documentType: string;
+  fileName: string;
+  expiryDate: string;
+  file: File | null;
+};
+
+const defaultDocumentForm: EmployeeDocumentFormState = {
+  documentType: "Employment Contract",
+  fileName: "",
+  expiryDate: "",
+  file: null,
+};
+
+const documentTypeOptions = [
+  "National ID",
+  "Employment Contract",
+  "Medical Certificate",
+  "Food Handler License",
+  "Work Permit",
+  "Training Certificate",
+  "Payroll Document",
+  "Other",
+];
+
 type TabKey =
   | "general"
   | "employment"
@@ -66,6 +92,7 @@ type TabKey =
   | "attendance"
   | "leave"
   | "documents"
+  | "telegram"
   | "access"
   | "audit";
 
@@ -91,6 +118,7 @@ const tabs: TabConfig[] = [
   { key: "attendance", label: "Attendance", icon: "ti-clock" },
   { key: "leave", label: "Leave", icon: "ti-calendar" },
   { key: "documents", label: "Documents", icon: "ti-file-text" },
+  { key: "telegram", label: "Telegram", icon: "ti-brand-telegram" },
   { key: "access", label: "Access", icon: "ti-shield-lock" },
   { key: "audit", label: "Audit", icon: "ti-history" },
 ];
@@ -103,13 +131,17 @@ function unwrapEmployee(response: unknown): EmployeeDetailView | null {
 }
 
 function valueOrDash(value: DetailValue): string | number {
-  if (value === null || value === undefined || value === "") return "—";
+  if (value === null || value === undefined || value === "") return "-";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return value;
 }
 
 function safeDate(value?: string | null): string {
-  return value ? fmtDate(value) : "—";
+  return value ? fmtDate(value) : "-";
+}
+
+function safeDateTime(value?: string | null): string {
+  return value ? fmtDateTime(value) : "-";
 }
 
 function cleanStatus(status?: string | null): string {
@@ -132,7 +164,7 @@ function getTaxId(employee: EmployeeDetailView): Maybe<string> {
 }
 
 function getEmployeeCode(employee: EmployeeDetailView): string {
-  return employee.employeeCode ?? employee.employeeNo ?? "—";
+  return employee.employeeCode ?? employee.employeeNo ?? "-";
 }
 
 function getPosition(employee: EmployeeDetailView): string | null {
@@ -173,6 +205,18 @@ function getMissingItems(employee: EmployeeDetailView): string[] {
   return items.filter(([, value]) => value === null || value === undefined || value === "").map(([label]) => label);
 }
 
+function getTelegramStartParam(): string {
+  if (typeof window === "undefined") return "ambassador";
+
+  const host = window.location.hostname.toLowerCase();
+  const rootDomains = ["fnbnova.com", "www.fnbnova.com", "localhost", "127.0.0.1"];
+
+  if (rootDomains.includes(host)) return "ambassador";
+
+  const [subdomain] = host.split(".");
+  return subdomain || "ambassador";
+}
+
 function DetailField({ field }: { field: FieldConfig }) {
   return (
     <div className={`${styles.detailField} ${field.span === 2 ? styles.detailFieldWide : ""}`}>
@@ -193,6 +237,24 @@ function DetailSection({ title, fields }: { title: string; fields: FieldConfig[]
       </dl>
     </section>
   );
+}
+
+function getDocumentStatus(document: EmployeeDocumentDto): { label: string; className: string } {
+  if (!document.expiryDate) return { label: "On file", className: styles.badgeSuccess };
+
+  const expiry = new Date(document.expiryDate);
+  if (Number.isNaN(expiry.getTime())) return { label: "On file", className: styles.badgeSuccess };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (expiry < today) return { label: "Expired", className: styles.badgeDanger };
+
+  const warningDate = new Date(today);
+  warningDate.setDate(warningDate.getDate() + 30);
+
+  if (expiry <= warningDate) return { label: "Expiring soon", className: styles.badgeWarning };
+  return { label: "On file", className: styles.badgeSuccess };
 }
 
 function StatusPill({ status }: { status?: string | null }) {
@@ -226,6 +288,7 @@ function EmptyState({ onBack }: { onBack: () => void }) {
 
 export default function EmployeeDetailPage() {
   const nav = useErpNavigate();
+  const { hasPermission } = useAuth();
   const { companyId: scopedCompanyId } = useAppScope();
   const { companyId: routeCompanyId, employeeId } = useParams<{
     companyId?: string;
@@ -243,7 +306,11 @@ export default function EmployeeDetailPage() {
   const [telegramTokenExpiresAt, setTelegramTokenExpiresAt] = useState<string | null>(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = useState(false);
   const [telegramLinkError, setTelegramLinkError] = useState<string | null>(null);
-
+  const [documents, setDocuments] = useState<EmployeeDocumentDto[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [documentSaving, setDocumentSaving] = useState(false);
+  const [documentForm, setDocumentForm] = useState<EmployeeDocumentFormState>(defaultDocumentForm);
   const loadEmployee = useCallback(
     async (silent = false) => {
       if (!companyId || !employeeId) {
@@ -274,13 +341,36 @@ export default function EmployeeDetailPage() {
     void loadEmployee();
   }, [loadEmployee]);
 
+  const loadDocuments = useCallback(async () => {
+    if (!companyId || !employeeId) return;
+
+    setDocumentsLoading(true);
+    setDocumentsError(null);
+
+    try {
+      const rows = await employeeApi.listDocuments(companyId, employeeId);
+      setDocuments(rows);
+    } catch (e) {
+      setDocumentsError(getApiError(e, "Failed to load employee documents."));
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }, [companyId, employeeId]);
+
+  useEffect(() => {
+    if (activeTab === "documents") {
+      void loadDocuments();
+    }
+  }, [activeTab, loadDocuments]);
+
   const employeeRouteId = employee?.id ?? employeeId;
-  const employeeCode = employee ? getEmployeeCode(employee) : "—";
+  const employeeCode = employee ? getEmployeeCode(employee) : "-";
   const position = employee ? getPosition(employee) : null;
   const isProbation = cleanStatus(employee?.status).toLowerCase() === "probation";
   const isTerminated = cleanStatus(employee?.status).toLowerCase() === "terminated";
   const missingItems = useMemo(() => (employee ? getMissingItems(employee) : []), [employee]);
   const completeness = employee ? getCompleteness(employee) : 0;
+  const canManageEmployee = hasPermission("hr.employees.update");
 
   const tabSections = useMemo(() => {
     if (!employee) return {} as Record<TabKey, React.ReactNode>;
@@ -341,7 +431,6 @@ export default function EmployeeDetailPage() {
         <DetailSection
           title="Organization Assignment"
           fields={[
-            { label: "Company", value: companyId },
             { label: "Branch", value: employee.branchName },
             { label: "Department", value: employee.departmentName },
             { label: "Position", value: position },
@@ -381,19 +470,28 @@ export default function EmployeeDetailPage() {
         </>
       ),
       attendance: (
-        <DetailSection
-          title="Attendance Configuration"
-          fields={[
-            { label: "Shift Pattern", value: (employee as any).shiftPatternName ?? employee.workSchedule },
-            { label: "Roster Group", value: (employee as any).rosterGroupName },
-            { label: "Attendance Device", value: (employee as any).attendanceDeviceName },
-            { label: "Biometric ID", value: (employee as any).biometricId },
-            { label: "Overtime Policy", value: (employee as any).overtimePolicyName },
-            { label: "Late Policy", value: (employee as any).latePolicyName },
-            { label: "Holiday Calendar", value: (employee as any).holidayCalendarName },
-            { label: "Meal Break Rule", value: (employee as any).mealBreakRuleName },
-          ]}
-        />
+        <>
+          <DetailSection
+            title="Attendance Configuration"
+            fields={[
+              { label: "Shift Pattern", value: (employee as any).shiftPatternName ?? employee.workSchedule },
+              { label: "Roster Group", value: (employee as any).rosterGroupName },
+              { label: "Attendance Device", value: (employee as any).attendanceDeviceName },
+              { label: "Biometric ID", value: (employee as any).biometricId },
+              { label: "Overtime Policy", value: (employee as any).overtimePolicyName },
+              { label: "Late Policy", value: (employee as any).latePolicyName },
+              { label: "Holiday Calendar", value: (employee as any).holidayCalendarName },
+              { label: "Meal Break Rule", value: (employee as any).mealBreakRuleName },
+            ]}
+          />
+          {canManageEmployee && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              <button type="button" className={styles.button} onClick={() => nav("hr/attendance/configuration")}>
+                Open Attendance Configuration
+              </button>
+            </div>
+          )}
+        </>
       ),
       leave: (
         <DetailSection
@@ -403,13 +501,51 @@ export default function EmployeeDetailPage() {
             { label: "Annual Leave Balance", value: (employee as any).annualLeaveBalance },
             { label: "Sick Leave Balance", value: (employee as any).sickLeaveBalance },
             { label: "Pending Requests", value: (employee as any).pendingLeaveRequests },
-            { label: "Last Leave Taken", value: safeDate((employee as any).lastLeaveTakenAt ?? null) },
+            { label: "Last Leave Taken", value: safeDateTime((employee as any).lastLeaveTakenAt ?? null) },
           ]}
         />
       ),
       documents: (
         <section className={styles.detailSection}>
-          <h2>Document Register</h2>
+          <div className={styles.sectionHeaderRow}>
+            <h2>Document Register</h2>
+            <button type="button" className={styles.button} onClick={() => void loadDocuments()} disabled={documentsLoading}>
+              <i className="ti ti-refresh" aria-hidden="true" /> {documentsLoading ? "Loading..." : "Refresh"}
+            </button>
+          </div>
+
+          {canManageEmployee ? (
+            <form className={styles.documentForm} onSubmit={submitDocument}>
+              <label>
+                Type
+                <select value={documentForm.documentType} onChange={(e) => setDocumentForm((x) => ({ ...x, documentType: e.target.value }))}>
+                  {documentTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </label>
+              <label>
+                Document name
+                <input value={documentForm.fileName} onChange={(e) => setDocumentForm((x) => ({ ...x, fileName: e.target.value }))} placeholder="Signed contract, ID scan, certificate" />
+              </label>
+              <label>
+                File
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  onChange={(e) => setDocumentForm((x) => ({ ...x, file: e.target.files?.[0] ?? null }))}
+                />
+              </label>
+              <label>
+                Expiry
+                <input type="date" value={documentForm.expiryDate} onChange={(e) => setDocumentForm((x) => ({ ...x, expiryDate: e.target.value }))} />
+              </label>
+              <button type="submit" className={`${styles.button} ${styles.buttonPrimary}`} disabled={documentSaving}>
+                <i className="ti ti-plus" aria-hidden="true" /> {documentSaving ? "Saving..." : "Add document"}
+              </button>
+            </form>
+          ) : null}
+
+          {documentsError ? <div className={styles.alert}>{documentsError}</div> : null}
+
           <div className={styles.tableWrap}>
             <table className={styles.erpTable}>
               <thead>
@@ -417,44 +553,70 @@ export default function EmployeeDetailPage() {
                   <th>Document</th>
                   <th>Status</th>
                   <th>Expiry</th>
-                  <th>Reference</th>
+                  <th>Uploaded</th>
+                  <th>Uploaded By</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {["National ID", "Employment Contract", "Medical Certificate", "Food Handler License", "Work Permit", "Training Certificate"].map((doc) => (
-                  <tr key={doc}>
-                    <td>{doc}</td>
-                    <td><span className={`${styles.badge} ${styles.badgeNeutral}`}>Not configured</span></td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td><button type="button" className={styles.linkButton} onClick={() => employeeRouteId && nav(`hr/employees/${employeeRouteId}/documents`)}>Open</button></td>
+                {documents.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className={styles.emptyCell}>{documentsLoading ? "Loading documents..." : "No employee documents have been registered yet."}</td>
                   </tr>
-                ))}
+                ) : documents.map((document) => {
+                  const status = getDocumentStatus(document);
+                  return (
+                    <tr key={document.id}>
+                      <td><strong>{document.documentType}</strong><span className={styles.tableSubtext}>{document.fileName}</span></td>
+                      <td><span className={`${styles.badge} ${status.className}`}>{status.label}</span></td>
+                      <td>{safeDate(document.expiryDate ?? null)}</td>
+                      <td>{safeDateTime(document.uploadedAt)}</td>
+                      <td>{valueOrDash(document.uploadedBy)}</td>
+                      <td>
+                        <button type="button" className={styles.linkButton} onClick={() => void downloadDocument(document)}>
+                          Download
+                        </button>
+                        {canManageEmployee ? (
+                          <button type="button" className={styles.linkButtonDanger} onClick={() => void deleteDocument(document.id)}>
+                            Delete
+                          </button>
+                        ) : "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </section>
       ),
-      access: (
+      telegram: (
         <>
           <DetailSection
-            title="System Access"
+            title="Telegram Link"
             fields={[
-              { label: "System User", value: employee.hasSystemAccess },
-              { label: "Last Login", value: safeDate(employee.lastLoginAt ?? null) },
               { label: "Telegram Username", value: employee.telegramUserName },
               { label: "Telegram Chat ID", value: employee.telegramChatId },
-              { label: "Telegram Linked At", value: safeDate(employee.telegramLinkedAtUtc ?? null) },
-              { label: "ERP Role", value: (employee as any).erpRoleName },
-              { label: "POS Role", value: (employee as any).posRoleName },
-              { label: "Approval Limit", value: (employee as any).approvalLimit },
+              { label: "Telegram Linked At", value: safeDateTime(employee.telegramLinkedAtUtc ?? null) },
             ]}
           />
+          <section className={styles.telegramPanel}>
+            <div>
+              <h2>Employee Mini App Access</h2>
+              <p className={styles.muted}>
+                Generate a temporary HR link code and send it to the employee with the Telegram Mini App invite.
+              </p>
+            </div>
+            {canManageEmployee ? (
+              <button type="button" className={styles.button} onClick={generateTelegramLink} disabled={telegramLinkLoading}>
+                <i className="ti ti-brand-telegram" aria-hidden="true" /> {telegramLinkLoading ? "Generating..." : "Generate link code"}
+              </button>
+            ) : null}
+          </section>
           {telegramToken ? (
             <section className={styles.systemMessage} role="status">
               <strong>Telegram link code:</strong> <code>{telegramToken}</code>
-              {telegramTokenExpiresAt ? <span>Expires {fmtDate(telegramTokenExpiresAt)}</span> : null}
+              {telegramTokenExpiresAt ? <span>Expires {fmtDateTime(telegramTokenExpiresAt)}</span> : null}
               <button type="button" className={styles.button} onClick={() => void copyTelegramInvite()}>
                 Copy Invite
               </button>
@@ -463,20 +625,32 @@ export default function EmployeeDetailPage() {
           {telegramLinkError ? <div className={styles.alert}>{telegramLinkError}</div> : null}
         </>
       ),
+      access: (
+        <DetailSection
+          title="System Access"
+          fields={[
+            { label: "System User", value: employee.hasSystemAccess },
+            { label: "Last Login", value: safeDateTime(employee.lastLoginAt ?? null) },
+            { label: "ERP Role", value: (employee as any).erpRoleName },
+            { label: "POS Role", value: (employee as any).posRoleName },
+            { label: "Approval Limit", value: (employee as any).approvalLimit },
+          ]}
+        />
+      ),
       audit: (
         <DetailSection
           title="Audit Trail"
           fields={[
-            { label: "Created At", value: safeDate(employee.createdAt ?? null) },
+            { label: "Created At", value: safeDateTime(employee.createdAt ?? null) },
             { label: "Created By", value: employee.createdBy },
-            { label: "Updated At", value: safeDate(employee.updatedAt ?? null) },
+            { label: "Updated At", value: safeDateTime(employee.updatedAt ?? null) },
             { label: "Updated By", value: employee.updatedBy },
-            { label: "Record ID", value: employeeRouteId, span: 2 },
+            { label: "Employee Record", value: employeeCode, span: 2 },
           ]}
         />
       ),
     };
-  }, [companyId, employee, employeeCode, employeeRouteId, nav, position, telegramLinkError, telegramToken, telegramTokenExpiresAt]);
+  }, [canManageEmployee, documentForm, documentSaving, documents, documentsError, documentsLoading, employee, employeeCode, employeeRouteId, loadDocuments, nav, position, telegramLinkError, telegramLinkLoading, telegramToken, telegramTokenExpiresAt]);
 
   function goToEmployees() {
     nav("hr/employees");
@@ -497,7 +671,75 @@ export default function EmployeeDetailPage() {
     nav(`hr/employees/${employeeRouteId}/terminate`);
   }
 
+  async function submitDocument(event: { preventDefault: () => void }) {
+    event.preventDefault();
+
+    if (!companyId || !employeeRouteId) {
+      setDocumentsError("Missing company or employee information.");
+      return;
+    }
+
+    if (!documentForm.file) {
+      setDocumentsError("Upload a document file before saving.");
+      return;
+    }
+
+    setDocumentSaving(true);
+    setDocumentsError(null);
+
+    try {
+      await employeeApi.createDocument(companyId, employeeRouteId, {
+        documentType: documentForm.documentType,
+        fileName: documentForm.fileName || documentForm.file.name,
+        expiryDate: documentForm.expiryDate || null,
+        file: documentForm.file,
+      });
+
+      setDocumentForm(defaultDocumentForm);
+      await loadDocuments();
+    } catch (e) {
+      setDocumentsError(getApiError(e, "Failed to save employee document."));
+    } finally {
+      setDocumentSaving(false);
+    }
+  }
+
+  async function downloadDocument(document: EmployeeDocumentDto) {
+    if (!companyId || !employeeRouteId) return;
+
+    setDocumentsError(null);
+
+    try {
+      const blob = await employeeApi.downloadDocument(companyId, employeeRouteId, document.id);
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = document.fileName || "employee-document";
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setDocumentsError(getApiError(e, "Failed to download employee document."));
+    }
+  }
+
+  async function deleteDocument(documentId: string) {
+    if (!companyId || !employeeRouteId) return;
+
+    setDocumentsError(null);
+
+    try {
+      await employeeApi.deleteDocument(companyId, employeeRouteId, documentId);
+      await loadDocuments();
+    } catch (e) {
+      setDocumentsError(getApiError(e, "Failed to delete employee document."));
+    }
+  }
+
   async function generateTelegramLink() {
+    setActiveTab("telegram");
+
     if (!companyId || !employeeRouteId) {
       setTelegramLinkError("Missing company or employee information.");
       return;
@@ -530,8 +772,8 @@ export default function EmployeeDetailPage() {
     if (!telegramToken) return;
 
     const message = [
-      "Open HotelNova Mini App:",
-      "https://t.me/hotelnova_bot/erp?startapp=ambassador",
+      "Open Hotel Nova Mini App:",
+      `https://t.me/hotelnova_bot/erp?startapp=${getTelegramStartParam()}`,
       "",
       "Your HR link code:",
       telegramToken,
@@ -596,23 +838,8 @@ export default function EmployeeDetailPage() {
             <i className="ti ti-user-check" aria-hidden="true" /> Confirm
           </button>
         ) : null}
-        <button type="button" className={styles.button} onClick={() => nav("hr/attendance")}>
-          <i className="ti ti-clock" aria-hidden="true" /> Attendance
-        </button>
-        <button type="button" className={styles.button} onClick={() => employeeRouteId && nav(`hr/leave/balances/${employeeRouteId}`)}>
-          <i className="ti ti-calendar" aria-hidden="true" /> Leave
-        </button>
-        <button type="button" className={styles.button} onClick={() => nav("hr/payroll")}>
-          <i className="ti ti-cash" aria-hidden="true" /> Payroll
-        </button>
-        <button type="button" className={styles.button} onClick={() => employeeRouteId && nav(`hr/employees/${employeeRouteId}/documents`)}>
-          <i className="ti ti-file-text" aria-hidden="true" /> Documents
-        </button>
-        <button type="button" className={styles.button} onClick={generateTelegramLink} disabled={telegramLinkLoading}>
-          <i className="ti ti-brand-telegram" aria-hidden="true" /> {telegramLinkLoading ? "Generating…" : "Telegram"}
-        </button>
         <button type="button" className={styles.button} disabled={refreshing} onClick={() => void loadEmployee(true)}>
-          <i className="ti ti-refresh" aria-hidden="true" /> {refreshing ? "Refreshing…" : "Refresh"}
+          <i className="ti ti-refresh" aria-hidden="true" /> {refreshing ? "Refreshing..." : "Refresh"}
         </button>
         {!isTerminated ? (
           <button type="button" className={`${styles.button} ${styles.buttonDanger}`} onClick={goToTerminate}>
@@ -674,9 +901,9 @@ export default function EmployeeDetailPage() {
           <section className={styles.sideSection}>
             <h2>Recent Activity</h2>
             <div className={styles.statusRows}>
-              <span>Updated <strong>{safeDate(employee.updatedAt ?? null)}</strong></span>
+              <span>Updated <strong>{safeDateTime(employee.updatedAt ?? null)}</strong></span>
               <span>Updated By <strong>{valueOrDash(employee.updatedBy)}</strong></span>
-              <span>Last Login <strong>{safeDate(employee.lastLoginAt ?? null)}</strong></span>
+              <span>Last Login <strong>{safeDateTime(employee.lastLoginAt ?? null)}</strong></span>
             </div>
           </section>
         </aside>

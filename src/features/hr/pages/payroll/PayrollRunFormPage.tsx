@@ -157,7 +157,7 @@ export default function PayrollRunFormPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Payroll</div>
+          <div className="page-kicker">Human Resources - Payroll</div>
           <div className="page-title">New Payroll Run</div>
           <div className="page-sub">Create a payroll run for a pay period</div>
         </div>
@@ -251,8 +251,8 @@ export default function PayrollRunFormPage() {
           fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.6,
         }}>
           Creating this run will generate payslips for all active employees in the
-          period <strong style={{ color: 'var(--text)' }}>{values.periodName || '—'}</strong>.
-          The run starts in <strong>Draft</strong> status — you can review before processing.
+          period <strong style={{ color: 'var(--text)' }}>{values.periodName || '-'}</strong>.
+          The run starts in <strong>Draft</strong> status - you can review before processing.
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

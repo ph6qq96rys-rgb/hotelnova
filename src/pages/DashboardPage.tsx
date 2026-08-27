@@ -6,6 +6,8 @@ import type {
   MenuEngineeringSummaryDto,
 } from "../api/dashboard/dashboardTypes";
 import { useAppScope } from "../app/useAppScope";
+import { useAuth } from "../auth/AuthProvider";
+import { hasErpPermission } from "../auth/erpAccess";
 import { dashboardQuickActionPaths } from "../routes/routeConfig";
 import { useErpNavigate } from "../routes/useErpNavigation";
 import ModernDashboardView from "../components/ModernDashboardView";
@@ -22,6 +24,7 @@ type QuickAction = {
   title: string;
   sub: string;
   href: string;
+  permissions?: string[];
 };
 
 const zeroMenuEngineering: MenuEngineeringSummaryDto = {
@@ -29,6 +32,41 @@ const zeroMenuEngineering: MenuEngineeringSummaryDto = {
   puzzle: 0,
   plowhorse: 0,
   dog: 0,
+};
+
+const emptyDashboard: DashboardOverviewDto = {
+  generatedAtUtc: new Date().toISOString(),
+  sales: {
+    todaySales: 0,
+    todayCogs: 0,
+    todayGrossProfit: 0,
+    todayOrders: 0,
+    averageOrderValue: 0,
+    todayMarginPct: 0,
+    todayFoodCostPct: 0,
+    last7DaysRevenue: 0,
+    last30DaysRevenue: 0,
+    yearToDateRevenue: 0,
+  },
+  inventorySummary: {
+    lowStockItems: 0,
+    inventoryValue: null,
+    openTransfers: 0,
+  },
+  procurement: {
+    pendingPurchaseOrders: 0,
+  },
+  identity: {
+    totalUsers: 0,
+    totalRoles: 0,
+  },
+  hr: null,
+  menuEngineering: zeroMenuEngineering,
+  alerts: [],
+  bestSellers: [],
+  inventory: [],
+  revenueTrend: [],
+  foodCostTrend: [],
 };
 
 function toNumber(value: unknown): number {
@@ -144,6 +182,11 @@ function extractErrorMessage(error: unknown): string {
   );
 }
 
+function getStatusCode(error: unknown): number | null {
+  const status = (error as any)?.response?.status;
+  return Number.isFinite(status) ? Number(status) : null;
+}
+
 function useSafeErpNavigation() {
   const navigation = useErpNavigate() as any;
 
@@ -170,6 +213,21 @@ function useSafeErpNavigation() {
 export default function DashboardPage() {
   const { go } = useSafeErpNavigation();
   const { companyId } = useAppScope();
+  const auth = useAuth();
+
+  const accessIdentity = useMemo(
+    () => ({
+      roles: auth.roles,
+      permissions: auth.permissions,
+    }),
+    [auth.roles, auth.permissions],
+  );
+
+  const can = useCallback(
+    (permission: string) =>
+      hasErpPermission(accessIdentity, permission),
+    [accessIdentity],
+  );
 
   const [state, setState] = useState<DashboardState>({ status: "idle" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -185,43 +243,66 @@ export default function DashboardPage() {
   const actions = useMemo<QuickAction[]>(
     () => [
       {
+        icon: "ti-clipboard-check",
+        title: "Daily Operations",
+        sub: "Plan shift and readiness",
+        href: "sales/operations",
+        permissions: ["operations.view"],
+      },
+      {
         icon: "ti-package",
         title: "Inventory Items",
         sub: "Manage inventory master",
         href: inventoryItemsPath,
+        permissions: ["items.view"],
       },
       {
         icon: "ti-arrows-transfer-up-down",
         title: "Stock Transfer",
         sub: "Move inventory",
         href: dashboardQuickActionPaths.stockTransferNew,
+        permissions: ["stocktransfers.create"],
       },
       {
         icon: "ti-adjustments",
         title: "Stock Adjustment",
         sub: "Adjust inventory",
         href: dashboardQuickActionPaths.adjustmentNew,
+        permissions: ["inventory.adjustments.create"],
       },
       {
         icon: "ti-tools-kitchen-2",
         title: "Production Batch",
         sub: "Execute recipe",
         href: dashboardQuickActionPaths.productionBatchNew,
+        permissions: ["production.create"],
       },
       {
         icon: "ti-chef-hat",
         title: "Recipe Management",
         sub: "Manage recipes",
         href: dashboardQuickActionPaths.recipeManagement,
+        permissions: ["recipes.view"],
       },
       {
         icon: "ti-chart-dots",
         title: "Menu Engineering",
         sub: "Boston Matrix",
         href: dashboardQuickActionPaths.menuEngineering,
+        permissions: ["menu.view"],
       },
     ],
     [inventoryItemsPath],
+  );
+
+  const visibleActions = useMemo(
+    () =>
+      actions.filter(
+        (action) =>
+          !action.permissions?.length ||
+          action.permissions.some((permission) => can(permission)),
+      ),
+    [actions, can],
   );
 
   useEffect(() => {
@@ -248,6 +329,17 @@ export default function DashboardPage() {
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
+
+        if (getStatusCode(error) === 403) {
+          setState({
+            status: "loaded",
+            data: {
+              ...emptyDashboard,
+              generatedAtUtc: new Date().toISOString(),
+            },
+          });
+          return;
+        }
 
         setState({
           status: "error",
@@ -286,7 +378,15 @@ export default function DashboardPage() {
       <ModernDashboardView
         dashboard={state.data}
         updatedAt={updatedAt}
-        actions={actions}
+        actions={visibleActions}
+        capabilities={{
+          sales: can("sales.view"),
+          inventory: can("inventory.view"),
+          procurement: can("purchasing.view") || can("grn.view"),
+          identity: can("users.view") || can("roles.view"),
+          menu: can("menu.view") || can("recipes.view") || can("production.view"),
+          operations: can("operations.view"),
+        }}
         onNavigate={go}
         onRefresh={reload}
         refreshing={false}
@@ -300,9 +400,9 @@ function DashboardLoadingState() {
     <>
       <header className="saas-page-header">
         <div>
-          <div className="saas-eyebrow">RestaurantFNB Command Center</div>
+          <div className="saas-eyebrow">Hotel Nova Command Center</div>
           <h1>Operations dashboard</h1>
-          <p>Loading live operational data…</p>
+          <p>Loading live operational data...</p>
         </div>
       </header>
 
@@ -334,7 +434,7 @@ function DashboardErrorState({
     <>
       <header className="saas-page-header">
         <div>
-          <div className="saas-eyebrow">RestaurantFNB Command Center</div>
+          <div className="saas-eyebrow">Hotel Nova Command Center</div>
           <h1>Operations dashboard</h1>
           <p>The dashboard could not be loaded.</p>
         </div>
@@ -346,7 +446,7 @@ function DashboardErrorState({
         </div>
 
         <div>
-          <strong>Couldn’t load dashboard</strong>
+          <strong>Couldn't load dashboard</strong>
           <p>{message}</p>
         </div>
 

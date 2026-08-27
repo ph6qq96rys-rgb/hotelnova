@@ -129,7 +129,7 @@ export function SivApprovalWindow({
           disabled={submitting || hasInvalidQuantity}
           onClick={() => void approve()}
         >
-          {submitting ? "Approving…" : "Approve SIV"}
+          {submitting ? "Approving..." : "Approve SIV"}
         </button>
       </main>
 

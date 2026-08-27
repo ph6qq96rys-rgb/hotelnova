@@ -197,7 +197,7 @@ export default function TrainingProgramFormPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Training</div>
+          <div className="page-kicker">Human Resources - Training</div>
           <div className="page-title">New Training Program</div>
           <div className="page-sub">Define a reusable training program for scheduling</div>
         </div>

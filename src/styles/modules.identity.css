@@ -1,4 +1,4 @@
-﻿.lux-page {
+.lux-page {
   padding: 28px;
   background: #f7f8fb;
   min-height: calc(100vh - 72px);
@@ -452,6 +452,150 @@
   margin-top: 18px;
 }
 
+.userCreate__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.userCreate__summary {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.userCreate__summary span {
+  border: 1px solid #dbe3ef;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.userCreate__identityGrid {
+  display: grid;
+  grid-template-columns: minmax(280px, .85fr) minmax(320px, 1.15fr);
+  gap: 16px;
+}
+
+.userCreate__panel {
+  border-radius: 14px;
+  padding: 16px;
+  background: #fff;
+}
+
+.userCreate__panelBlock {
+  margin-top: 14px;
+}
+
+.userCreate__sectionHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.userCreate__sectionHead .lux-panel__title {
+  margin-bottom: 4px;
+}
+
+.userCreate__sectionHead p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.userCreate__step {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1d4ed8;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 13px;
+}
+
+.userCreate__fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.userCreate__optionGrid {
+  max-height: 176px;
+  overflow: auto;
+  border: 1px solid #edf2f7;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.userCreate__optionGrid--roles {
+  max-height: 230px;
+}
+
+.userCreate__optionGrid .lux-rolePill {
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.userCreate__scopeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.userCreate__scopeCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #dbe3ef;
+  background: #fff;
+  border-radius: 14px;
+  padding: 13px;
+  cursor: pointer;
+}
+
+.userCreate__scopeCard:has(input:checked) {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .08);
+}
+
+.userCreate__scopeCard strong,
+.userCreate__scopeCard small {
+  display: block;
+}
+
+.userCreate__scopeCard strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.userCreate__scopeCard small {
+  color: #64748b;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+
+.userCreate__footnote {
+  margin: 10px 0 12px;
+}
+
 @media (max-width: 1100px) {
   .lux-hero__content {
     flex-direction: column;
@@ -474,6 +618,22 @@
 
   .lux-grid--2 {
     grid-template-columns: 1fr;
+  }
+
+  .userCreate__header,
+  .userCreate__identityGrid,
+  .userCreate__scopeGrid,
+  .userCreate__fieldGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .userCreate__header {
+    flex-direction: column;
+  }
+
+  .userCreate__summary {
+    justify-content: flex-start;
+    max-width: none;
   }
 }
 .lux-filterGrid {
@@ -587,5 +747,24 @@
 
   .lux-kpis {
     grid-template-columns: 1fr;
+  }
+
+  .lux-modalOverlay {
+    padding: 10px;
+    place-items: stretch;
+  }
+
+  .lux-modal {
+    max-height: calc(100vh - 20px);
+  }
+
+  .lux-form,
+  .lux-resetPw {
+    padding: 18px;
+  }
+
+  .userCreate__optionGrid,
+  .userCreate__optionGrid--roles {
+    max-height: 220px;
   }
 }

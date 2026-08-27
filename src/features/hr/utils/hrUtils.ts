@@ -5,29 +5,39 @@ import type {
   ApplicationStatus, ReviewStatus, EnrollmentStatus,
   AttendanceStatus, JobPostingStatus, CycleStatus,
 } from '../types';
+import { toUserFriendlyError } from "../../../shared/errors/errorMessage.utils";
+import {
+  APP_TIME_ZONE,
+  formatAppDate,
+  formatAppDateTime,
+  formatAppTime,
+  formatAppTimeInTimeZone,
+  todayLocalIsoDate as getTodayLocalIsoDate,
+} from "../../../shared/datetime/dateFormat";
 
-// ── Date / Number formatters ──────────────────────────────────────────────────
+// Date / Number formatters
 
 export function fmtDate(value?: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  return Number.isNaN(d.getTime())
-    ? '—'
-    : d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatAppDate(value);
 }
 
 export function fmtDateTime(value?: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+  return formatAppDateTime(value);
 }
 
 export function fmtTime(value?: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  return Number.isNaN(d.getTime())
-    ? '—'
-    : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return formatAppTime(value);
+}
+
+export function fmtTimeInTimeZone(
+  value?: string | null,
+  timeZone = APP_TIME_ZONE,
+): string {
+  return formatAppTimeInTimeZone(value, timeZone);
+}
+
+export function todayLocalIsoDate(): string {
+  return getTodayLocalIsoDate();
 }
 
 export function fmtMoney(v?: number | null): string {
@@ -35,7 +45,6 @@ export function fmtMoney(v?: number | null): string {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
 }
-
 export function fmtNumber(v?: number | null, decimals = 2): string {
   return Number(v ?? 0).toLocaleString(undefined, {
     minimumFractionDigits: decimals, maximumFractionDigits: decimals,
@@ -47,13 +56,10 @@ export function fmtPercent(v?: number | null): string {
 }
 
 export function getApiError(e: unknown, fallback: string): string {
-  const err = e as any;
-  const data = err?.response?.data;
-  if (typeof data === 'string') return data;
-  return data?.message ?? data?.title ?? err?.message ?? fallback;
+  return toUserFriendlyError(e, fallback);
 }
 
-// ── Badge class maps ──────────────────────────────────────────────────────────
+// Badge class maps
 
 export const EMPLOYMENT_STATUS_CLASS: Record<EmploymentStatus, string> = {
   Probation:  'badge badge-warn',
@@ -119,6 +125,9 @@ export const ATTENDANCE_STATUS_CLASS: Record<AttendanceStatus, string> = {
   OnLeave:  'badge badge-info',
   Holiday:  'badge badge-neutral',
   WeekOff:  'badge badge-neutral',
+  EarlyDeparture: 'badge badge-warn',
+  MissingPunch: 'badge badge-danger',
+  ApprovedException: 'badge badge-success',
 };
 
 export const JOB_STATUS_CLASS: Record<JobPostingStatus, string> = {
@@ -137,10 +146,10 @@ export const CYCLE_STATUS_CLASS: Record<CycleStatus, string> = {
   Archived: 'badge badge-neutral',
 };
 
-// ── Rating label helpers ──────────────────────────────────────────────────────
+// Rating label helpers
 
 export function ratingColor(rating?: number | null): string {
-  if (!rating) return 'var(--text-muted)';
+  if (!rating) return '-';
   if (rating >= 4.5) return 'var(--success)';
   if (rating >= 3.5) return 'var(--accent)';
   if (rating >= 2.5) return 'var(--warn)';
@@ -148,7 +157,7 @@ export function ratingColor(rating?: number | null): string {
 }
 
 export function ratingLabel(rating?: number | null): string {
-  if (!rating) return '—';
+  if (!rating) return '-';
   if (rating >= 4.5) return 'Exceptional';
   if (rating >= 3.5) return 'Exceeds Expectations';
   if (rating >= 2.5) return 'Meets Expectations';

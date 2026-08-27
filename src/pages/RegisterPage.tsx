@@ -78,7 +78,7 @@ const [tenantId, setTenantId] = useState(localStorage.getItem("tenantId") ?? "")
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
             </svg>
           </div>
-          <span className="auth-logo__name">RestaurantFNB</span>
+          <span className="auth-logo__name">Hotel Nova</span>
         </div>
 
         <div className="auth-card">
@@ -176,7 +176,7 @@ const [tenantId, setTenantId] = useState(localStorage.getItem("tenantId") ?? "")
               disabled={!canSubmit || busy}
               aria-busy={busy}
             >
-              {busy ? <><span className="auth-spinner" aria-hidden="true" />Creating account…</> : "Create account"}
+              {busy ? <><span className="auth-spinner" aria-hidden="true" />Creating account...</> : "Create account"}
             </button>
 
           </form>

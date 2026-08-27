@@ -1,6 +1,6 @@
 // src/features/inventory/siv/utils/sivWorkflow.ts
 // Kept as a thin re-export wrapper so existing imports don't break.
-// Core normalization lives in types.ts — import from there for new code.
+// Core normalization lives in types.ts - import from there for new code.
 
 export type SivStatusKey =
   | "draft" | "submitted" | "approved" | "requestedchanges"

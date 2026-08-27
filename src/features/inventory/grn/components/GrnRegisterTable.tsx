@@ -129,7 +129,7 @@ export default function GrnRegisterTable({ rows, loading, onOpen }: Props) {
                   <td>{row.supplierName || "Supplier not recorded"}</td>
                   <td>{metrics.warehouse}</td>
                   <td>{metrics.receiptDate}</td>
-                  <td className="num">{metrics.lineCount || "—"}</td>
+                  <td className="num">{metrics.lineCount || "-"}</td>
                   <td className="num">{formatMoney(metrics.value)}</td>
                   <td>
                     <span className={statusBadgeClass(metrics.status)}>

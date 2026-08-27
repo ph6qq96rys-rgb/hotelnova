@@ -1,4 +1,4 @@
-﻿// src/features/production/api/productionBatchesApi.ts
+// src/features/production/api/productionBatchesApi.ts
 //
 // Production batch CRUD, recipe application, posting, and reversal.
 // Base path: /companies/{companyId}/branches/{branchId}/production/batches
@@ -9,7 +9,7 @@
 import { http } from "../../../api/http";
 import type { AxiosRequestConfig } from "axios";
 
-// ── DTOs ──────────────────────────────────────────────────────────────────────
+//  DTOs 
 
 export interface ProductionInputLineDto {
   id:            string;
@@ -20,7 +20,7 @@ export interface ProductionInputLineDto {
   qtyBase:       number;
   unitCost:      number;
   lineAmount:    number;
-  /** ProductionInputSource numeric enum — use normaliseSource() in components. */
+  /** ProductionInputSource numeric enum - use normaliseSource() in components. */
   source:        number;
   recipeLineId?: string | null;
   batchNo?:      string | null;
@@ -47,7 +47,7 @@ export interface ProductionBatchDto {
   companyId:       string;
   branchId:        string;
   batchNo:         string;
-  /** Numeric status — see C# ProductionBatchStatus enum. */
+  /** Numeric status - see C# ProductionBatchStatus enum. */
   status:          number;
   issueLocationId: string;
   outputLocationId:string;
@@ -61,14 +61,14 @@ export interface ProductionBatchDto {
   ledgerGroupId?:  string | null;
 }
 
-// ── Requests ──────────────────────────────────────────────────────────────────
+//  Requests 
 
 export interface CreateProductionBatchRequest {
   menuItemId:       string;
   plannedQty:       number;
   issueLocationId:  string;
   outputLocationId: string;
-  /** ISO 8601 datetime string — maps to C# DateTime ProducedAtUtc. */
+  /** ISO 8601 datetime string - maps to C# DateTime ProducedAtUtc. */
   producedAtUtc:    string;
   notes?:           string | null;
 }
@@ -89,14 +89,14 @@ export interface UpdateProductionLinesRequest {
   outputs: ProductionLineRequest[];
 }
 
-/** RecipeId is the recipe entity ID — not the menuItemId. */
+/** RecipeId is the recipe entity ID - not the menuItemId. */
 export interface ApplyRecipeRequest {
   recipeId:              string;
   outputQty:             number;
   replaceExistingInputs: boolean;
 }
 
-// ── ApiError ──────────────────────────────────────────────────────────────────
+//  ApiError 
 
 export class ApiError extends Error {
   constructor(
@@ -121,7 +121,7 @@ export class ApiError extends Error {
   }
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
+//  Internal helpers 
 
 function batchesPath(companyId: string, branchId: string): string {
   return `/companies/${companyId}/branches/${branchId}/production/batches`;
@@ -150,7 +150,7 @@ async function request<T>(
   }
 }
 
-// ── Full client ───────────────────────────────────────────────────────────────
+//  Full client 
 
 export const productionBatchesApi = {
   create(companyId: string, branchId: string, body: CreateProductionBatchRequest, signal?: AbortSignal): Promise<string> {
@@ -178,7 +178,7 @@ export const productionBatchesApi = {
   },
 };
 
-// ── Scoped client (preferred at call sites) ───────────────────────────────────
+//  Scoped client (preferred at call sites) 
 
 export function createScopedProductionBatchesApi(companyId: string, branchId: string) {
   return {

@@ -109,8 +109,8 @@ export function Card({
       style={{
         background: "#18181B",
         border: "1px solid rgba(255,255,255,0.07)",
-        borderRadius: 12,
-        padding: 18,
+        borderRadius: 8,
+        padding: 16,
         ...style,
       }}
     >

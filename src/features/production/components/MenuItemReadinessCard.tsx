@@ -11,7 +11,7 @@ type Props = {
 function CheckRow({ ok, text }: { ok: boolean; text: string }) {
   return (
     <div className={`p-check ${ok ? "p-check--ok" : "p-check--warn"}`}>
-      <span className="p-check__icon">{ok ? "✓" : "!"}</span>
+      <span className="p-check__icon">{ok ? "" : "!"}</span>
       <span>{text}</span>
     </div>
   );

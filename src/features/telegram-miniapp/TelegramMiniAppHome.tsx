@@ -20,7 +20,7 @@ function TelegramMiniAppHome({ onOpenTab, auth, runtime }: Props) {
       <section className="tg-mini-hero">
         <div className="tg-mini-hero__top">
           <div>
-            <div className="tg-mini-eyebrow">HotelNova ERP</div>
+            <div className="tg-mini-eyebrow">Hotel Nova</div>
             <h2 className="tg-mini-hero__title">
               {auth.employeeName
                 ? `Welcome, ${auth.employeeName}`
@@ -28,7 +28,7 @@ function TelegramMiniAppHome({ onOpenTab, auth, runtime }: Props) {
             </h2>
           </div>
 
-          <div className="tg-mini-hero__icon">🏨</div>
+          <div className="tg-mini-hero__icon"></div>
         </div>
 
         <p className="tg-mini-hero__text">
@@ -49,7 +49,7 @@ function TelegramMiniAppHome({ onOpenTab, auth, runtime }: Props) {
                 : "Verified"
           }
         />
-        <InfoPill label="Employee" value={auth.employeeCode ?? "—"} />
+        <InfoPill label="Employee" value={auth.employeeCode ?? "-"} />
         <InfoPill
           label="Branch"
           value={auth.branchId ? "Assigned" : "Not assigned"}
@@ -116,7 +116,7 @@ function MenuCard({
         <small>{item.description}</small>
       </span>
 
-      <span className="tg-mini-menu-card__chevron">›</span>
+      <span className="tg-mini-menu-card__chevron"></span>
     </button>
   );
 }

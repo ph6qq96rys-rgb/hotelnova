@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { useAppScope } from "../../../app/useAppScope";
+import CompanySettingsPage from "../../../features/company/onboarding/CompanySettingsPage";
 import { useAuth } from "../../../auth/AuthProvider";
 
 import "./security.css";
@@ -232,16 +233,11 @@ export default function SettingsPage() {
   const canView =
     currentIsSystemAdmin ||
     currentIsCompanyAdmin ||
-    hasPermission?.("settings.view") ||
-    hasPermission?.("settings.manage") ||
-    hasPermission?.("security.view") ||
-    hasPermission?.("security.manage");
+    hasPermission?.("settings.view");
 
   const canManage =
     currentIsSystemAdmin ||
-    currentIsCompanyAdmin ||
-    hasPermission?.("settings.manage") ||
-    hasPermission?.("security.manage");
+    currentIsCompanyAdmin;
 
   const [active, setActive] = useState<SettingsSection>("company");
   const [dirty, setDirty] = useState(false);
@@ -326,6 +322,10 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (companyId) {
+    return <CompanySettingsPage />;
   }
 
   if (!companyId && !currentIsSystemAdmin) {

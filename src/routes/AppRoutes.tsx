@@ -1,9 +1,14 @@
-﻿// src/routes/AppRoutes.tsx
+// src/routes/AppRoutes.tsx
 
 import type { ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 
 import RequireCompany from "../auth/RequireCompany";
+import {
+  canAccessRoute as canAccessErpRoute,
+  hasCompanyAdminRole,
+  hasSystemAdminRole,
+} from "../auth/erpAccess";
 import { loadAuth } from "../auth/auth.storage";
 import { loadPlatformAuth } from "../auth/platform-auth.storage";
 import { loadWorkspaceAuth } from "../auth/workspace-auth.storage";
@@ -30,6 +35,7 @@ import { useSalesRoutes } from "./sales-cogsroute";
 import { getHrRoutes } from "./hrRoutes";
 import { getPostRoutes } from "./posRoutes";
 import { organizationRoutes } from "./organizationRoutes";
+import { procurementRoutes } from "./procurementRoutes";
 
 import type { AppRouteLike } from "./routeDefConfig";
 import TelegramMiniAppDashboard from "../features/telegram-miniapp/TelegramMiniAppDashboard";
@@ -38,6 +44,23 @@ const COMPANY_ONBOARDING_PATH = "companies/onboarding";
 const USER_LOGIN_PATH = "/login";
 const SYSTEM_ADMIN_LOGIN_PATH = "/system-admin-login";
 const PLATFORM_HOME_PATH = "/platform/tenants";
+const LEGACY_COMPANY_ROUTE_ROOTS = [
+  "dashboard",
+  "hr",
+  "inventory",
+  "inventory-master",
+  "production",
+  "reports",
+  "sales",
+  "pos",
+  "grn",
+  "procurement",
+  "users",
+  "security",
+  "settings",
+  "org",
+  "organizations",
+] as const;
 
 type AuthLike = {
   accessToken?: string | null;
@@ -68,6 +91,7 @@ export default function AppRoutes() {
     ...(salesRoutes as AppRouteLike[]),
     ...(hrRoutes as AppRouteLike[]),
     ...(posRoutes as AppRouteLike[]),
+    ...(procurementRoutes as AppRouteLike[]),
   ]);
 
   return (
@@ -79,6 +103,13 @@ export default function AppRoutes() {
       <Route path="/telegram-miniapp" element={<TelegramMiniAppDashboard />} />
       <Route path={SYSTEM_ADMIN_LOGIN_PATH} element={<SystemAdminLoginPage />} />
       <Route path="/telegram" element={<Navigate to="/telegram-miniapp" replace />} />
+      {LEGACY_COMPANY_ROUTE_ROOTS.map((root) => (
+        <Route
+          key={`legacy-company-${root}`}
+          path={`/${root}/*`}
+          element={<LegacyCompanyScopedRedirect />}
+        />
+      ))}
 
       <Route
         path="/platform"
@@ -137,7 +168,7 @@ export default function AppRoutes() {
           </RequireWorkspaceAuth>
         }
       >
-        <Route index element={<CompanyOnboardingModule />} />
+        <Route index element={<BranchOnboardingRoute />} />
       </Route>
 
       <Route
@@ -185,8 +216,18 @@ function RequirePlatformAdmin({ children }: { children: ReactNode }) {
 function RequireWorkspaceAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
   const auth = getWorkspaceAuth();
+  const platformAuth = getPlatformAuth();
+  const isFreshCompanyOnboarding =
+    normalizeRoutePath(location.pathname) === "companies/onboarding";
 
-  if (!auth?.accessToken) {
+  if (
+    !auth?.accessToken &&
+    !(
+      isFreshCompanyOnboarding &&
+      platformAuth?.accessToken &&
+      hasSystemAdminRole(platformAuth.roles)
+    )
+  ) {
     const returnUrl = `${location.pathname}${location.search}${location.hash}`;
 
     return (
@@ -200,6 +241,29 @@ function RequireWorkspaceAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function LegacyCompanyScopedRedirect() {
+  const location = useLocation();
+  const workspaceAuth = getWorkspaceAuth();
+  const returnUrl = `${location.pathname}${location.search}${location.hash}`;
+
+  if (!workspaceAuth?.accessToken) {
+    return (
+      <Navigate
+        to={`${USER_LOGIN_PATH}?returnUrl=${encodeURIComponent(returnUrl)}`}
+        replace
+      />
+    );
+  }
+
+  if (!workspaceAuth.companyId) {
+    return <Navigate to="/companies/onboarding" replace />;
+  }
+
+  const companyChildPath = normalizeRoutePath(location.pathname);
+  const target = `/companies/${workspaceAuth.companyId}/${companyChildPath}${location.search}${location.hash}`;
+
+  return <Navigate to={target} replace />;
+}
 function CompanyDashboardRedirect() {
   const { companyId } = useParams();
 
@@ -208,6 +272,20 @@ function CompanyDashboardRedirect() {
   }
 
   return <Navigate to={`/companies/${companyId}/dashboard`} replace />;
+}
+
+function BranchOnboardingRoute() {
+  const { companyId, branchId } = useParams();
+
+  if (!companyId) {
+    return <Navigate to={USER_LOGIN_PATH} replace />;
+  }
+
+  if (!branchId || branchId.startsWith(":")) {
+    return <Navigate to={`/companies/${companyId}/onboarding`} replace />;
+  }
+
+  return <CompanyOnboardingModule />;
 }
 
 function GlobalRedirect() {
@@ -256,22 +334,8 @@ function RouteGuard({
     return <>{children}</>;
   }
 
-  if (route.roles?.length) {
-    const allowedByRole = route.roles.some((role) => hasRole(roles, role));
-
-    if (!allowedByRole) {
-      return <AccessDenied />;
-    }
-  }
-
-  if (route.permissions?.length) {
-    const allowedByPermission = route.permissions.some((permission) =>
-      hasPermission(permissions, permission)
-    );
-
-    if (!allowedByPermission) {
-      return <AccessDenied />;
-    }
+  if (!canAccessErpRoute({ roles, permissions }, route)) {
+    return <AccessDenied route={route} />;
   }
 
   return <>{children}</>;
@@ -284,18 +348,20 @@ function isSecurityRoute(route: AppRouteLike): boolean {
   return section === "security" || path === "users" || path.startsWith("security/");
 }
 
-function AccessDenied() {
+function AccessDenied({ route }: { route?: AppRouteLike }) {
   const { companyId } = useParams();
+  const label = route?.label ?? route?.menu?.label;
+  const pageName = label ? String(label) : "this page";
 
   return (
     <div style={{ padding: 24 }}>
       <h2 style={{ margin: 0, fontSize: 20 }}>Access denied</h2>
       <p style={{ marginTop: 8, color: "#64748b" }}>
-        You do not have permission to access this page.
+        You do not have permission to access {pageName}.
       </p>
 
       {companyId ? (
-        <a href={`/companies/${companyId}/dashboard`}>Go to dashboard</a>
+        <a href={`/companies/${companyId}/dashboard`}>Go to Dashboard</a>
       ) : (
         <a href={USER_LOGIN_PATH}>Go to login</a>
       )}
@@ -365,14 +431,22 @@ function getPlatformAuth(): AuthLike | null {
 
 function getWorkspaceAuth(): AuthLike | null {
   const workspaceAuth = loadWorkspaceAuth();
+  const legacyAuth = loadAuth();
+
+  // Prefer the freshly logged-in tenant auth while the migration still keeps
+  // direct tenant sessions in auth.storage. Stale workspaceAuth can otherwise
+  // hide the latest role/permission claims.
+  if (
+    legacyAuth?.accessToken &&
+    !hasSystemAdminRole(legacyAuth.roles) &&
+    legacyAuth.companyId
+  ) {
+    return legacyAuth;
+  }
 
   if (workspaceAuth?.accessToken) {
     return workspaceAuth;
   }
-
-  // Migration fallback: preserve the existing user-login flow while it still
-  // writes to auth.storage. Never expose a legacy system-admin session here.
-  const legacyAuth = loadAuth();
 
   if (legacyAuth?.accessToken && !hasSystemAdminRole(legacyAuth.roles)) {
     return legacyAuth;
@@ -495,38 +569,3 @@ function buildRouteKey(
   ].join("__");
 }
 
-function hasSystemAdminRole(roles?: string[] | null): boolean {
-  return (roles ?? []).some((role) => {
-    const normalized = role.trim().toUpperCase();
-    return normalized === "SYSTEMADMIN" || normalized === "SYSADMIN";
-  });
-}
-
-function hasCompanyAdminRole(roles?: string[] | null): boolean {
-  return (roles ?? []).some((role) => {
-    const normalized = role.trim().toUpperCase();
-    return normalized === "COMPANYADMIN";
-  });
-}
-
-function hasRole(
-  roles: string[] | null | undefined,
-  requiredRole: string
-): boolean {
-  const required = requiredRole.trim().toUpperCase();
-
-  return (roles ?? []).some(
-    (role) => role.trim().toUpperCase() === required
-  );
-}
-
-function hasPermission(
-  permissions: string[] | null | undefined,
-  requiredPermission: string
-): boolean {
-  const required = requiredPermission.trim().toLowerCase();
-
-  return (permissions ?? []).some(
-    (permission) => permission.trim().toLowerCase() === required
-  );
-}

@@ -1,7 +1,7 @@
-﻿// src/features/inventory/items/api/inventoryItemsApi.ts
+// src/features/inventory/items/api/inventoryItemsApi.ts
 //
 // Single canonical API client for inventory item master data.
-// Replaces the parallel itemsApi.ts — that file is removed.
+// Replaces the parallel itemsApi.ts - that file is removed.
 // Base path: /companies/{companyId}/inventory-master
 
 import { http } from "../../../../api/http";
@@ -13,7 +13,7 @@ import type {
   ItemUomDto,
 } from "../types";
 
-// ── Request types ─────────────────────────────────────────────────────────────
+//  Request types 
 
 export interface CreateItemBody {
   companyId:      string;
@@ -48,16 +48,16 @@ export interface CreateCategoryBody {
   description?: string | null;
 }
 
-// ── URL factory ───────────────────────────────────────────────────────────────
+//  URL factory 
 
 function masterUrl(companyId: string, path = ""): string {
   return `/companies/${companyId}/inventory-master${path}`;
 }
 
-// ── API ───────────────────────────────────────────────────────────────────────
+//  API 
 
 export const inventoryItemsApi = {
-  // ── Catalogs ───────────────────────────────────────────────────────────────
+  //  Catalogs 
 
   /** Load all reference data (categories, UOMs, costing methods) in one call. */
   loadCatalogs(companyId: string): Promise<InventoryCatalogs> {
@@ -66,7 +66,7 @@ export const inventoryItemsApi = {
       .then((r) => r.data);
   },
 
-  // ── Items ──────────────────────────────────────────────────────────────────
+  //  Items 
 
   list(companyId: string, q?: string): Promise<InventoryItemDto[]> {
     return http
@@ -98,7 +98,7 @@ export const inventoryItemsApi = {
       .then(() => undefined);
   },
 
-  // ── Categories ─────────────────────────────────────────────────────────────
+  //  Categories 
 
   getCategories(companyId: string): Promise<CategoryDto[]> {
     return http
@@ -112,7 +112,7 @@ export const inventoryItemsApi = {
       .then((r) => r.data);
   },
 
-  // ── UOMs ───────────────────────────────────────────────────────────────────
+  //  UOMs 
 
   getUoms(companyId: string): Promise<UomDto[]> {
     return http

@@ -1,12 +1,21 @@
-// src/pages/auth/LoginPage.tsx
-
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError } from "../auth/auth.api";
-import { loadAuth, saveAuth } from "../auth/auth.storage";
+import type { AuthState } from "../auth/auth.types";
+import { canAccessRoute, hasSystemAdminRole } from "../auth/erpAccess";
 import { safeReturnUrl } from "../auth/returnUrl";
+import { companyRoutes } from "../routes/companyRoutes";
+import { useGrnRoutes } from "../routes/grnroutes";
+import { getHrRoutes } from "../routes/hrRoutes";
+import { inventoryMasterRoutes } from "../routes/inventoryMasterRoutes";
+import { organizationRoutes } from "../routes/organizationRoutes";
+import { getPostRoutes } from "../routes/posRoutes";
+import { procurementRoutes } from "../routes/procurementRoutes";
+import { routeConfig } from "../routes/routeConfig";
+import { useSalesRoutes } from "../routes/sales-cogsroute";
+import type { AppRouteLike } from "../routes/routeDefConfig";
 
 import "../styles/modules.identity.css";
 
@@ -14,16 +23,11 @@ interface LocationState {
   from?: string | { pathname: string };
 }
 
-type LoginMode = "workspace" | "platform";
+type RouteAccessCandidate = Pick<AppRouteLike, "path" | "roles" | "permissions">;
 
-const SYSTEM_ADMIN_EMAIL = "systemadmin@restaurantfnb.local";
 const PLATFORM_TENANTS_PATH = "/platform/tenants";
 
 function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function normalizeTenantSlug(value: string): string {
   return value.trim().toLowerCase();
 }
 
@@ -39,25 +43,91 @@ function clearTenantStorage(): void {
   sessionStorage.removeItem("branchId");
 }
 
-function getInitialTenantSlug(search: string): string {
-  const sp = new URLSearchParams(search);
-
-  return (
-    sp.get("tenantSlug") ||
-    sp.get("tenant") ||
-    localStorage.getItem("tenantSlug") ||
-    ""
-  )
-    .trim()
-    .toLowerCase();
+function getCompanyDashboardPath(auth: AuthState | null): string {
+  return auth?.companyId ? `/companies/${auth.companyId}/dashboard` : "/";
 }
 
-function getInitialLoginMode(): LoginMode {
-  const lastEmail = localStorage.getItem("lastLoginEmail");
+function getPostLoginTarget(
+  auth: AuthState | null,
+  redirectTo: string,
+  routes: readonly RouteAccessCandidate[]
+): string {
+  if (hasSystemAdminRole(auth?.roles)) {
+    return PLATFORM_TENANTS_PATH;
+  }
 
-  return lastEmail?.toLowerCase() === SYSTEM_ADMIN_EMAIL
-    ? "platform"
-    : "workspace";
+  const dashboardPath = getCompanyDashboardPath(auth);
+  const safeRedirect = safeReturnUrl(redirectTo, dashboardPath);
+
+  if (isAuthorizedCompanyRedirect(auth, safeRedirect, routes)) {
+    return safeRedirect;
+  }
+
+  return dashboardPath;
+}
+
+function isAuthorizedCompanyRedirect(
+  auth: AuthState | null,
+  redirectTo: string,
+  routes: readonly RouteAccessCandidate[]
+): boolean {
+  if (!auth?.companyId) return false;
+
+  const companyRoot = `/companies/${auth.companyId}`;
+
+  if (redirectTo === companyRoot || redirectTo === `${companyRoot}/dashboard`) {
+    return true;
+  }
+
+  if (!redirectTo.startsWith(`${companyRoot}/`)) {
+    return false;
+  }
+
+  const urlPath = redirectTo.split(/[?#]/, 1)[0] ?? redirectTo;
+  const childPath = normalizeCompanyChildPath(urlPath, auth.companyId);
+
+  if (!childPath || childPath === "dashboard") {
+    return true;
+  }
+
+  const matchedRoute = routes.find((route) => routeMatchesPath(route.path, childPath));
+
+  if (!matchedRoute) {
+    return false;
+  }
+
+  return canAccessRoute(
+    { roles: auth.roles ?? [], permissions: auth.permissions ?? [] },
+    matchedRoute
+  );
+}
+
+function normalizeCompanyChildPath(path: string, companyId: string): string {
+  return path
+    .replace(new RegExp(`^/companies/${escapeRegExp(companyId)}/?`), "")
+    .replace(/^\/+|\/+$/g, "");
+}
+
+function routeMatchesPath(routePath: string | undefined, actualPath: string): boolean {
+  if (!routePath) return false;
+
+  const cleanRoute = routePath
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/^companies\/:[^/]+\/?/, "")
+    .replace(/^companies\/[^/]+\/?/, "");
+
+  if (!cleanRoute) return !actualPath;
+
+  const routeParts = cleanRoute.split("/");
+  const actualParts = actualPath.split("/");
+
+  if (routeParts.length !== actualParts.length) return false;
+
+  return routeParts.every((part, index) => part.startsWith(":") || part === actualParts[index]);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function IconGrid() {
@@ -90,23 +160,36 @@ function IconAlert() {
 }
 
 export default function LoginPage() {
-  const { login, isAuthenticated, isReady } = useAuth();
+  const { auth, login, isAuthenticated, isReady } = useAuth();
+  const grnRoutes = useGrnRoutes();
+  const salesRoutes = useSalesRoutes();
+  const hrRoutes = getHrRoutes();
+  const posRoutes = getPostRoutes();
 
   const nav = useNavigate();
   const location = useLocation();
 
-  const initialMode = getInitialLoginMode();
-
-  const [mode, setMode] = useState<LoginMode>(initialMode);
-  const [tenantSlug, setTenantSlug] = useState(() =>
-    initialMode === "platform" ? "" : getInitialTenantSlug(location.search)
-  );
   const [email, setEmail] = useState(() => localStorage.getItem("lastLoginEmail") ?? "");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const routeAccessCandidates = useMemo<RouteAccessCandidate[]>(
+    () => [
+      ...(routeConfig as AppRouteLike[]),
+      ...(companyRoutes as AppRouteLike[]),
+      ...(inventoryMasterRoutes as AppRouteLike[]),
+      ...(organizationRoutes as AppRouteLike[]),
+      ...(procurementRoutes as AppRouteLike[]),
+      ...(grnRoutes as AppRouteLike[]),
+      ...(salesRoutes as AppRouteLike[]),
+      ...(hrRoutes as AppRouteLike[]),
+      ...(posRoutes as AppRouteLike[]),
+    ],
+    [grnRoutes, salesRoutes, hrRoutes, posRoutes]
+  );
 
   const redirectTo = useMemo(() => {
     const sp = new URLSearchParams(location.search);
@@ -119,20 +202,13 @@ export default function LoginPage() {
     return safeReturnUrl(raw ?? fromPath, "/");
   }, [location.search, location.state]);
 
-  function switchMode(nextMode: LoginMode) {
-    if (busy) return;
+  useEffect(() => {
+    if (!isReady || !isAuthenticated) return;
 
-    setMode(nextMode);
-    setError(null);
-
-    if (nextMode === "platform") {
-      setTenantSlug("");
-      clearTenantStorage();
-      return;
-    }
-
-    setTenantSlug(getInitialTenantSlug(location.search));
-  }
+    nav(getPostLoginTarget(auth, redirectTo, routeAccessCandidates), {
+      replace: true,
+    });
+  }, [auth, isAuthenticated, isReady, nav, redirectTo, routeAccessCandidates]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -140,15 +216,9 @@ export default function LoginPage() {
     if (busy) return;
 
     const normalizedEmail = normalizeEmail(email);
-    const normalizedTenantSlug = normalizeTenantSlug(tenantSlug);
 
     if (!normalizedEmail || !password) {
       setError("Email and password are required.");
-      return;
-    }
-
-    if (mode === "workspace" && !normalizedTenantSlug) {
-      setError("Workspace / tenant is required.");
       return;
     }
 
@@ -156,37 +226,20 @@ export default function LoginPage() {
     setError(null);
 
     try {
+      clearTenantStorage();
       localStorage.setItem("lastLoginEmail", normalizedEmail);
 
-      if (mode === "workspace") {
-        localStorage.setItem("tenantSlug", normalizedTenantSlug);
-        sessionStorage.setItem("tenantSlug", normalizedTenantSlug);
-      } else {
-        clearTenantStorage();
-      }
-
-      await login(
+      const nextAuth = await login(
         {
-          tenantSlug: mode === "workspace" ? normalizedTenantSlug : null,
           email: normalizedEmail,
           password,
         },
         remember
       );
-          const auth = loadAuth();
 
-          if (mode === "platform") {
-            nav(PLATFORM_TENANTS_PATH, { replace: true });
-            return;
-          }
-
-          if (!auth?.companyId) {
-            throw new Error("Login succeeded but company scope was not returned.");
-          }
-
-          nav(`/companies/${auth.companyId}/dashboard`, {
-            replace: true,
-          });
+      nav(getPostLoginTarget(nextAuth, redirectTo, routeAccessCandidates), {
+        replace: true,
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Sign in failed.");
       setBusy(false);
@@ -198,16 +251,12 @@ export default function LoginPage() {
   if (isAuthenticated) {
     return (
       <div className="auth-page">
-        <p className="auth-redirecting">Redirecting…</p>
+        <p className="auth-redirecting">Redirecting...</p>
       </div>
     );
   }
 
-  const canSubmit =
-    Boolean(email.trim()) &&
-    Boolean(password) &&
-    (mode === "platform" || Boolean(normalizeTenantSlug(tenantSlug))) &&
-    !busy;
+  const canSubmit = Boolean(email.trim()) && Boolean(password) && !busy;
 
   return (
     <div className="auth-page">
@@ -216,66 +265,18 @@ export default function LoginPage() {
           <div className="auth-logo__icon" aria-hidden="true">
             <IconGrid />
           </div>
-          <span className="auth-logo__name">RestaurantFNB</span>
+          <span className="auth-logo__name">Hotel Nova</span>
         </div>
 
         <div className="auth-card">
           <div className="auth-card__head">
             <h1 className="auth-card__title">Sign in</h1>
             <p className="auth-card__sub">
-              {mode === "workspace"
-                ? "Enter your workspace credentials."
-                : "Enter your platform administrator credentials."}
+              Enter your account credentials. Your company workspace is selected automatically.
             </p>
           </div>
 
-          <div className="auth-mode-switch" role="tablist" aria-label="Login mode">
-            <button
-              type="button"
-              className={`auth-mode-switch__btn ${mode === "workspace" ? "is-active" : ""}`}
-              onClick={() => switchMode("workspace")}
-              disabled={busy}
-            >
-              Workspace Login
-            </button>
-
-            <button
-              type="button"
-              className={`auth-mode-switch__btn ${mode === "platform" ? "is-active" : ""}`}
-              onClick={() => switchMode("platform")}
-              disabled={busy}
-            >
-              Platform Admin
-            </button>
-          </div>
-
           <form className="auth-form" onSubmit={onSubmit} noValidate>
-            {mode === "workspace" && (
-              <div className="auth-field">
-                <label className="auth-label" htmlFor="tenantSlug">
-                  Workspace / Tenant
-                </label>
-
-                <div className="auth-input-wrap">
-                  <input
-                    id="tenantSlug"
-                    name="tenantSlug"
-                    type="text"
-                    className="auth-input"
-                    value={tenantSlug}
-                    onChange={(e) => setTenantSlug(e.target.value)}
-                    onBlur={(e) => setTenantSlug(normalizeTenantSlug(e.target.value))}
-                    placeholder="ambassador"
-                    autoComplete="organization"
-                    required
-                    disabled={busy}
-                  />
-                </div>
-
-                <small className="auth-help">Example: ambassador, dako</small>
-              </div>
-            )}
-
             <div className="auth-field">
               <label className="auth-label" htmlFor="email">
                 Email address
@@ -289,7 +290,7 @@ export default function LoginPage() {
                   className="auth-input"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={mode === "platform" ? SYSTEM_ADMIN_EMAIL : "you@restaurant.com"}
+                  placeholder="you@restaurant.com"
                   autoComplete="email"
                   autoFocus
                   required
@@ -317,7 +318,7 @@ export default function LoginPage() {
                   className="auth-input"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Password"
                   autoComplete="current-password"
                   required
                   disabled={busy}
@@ -362,7 +363,7 @@ export default function LoginPage() {
               {busy ? (
                 <>
                   <span className="auth-spinner" aria-hidden="true" />
-                  Signing in…
+                  Signing in...
                 </>
               ) : (
                 "Sign in"
@@ -373,27 +374,13 @@ export default function LoginPage() {
           <div className="auth-divider" style={{ margin: "20px 0 16px" }} />
 
           <p className="auth-security-note">
-            {mode === "workspace" ? (
-              <>
-                Protected by tenant-scoped authentication.
-                <br />
-                Your session is isolated to your workspace.
-              </>
-            ) : (
-              <>
-                Protected by platform administrator authentication.
-                <br />
-                Platform access is isolated from tenant workspaces.
-              </>
-            )}
+            Protected by tenant-platform authentication.
+            <br />
+            The backend determines your company workspace after sign in.
           </p>
         </div>
 
-        <p className="auth-footer">
-          {mode === "workspace"
-            ? "Need access? Contact your company administrator."
-            : "Platform access is restricted to authorized system administrators."}
-        </p>
+        <p className="auth-footer">Need access? Contact your company administrator.</p>
 
         <div className="auth-trust">
           <span className="auth-trust__item">Encrypted</span>

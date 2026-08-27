@@ -25,12 +25,14 @@ export type TelegramPageMeta = {
 export type TelegramMiniAppAuthResult = {
   success: boolean;
   message?: string | null;
+  errorCode?: string | null;
   requiresEmployeeLink: boolean;
 
   companyId?: string | null;
   employeeId?: string | null;
   userId?: string | null;
   branchId?: string | null;
+  tenantSlug?: string | null;
 
   employeeName?: string | null;
   employeeCode?: string | null;

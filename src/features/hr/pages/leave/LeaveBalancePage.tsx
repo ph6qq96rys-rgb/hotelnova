@@ -42,7 +42,7 @@ export default function LeaveBalancePage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Leave</div>
+          <div className="page-kicker">Human Resources - Leave</div>
           <div className="page-title">Leave Balances</div>
           <div className="page-sub">
             Entitlements and remaining balances for employee {employeeId}
@@ -63,7 +63,7 @@ export default function LeaveBalancePage() {
             onClick={() => nav(`/hr/leave/new`)}>
             + New Request
           </button>
-          <button className="btn" onClick={() => nav(-1)}>← Back</button>
+          <button className="btn" onClick={() => nav(-1)}>Back</button>
         </div>
       </div>
 
@@ -208,7 +208,7 @@ export default function LeaveBalancePage() {
                   <td style={{ fontWeight: 500, fontSize: 13 }}>{b.leaveTypeName}</td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 12 }}>{b.entitled}</td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-muted)' }}>
-                    {b.carryForward ?? '—'}
+                    {b.carryForward ?? '-'}
                   </td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--accent)' }}>
                     {b.taken}

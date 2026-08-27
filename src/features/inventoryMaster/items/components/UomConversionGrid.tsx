@@ -38,7 +38,61 @@ function isValidFactorText(value: string): boolean {
 }
 
 function uomLabel(uom: UomOption): string {
-  return uom.code ? `${uom.code} — ${uom.name}` : uom.name;
+  return uom.code ? `${uom.code} - ${uom.name}` : uom.name;
+}
+
+type UomFamily = "weight" | "volume" | "count" | "package" | "unknown";
+
+function normalizeToken(value?: string | null): string {
+  return (value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function uomFamily(uom?: Pick<UomOption, "code" | "name">): UomFamily {
+  if (!uom) return "unknown";
+
+  const tokens = new Set([normalizeToken(uom.code), normalizeToken(uom.name)]);
+
+  if (["KG", "KGS", "KILOGRAM", "KILOGRAMS", "GM", "G", "GR", "GRAM", "GRAMS"].some((x) => tokens.has(x))) {
+    return "weight";
+  }
+
+  if (["LTR", "L", "LT", "LITER", "LITRE", "LITERS", "LITRES", "ML", "MILLILITER", "MILLILITRE", "MILLILITERS", "MILLILITRES"].some((x) => tokens.has(x))) {
+    return "volume";
+  }
+
+  if (["EA", "EACH", "PCS", "PC", "PIECE", "PIECES", "UNIT", "UNITS", "EACHUNIT"].some((x) => tokens.has(x))) {
+    return "count";
+  }
+
+  if (["CASE", "CS", "BOX", "PACK", "PK", "PKT", "DOZ", "DOZEN", "BTL", "BOTTLE", "SET", "ROLL"].some((x) => tokens.has(x))) {
+    return "package";
+  }
+
+  return "unknown";
+}
+
+function isCompatibleUom(baseUom?: UomOption, selectedUom?: UomOption): boolean {
+  if (!baseUom || !selectedUom) return true;
+  if (baseUom.id === selectedUom.id) return true;
+
+  const baseFamily = uomFamily(baseUom);
+  const selectedFamily = uomFamily(selectedUom);
+
+  if (baseFamily === "unknown" || selectedFamily === "unknown") return true;
+  if (baseFamily === selectedFamily && baseFamily !== "package") return true;
+
+  return baseFamily === "count" && selectedFamily === "package";
+}
+
+function compatibilityHint(baseUom?: UomOption): string {
+  const family = uomFamily(baseUom);
+
+  if (family === "weight") return "Use weight units only, for example 1 GM = 0.001 KG or 1 KG = 1000 GM.";
+  if (family === "volume") return "Use volume units only, for example 1 ML = 0.001 LTR.";
+  if (family === "count") return "Use count units or purchasing packs, for example 1 CASE = 24 EA.";
+  if (family === "package") return "Package units should normally be purchasing units, not base units.";
+
+  return "The factor means base quantity received from 1 selected unit.";
 }
 
 function buildBaseRow(baseUom: UomOption): ItemUomDto {
@@ -57,6 +111,21 @@ function buildBaseRow(baseUom: UomOption): ItemUomDto {
   };
 }
 
+function rowSignature(rows: ItemUomDto[]): string {
+  return rows
+    .map((row) => [
+      row.uomId,
+      row.toBaseFactor ?? "",
+      row.isBase ? 1 : 0,
+      row.isPurchase ? 1 : 0,
+      row.isIssue ? 1 : 0,
+      row.isRecipe ? 1 : 0,
+      row.isConsume ? 1 : 0,
+      row.isCount ? 1 : 0,
+      row.isActive !== false ? 1 : 0,
+    ].join(":"))
+    .join("|");
+}
 function normalizeRows(
   baseUomId: string | undefined,
   uoms: UomOption[],
@@ -129,6 +198,11 @@ export default function UomConversionGrid({
 
   const [factorText, setFactorText] = useState<Record<string, string>>({});
 
+  useEffect(() => {
+    if (rowSignature(rows) === rowSignature(normalizedRows)) return;
+    onChange(normalizedRows);
+  }, [normalizedRows, onChange, rows]);
+
   const uomById = useMemo(() => new Map(uoms.map((x) => [x.id, x])), [uoms]);
 
   const baseUom = useMemo(
@@ -142,8 +216,10 @@ export default function UomConversionGrid({
   );
 
   const canAdd = useMemo(
-    () => Boolean(baseUomId) && uoms.some((x) => x.id !== baseUomId && !usedUomIds.has(x.id)),
-    [baseUomId, uoms, usedUomIds]
+    () =>
+      Boolean(baseUomId) &&
+      uoms.some((x) => x.id !== baseUomId && !usedUomIds.has(x.id) && isCompatibleUom(baseUom, x)),
+    [baseUom, baseUomId, uoms, usedUomIds]
   );
 
   useEffect(() => {
@@ -213,11 +289,11 @@ export default function UomConversionGrid({
           .filter(Boolean)
       );
 
-      return uoms.filter(
-        (x) =>
-          x.id !== baseUomId &&
-          (x.id === row.uomId || !takenByOthers.has(x.id))
-      );
+      return uoms.filter((x) => {
+        if (x.id === baseUomId) return false;
+        if (x.id !== row.uomId && takenByOthers.has(x.id)) return false;
+        return isCompatibleUom(baseUom, x);
+      });
     },
     [baseUom, baseUomId, uoms, vmRows]
   );
@@ -278,7 +354,7 @@ export default function UomConversionGrid({
 
   const addRow = useCallback(() => {
     const nextUom = uoms.find(
-      (x) => x.id !== baseUomId && !usedUomIds.has(x.id)
+      (x) => x.id !== baseUomId && !usedUomIds.has(x.id) && isCompatibleUom(baseUom, x)
     );
 
     if (!nextUom) return;
@@ -300,7 +376,7 @@ export default function UomConversionGrid({
 
     commit([...vmRows, row]);
     setFactorText((prev) => ({ ...prev, [row._key]: "" }));
-  }, [baseUomId, commit, uoms, usedUomIds, vmRows]);
+  }, [baseUom, baseUomId, commit, uoms, usedUomIds, vmRows]);
 
   const removeRow = useCallback(
     (key: string) => {
@@ -366,14 +442,14 @@ export default function UomConversionGrid({
         <div className="uom-grid__meta">
           <div className="uom-grid__title">Allowed Units &amp; Conversions</div>
           <div className="uom-grid__subtitle">
-            Configure which UOMs are valid for purchase, issue, consumption, and stock count.
+            Define how each selected unit converts into the base stock unit.
           </div>
 
           {baseUom ? (
             <div className="uom-chip">
               <span className="uom-chip__label">Base unit</span>
               <strong>{baseUom.code || baseUom.name}</strong>
-              <span className="uom-chip__separator">—</span>
+              <span className="uom-chip__separator">-</span>
               <span>{baseUom.name}</span>
             </div>
           ) : (
@@ -399,7 +475,7 @@ export default function UomConversionGrid({
             <thead>
               <tr>
                 <th>Unit</th>
-                <th>To Base Factor</th>
+                <th>Base Qty / 1 Unit</th>
                 <th>Purchase</th>
                 <th>Issue</th>
                 <th>Recipe</th>
@@ -462,7 +538,7 @@ export default function UomConversionGrid({
                         />
 
                         <div className={`uom-factor-hint${invalid ? " uom-factor-hint--error" : ""}`}>
-                          {row.isBase ? "Locked to 1." : "Must be greater than zero."}
+                          {row.isBase ? "Locked to 1." : compatibilityHint(baseUom)}
                         </div>
                       </td>
 
@@ -530,7 +606,7 @@ export default function UomConversionGrid({
                             <b>{baseUom.code || baseUom.name}</b>
                           </span>
                         ) : (
-                          "—"
+                          "-"
                         )}
                       </td>
 
@@ -555,7 +631,7 @@ export default function UomConversionGrid({
         <div className="uom-table-footer">
           Purchase GRN requires <strong>Purchase</strong>. SIV/store issue requires{" "}
           <strong>Issue</strong>. Recipe/COGS posting requires{" "}
-          <strong>Consume</strong>. Physical count requires <strong>Count</strong>.
+          <strong>Consume</strong>. Physical count requires <strong>Count</strong>. The factor is always 1 selected unit = N base units.
         </div>
       </div>
     </div>

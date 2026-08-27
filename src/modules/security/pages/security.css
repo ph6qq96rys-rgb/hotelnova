@@ -1,6 +1,6 @@
 /* src/pages/auth/security.css */
 
-/* ── Design tokens ───────────────────────────────────────────────────────── */
+/*  Design tokens  */
 :root {
   --a-bg:           #0c0e14;
   --a-surface:      #13151e;
@@ -32,7 +32,7 @@
   --a-t: 170ms cubic-bezier(0.4,0,0.2,1);
 }
 
-/* ── Page shell ──────────────────────────────────────────────────────────── */
+/*  Page shell  */
 .auth-page {
   min-height: 100vh;
   display: flex;
@@ -73,7 +73,7 @@
   font-size: 13px;
 }
 
-/* ── Outer box ───────────────────────────────────────────────────────────── */
+/*  Outer box  */
 .auth-box,
 .auth-wrap {
   width: 100%;
@@ -91,7 +91,7 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Logo / brand mark ───────────────────────────────────────────────────── */
+/*  Logo / brand mark  */
 .auth-logo {
   display: flex;
   align-items: center;
@@ -123,7 +123,7 @@
 .auth-mark__wordmark { font-size: 15px; font-weight: 600; letter-spacing: -0.02em; color: var(--a-text); }
 .auth-mark__tagline  { font-size: 12px; color: var(--a-text-2); margin-top: 1px; }
 
-/* ── Card ────────────────────────────────────────────────────────────────── */
+/*  Card  */
 .auth-card {
   background: var(--a-surface);
   border: 1px solid var(--a-border);
@@ -135,7 +135,7 @@
 .auth-card__title { font-size: 19px; font-weight: 600; letter-spacing: -0.03em; color: var(--a-text); margin: 0 0 3px; }
 .auth-card__sub   { font-size: 13px; color: var(--a-text-2); margin: 0; }
 
-/* ── Form ────────────────────────────────────────────────────────────────── */
+/*  Form  */
 .auth-form,
 .sec-form {
   display: flex;
@@ -175,7 +175,7 @@
 .auth-link:hover,
 .sec-label-link:hover { color: var(--a-accent); }
 
-/* ── Input ───────────────────────────────────────────────────────────────── */
+/*  Input  */
 .auth-input-wrap {
   position: relative;
   display: flex;
@@ -197,7 +197,7 @@
   transition: border-color var(--a-t), box-shadow var(--a-t), background var(--a-t);
 }
 
-/* Input without icon suffix — no right padding */
+/* Input without icon suffix - no right padding */
 .auth-input:not(.auth-input-wrap .auth-input) {
   padding-right: 14px;
 }
@@ -257,7 +257,7 @@
   margin-top: 2px;
 }
 
-/* ── Remember me ─────────────────────────────────────────────────────────── */
+/*  Remember me  */
 .auth-remember {
   display: flex;
   align-items: center;
@@ -278,7 +278,7 @@
   user-select: none;
 }
 
-/* ── Error alert ─────────────────────────────────────────────────────────── */
+/*  Error alert  */
 .auth-error,
 .sec-alert,
 .sec-alert--error {
@@ -303,7 +303,7 @@
   88%     { transform: translateX(3px); }
 }
 
-/* ── Success state ───────────────────────────────────────────────────────── */
+/*  Success state  */
 .auth-success {
   display: flex;
   flex-direction: column;
@@ -353,7 +353,7 @@
 }
 .auth-success__action:hover { color: var(--a-accent-hover); }
 
-/* ── Primary button ──────────────────────────────────────────────────────── */
+/*  Primary button  */
 .auth-btn,
 .sec-btn,
 .sec-btn--primary {
@@ -383,7 +383,7 @@
 
 .sec-btn--full { width: 100%; }
 
-/* ── Spinner ─────────────────────────────────────────────────────────────── */
+/*  Spinner  */
 .auth-spinner,
 .sec-spinner {
   display: inline-block;
@@ -396,14 +396,14 @@
 }
 @keyframes a-spin { to { transform: rotate(360deg); } }
 
-/* ── Divider ─────────────────────────────────────────────────────────────── */
+/*  Divider  */
 .auth-divider {
   height: 1px;
   background: var(--a-border);
   margin: 4px 0;
 }
 
-/* ── Security note ───────────────────────────────────────────────────────── */
+/*  Security note  */
 .auth-security-note {
   font-size: 11.5px;
   color: var(--a-text-3);
@@ -412,7 +412,7 @@
   margin: 0;
 }
 
-/* ── Trust badges ────────────────────────────────────────────────────────── */
+/*  Trust badges  */
 .auth-trust {
   display: flex;
   justify-content: center;
@@ -436,7 +436,7 @@
   flex-shrink: 0;
 }
 
-/* ── Footer ──────────────────────────────────────────────────────────────── */
+/*  Footer  */
 .auth-footer {
   text-align: center;
   font-size: 13px;
@@ -454,7 +454,7 @@
 .auth-footer-row a { color: var(--a-accent); text-decoration: none; }
 .auth-footer-row a:hover { text-decoration: underline; }
 
-/* ── Password strength bar ───────────────────────────────────────────────── */
+/*  Password strength bar  */
 .auth-strength {
   display: flex;
   flex-direction: column;
@@ -485,7 +485,7 @@
   color: var(--a-text-2);
 }
 
-/* ── Login Mode Switch ─────────────────────────────────────────────────── */
+/*  Login Mode Switch  */
 
 .auth-mode-switch {
   display: flex;
@@ -541,7 +541,7 @@
   cursor: not-allowed;
 }
 
-/* ── ERP security module workspace ───────────────────────────────────────── */
+/*  ERP security module workspace  */
 
 .sec-page {
   padding: 28px;
@@ -1014,6 +1014,147 @@
 }
 
 @media (max-width: 720px) {
+  .auth-page,
+  .auth-shell {
+    min-height: 100dvh;
+    align-items: stretch;
+    justify-content: flex-start;
+    overflow-y: auto;
+    padding: max(18px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom));
+  }
+
+  .auth-page::before {
+    width: 360px;
+    height: 360px;
+    opacity: 0.9;
+  }
+
+  .auth-box,
+  .auth-wrap {
+    max-width: none;
+    min-height: calc(100dvh - max(18px, env(safe-area-inset-top)) - max(18px, env(safe-area-inset-bottom)));
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .auth-logo,
+  .auth-mark {
+    padding-inline: 2px;
+  }
+
+  .auth-logo__icon,
+  .auth-mark__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+
+  .auth-logo__name,
+  .auth-mark__title,
+  .auth-mark__wordmark {
+    font-size: 16px;
+  }
+
+  .auth-card {
+    padding: 22px;
+    border-radius: 18px;
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.22);
+  }
+
+  .auth-card__head {
+    margin-bottom: 18px;
+  }
+
+  .auth-card__title {
+    font-size: 22px;
+    line-height: 1.15;
+  }
+
+  .auth-card__sub {
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .auth-form,
+  .sec-form {
+    gap: 15px;
+  }
+
+  .auth-field,
+  .sec-field {
+    gap: 7px;
+  }
+
+  .auth-field__row,
+  .sec-field-row {
+    gap: 12px;
+  }
+
+  .auth-label,
+  .sec-label,
+  .auth-link,
+  .sec-label-link {
+    font-size: 13px;
+  }
+
+  .auth-input,
+  .sec-input {
+    height: 48px;
+    border-radius: 12px;
+    font-size: 16px;
+  }
+
+  .auth-input__toggle {
+    right: 12px;
+    min-width: 34px;
+    min-height: 34px;
+    justify-content: center;
+  }
+
+  .auth-checkbox {
+    width: 19px;
+    height: 19px;
+  }
+
+  .auth-remember__label {
+    font-size: 14px;
+  }
+
+  .auth-error,
+  .sec-alert,
+  .sec-alert--error {
+    border-radius: 12px;
+    padding: 12px 13px;
+  }
+
+  .auth-btn,
+  .sec-btn,
+  .sec-btn--primary {
+    min-height: 48px;
+    border-radius: 12px;
+    font-size: 15px;
+  }
+
+  .auth-security-note {
+    font-size: 12px;
+  }
+
+  .auth-footer,
+  .auth-footer-row {
+    font-size: 13px;
+    line-height: 1.45;
+    text-align: center;
+  }
+
+  .auth-trust {
+    gap: 6px 9px;
+    padding-inline: 12px;
+  }
+
+  .auth-trust__item {
+    font-size: 11.5px;
+  }
+
   .sec-page {
     padding: 16px;
   }
@@ -1026,5 +1167,24 @@
   .sec-kpi-grid,
   .sec-form-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 380px) {
+  .auth-page,
+  .auth-shell {
+    padding-inline: 12px;
+  }
+
+  .auth-card {
+    padding: 20px 18px;
+  }
+
+  .auth-card__title {
+    font-size: 21px;
+  }
+
+  .auth-card__sub {
+    font-size: 13.5px;
   }
 }

@@ -8,6 +8,7 @@ import { useAuth } from "../../../auth/AuthProvider";
 import { securityApi } from "../api/securityApi";
 import { useUser } from "../hooks/useUsers";
 import { extractSecurityError } from "../utils/security.utils";
+import { fmtDateTime } from "../../../features/hr/utils/hrUtils";
 
 import "./security.css";
 
@@ -76,8 +77,7 @@ function actorCanManageTarget(
 
   return (
     actorIsCompanyAdmin ||
-    Boolean(hasPermission?.("users.manage")) ||
-    Boolean(hasPermission?.("security.manage"))
+    Boolean(hasPermission?.("users.update"))
   );
 }
 
@@ -105,10 +105,7 @@ function statusText(user: any): string {
 }
 
 function fmtDate(value: unknown): string {
-  if (!value) return "—";
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString();
+  return fmtDateTime(value ? String(value) : null);
 }
 
 function isStrongPassword(password: string): boolean {
@@ -198,7 +195,7 @@ function DetailItem({
   return (
     <div>
       <div className="sec-muted">{label}</div>
-      <strong>{value || "—"}</strong>
+      <strong>{value || "-"}</strong>
     </div>
   );
 }
@@ -382,7 +379,7 @@ export default function UserDetailPage() {
   if (loading) {
     return (
       <div className="sec-page">
-        <div className="sec-placeholder">Loading user security profile…</div>
+        <div className="sec-placeholder">Loading user security profile'</div>
       </div>
     );
   }
@@ -402,7 +399,7 @@ export default function UserDetailPage() {
       <div className="sec-page">
         <div className="sec-guard">
           <div className="sec-guard__inner">
-            <div className="sec-guard__icon">🔍</div>
+            <div className="sec-guard__icon"></div>
             <div className="sec-guard__title">User not found</div>
             <div className="sec-guard__text">
               This user does not exist or you do not have access.
@@ -426,12 +423,12 @@ export default function UserDetailPage() {
           </div>
 
           <div>
-            <p className="sec-kicker">Security · User Control Center</p>
+            <p className="sec-kicker">Security '- User Control Center</p>
             <h1 className="sec-page-title" style={{ fontSize: 24 }}>
               {displayName}
             </h1>
             <p className="sec-page-subtitle" style={{ marginTop: 0 }}>
-              {user.email ?? "No email"} · {accountType(user)} · {statusText(user)}
+              {user.email ?? "No email"} '-'- {statusText(user)}
             </p>
           </div>
         </div>
@@ -443,10 +440,10 @@ export default function UserDetailPage() {
             onClick={() => navigate(-1)}
             disabled={busy}
           >
-            ← Back
+              Back
           </button>
 
-          <Can permission="users.manage">
+          <Can permission="users.update">
             <button
               type="button"
               className="sec-btn"
@@ -614,7 +611,7 @@ export default function UserDetailPage() {
               <DetailItem label="Protected account" value={selectedIsSystemAdmin || selectedIsCompanyAdmin ? "Yes" : "No"} />
               <DetailItem label="Last login" value={fmtDate(user.lastLoginAtUtc ?? user.lastLoginAt)} />
               <DetailItem label="Password changed" value={fmtDate(user.passwordChangedAtUtc ?? user.passwordChangedAt)} />
-              <DetailItem label="MFA" value={user.mfaEnabled === true ? "Enabled" : user.mfaEnabled === false ? "Disabled" : "—"} />
+              <DetailItem label="MFA" value={user.mfaEnabled === true ? "Enabled" : user.mfaEnabled === false ? "Disabled" : "-"} />
               <DetailItem label="Lockout" value={user.lockoutEnabled || user.lockedOut ? "Locked / controlled" : "Not locked"} />
             </div>
           </div>
@@ -724,7 +721,7 @@ export default function UserDetailPage() {
                   disabled={busy || !isStrongPassword(newPassword.trim())}
                   onClick={submitResetPassword}
                 >
-                  {busy ? "Updating…" : "Update password"}
+                  {busy ? "Updating..." : "Update password"}
                 </button>
               </div>
             </div>

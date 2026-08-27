@@ -12,6 +12,7 @@ import { useParams } from "react-router-dom";
 import { http } from "../../../../api/http";
 import { useAppScope } from "../../../../app/useAppScope";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
+import { fmtDateTime } from "../../utils/hrUtils";
 
 type AttendanceQrCodeType = "ClockIn" | "ClockOut" | "Both";
 
@@ -347,7 +348,7 @@ export default function BranchAttendanceQrGeneratorPage({
           <p style={styles.eyebrow}>ERP Attendance</p>
           <h1 style={styles.title}>Branch QR Code Generator</h1>
           <p style={styles.subtitle}>
-            {resolvedBranchName ? `${resolvedBranchName} · ` : ""}Generate,
+            {resolvedBranchName ? `${resolvedBranchName} - ` : ""}Generate,
             rotate, display, and deactivate secure attendance QR codes per
             branch.
           </p>
@@ -446,8 +447,7 @@ export default function BranchAttendanceQrGeneratorPage({
               </div>
 
               <dl style={styles.metaGrid}>
-                <MetaItem label="QR Id" value={qr.id} />
-                <MetaItem label="Code" value={qr.code} />
+                <MetaItem label="QR Code" value={qr.code} />
                 <MetaItem label="Valid from" value={formatDateTime(qr.validFromUtc)} />
                 <MetaItem label="Expires" value={formatDateTime(qr.validToUtc)} />
               </dl>
@@ -571,10 +571,7 @@ function isAxiosErrorLike(
 }
 
 function formatDateTime(value?: string): string {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return fmtDateTime(value);
 }
 
 function getRelativeExpiry(value?: string): string {

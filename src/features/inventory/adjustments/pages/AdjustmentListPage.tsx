@@ -36,7 +36,7 @@ function normalizeLocation(row: StockLocationOption | Record<string, unknown>): 
 
   return {
     id,
-    name: String(source.name ?? source.locationName ?? source.stockLocationName ?? source.branchLocationName ?? id),
+    name: String(source.name ?? source.locationName ?? source.stockLocationName ?? source.branchLocationName ?? "Unnamed stock location"),
     code: cleanString(source.code ?? source.locationCode ?? source.stockLocationCode),
     isActive: source.isActive !== false && source.active !== false && source.isEnabled !== false,
     branchName: cleanString(source.branchName ?? (source.branch as Record<string, unknown> | undefined)?.["name"]),
@@ -45,15 +45,15 @@ function normalizeLocation(row: StockLocationOption | Record<string, unknown>): 
 }
 
 function locationLabel(location: LocationOption): string {
-  const left = location.code ? `${location.code} — ${location.name}` : location.name;
+  const left = location.code ? `${location.code} - ${location.name}` : location.name;
   const scope = location.branchLocationName || location.branchName;
   return scope ? `${left} (${scope})` : left;
 }
 
 function fmtDate(value?: string | null) {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 }
 
@@ -71,7 +71,7 @@ function rowAmount(row: InventoryAdjustmentDto): number {
 
 function getRowLocation(row: InventoryAdjustmentDto): string {
   const source = row as InventoryAdjustmentDto & Record<string, unknown>;
-  return String(source.locationName ?? source.stockLocationName ?? source.branchLocationName ?? source.locationId ?? "—");
+  return String(source.locationName ?? source.stockLocationName ?? source.branchLocationName ?? "Unassigned location");
 }
 
 export default function AdjustmentListPage() {
@@ -194,13 +194,13 @@ export default function AdjustmentListPage() {
         <label>
           Stock location
           <select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={locationLoading}>
-            <option value="">{locationLoading ? "Loading locations…" : "All branch stock locations"}</option>
+            <option value="">{locationLoading ? "Loading locations..." : "All branch stock locations"}</option>
             {locations.map((location) => <option key={location.id} value={location.id}>{locationLabel(location)}</option>)}
           </select>
         </label>
 
         <button type="button" className="btn" disabled={loading || !companyId || !branchId} onClick={() => void load()}>
-          <i className="ti ti-refresh" aria-hidden /> {loading ? "Loading…" : "Refresh"}
+          <i className="ti ti-refresh" aria-hidden /> {loading ? "Loading..." : "Refresh"}
         </button>
       </section>
 
@@ -227,7 +227,7 @@ export default function AdjustmentListPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="adj-empty">Loading…</td></tr>
+                <tr><td colSpan={10} className="adj-empty">Loading...</td></tr>
               ) : items.length === 0 ? (
                 <tr><td colSpan={10} className="adj-empty">No adjustments found. <button type="button" className="link-button" disabled={!canCreate} onClick={goToCreate}>Create one</button></td></tr>
               ) : (
@@ -240,12 +240,12 @@ export default function AdjustmentListPage() {
                     <tr key={row.id} className="adj-click-row" onClick={() => goToDetail(row.id)}>
                       <td className="adj-mono muted">{fmtDate(row.adjustmentDate)}</td>
                       <td>
-                        <div className="adj-strong">{row.adjustmentNo || "—"}</div>
+                        <div className="adj-strong">{row.adjustmentNo || "-"}</div>
                         {row.referenceNo && <div className="adj-subline">Ref: {row.referenceNo}</div>}
-                        {row.hasHighVariance && <div className="adj-warning-line">⚠ High variance {row.highestVariancePercent?.toFixed(1) ?? "0.0"}%</div>}
+                        {row.hasHighVariance && <div className="adj-warning-line">Warning: High variance {row.highestVariancePercent?.toFixed(1) ?? "0.0"}%</div>}
                       </td>
                       <td>{getRowLocation(row)}</td>
-                      <td>{row.adjustmentType || "—"}</td>
+                      <td>{row.adjustmentType || "-"}</td>
                       <td>
                         <span className={STATUS_BADGE[normalizedStatus]}>{normalizedStatus}</span>
                         {row.rejectionNote && <div className="adj-danger-line" title={row.rejectionNote}>{row.rejectionNote}</div>}
@@ -254,7 +254,7 @@ export default function AdjustmentListPage() {
                       <td className="num adj-mono">{fmtQty(row.totalCountedQty ?? 0)}</td>
                       <td className="num adj-mono" data-sign={varianceQty < 0 ? "neg" : varianceQty > 0 ? "pos" : undefined}>{varianceQty >= 0 ? "+" : ""}{fmtQty(varianceQty)}</td>
                       <td className="num adj-mono adj-strong">{fmtMoney(amount)}</td>
-                      <td className="num"><button type="button" className="btn btn-sm" onClick={(event) => { event.stopPropagation(); goToDetail(row.id); }}>Open →</button></td>
+                      <td className="num"><button type="button" className="btn btn-sm" onClick={(event) => { event.stopPropagation(); goToDetail(row.id); }}>Open to</button></td>
                     </tr>
                   );
                 })

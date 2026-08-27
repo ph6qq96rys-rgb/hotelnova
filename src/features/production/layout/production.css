@@ -1,10 +1,10 @@
-﻿/* =============================================================================
-   production.css — Unified ERP Design System
+/* =============================================================================
+   production.css - Unified ERP Design System
    Replaces: menu-engineering.css, menu-item-create.css,
              menu-item-detail.css, production-batch.css, production-workspace.css
    ============================================================================= */
 
-/* ── Design Tokens ──────────────────────────────────────────────────────────── */
+/*  Design Tokens  */
 :root {
   --p-font:        "Inter", system-ui, -apple-system, sans-serif;
   --p-mono:        "JetBrains Mono", "Fira Code", ui-monospace, monospace;
@@ -49,7 +49,7 @@
   --p-shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
 }
 
-/* ── Reset / Base ───────────────────────────────────────────────────────────── */
+/*  Reset / Base  */
 *, *::before, *::after { box-sizing: border-box; }
 
 .p-page {
@@ -62,7 +62,7 @@
   margin: 0 auto;
 }
 
-/* ── Layout Shell (Workspace) ───────────────────────────────────────────────── */
+/*  Layout Shell (Workspace)  */
 .p-shell {
   display: flex;
   min-height: 100vh;
@@ -208,7 +208,7 @@
 
 .p-content { padding: 28px; flex: 1; }
 
-/* ── Page Header ────────────────────────────────────────────────────────────── */
+/*  Page Header  */
 .p-page-header {
   display: flex;
   align-items: flex-start;
@@ -250,7 +250,7 @@
   margin: 6px 0 0;
 }
 
-/* ── Workflow Bar ────────────────────────────────────────────────────────────── */
+/*  Workflow Bar  */
 .p-workflow-bar {
   display: flex;
   align-items: center;
@@ -316,7 +316,7 @@
   color: #78350f;
 }
 
-/* ── Card ───────────────────────────────────────────────────────────────────── */
+/*  Card  */
 .p-card {
   background: var(--p-surface);
   border: 1px solid var(--p-border);
@@ -350,7 +350,7 @@
   gap: 8px;
 }
 
-/* ── Metrics Strip ──────────────────────────────────────────────────────────── */
+/*  Metrics Strip  */
 .p-metrics {
   display: flex;
   gap: 0;
@@ -439,7 +439,7 @@
 .p-summary__value.is-danger  { color: var(--p-danger); }
 .p-summary__value.is-success { color: var(--p-success); }
 
-/* ── Table ──────────────────────────────────────────────────────────────────── */
+/*  Table  */
 .p-table-wrap { overflow-x: auto; }
 
 .p-table {
@@ -502,7 +502,7 @@
   display: block;
 }
 
-/* ── Form Controls ──────────────────────────────────────────────────────────── */
+/*  Form Controls  */
 .p-field { display: flex; flex-direction: column; gap: 5px; }
 
 .p-field__label {
@@ -574,7 +574,7 @@
   gap: 14px;
 }
 
-/* ── Buttons ────────────────────────────────────────────────────────────────── */
+/*  Buttons  */
 .p-btn {
   display: inline-flex;
   align-items: center;
@@ -620,7 +620,7 @@
 
 .p-btn-divider { width: 1px; height: 24px; background: var(--p-border); flex-shrink: 0; }
 
-/* ── Badges ─────────────────────────────────────────────────────────────────── */
+/*  Badges  */
 .p-badge {
   display: inline-flex;
   align-items: center;
@@ -657,6 +657,84 @@
 
 .p-cat-pill__dot { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; }
 
+.p-menu-eng .p-table th,
+.p-menu-eng .p-table td {
+  white-space: nowrap;
+}
+
+.p-menu-table-wrap {
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-r-md);
+}
+
+.p-menu-table {
+  min-width: 1320px;
+}
+
+.p-menu-code {
+  display: block;
+  margin-top: 2px;
+  color: var(--p-text-muted);
+  font-family: var(--p-mono);
+  font-size: 11px;
+}
+
+.p-menu-summary-bar {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.p-menu-matrix-card {
+  margin-bottom: 16px;
+}
+
+.p-matrix-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.p-matrix-quadrant {
+  min-height: 112px;
+  padding: 12px;
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-r-md);
+  background: var(--p-surface);
+  color: var(--p-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.p-matrix-quadrant:hover {
+  border-color: var(--p-accent);
+  box-shadow: var(--p-shadow-sm);
+}
+
+.p-matrix-quadrant__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.p-matrix-quadrant__items {
+  color: var(--p-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.p-reco {
+  min-width: 240px;
+  max-width: 360px;
+  color: var(--p-text);
+  white-space: normal !important;
+  line-height: 1.45;
+}
+
+.p-menu-eng .num.is-danger { color: var(--p-danger); }
+.p-menu-eng .num.is-success { color: var(--p-success); }
+
 /* Source pill (batch lines) */
 .p-source-pill {
   display: inline-block;
@@ -670,7 +748,7 @@
 .p-source-pill--recipe { background: var(--p-info-bg); color: #1e40af; }
 .p-source-pill--manual { background: var(--p-surface-3); color: var(--p-text-muted); }
 
-/* ── Alerts ─────────────────────────────────────────────────────────────────── */
+/*  Alerts  */
 .p-alert {
   display: flex;
   align-items: flex-start;
@@ -703,7 +781,7 @@
 }
 .p-dismiss:hover { opacity: 1; }
 
-/* ── Guard / Empty State ────────────────────────────────────────────────────── */
+/*  Guard / Empty State  */
 .p-guard {
   text-align: center;
   padding: 40px 24px;
@@ -716,7 +794,7 @@
 
 .p-guard__icon { font-size: 28px; margin-bottom: 10px; }
 
-/* ── Skeleton / Loading ─────────────────────────────────────────────────────── */
+/*  Skeleton / Loading  */
 .p-skeleton {
   height: 12px;
   border-radius: 6px;
@@ -730,7 +808,7 @@
   100% { background-position: -200% 0; }
 }
 
-/* ── Checklist ──────────────────────────────────────────────────────────────── */
+/*  Checklist  */
 .p-checklist { display: grid; gap: 8px; }
 
 .p-check {
@@ -758,7 +836,7 @@
 .p-check--ok   .p-check__icon { background: var(--p-success-bg); color: var(--p-success); }
 .p-check--warn .p-check__icon { background: var(--p-warning-bg); color: var(--p-warning); }
 
-/* ── Section header bands (recipe editor) ───────────────────────────────────── */
+/*  Section header bands (recipe editor)  */
 .p-section {
   border: 1px solid var(--p-border);
   border-radius: var(--p-r-md);
@@ -805,7 +883,121 @@
   font-family: var(--p-mono);
 }
 
-/* ── Step cards ─────────────────────────────────────────────────────────────── */
+/* Kitchen-first production guidance */
+.p-kitchen-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.8fr);
+  gap: 16px;
+  align-items: stretch;
+  margin-bottom: 14px;
+  padding: 18px;
+  border: 1px solid rgba(245,158,11,0.28);
+  border-radius: var(--p-r-lg);
+  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 58%, #f8fafc 100%);
+  box-shadow: var(--p-shadow-sm);
+}
+
+.p-kitchen-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.p-kitchen-status {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-r-md);
+  background: rgba(255,255,255,0.82);
+}
+
+.p-kitchen-status span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--p-text-muted);
+  font-family: var(--p-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.p-kitchen-status strong {
+  display: block;
+  overflow: hidden;
+  color: var(--p-text);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p-kitchen-status.is-ready {
+  border-color: rgba(22,163,74,0.34);
+  background: var(--p-success-bg);
+}
+
+.p-kitchen-status.is-warning {
+  border-color: rgba(217,119,6,0.34);
+  background: var(--p-warning-bg);
+}
+
+.p-kitchen-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.p-kitchen-step {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-r-md);
+  background: var(--p-surface);
+  color: var(--p-text-muted);
+}
+
+.p-kitchen-step > span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--p-surface-3);
+  color: var(--p-text-muted);
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.p-kitchen-step strong {
+  display: block;
+  color: var(--p-text);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.p-kitchen-step small {
+  display: block;
+  margin-top: 3px;
+  color: var(--p-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.p-kitchen-step.is-active {
+  border-color: rgba(245,158,11,0.38);
+  background: rgba(245,158,11,0.08);
+}
+
+.p-kitchen-step.is-active > span {
+  background: var(--p-accent);
+  color: #78350f;
+}
+
+/*  Step cards  */
 .p-steps {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -838,7 +1030,7 @@
   flex-shrink: 0;
 }
 
-/* ── Hint strip ─────────────────────────────────────────────────────────────── */
+/*  Hint strip  */
 .p-hint-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -866,7 +1058,7 @@
 
 .p-hint__text { font-size: 12px; color: var(--p-text-muted); line-height: 1.5; }
 
-/* ── Flow notes (detail page) ───────────────────────────────────────────────── */
+/*  Flow notes (detail page)  */
 .p-flow-notes {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -883,15 +1075,17 @@
 .p-flow-note__title { font-size: 13px; font-weight: 700; margin-bottom: 4px; color: var(--p-text); }
 .p-flow-note__text  { font-size: 12px; color: var(--p-text-muted); line-height: 1.45; }
 
-/* ── Recommendation text ────────────────────────────────────────────────────── */
+/*  Recommendation text  */
 .p-reco {
-  max-width: 240px;
+  min-width: 240px;
+  max-width: 360px;
   font-size: 12px;
-  color: var(--p-text-muted);
+  color: var(--p-text);
   line-height: 1.45;
+  white-space: normal !important;
 }
 
-/* ── Toolbar row ────────────────────────────────────────────────────────────── */
+/*  Toolbar row  */
 .p-toolbar {
   display: flex;
   align-items: center;
@@ -904,7 +1098,7 @@
 
 .p-toolbar__controls { display: flex; gap: 8px; align-items: center; }
 
-/* ── Action panel (warning) ─────────────────────────────────────────────────── */
+/*  Action panel (warning)  */
 .p-action-panel {
   display: flex;
   align-items: center;
@@ -920,7 +1114,7 @@
 .p-action-panel__title { font-size: 13px; font-weight: 700; color: var(--p-text); }
 .p-action-panel__text  { font-size: 12px; color: var(--p-text-muted); margin: 3px 0 0; line-height: 1.5; }
 
-/* ── Costing panel ──────────────────────────────────────────────────────────── */
+/*  Costing panel  */
 .p-costing-cards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -937,10 +1131,13 @@
 .p-costing-card__value { font-size: 22px; font-weight: 800; line-height: 1; }
 .p-costing-card__sub   { font-size: 11px; color: var(--p-text-soft); margin-top: 3px; }
 
-/* ── Responsive ─────────────────────────────────────────────────────────────── */
+/*  Responsive  */
 @media (max-width: 1100px) {
   .p-kpi-grid, .p-summary-bar { grid-template-columns: repeat(2, 1fr); }
+  .p-matrix-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .p-steps { grid-template-columns: repeat(2, 1fr); }
+  .p-kitchen-hero { grid-template-columns: 1fr; }
+  .p-kitchen-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .p-flow-notes { grid-template-columns: repeat(2, 1fr); }
   .p-costing-cards { grid-template-columns: repeat(2, 1fr); }
 }
@@ -959,7 +1156,16 @@
 
 @media (max-width: 640px) {
   .p-kpi-grid, .p-summary-bar, .p-costing-cards { grid-template-columns: 1fr; }
+  .p-matrix-grid { grid-template-columns: 1fr; padding: 12px; }
+  .p-menu-table { min-width: 1180px; }
+  .p-menu-eng .p-toolbar__controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
   .p-steps { grid-template-columns: 1fr; }
+  .p-kitchen-status-grid { grid-template-columns: 1fr; }
+  .p-kitchen-steps { grid-template-columns: 1fr; }
   .p-flow-notes { grid-template-columns: 1fr; }
   .p-workflow-bar { flex-direction: column; border-radius: var(--p-r-md); }
   .p-workflow-step:not(:last-child)::after { display: none; }

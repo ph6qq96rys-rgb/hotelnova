@@ -126,13 +126,19 @@ export default function SalesDashboardPage() {
   );
 
   const load = useCallback(async () => {
-    if (!companyId || !branchId) {
+    if (!companyId) {
       setSales([]);
       setPageState({
         status: "error",
         message:
-          "Company and branch context are required before the sales dashboard can be loaded.",
+          "Company context is required before the sales dashboard can be loaded.",
       });
+      return;
+    }
+
+    if (!branchId) {
+      setSales([]);
+      setPageState({ status: "idle" });
       return;
     }
 
@@ -171,11 +177,11 @@ export default function SalesDashboardPage() {
     void load();
   }, [load]);
 
-  if (!companyId || !branchId || !paths) {
+  if (!companyId || !paths) {
     return (
       <div className="pos-page">
         <Alert tone="warning">
-          Company and branch context are required before opening the sales control dashboard.
+          Company context is required before opening the sales control dashboard.
         </Alert>
       </div>
     );
@@ -190,7 +196,7 @@ export default function SalesDashboardPage() {
             Executive view of today&apos;s revenue, COGS, gross profit, cashier activity,
             and inventory accounting status.
           </p>
-          <p style={{ marginTop: 4, fontSize: 12, opacity: 0.7 }}>{refreshText}</p>
+          <p className="sales-refresh-text">{refreshText}</p>
         </div>
 
         <div className="pos-actions">
@@ -214,6 +220,13 @@ export default function SalesDashboardPage() {
 
       {errorMessage ? <Alert tone="danger">{errorMessage}</Alert> : null}
 
+      {!branchId ? (
+        <Alert tone="warning">
+          Select a branch to load branch-level sales activity. Company administrators can
+          switch branches from the workspace selector.
+        </Alert>
+      ) : null}
+
       <SalesKpis summary={summary} />
 
       {summary.pendingInventory > 0 ? (
@@ -224,14 +237,7 @@ export default function SalesDashboardPage() {
         </Alert>
       ) : null}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1.4fr 0.8fr",
-          gap: 14,
-          alignItems: "start",
-        }}
-      >
+      <div className="sales-dashboard-grid">
         <RecentSalesCard
           sales={sales}
           loading={loading}
@@ -247,14 +253,7 @@ export default function SalesDashboardPage() {
 
 function SalesKpis({ summary }: { summary: SalesSummary }) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(4, minmax(150px, 1fr))",
-        gap: 12,
-        marginBottom: 14,
-      }}
-    >
+    <div className="sales-kpi-grid">
       <Kpi label="Net Sales Today" value={money(summary.totalSales)} />
       <Kpi label="Cost of Goods Sold" value={money(summary.totalCogs)} />
       <Kpi label="Gross Profit" value={money(summary.grossProfit)} />
@@ -292,7 +291,7 @@ function RecentSalesCard({
         </Button>
       }
     >
-      <div style={{ overflowX: "auto" }}>
+      <div className="sales-table-shell">
         <table className="pos-table">
           <thead>
             <tr>
@@ -308,7 +307,7 @@ function RecentSalesCard({
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", padding: 28 }}>
+                <td colSpan={6} className="sales-empty-cell">
                   Loading today&apos;s sales activity...
                 </td>
               </tr>
@@ -316,7 +315,7 @@ function RecentSalesCard({
 
             {!loading && sales.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", padding: 28 }}>
+                <td colSpan={6} className="sales-empty-cell">
                   No sales transactions have been recorded for today.
                 </td>
               </tr>
@@ -330,7 +329,7 @@ function RecentSalesCard({
                     style={{ cursor: "pointer" }}
                     title="Open sale detail"
                   >
-                    <td style={{ fontFamily: "monospace" }}>{sale.saleNo}</td>
+                    <td className="sales-mono">{sale.saleNo}</td>
                     <td>{dateTime(sale.soldAtUtc)}</td>
                     <td>
                       <SaleStatusBadge status={sale.status} />
@@ -355,7 +354,7 @@ function RecentSalesCard({
 function QuickActionsCard({ paths, go }: { paths: SalesPaths; go: (path: string) => void }) {
   return (
     <Card title="Operational Shortcuts" subtitle="Daily sales and POS control workflow">
-      <div style={{ display: "grid", gap: 10 }}>
+      <div className="sales-shortcut-stack">
         <Button variant="primary" size="lg" block onClick={() => go(paths.pos)}>
           <Monitor size={16} /> Start POS Transaction
         </Button>

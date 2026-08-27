@@ -13,9 +13,19 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import { http } from "../api/http";
+import {
+  hasAllErpPermissions,
+  hasAnyErpPermission,
+  hasErpPermission,
+} from "./erpAccess";
 import { authApi } from "./auth.api";
 import { clearAuth, loadAuth, saveAuth } from "./auth.storage";
 import { safeReturnUrl } from "./returnUrl";
+import {
+  clearWorkspaceAuth,
+  saveWorkspaceAuth,
+} from "./workspace-auth.storage";
+import { clearPlatformAuth } from "./platform-auth.storage";
 import type {
   AuthState,
   AuthUser,
@@ -32,9 +42,6 @@ import {
 } from "./jwt";
 import {
   createPermissionSet,
-  hasAllPermissions,
-  hasAnyPermission,
-  hasPermission,
   normalizePermissions,
 } from "./permission.utils";
 
@@ -64,7 +71,7 @@ export interface AuthContextValue {
   hasAnyPermission: (permissions: string[]) => boolean;
   hasAllPermissions: (permissions: string[]) => boolean;
 
-  login: (input: LoginRequest, remember?: boolean) => Promise<void>;
+  login: (input: LoginRequest, remember?: boolean) => Promise<AuthState>;
   register: (input: RegisterRequest, remember?: boolean) => Promise<void>;
   logout: () => void;
   refreshMe: () => Promise<void>;
@@ -75,12 +82,43 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const AUTH_PATHS = [
   "/login",
+  "/system-admin-login",
   "/register",
   "/forgot-password",
   "/reset-password",
 ];
 
 const SYSTEM_ADMIN_ROLES = ["SYSTEMADMIN", "SYSADMIN"];
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const ACTIVITY_WRITE_THROTTLE_MS = 15 * 1000;
+const LAST_ACTIVITY_KEY = "restaurantfnb.auth.lastActivityAt";
+const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
+  "keydown",
+  "mousedown",
+  "mousemove",
+  "pointerdown",
+  "scroll",
+  "touchstart",
+];
+
+function readLastActivityAt(): number | null {
+  const raw = localStorage.getItem(LAST_ACTIVITY_KEY) ?? sessionStorage.getItem(LAST_ACTIVITY_KEY);
+  if (!raw) return null;
+
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function writeLastActivityAt(value = Date.now()): void {
+  const serialized = String(value);
+  localStorage.setItem(LAST_ACTIVITY_KEY, serialized);
+  sessionStorage.setItem(LAST_ACTIVITY_KEY, serialized);
+}
+
+function clearLastActivityAt(): void {
+  localStorage.removeItem(LAST_ACTIVITY_KEY);
+  sessionStorage.removeItem(LAST_ACTIVITY_KEY);
+}
 
 function firstString(...values: unknown[]): string | null {
   for (const value of values) {
@@ -136,12 +174,18 @@ function extractExpiresAt(
   accessToken: string
 ): string | null {
   if (response.token && typeof response.token === "object") {
-    const nestedExpiresAt = firstString(response.token.expiresAt);
+    const nestedExpiresAt = firstString(
+      response.token.expiresAt,
+      (response.token as any).expiresAtUtc
+    );
 
     if (nestedExpiresAt) return nestedExpiresAt;
   }
 
-  return firstString(response.expiresAt) ?? getExpiresAtFromToken(accessToken);
+  return (
+    firstString(response.expiresAt, (response as any).expiresAtUtc) ??
+    getExpiresAtFromToken(accessToken)
+  );
 }
 
 function buildAuthUser(
@@ -386,6 +430,39 @@ function syncAppScopeFromAuth(auth: AuthState | null): void {
   );
 }
 
+function syncWorkspaceAuthFromAuth(auth: AuthState | null): void {
+  if (!auth?.accessToken || !auth.companyId) {
+    clearWorkspaceAuth();
+    return;
+  }
+
+  saveWorkspaceAuth({
+    accessToken: auth.accessToken,
+    refreshToken: auth.refreshToken ?? null,
+    expiresAt: auth.expiresAt ?? "",
+    companyId: auth.companyId,
+    companyName: auth.companyName ?? "",
+    tenantSlug: auth.tenantSlug ?? "",
+    branchId: auth.branchId ?? null,
+    branchName: auth.branchName ?? null,
+    roles: auth.roles ?? [],
+    permissions: auth.permissions ?? [],
+  });
+}
+
+function hasSystemAdminRole(
+  roles: string[] | null | undefined,
+): boolean {
+  return (roles ?? []).some((role) => {
+    const normalized = role.trim().toUpperCase();
+
+    return (
+      normalized === "SYSTEMADMIN" ||
+      normalized === "SYSADMIN"
+    );
+  });
+}
+
 function clearAppScopeCompat(): void {
   for (const key of [
     "companyId",
@@ -398,6 +475,8 @@ function clearAppScopeCompat(): void {
     localStorage.removeItem(key);
     sessionStorage.removeItem(key);
   }
+
+  clearWorkspaceAuth();
 }
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
@@ -420,15 +499,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (auth?.accessToken) {
-      http.defaults.headers.Authorization = `Bearer ${auth.accessToken}`;
-    } else {
-      delete http.defaults.headers.Authorization;
-    }
+    delete http.defaults.headers.Authorization;
   }, [auth?.accessToken]);
 
-  const logoutAndRedirect = useCallback(() => {
-    clearAuth();
+  const logoutAndRedirect = useCallback((event?: Event) => {
+    const scope =
+      event instanceof CustomEvent
+        ? (event.detail as { scope?: string } | undefined)?.scope
+        : null;
+    const isPlatformScope = scope === "platform";
+
+    if (isPlatformScope) {
+      clearAuth();
+      clearWorkspaceAuth();
+      clearPlatformAuth();
+    } else {
+      clearWorkspaceAuth();
+
+      const currentAuth = loadAuth();
+
+      if (
+        currentAuth &&
+        !hasSystemAdminRole(currentAuth.roles)
+      ) {
+        clearAuth();
+      }
+    }
+
     setAuth(null);
 
     const current = pathnameRef.current;
@@ -438,8 +535,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const returnUrl = encodeURIComponent(getDefaultReturnUrl(current));
+    const loginPath = isPlatformScope
+      ? "/system-admin-login"
+      : "/login";
 
-    navigate(`/login?returnUrl=${returnUrl}`, {
+    navigate(`${loginPath}?returnUrl=${returnUrl}`, {
       replace: true,
     });
   }, [navigate]);
@@ -455,29 +555,118 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isReady || !auth?.accessToken) return;
 
-    if (isTokenExpired(auth.accessToken)) {
-      logoutAndRedirect();
+    let timeoutId: number | null = null;
+    let lastWriteAt = 0;
+
+    const clearIdleTimer = () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    const scheduleIdleCheck = () => {
+      clearIdleTimer();
+
+      const lastActivityAt = readLastActivityAt() ?? Date.now();
+      const remainingMs = IDLE_TIMEOUT_MS - (Date.now() - lastActivityAt);
+
+      if (remainingMs <= 0) {
+        logoutAndRedirect();
+        return;
+      }
+
+      timeoutId = window.setTimeout(logoutAndRedirect, remainingMs);
+    };
+
+    const markActivity = () => {
+      const now = Date.now();
+
+      if (now - lastWriteAt < ACTIVITY_WRITE_THROTTLE_MS) {
+        return;
+      }
+
+      lastWriteAt = now;
+      writeLastActivityAt(now);
+      scheduleIdleCheck();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        scheduleIdleCheck();
+      }
+    };
+
+    if (!readLastActivityAt()) {
+      writeLastActivityAt();
     }
+
+    scheduleIdleCheck();
+
+    for (const eventName of ACTIVITY_EVENTS) {
+      window.addEventListener(eventName, markActivity, { passive: true });
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearIdleTimer();
+
+      for (const eventName of ACTIVITY_EVENTS) {
+        window.removeEventListener(eventName, markActivity);
+      }
+
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [isReady, auth?.accessToken, logoutAndRedirect]);
 
   useEffect(() => {
     if (!isReady || !auth?.accessToken || !auth.expiresAt) return;
 
+    const refreshOrLogout = async () => {
+      if (!auth.refreshToken) {
+        logoutAndRedirect();
+        return;
+      }
+
+      try {
+        const response = await authApi.refresh({
+          refreshToken: auth.refreshToken,
+          companyId: auth.companyId,
+          branchId: auth.branchId,
+        });
+
+        const next = buildAuthState(response, auth.sessionOnly);
+        saveAuth(next);
+        syncAppScopeFromAuth(next);
+        syncWorkspaceAuthFromAuth(next);
+        setAuth(next);
+      } catch {
+        logoutAndRedirect();
+      }
+    };
+
+    if (isTokenExpired(auth.accessToken)) {
+      void refreshOrLogout();
+      return;
+    }
+
     const expiresAtMs = Date.parse(auth.expiresAt);
 
-    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+    if (!Number.isFinite(expiresAtMs)) {
       logoutAndRedirect();
       return;
     }
 
-    const timeout = window.setTimeout(
-      logoutAndRedirect,
-      Math.max(expiresAtMs - Date.now(), 0)
-    );
+    const refreshInMs = Math.max(expiresAtMs - Date.now() - 60_000, 0);
+    const timeout = window.setTimeout(() => {
+      void refreshOrLogout();
+    }, refreshInMs);
 
     return () => window.clearTimeout(timeout);
   }, [
     isReady,
+    auth,
     auth?.accessToken,
     auth?.expiresAt,
     logoutAndRedirect,
@@ -493,7 +682,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         saveAuth(next);
         syncAppScopeFromAuth(next);
+        syncWorkspaceAuthFromAuth(next);
+        writeLastActivityAt();
         setAuth(next);
+
+        return next;
       } finally {
         setIsLoading(false);
       }
@@ -510,6 +703,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const next = buildAuthState(response, !remember);
 
         saveAuth(next);
+        syncAppScopeFromAuth(next);
+        syncWorkspaceAuthFromAuth(next);
         setAuth(next);
       } finally {
         setIsLoading(false);
@@ -568,6 +763,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     saveAuth(next);
+    syncAppScopeFromAuth(next);
+    syncWorkspaceAuthFromAuth(next);
     setAuth(next);
   }, [auth]);
 
@@ -623,13 +820,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isTenantUser: Boolean(auth?.companyId) && !isSystemAdmin,
 
       hasPermission: (permission) =>
-        hasPermission(permissions, permission),
+        hasErpPermission({ roles, permissions }, permission),
 
       hasAnyPermission: (required) =>
-        hasAnyPermission(permissions, required),
+        hasAnyErpPermission({ roles, permissions }, required),
 
       hasAllPermissions: (required) =>
-        hasAllPermissions(permissions, required),
+        hasAllErpPermissions({ roles, permissions }, required),
 
       login,
       register,

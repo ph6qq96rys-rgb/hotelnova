@@ -8,6 +8,7 @@ export type InventoryControlSettingsDto = {
   warningVariancePercent: number;
   highVariancePercent: number;
   criticalVariancePercent: number;
+  approvalThresholdPercent: number;
   requireApprovalForHighVariance: boolean;
   blockPostingOnCriticalVariance: boolean;
   lockInventoryDuringCount: boolean;
@@ -22,6 +23,7 @@ export type UpsertInventoryControlSettingsRequest = {
   warningVariancePercent: number;
   highVariancePercent: number;
   criticalVariancePercent: number;
+  approvalThresholdPercent: number;
   requireApprovalForHighVariance: boolean;
   blockPostingOnCriticalVariance: boolean;
   lockInventoryDuringCount: boolean;

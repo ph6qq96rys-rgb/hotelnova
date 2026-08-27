@@ -2,8 +2,9 @@
 
 import type { BranchRole } from "../../types/company.types";
 import type { Nullable } from "../state/onboarding.types";
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 
-// ── String utilities ──────────────────────────────────────────────────────────
+//  String utilities 
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -15,61 +16,34 @@ export function trimOrNull(value: Nullable<string>): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-/** Minimal email check — real validation happens server-side. */
+/** Minimal email check - real validation happens server-side. */
 export function isEmail(value: string): boolean {
   const v = value.trim();
   return v.length >= 5 && v.includes("@") && v.includes(".");
 }
 
-// ── API error extraction ──────────────────────────────────────────────────────
+//  API error extraction 
 
 /**
  * Converts a thrown Axios/fetch error into a human-readable string.
  *
  * Priority (matches the backend's Program.cs exception handler shape):
- *   1. data.detail  — our handler's detail field
- *   2. data.error   — our handler's error field
- *   3. data.message — generic convention
- *   4. data.title   — ASP.NET ProblemDetails
- *   5. data.errors  — ASP.NET validation errors dict → join first messages
- *   6. e.message    — Axios network message
+ *   1. data.detail  - our handler's detail field
+ *   2. data.error   - our handler's error field
+ *   3. data.message - generic convention
+ *   4. data.title   - ASP.NET ProblemDetails
+ *   5. data.errors  - ASP.NET validation errors dict to join first messages
+ *   6. e.message    - Axios network message
  *   7. fallback
  */
 export function extractApiError(
-  error:    unknown,
+  error: unknown,
   fallback: string = "Something went wrong.",
 ): string {
-  const e = error as any;
-  const data = e?.response?.data;
-
-  if (!data) {
-    // Network / no response
-    if (e?.code === "ERR_NETWORK" || e?.code === "ECONNREFUSED") {
-      return "Cannot reach the server — check your connection.";
-    }
-    return e?.message ?? fallback;
-  }
-
-  // ASP.NET validation errors: { errors: { FieldName: ["msg1", "msg2"] } }
-  if (data.errors && typeof data.errors === "object") {
-    const messages = Object.values(data.errors as Record<string, string[]>)
-      .flat()
-      .filter(Boolean)
-      .slice(0, 3);
-    if (messages.length > 0) return messages.join(" ");
-  }
-
-  return (
-    data.detail  ??
-    data.error   ??
-    data.message ??
-    data.title   ??
-    e?.message   ??
-    fallback
-  );
+  return toUserFriendlyError(error, fallback);
 }
 
-// ── Display helpers ───────────────────────────────────────────────────────────
+// -- Display helpers 
 
 export function roleName(role: BranchRole | string | null | undefined): string {
   return role === "BranchAdmin" ? "Branch Admin" : (role || "Staff");
@@ -87,10 +61,10 @@ export function branchUserDisplayName(user: Record<string, any>): string {
   if (full)            return full;
   if (user.userName)   return user.userName;
   if (user.email)      return user.email;
-  return "—";
+  return "-";
 }
 
-// ── Array utilities ───────────────────────────────────────────────────────────
+//  Array utilities 
 
 /**
  * Safely coerces an API response into an array.
@@ -123,10 +97,10 @@ export function upsertById<T extends { id?: string; Id?: string }>(
   return [item, ...without];
 }
 
-// ── DEPRECATED — remove once all HTTP responses go through a camelCase
+//  DEPRECATED - remove once all HTTP responses go through a camelCase
 // response interceptor in http.ts. The backend should return camelCase;
 // this is a temporary shim for endpoints that still return PascalCase.
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 /** @deprecated Add a camelCase interceptor to http.ts instead. */
 export function normalizeEntity<T extends Record<string, any>>(x: T): T {
   return {

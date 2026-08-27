@@ -201,7 +201,7 @@ export default function MenuItemCreatePage() {
     return (
       <div className="p-page">
         <div className="p-guard">
-          <div className="p-guard__icon">⚙</div>
+          <div className="p-guard__icon"></div>
           Company scope is required to continue.
         </div>
       </div>
@@ -212,7 +212,7 @@ export default function MenuItemCreatePage() {
     return (
       <div className="p-page">
         <div className="p-guard">
-          <div className="p-guard__icon">🏬</div>
+          <div className="p-guard__icon"></div>
           Select a branch to continue.
         </div>
       </div>
@@ -238,7 +238,7 @@ export default function MenuItemCreatePage() {
           onClick={goBackToList}
           disabled={saving}
         >
-          ← Cancel
+          - Cancel
         </button>
       </div>
 
@@ -250,17 +250,46 @@ export default function MenuItemCreatePage() {
             className="p-dismiss"
             onClick={() => setError(null)}
           >
-            ✕
+            
           </button>
         </div>
       )}
 
+      <section className="p-kitchen-hero" aria-label="Menu item creation intent">
+        <div>
+          <p className="p-kicker">Menu Item Creation</p>
+          <h1 className="p-title">Create only guest-facing sales items here</h1>
+          <p className="p-subtitle">
+            Menu Items are sales items for POS and reports. If the kitchen produces a prep item that is not sold directly, create it as a Semi-Finished inventory item and select it later in Recipe Editor OUTPUT.
+          </p>
+        </div>
+
+        <div className="p-kitchen-status-grid">
+          <div className="p-kitchen-status is-ready">
+            <span>POS sales item</span>
+            <strong>This screen</strong>
+          </div>
+          <div className="p-kitchen-status">
+            <span>Prep-only output</span>
+            <strong>Inventory Master</strong>
+          </div>
+          <div className="p-kitchen-status">
+            <span>Recipe OUTPUT</span>
+            <strong>Stock received</strong>
+          </div>
+          <div className="p-kitchen-status">
+            <span>Sales behavior</span>
+            <strong>{isAvailableForSale ? "Available for POS" : "Not for POS"}</strong>
+          </div>
+        </div>
+      </section>
+
       <div className="p-card">
         <div className="p-card__head">
           <div>
-            <p className="p-card__title">Commercial Setup</p>
+            <p className="p-card__title">Sales Item Setup</p>
             <p className="p-card__subtitle">
-              This item appears in POS and sales reports when active and available for sale.
+              Create a POS-facing menu item. Production outputs are inventory items selected later in Recipe Editor.
             </p>
           </div>
 
@@ -278,6 +307,12 @@ export default function MenuItemCreatePage() {
           disabled={saving || loadingLookups}
           style={{ border: 0, padding: 0, margin: 0 }}
         >
+          <div className="p-alert p-alert--info">
+            <span className="p-alert__body">
+              This page creates Menu Items for POS and Sales. Prep-only production outputs are created in Inventory Master as Semi-Finished or Finished Good, then selected in Recipe Editor OUTPUT - Stock received into inventory.
+            </span>
+          </div>
+
           <div className="p-grid-2">
             <div className="p-field">
               <label className="p-field__label">Menu Item Name *</label>
@@ -353,7 +388,7 @@ export default function MenuItemCreatePage() {
               >
                 <option value="">
                   Use category default
-                  {inheritedLocationName ? ` — ${inheritedLocationName}` : ""}
+                  {inheritedLocationName ? ` - ${inheritedLocationName}` : ""}
                 </option>
 
                 {locations.map((location) => (
@@ -378,10 +413,13 @@ export default function MenuItemCreatePage() {
                 value={itemType}
                 onChange={(e) => setItemType(Number(e.target.value))}
               >
-                <option value={1}>Food / Recipe Item</option>
-                <option value={2}>Beverage</option>
-                <option value={3}>Service / Non-stock</option>
+                <option value={1}>Prepared Food - POS sales item</option>
+                <option value={2}>Beverage - POS sales item</option>
+                <option value={3}>Service / Non-stock sales item</option>
               </select>
+              <span className="p-field__hint">
+                Semi-Finished and Finished Good types belong to Inventory Master, not Menu Item creation.
+              </span>
             </div>
           </div>
 
@@ -405,10 +443,9 @@ export default function MenuItemCreatePage() {
             </label>
           </div>
 
-          <div className="p-alert p-alert--warning" style={{ marginTop: 16 }}>
+          <div className="p-alert p-alert--info" style={{ marginTop: 16 }}>
             <span className="p-alert__body">
-              POS readiness requires: active item, available for sale, recipe configured,
-              and consumption location configured either on item or category.
+              POS readiness requires an active item, available-for-sale status, recipe setup, and a consumption stock location from either the item or category.
             </span>
           </div>
         </fieldset>

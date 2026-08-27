@@ -258,7 +258,7 @@ function TransfersToolbar({
           style={{ ...inputStyle(false), width: 260 }}
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search transfer, route, reference…"
+          placeholder="Search transfer, route, reference..."
           disabled={loading}
         />
 
@@ -319,7 +319,7 @@ function TransfersTable({
           {loading ? (
             <tr>
               <td colSpan={7} style={{ padding: 18, opacity: 0.75 }}>
-                Loading transfers…
+                Loading transfers...
               </td>
             </tr>
           ) : null}
@@ -340,12 +340,12 @@ function TransfersTable({
                 return (
                   <tr key={row.id} style={{ cursor: "pointer" }} onClick={() => onOpen(row.id)}>
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 800 }}>{anyRow.transferNumber ?? "—"}</div>
+                      <div style={{ fontWeight: 800 }}>{anyRow.transferNumber ?? "-"}</div>
                       <div style={{ fontSize: 12, opacity: 0.75 }}>{anyRow.reference ?? ""}</div>
                     </td>
 
                     <td style={tdStyle}>
-                      {row.fromLocationName} → {row.toLocationName}
+                      {row.fromLocationName} to {row.toLocationName}
                     </td>
 
                     <td style={tdStyle}>{fmtDateTime(anyRow.transferDateUtc)}</td>
@@ -387,7 +387,7 @@ function StickyActions({
   return (
     <div style={stickyBar}>
       <div style={{ opacity: 0.85 }}>
-        <b>Workflow:</b> Draft → Submit → Approve → Post
+        <b>Workflow:</b> Draft to Submit to Approve to Post
       </div>
 
       <div style={{ display: "flex", gap: 10 }}>

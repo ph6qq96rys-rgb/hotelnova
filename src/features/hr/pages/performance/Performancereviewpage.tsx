@@ -36,7 +36,7 @@ function Field({ label, value }: { label: string; value?: React.ReactNode }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '—'}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '-'}</div>
     </div>
   );
 }
@@ -135,7 +135,7 @@ export default function PerformanceReviewPage() {
     return (
       <div className="page">
         <div className="alert alert-danger">{error}</div>
-        <button className="btn" onClick={() => nav(-1)}>← Back</button>
+        <button className="btn" onClick={() => nav(-1)}>Back</button>
       </div>
     );
   }
@@ -147,10 +147,10 @@ export default function PerformanceReviewPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Performance · Review</div>
+          <div className="page-kicker">Human Resources - Performance - Review</div>
           <div className="page-title">{review.employeeName}</div>
           <div className="page-sub">
-            {review.cycleName} · Reviewer: {review.reviewerName}
+            {review.cycleName} - Reviewer: {review.reviewerName}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -166,7 +166,7 @@ export default function PerformanceReviewPage() {
           }}>
             {review.status}
           </span>
-          <button className="btn" onClick={() => nav(cyclePath)}>← Back</button>
+          <button className="btn" onClick={() => nav(cyclePath)}>Back</button>
         </div>
       </div>
 
@@ -177,7 +177,7 @@ export default function PerformanceReviewPage() {
         <div className="kpi">
           <div className="kpi-label">Overall Score</div>
           <div className="kpi-val" style={{ color: 'var(--accent)' }}>
-            {review.finalRating != null ? review.finalRating.toFixed(1) : '—'}
+            {review.finalRating != null ? review.finalRating.toFixed(1) : '-'}
           </div>
           <div className="kpi-sub">out of 5.0</div>
         </div>

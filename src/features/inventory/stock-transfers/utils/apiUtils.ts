@@ -1,5 +1,7 @@
 // src/features/inventory/stockTransfers/utils/apiUtils.ts
 
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
+
 export type PagedResult<T> = {
   items: T[];
   page?: number;
@@ -46,35 +48,7 @@ export function getApiError(
   error: unknown,
   fallback = "Request failed."
 ): string {
-  const err = error as any;
-  const data = err?.response?.data;
-
-  if (typeof data === "string") return data;
-
-  if (data && typeof data === "object") {
-    const title = data.title || data.error || data.message || fallback;
-    const detail =
-      data.detail && data.detail !== title ? ` — ${data.detail}` : "";
-    const traceId = data.traceId ? ` (traceId: ${data.traceId})` : "";
-
-    const validation =
-      data.errors && typeof data.errors === "object"
-        ? " " +
-          Object.entries(data.errors)
-            .map(([key, value]) => {
-              const message = Array.isArray(value)
-                ? value.join(", ")
-                : String(value);
-
-              return `${key}: ${message}`;
-            })
-            .join(" | ")
-        : "";
-
-    return `${title}${traceId}${detail}${validation}`;
-  }
-
-  return err?.message ?? fallback;
+  return toUserFriendlyError(error, fallback);
 }
 
 export function clean(value: unknown): string {
@@ -99,7 +73,7 @@ export function money(value: unknown): string {
 
 export function fmtDateTime(value?: string | null): string {
   const raw = clean(value);
-  if (!raw) return "—";
+  if (!raw) return "-";
 
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? raw : date.toLocaleString();

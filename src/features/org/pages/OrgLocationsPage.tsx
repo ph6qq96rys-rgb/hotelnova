@@ -7,6 +7,8 @@ import CompanyForm from "../components/CompanyForm";
 import OrgTree from "../components/OrgTree";
 import StoreForm from "../components/StoreForm";
 import { orgApi } from "../api/orgApi";
+import "../../../styles/modules.org.css";
+
 import type {
   BranchDto,
   CompanyDto,
@@ -308,7 +310,7 @@ export default function OrgLocationsPage() {
           <strong>Error:</strong> {error}
         </div>
       )}
-      {loading && <div className="alert alert-info">Loading organization data…</div>}
+      {loading && <div className="alert alert-info">Loading organization data...</div>}
 
       <div className="two-col">
         <OrgTree
@@ -343,23 +345,23 @@ export default function OrgLocationsPage() {
                 <hr />
 
                 <div>
-                  <strong>Branch:</strong> {currentBranch?.name ?? "—"}
+                  <strong>Branch:</strong> {currentBranch?.name ?? "-"}
                 </div>
                 <div>
                   <strong>City/Region:</strong>{" "}
                   {currentBranch
-                    ? `${currentBranch.city ?? "—"} / ${currentBranch.region ?? "—"}`
-                    : "—"}
+                    ? `${currentBranch.city ?? "-"} / ${currentBranch.region ?? "-"}`
+                    : "-"}
                 </div>
 
                 <hr />
 
                 <div>
-                  <strong>Store:</strong> {currentStore?.name ?? "—"}
+                  <strong>Store:</strong> {currentStore?.name ?? "-"}
                 </div>
                 <div>
                   <strong>Store Type:</strong>{" "}
-                  {currentStore ? (currentStore.isWarehouse ? "Warehouse" : "Store") : "—"}
+                  {currentStore ? (currentStore.isWarehouse ? "Warehouse" : "Store") : "-"}
                 </div>
               </div>
             )}

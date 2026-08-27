@@ -4,8 +4,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthProvider";
-import { ApiError } from "../../auth/auth.api";
-import { loadAuth } from "../../auth/auth.storage";
+import { ApiError, authApi } from "../../auth/auth.api";
+import type { LoginResponse } from "../../auth/auth.types";
+import {
+  getExpiresAtFromToken,
+  getPermissionsFromToken,
+  getRolesFromToken,
+} from "../../auth/jwt";
 import {
   clearPlatformAuth,
   loadPlatformAuth,
@@ -18,6 +23,81 @@ const PLATFORM_TENANTS_PATH = "/platform/tenants";
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeList(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+}
+
+function extractAccessToken(response: LoginResponse): string | null {
+  if (typeof response.accessToken === "string" && response.accessToken.trim()) {
+    return response.accessToken.trim();
+  }
+
+  if (typeof response.token === "string" && response.token.trim()) {
+    return response.token.trim();
+  }
+
+  if (response.token && typeof response.token === "object") {
+    const tokenObject = response.token;
+
+    return (
+      tokenObject.accessToken?.trim() ??
+      tokenObject.token?.trim() ??
+      null
+    );
+  }
+
+  return null;
+}
+
+function extractRefreshToken(response: LoginResponse): string | null {
+  if (
+    typeof response.refreshToken === "string" &&
+    response.refreshToken.trim()
+  ) {
+    return response.refreshToken.trim();
+  }
+
+  if (response.token && typeof response.token === "object") {
+    return response.token.refreshToken?.trim() ?? null;
+  }
+
+  return null;
+}
+
+function extractExpiresAt(
+  response: LoginResponse,
+  accessToken: string,
+): string | null {
+  if (typeof response.expiresAt === "string" && response.expiresAt.trim()) {
+    return response.expiresAt.trim();
+  }
+
+  if (
+    typeof response.expiresAtUtc === "string" &&
+    response.expiresAtUtc.trim()
+  ) {
+    return response.expiresAtUtc.trim();
+  }
+
+  if (response.token && typeof response.token === "object") {
+    const tokenObject = response.token;
+
+    return (
+      tokenObject.expiresAt?.trim() ??
+      tokenObject.expiresAtUtc?.trim() ??
+      getExpiresAtFromToken(accessToken)
+    );
+  }
+
+  return getExpiresAtFromToken(accessToken);
 }
 
 function hasSystemAdminRole(
@@ -116,7 +196,7 @@ function IconAlert() {
 }
 
 export default function SystemAdminLoginPage() {
-  const { login, isReady } = useAuth();
+  const { isReady } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState(
@@ -173,28 +253,30 @@ export default function SystemAdminLoginPage() {
         normalizedEmail,
       );
 
-      // The existing provider performs the same backend login flow used by
-      // the rest of the application. tenantSlug:null requests platform login.
-      await login(
-        {
-          tenantSlug: null,
-          email: normalizedEmail,
-          password,
-        },
-        remember,
-      );
+      const auth = await authApi.platformLogin({
+        email: normalizedEmail,
+        password,
+      });
+      const accessToken = extractAccessToken(auth);
 
-      // AuthProvider currently persists the response in the legacy store.
-      // Copy only the administrator session into the dedicated platform store.
-      const auth = loadAuth();
-
-      if (!auth?.accessToken) {
+      if (!accessToken) {
         throw new ApiError(
           "Administrator login did not return an access token.",
         );
       }
 
-      if (!hasSystemAdminRole(auth.roles)) {
+      const roles = normalizeList([
+        ...(auth.roles ?? []),
+        ...(auth.user?.roles ?? []),
+        ...getRolesFromToken(accessToken),
+      ]);
+      const permissions = normalizeList([
+        ...(auth.permissions ?? []),
+        ...(auth.user?.permissions ?? []),
+        ...getPermissionsFromToken(accessToken),
+      ]);
+
+      if (!hasSystemAdminRole(roles)) {
         clearPlatformAuth();
 
         throw new ApiError(
@@ -205,11 +287,11 @@ export default function SystemAdminLoginPage() {
 
       savePlatformAuth(
         {
-          accessToken: auth.accessToken,
-          refreshToken: auth.refreshToken ?? null,
-          expiresAt: auth.expiresAt,
-          roles: auth.roles ?? [],
-          permissions: auth.permissions ?? [],
+          accessToken,
+          refreshToken: extractRefreshToken(auth),
+          expiresAt: extractExpiresAt(auth, accessToken),
+          roles,
+          permissions,
         },
         remember,
       );
@@ -240,7 +322,7 @@ export default function SystemAdminLoginPage() {
     return (
       <div className="auth-page">
         <p className="auth-redirecting">
-          Redirecting…
+          Redirecting...
         </p>
       </div>
     );
@@ -263,7 +345,7 @@ export default function SystemAdminLoginPage() {
           </div>
 
           <span className="auth-logo__name">
-            RestaurantFNB Platform
+            Hotel Nova Platform
           </span>
         </div>
 
@@ -333,7 +415,7 @@ export default function SystemAdminLoginPage() {
                   onChange={(event) =>
                     setPassword(event.target.value)
                   }
-                  placeholder="••••••••"
+                  placeholder="--------"
                   autoComplete="current-password"
                   required
                   disabled={busy}
@@ -401,7 +483,7 @@ export default function SystemAdminLoginPage() {
                     className="auth-spinner"
                     aria-hidden="true"
                   />
-                  Signing in…
+                  Signing in...
                 </>
               ) : (
                 "Sign in as administrator"

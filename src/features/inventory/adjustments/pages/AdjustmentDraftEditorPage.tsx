@@ -127,10 +127,10 @@ function fmtMoney(value: unknown): string {
 }
 
 function fmtDate(value?: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
 
   return date.toLocaleDateString(undefined, {
     day: "2-digit",
@@ -184,8 +184,8 @@ function normalizeStockLocation(
       source.branchLocationName,
       branchLocation.name,
       source.displayName,
-      stockLocationId
-    ) ?? stockLocationId;
+      "Unnamed stock location"
+    ) ?? "Unnamed stock location";
 
   return {
     id: stockLocationId,
@@ -235,11 +235,11 @@ function normalizeStockLocation(
 
 function getLocationLabel(location: NormalizedStockLocation): string {
   const left = location.code
-    ? `${location.code} — ${location.name}`
+    ? `${location.code} - ${location.name}`
     : location.name;
 
   const scope = location.branchLocationName || location.branchName;
-  const suffix = [scope, location.type].filter(Boolean).join(" · ");
+  const suffix = [scope, location.type].filter(Boolean).join(" - ");
 
   return suffix ? `${left} (${suffix})` : left;
 }
@@ -281,10 +281,10 @@ function dtoLineToVm(line: InventoryAdjustmentDto["lines"][number]): LineVm {
     vmId: `dto-${line.fifoLotId}-${line.itemId}`,
     fifoLotId: line.fifoLotId,
     itemId: line.itemId,
-    itemName: line.itemName ?? line.itemId,
+    itemName: line.itemName ?? "Unnamed item",
     itemCode: undefined,
     uomId: line.uomId,
-    uomName: line.uomName ?? line.uomId,
+    uomName: line.uomName ?? "Unspecified UOM",
     systemQty: line.systemQty,
     countedQty: line.countedQty,
     adjustmentQty: line.adjustmentQty,
@@ -402,7 +402,7 @@ function InlineModal({
             disabled={working || (requireText && !text.trim())}
             onClick={() => onConfirm(text.trim())}
           >
-            {working ? "Working…" : confirmLabel}
+            {working ? "Working..." : confirmLabel}
           </button>
         </div>
       </div>
@@ -913,7 +913,7 @@ function buildLines() {
   if (pageLoading) {
     return (
       <main className="adj-page page">
-        <div className="adj-loading">Loading adjustment…</div>
+        <div className="adj-loading">Loading adjustment...</div>
       </main>
     );
   }
@@ -955,7 +955,7 @@ function buildLines() {
         <div className="adj-header-left">
           <div className="adj-kicker">
             {isEdit
-              ? `Adjustment · ${draft?.adjustmentNo ?? "…"}`
+              ? `Adjustment - ${draft?.adjustmentNo ?? "..."}`
               : "New adjustment"}
           </div>
 
@@ -969,9 +969,9 @@ function buildLines() {
             {isEdit
               ? `Created ${fmtDate(draft?.createdAt)}${
                   draft?.submittedAt
-                    ? ` · Submitted ${fmtDate(draft.submittedAt)}`
+                    ? ` - Submitted ${fmtDate(draft.submittedAt)}`
                     : ""
-                }${draft?.postedAt ? ` · Posted ${fmtDate(draft.postedAt)}` : ""}`
+                }${draft?.postedAt ? ` - Posted ${fmtDate(draft.postedAt)}` : ""}`
               : "Select an active branch stock location, then add FIFO lots to count."}
           </div>
 
@@ -987,7 +987,7 @@ function buildLines() {
 
           {draft?.hasHighVariance && (
             <span className="adj-badge warn">
-              ⚠ {draft.highestVariancePercent?.toFixed(1)}% variance
+              Warning: {draft.highestVariancePercent?.toFixed(1)}% variance
             </span>
           )}
 
@@ -998,7 +998,7 @@ function buildLines() {
               disabled={saving || lines.length === 0}
               onClick={submitAdjustment}
             >
-              {saving ? "Submitting…" : "Submit for approval"}
+              {saving ? "Submitting..." : "Submit for approval"}
             </button>
           )}
 
@@ -1009,7 +1009,7 @@ function buildLines() {
               disabled={saving}
               onClick={approveAdjustment}
             >
-              {saving ? "Approving…" : "Approve"}
+              {saving ? "Approving..." : "Approve"}
             </button>
           )}
 
@@ -1031,7 +1031,7 @@ function buildLines() {
               disabled={saving}
               onClick={postAdjustment}
             >
-              {saving ? "Posting…" : "Post to inventory"}
+              {saving ? "Posting..." : "Post to inventory"}
             </button>
           )}
 
@@ -1053,12 +1053,12 @@ function buildLines() {
               disabled={saving || lines.length === 0}
               onClick={() => void saveDraft()}
             >
-              {saving ? "Saving…" : isEdit ? "Save changes" : "Create draft"}
+              {saving ? "Saving..." : isEdit ? "Save changes" : "Create draft"}
             </button>
           )}
 
           <button type="button" className="btn" onClick={goBack}>
-            ← Back
+            Back
           </button>
         </div>
       </header>
@@ -1095,7 +1095,7 @@ function buildLines() {
                 value={
                   selectedLocation
                     ? getLocationLabel(selectedLocation)
-                    : locationId || "—"
+                    : locationId || "-"
                 }
                 readOnly
                 disabled
@@ -1109,8 +1109,8 @@ function buildLines() {
               >
                 <option value="">
                   {locationLoading
-                    ? "Loading locations…"
-                    : "— select stock location —"}
+                    ? "Loading locations..."
+                    : "- select stock location -"}
                 </option>
 
                 {activeLocations.map((location) => (
@@ -1216,17 +1216,17 @@ function buildLines() {
       {locationId && (
         <section className="adj-policy-banner" aria-live="polite">
           {settingsLoading
-            ? "Loading inventory control policy…"
+            ? "Loading inventory control policy..."
             : settings
               ? (
                 <>
-                  <strong>Variance policy</strong> · Warning{" "}
-                  {fmt2(settings.warningVariancePercent)}% · High{" "}
-                  {fmt2(settings.highVariancePercent)}% · Critical{" "}
+                  <strong>Variance policy</strong> - Warning{" "}
+                  {fmt2(settings.warningVariancePercent)}% - High{" "}
+                  {fmt2(settings.highVariancePercent)}% - Critical{" "}
                   {fmt2(settings.criticalVariancePercent)}%
-                  {settings.requireReasonOnVariance && " · Reason required"}
+                  {settings.requireReasonOnVariance && " - Reason required"}
                   {settings.blockPostingOnCriticalVariance &&
-                    " · Critical posting blocked"}
+                    " - Critical posting blocked"}
                 </>
               )
               : "No inventory control policy loaded for this location."}
@@ -1240,7 +1240,7 @@ function buildLines() {
               <h2 id="adj-add-lots-title">Add stock lots</h2>
               <p>
                 {candidateLoading
-                  ? "Loading available lots…"
+                  ? "Loading available lots..."
                   : `${availableCandidates.length} lot${
                       availableCandidates.length !== 1 ? "s" : ""
                     } available in ${
@@ -1253,7 +1253,7 @@ function buildLines() {
               className="adj-search-input"
               value={search}
               onChange={(event) => handleSearchChange(event.target.value)}
-              placeholder="Search item / batch…"
+              placeholder="Search item / batch..."
             />
           </div>
 
@@ -1323,7 +1323,7 @@ function buildLines() {
           <div>
             <h2 id="adj-count-lines-title">Count lines</h2>
             <p>
-              Enter counted quantities. Variance = counted − system.
+              Enter counted quantities. Variance = counted - system.
               {hasVariance &&
                 " Notes are required by policy when applicable."}
             </p>
@@ -1389,7 +1389,7 @@ function buildLines() {
                         <input
                           value={
                             line.itemCode
-                              ? `${line.itemCode} — ${line.itemName}`
+                              ? `${line.itemCode} - ${line.itemName}`
                               : line.itemName
                           }
                           readOnly
@@ -1406,7 +1406,7 @@ function buildLines() {
                           value={
                             line.isBaseUnit
                               ? line.baseUomName
-                              : `${line.baseUomName} (×${line.conversionFactor})`
+                              : `${line.baseUomName} (${line.conversionFactor})`
                           }
                           readOnly
                           disabled
@@ -1419,12 +1419,12 @@ function buildLines() {
                       </td>
 
                       <td className="adj-td-input">
-                        <input value={line.batchNo ?? "—"} readOnly disabled />
+                        <input value={line.batchNo ?? "-"} readOnly disabled />
                       </td>
 
                       <td className="adj-td-input">
                         <input
-                          value={line.expiryDate?.slice(0, 10) ?? "—"}
+                          value={line.expiryDate?.slice(0, 10) ?? "-"}
                           readOnly
                           disabled
                           data-expired={
@@ -1472,7 +1472,7 @@ function buildLines() {
                           <div
                             className={`adj-variance-badge adj-variance-badge--${varianceLevel}`}
                           >
-                            {varianceLevel.toUpperCase()} · {fmt2(percent)}%
+                            {varianceLevel.toUpperCase()} - {fmt2(percent)}%
                           </div>
                         )}
                       </td>
@@ -1498,7 +1498,7 @@ function buildLines() {
                       <td className="adj-td-input">
                         <input
                           value={line.notes}
-                          placeholder={notesRequired ? "Required ⚠" : "Optional"}
+                          placeholder={notesRequired ? "Required Warning:" : "Optional"}
                           disabled={isLocked}
                           onChange={(event) =>
                             handleNotesChange(index, event.target.value)

@@ -31,11 +31,11 @@ export default memo(LedgerTable);
 function Th({ children, numeric }: { children: React.ReactNode; numeric?: boolean }) { return <th style={{ ...styles.th, ...(numeric ? styles.numeric : {}) }}>{children}</th>; }
 function Td({ children, numeric, mono }: { children: React.ReactNode; numeric?: boolean; mono?: boolean }) { return <td style={{ ...styles.td, ...(numeric ? styles.numeric : {}), ...(mono ? styles.mono : {}) }}>{children}</td>; }
 function Direction({ value }: { value: unknown }) { const v = String(value ?? "").toLowerCase(); return <span style={{ ...styles.pill, background: v === "in" ? "rgba(22,163,74,.08)" : v === "out" ? "rgba(220,38,38,.08)" : "rgba(0,0,0,.03)" }}>{show(value)}</span>; }
-function show(value: unknown) { return value === null || value === undefined || value === "" ? "—" : String(value); }
-function humanize(value: string | null | undefined) { return value ? value.replace("_", " ").toLowerCase().replace(/\b\w/g, (x) => x.toUpperCase()) : "—"; }
-function formatDate(value: string | Date | null | undefined) { if (!value) return "—"; const date = value instanceof Date ? value : new Date(value); return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date); }
-function qty(value: unknown) { const n = Number(value); return value === null || value === undefined || value === "" ? "—" : Number.isFinite(n) ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 6 }).format(n) : String(value); }
-function money(value: unknown) { const n = Number(value); return value === null || value === undefined || value === "" ? "—" : Number.isFinite(n) ? new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) : String(value); }
+function show(value: unknown) { return value === null || value === undefined || value === "" ? "-" : String(value); }
+function humanize(value: string | null | undefined) { return value ? value.replace("_", " ").toLowerCase().replace(/\b\w/g, (x) => x.toUpperCase()) : "-"; }
+function formatDate(value: string | Date | null | undefined) { if (!value) return "-"; const date = value instanceof Date ? value : new Date(value); return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date); }
+function qty(value: unknown) { const n = Number(value); return value === null || value === undefined || value === "" ? "-" : Number.isFinite(n) ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 6 }).format(n) : String(value); }
+function money(value: unknown) { const n = Number(value); return value === null || value === undefined || value === "" ? "-" : Number.isFinite(n) ? new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) : String(value); }
 
 const styles: Record<string, React.CSSProperties> = {
   wrap: { width: "100%", maxHeight: "70vh", overflow: "auto", border: "1px solid rgba(0,0,0,.1)", borderRadius: 12 },

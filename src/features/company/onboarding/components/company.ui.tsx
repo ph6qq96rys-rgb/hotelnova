@@ -323,10 +323,10 @@ export function Btn({
 }
 
 const ALERT_ICONS: Record<"ok" | "success" | "danger" | "warn" | "info", string> = {
-  ok: "✓",
-  success: "✓",
-  danger: "✕",
-  warn: "⚠",
+  ok: "",
+  success: "",
+  danger: "",
+  warn: "Warning:",
   info: "i",
 };
 
@@ -378,7 +378,7 @@ export function CheckItem({
   return (
     <div className={cx("ob-check-item", done ? "ob-check-item--done" : "ob-check-item--pending")}>
       <div className={cx("ob-check-dot", done ? "ob-check-dot--done" : "ob-check-dot--pending")}>
-        {done ? "✓" : "–"}
+        {done ? "" : "-"}
       </div>
       <span className={cx("ob-check-label", done ? "ob-check-label--done" : "ob-check-label--pending")}>
         {title}
@@ -417,7 +417,7 @@ export function EmptyState({
 }) {
   return (
     <div className="ob-empty">
-      <div className="ob-empty__icon">□</div>
+      <div className="ob-empty__icon"></div>
       <div className="ob-empty__title">{title}</div>
       {sub && <div className="ob-empty__sub">{sub}</div>}
     </div>
@@ -465,7 +465,7 @@ export function WizardSidebar<TKey extends string>({
                     : "ob-rail-dot--default",
               )}
             >
-              {isDone ? "✓" : isLocked ? "🔒" : "○"}
+              {isDone ? "" : isLocked ? "" : ""}
             </div>
 
             <div className="ob-rail-label">
@@ -524,7 +524,7 @@ export function WizardNav({
   return (
     <div className="ob-wizard-nav">
       <Btn variant="ghost" onClick={onBack} disabled={backDisabled}>
-        ← Back
+        Back
       </Btn>
 
       <span className="ob-wizard-step-lbl">
@@ -537,7 +537,7 @@ export function WizardNav({
         </Btn>
       ) : (
         <Btn variant="primary" onClick={onNext} disabled={nextDisabled}>
-          Continue →
+          Continue to
         </Btn>
       )}
     </div>

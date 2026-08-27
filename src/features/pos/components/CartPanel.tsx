@@ -65,7 +65,7 @@ export function CartPanel({
                     </div>
 
                     <div style={{ fontSize: 12, color: "#A1A1AA", marginTop: 5 }}>
-                      {money(item.price)} × {item.qty}
+                      {money(item.price)}  {item.qty}
                     </div>
                   </div>
 

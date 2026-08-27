@@ -5,6 +5,7 @@ import type {
   InventorySummaryDto,
   MenuEngineeringSummaryDto,
 } from "../api/dashboard/dashboardTypes";
+import { formatAppDate } from "../shared/datetime/dateFormat";
 import "./dashboard-modern-saas.css";
 
 type QuickAction = {
@@ -14,17 +15,31 @@ type QuickAction = {
   href: string;
 };
 
+type DashboardCapabilities = {
+  sales?: boolean;
+  inventory?: boolean;
+  procurement?: boolean;
+  identity?: boolean;
+  menu?: boolean;
+  operations?: boolean;
+};
+
 type Props = {
   dashboard: DashboardOverviewDto;
   updatedAt: string | null;
   actions: QuickAction[];
+  capabilities?: DashboardCapabilities;
   onNavigate: (path: string) => void;
   onRefresh: () => void;
   refreshing?: boolean;
 };
 
 const fmtMoney = (value?: number | null) =>
-  "$" + new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(Number(value ?? 0));
+  new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "ETB",
+    maximumFractionDigits: 0,
+  }).format(Number(value ?? 0));
 const fmtPct = (value?: number | null) => `${Number(value ?? 0).toFixed(1)}%`;
 const fmtNum = (value?: number | null) => new Intl.NumberFormat(undefined).format(Number(value ?? 0));
 const num = (value: unknown) => {
@@ -36,10 +51,20 @@ export default function ModernDashboardView({
   dashboard,
   updatedAt,
   actions,
+  capabilities,
   onNavigate,
   onRefresh,
   refreshing = false,
 }: Props) {
+  const can = {
+    sales: Boolean(capabilities?.sales),
+    inventory: Boolean(capabilities?.inventory),
+    procurement: Boolean(capabilities?.procurement),
+    identity: Boolean(capabilities?.identity),
+    menu: Boolean(capabilities?.menu),
+    operations: Boolean(capabilities?.operations),
+  };
+
   const sales = dashboard.sales;
   const inventorySummary = dashboard.inventorySummary;
   const procurement = dashboard.procurement;
@@ -53,106 +78,145 @@ export default function ModernDashboardView({
   const warningCount = alerts.filter((x) => x.severity === "warning").length;
 
   const kpis = [
-    {
+    can.sales && {
       label: "Today's revenue",
       value: fmtMoney(sales.todaySales),
       meta: `${fmtPct(sales.todayMarginPct)} margin`,
       icon: "ti-cash",
       tone: sales.todayMarginPct >= 50 ? "success" : "warning",
     },
-    {
+    can.sales && {
       label: "Orders today",
       value: fmtNum(sales.todayOrders),
       meta: `${fmtMoney(sales.averageOrderValue)} avg ticket`,
       icon: "ti-receipt",
       tone: "info",
     },
-    {
+    can.inventory && {
       label: "Inventory risk",
       value: fmtNum(inventorySummary.lowStockItems),
       meta: `${fmtNum(inventorySummary.openTransfers)} transfers open`,
       icon: "ti-package-off",
       tone: inventorySummary.lowStockItems > 0 ? "danger" : "success",
     },
-    {
-      label: "Pending POs",
+    can.procurement && {
+      label: "Approval queue",
       value: fmtNum(procurement.pendingPurchaseOrders),
       meta: criticalCount > 0 ? `${criticalCount} critical alerts` : `${warningCount} warnings`,
       icon: "ti-file-check",
       tone: criticalCount > 0 ? "danger" : "warning",
     },
-  ];
+  ].filter(Boolean) as Array<{
+    label: string;
+    value: string;
+    meta: string;
+    icon: string;
+    tone: string;
+  }>;
 
   const copilotActions = buildCopilotActions(dashboard, alerts, lowInventory);
+  const primaryOperationAction = actions.find((action) => action.title === "Daily Operations");
+  const hasMainSections = can.sales || can.operations || can.procurement || can.menu || can.inventory;
+  const hasSideSections =
+    actions.length > 0 || can.operations || can.inventory || can.procurement || can.identity || can.sales;
 
   return (
     <div className="modern-saas-dashboard">
       <header className="saas-page-header">
         <div>
-          <div className="saas-eyebrow">RestaurantFNB Command Center</div>
+          <div className="saas-eyebrow">Hotel Nova Command Center</div>
           <h1>Operations dashboard</h1>
-          <p>{updatedAt ? `Live view · Updated ${updatedAt}` : "Live operational view"}</p>
+          <p>{updatedAt ? `Live view - Updated ${updatedAt}` : "Live operational view"}</p>
         </div>
         <div className="saas-header-actions">
           <button className="saas-btn" onClick={onRefresh} disabled={refreshing}>
-            <i className="ti ti-refresh" /> {refreshing ? "Refreshing…" : "Refresh"}
+            <i className="ti ti-refresh" /> {refreshing ? "Refreshing..." : "Refresh"}
           </button>
-          <button className="saas-btn saas-btn-primary" onClick={() => onNavigate(actions[0]?.href ?? "/") }>
-            <i className="ti ti-plus" /> New operation
-          </button>
+          {primaryOperationAction ? (
+            <button className="saas-btn saas-btn-primary" onClick={() => onNavigate(primaryOperationAction.href)}>
+              <i className="ti ti-plus" /> New operation
+            </button>
+          ) : null}
         </div>
       </header>
 
-      <section className="saas-kpi-grid">
-        {kpis.map((kpi) => (
-          <article className="saas-kpi" key={kpi.label}>
-            <span className={`saas-kpi-icon is-${kpi.tone}`}><i className={`ti ${kpi.icon}`} /></span>
-            <div><small>{kpi.label}</small><strong>{kpi.value}</strong><p>{kpi.meta}</p></div>
-          </article>
-        ))}
-      </section>
+      {kpis.length > 0 ? (
+        <section className="saas-kpi-grid">
+          {kpis.map((kpi) => (
+            <article className="saas-kpi" key={kpi.label}>
+              <span className={`saas-kpi-icon is-${kpi.tone}`}><i className={`ti ${kpi.icon}`} /></span>
+              <div><small>{kpi.label}</small><strong>{kpi.value}</strong><p>{kpi.meta}</p></div>
+            </article>
+          ))}
+        </section>
+      ) : null}
 
       <section className="saas-dashboard-layout">
         <main className="saas-main-column">
-          <PerformanceCard dashboard={dashboard} />
+          {!hasMainSections ? (
+            <article className="saas-card">
+              <CardHeader eyebrow="Workspace" title="Dashboard" subtitle="No dashboard widgets are available for your current role." />
+              <Empty text="Only modules assigned to your role are shown here." />
+            </article>
+          ) : null}
 
-          <div className="saas-split-grid">
-            <AlertsCard alerts={alerts} onNavigate={onNavigate} />
-            <ApprovalQueue
-              pending={procurement.pendingPurchaseOrders}
-              critical={criticalCount}
-              warnings={warningCount}
-              total={alerts.length}
-            />
-          </div>
+          {can.sales ? <PerformanceCard dashboard={dashboard} /> : null}
 
-          <div className="saas-split-grid">
-            <BestSellers items={bestSellers} />
-            <MenuEngineering summary={menu} />
-          </div>
+          {can.operations || can.procurement ? (
+            <div className="saas-split-grid">
+              {can.operations ? <AlertsCard alerts={alerts} onNavigate={onNavigate} /> : null}
+              {can.procurement ? (
+                <ApprovalQueue
+                  pending={procurement.pendingPurchaseOrders}
+                  critical={criticalCount}
+                  warnings={warningCount}
+                  total={alerts.length}
+                />
+              ) : null}
+            </div>
+          ) : null}
 
-          <InventoryWatchlist items={lowInventory} />
+          {can.sales || can.menu ? (
+            <div className="saas-split-grid">
+              {can.sales ? <BestSellers items={bestSellers} /> : null}
+              {can.menu ? <MenuEngineering summary={menu} /> : null}
+            </div>
+          ) : null}
+
+          {can.inventory ? <InventoryWatchlist items={lowInventory} /> : null}
         </main>
 
-        <aside className="saas-side-column">
-          <CopilotCard actions={copilotActions} critical={criticalCount} warnings={warningCount} />
-          <QuickActions actions={actions} onNavigate={onNavigate} />
-          <BusinessHealth dashboard={dashboard} identity={identity} />
-        </aside>
+        {hasSideSections ? (
+          <aside className="saas-side-column">
+            {can.operations || can.inventory || can.procurement ? (
+              <CopilotCard
+                actions={copilotActions}
+                critical={criticalCount}
+                warnings={warningCount}
+                onNavigate={onNavigate}
+              />
+            ) : null}
+            {actions.length > 0 ? <QuickActions actions={actions} onNavigate={onNavigate} /> : null}
+            {can.sales || can.inventory || can.identity ? (
+              <BusinessHealth dashboard={dashboard} identity={identity} capabilities={can} />
+            ) : null}
+          </aside>
+        ) : null}
       </section>
     </div>
   );
 }
 
+function fmtTrendLabel(item: any, fallback: string): string {
+  const raw = item.label ?? item.day ?? item.dateLabel ?? item.date;
+  if (typeof raw !== "string" || !raw.trim()) return fallback;
+  return /^\d{4}-\d{2}-\d{2}/.test(raw) ? formatAppDate(raw) : raw;
+}
 function PerformanceCard({ dashboard }: { dashboard: DashboardOverviewDto }) {
   const sales = dashboard.sales;
   const raw = Array.isArray(dashboard.revenueTrend) ? dashboard.revenueTrend.slice(-7) : [];
-  const fallback = [11, 12, 13, 14, 16, 18, 16].map((share, i) => ({
-    label: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i],
-    value: sales.last7DaysRevenue * share / 100,
-  }));
-  const points = (raw.length ? raw : fallback).map((item: any, i) => ({
-    label: item.label ?? item.day ?? item.dateLabel ?? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i],
+  const points = raw.map((item: any, i) => ({
+    label: fmtTrendLabel(item, ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]),
     value: num(item.value ?? item.revenue ?? item.amount ?? item.total ?? item),
   }));
   const max = Math.max(...points.map((x) => x.value), 1);
@@ -166,14 +230,14 @@ function PerformanceCard({ dashboard }: { dashboard: DashboardOverviewDto }) {
         <Metric label="Food cost" value={fmtPct(sales.todayFoodCostPct)} />
         <Metric label="Avg order" value={fmtMoney(sales.averageOrderValue)} />
       </div>
-      <div className="saas-chart">
+      {points.length === 0 ? <Empty text="No revenue trend is available yet." /> : <div className="saas-chart">
         {points.map((point) => (
           <div className="saas-chart-column" key={`${point.label}-${point.value}`}>
             <div className="saas-chart-track"><div style={{ height: `${Math.max(point.value / max * 100, 6)}%` }} /></div>
             <span>{point.label}</span>
           </div>
         ))}
-      </div>
+      </div>}
       <div className="saas-period-row">
         <Metric label="7 days" value={fmtMoney(sales.last7DaysRevenue)} />
         <Metric label="30 days" value={fmtMoney(sales.last30DaysRevenue)} />
@@ -206,7 +270,7 @@ function ApprovalQueue({ pending, critical, warnings, total }: { pending: number
     <article className="saas-card">
       <CardHeader eyebrow="Workflow" title="Approval queue" subtitle="Documents and controls waiting for action" />
       <div className="saas-queue-grid">
-        <Queue label="Pending POs" value={pending} tone="warning" />
+        <Queue label="Approval queue" value={pending} tone="warning" />
         <Queue label="Critical alerts" value={critical} tone="danger" />
         <Queue label="Warnings" value={warnings} tone="warning" />
         <Queue label="Total alerts" value={total} tone="info" />
@@ -253,20 +317,36 @@ function InventoryWatchlist({ items }: { items: InventorySummaryDto[] }) {
           <tbody>{items.slice(0, 8).map((item, i) => {
             const available = num(item.availableQuantity); const reorder = num(item.reorderLevel);
             const tone = available <= 0 ? "danger" : available <= reorder ? "warning" : "success";
-            return <tr key={item.itemId ?? `${item.itemName}-${i}`}><td><strong>{item.itemName}</strong><small>{item.uomCode ?? ""}</small></td><td>{item.locationName ?? "—"}</td><td>{fmtNum(item.quantity)}</td><td>{fmtNum(item.availableQuantity)}</td><td>{fmtNum(item.reorderLevel)}</td><td><span className={`saas-chip is-${tone}`}>{tone === "danger" ? "Critical" : tone === "warning" ? "Low" : "Healthy"}</span></td></tr>;
+            return <tr key={item.itemId ?? `${item.itemName}-${i}`}><td><strong>{item.itemName}</strong><small>{item.uomCode ?? ""}</small></td><td>{item.locationName ?? "-"}</td><td>{fmtNum(item.quantity)}</td><td>{fmtNum(item.availableQuantity)}</td><td>{fmtNum(item.reorderLevel)}</td><td><span className={`saas-chip is-${tone}`}>{tone === "danger" ? "Critical" : tone === "warning" ? "Low" : "Healthy"}</span></td></tr>;
           })}</tbody></table>
       )}
     </article>
   );
 }
 
-function CopilotCard({ actions, critical, warnings }: { actions: string[]; critical: number; warnings: number }) {
+function CopilotCard({
+  actions,
+  critical,
+  warnings,
+  onNavigate,
+}: {
+  actions: string[];
+  critical: number;
+  warnings: number;
+  onNavigate: (path: string) => void;
+}) {
   return (
     <article className="saas-card saas-copilot-card">
       <CardHeader eyebrow="AI workspace" title="Restaurant Copilot" subtitle="Prioritized actions from current operations" badge="AI" />
       <div className="saas-copilot-summary"><div><strong>{critical + warnings}</strong><span>items need attention</span></div><div><span className="saas-chip is-danger">{critical} critical</span><span className="saas-chip is-warning">{warnings} warning</span></div></div>
       <ol className="saas-copilot-actions">{actions.map((action, i) => <li key={action}><span>{i + 1}</span><p>{action}</p></li>)}</ol>
-      <button className="saas-btn saas-btn-primary saas-full">Open Copilot workspace</button>
+      <button
+        className="saas-btn saas-btn-primary saas-full"
+        type="button"
+        onClick={() => onNavigate("sales/operations")}
+      >
+        Open Copilot workspace
+      </button>
     </article>
   );
 }
@@ -280,12 +360,26 @@ function QuickActions({ actions, onNavigate }: { actions: QuickAction[]; onNavig
   );
 }
 
-function BusinessHealth({ dashboard, identity }: { dashboard: DashboardOverviewDto; identity: DashboardOverviewDto["identity"] }) {
+function BusinessHealth({
+  dashboard,
+  identity,
+  capabilities,
+}: {
+  dashboard: DashboardOverviewDto;
+  identity: DashboardOverviewDto["identity"];
+  capabilities: DashboardCapabilities;
+}) {
   const rows = [
-    ["Food cost", fmtPct(dashboard.sales.todayFoodCostPct)],
-    ["Inventory value", dashboard.inventorySummary.inventoryValue == null ? "—" : fmtMoney(dashboard.inventorySummary.inventoryValue)],
-    ["Users", fmtNum(identity.totalUsers)], ["Roles", fmtNum(identity.totalRoles)],
-  ];
+    capabilities.sales ? ["Food cost", fmtPct(dashboard.sales.todayFoodCostPct)] : null,
+    capabilities.inventory
+      ? ["Inventory value", dashboard.inventorySummary.inventoryValue == null ? "-" : fmtMoney(dashboard.inventorySummary.inventoryValue)]
+      : null,
+    dashboard.hr ? ["Present today", fmtNum(dashboard.hr.employeesPresentToday)] : null,
+    dashboard.hr ? ["Pending leave", fmtNum(dashboard.hr.pendingLeaveRequests ?? 0)] : null,
+    capabilities.identity ? ["Users", fmtNum(identity.totalUsers)] : null,
+    capabilities.identity ? ["Roles", fmtNum(identity.totalRoles)] : null,
+  ].filter(Boolean) as string[][];
+
   return <article className="saas-card"><CardHeader eyebrow="Snapshot" title="Business health" subtitle="Compact operating summary" /><div className="saas-health">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></article>;
 }
 

@@ -1,77 +1,119 @@
+import { useMemo, useState } from "react";
+
 import type {
   FnbReportColumnDto,
   FnbReportRow,
 } from "../api/fnbReportsApi";
+import { formatReportValue, visibleReportColumns } from "../utils/fnbReportFormatting";
 
 type Props = {
   columns: FnbReportColumnDto[];
   rows: FnbReportRow[];
   loading: boolean;
+  reportName?: string;
+  currencyCode?: string;
   onRowOpen?: (row: FnbReportRow) => void;
 };
 
-function formatCell(value: unknown, format?: string) {
-  if (value == null || value === "") return "—";
-
-  if (typeof value === "number") {
-    switch (format) {
-      case "currency":
-        return value.toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
-
-      case "percent":
-        return `${value.toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}%`;
-
-      case "number":
-        return value.toLocaleString(undefined, {
-          maximumFractionDigits: 6,
-        });
-
-      default:
-        return value.toLocaleString();
-    }
-  }
-
-  if (format === "date") {
-    const date = new Date(String(value));
-    return Number.isNaN(date.getTime())
-      ? String(value)
-      : date.toLocaleDateString();
-  }
-
-  return String(value);
-}
+type SortState = {
+  key: string;
+  direction: "asc" | "desc";
+} | null;
 
 function isNumeric(format?: string) {
   return format === "number" || format === "currency" || format === "percent";
+}
+
+function compareValues(a: unknown, b: unknown, format?: string) {
+  if (a == null && b == null) return 0;
+  if (a == null) return -1;
+  if (b == null) return 1;
+
+  if (typeof a === "number" && typeof b === "number") return a - b;
+
+  if (format === "date") {
+    const aTime = new Date(String(a)).getTime();
+    const bTime = new Date(String(b)).getTime();
+    if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return aTime - bTime;
+  }
+
+  return String(a).localeCompare(String(b), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
 }
 
 export function FnbReportTable({
   columns,
   rows,
   loading,
+  reportName = "Report Detail",
+  currencyCode = "ETB",
   onRowOpen,
 }: Props) {
-  const visibleColumns = columns.filter((x) => x.isVisible !== false);
+  const [sort, setSort] = useState<SortState>(null);
+  const visibleColumns = visibleReportColumns(columns);
+
+  const sortedRows = useMemo(() => {
+    if (!sort) return rows;
+
+    const column = visibleColumns.find((x) => x.key === sort.key);
+    return [...rows].sort((a, b) => {
+      const result = compareValues(a[sort.key], b[sort.key], column?.format);
+      return sort.direction === "asc" ? result : -result;
+    });
+  }, [rows, sort, visibleColumns]);
+
+  const toggleSort = (column: FnbReportColumnDto) => {
+    if (column.isSortable === false) return;
+
+    setSort((current) => {
+      if (current?.key !== column.key) {
+        return { key: column.key, direction: "asc" };
+      }
+
+      if (current.direction === "asc") {
+        return { key: column.key, direction: "desc" };
+      }
+
+      return null;
+    });
+  };
 
   const handleRowClick = (row: FnbReportRow) => {
     const selectedText = window.getSelection()?.toString();
-    if (selectedText) return;
+    if (selectedText || !row.itemId) return;
 
     onRowOpen?.(row);
+  };
+
+  const renderCell = (row: FnbReportRow, column: FnbReportColumnDto) => {
+    if (column.key === "itemName") {
+      return (
+        <>
+          <strong>{String(row.itemName || "Unnamed item")}</strong>
+          <span>
+            {String(row.itemCode || "-")} - {String(row.uomName || "-")}
+          </span>
+        </>
+      );
+    }
+
+    return formatReportValue(row[column.key], column.format, currencyCode);
+  };
+
+  const renderSortMarker = (column: FnbReportColumnDto) => {
+    if (column.isSortable === false) return null;
+    if (sort?.key !== column.key) return <span aria-hidden="true">Sort</span>;
+    return <span aria-hidden="true">{sort.direction === "asc" ? "Asc" : "Desc"}</span>;
   };
 
   return (
     <div className="fnb-table-card">
       <div className="fnb-table-toolbar">
         <div>
-          <strong>Report Detail</strong>
-          <p>Backend-driven ERP report rows.</p>
+          <strong>{reportName}</strong>
+          <p>Operational report rows from approved ERP transactions.</p>
         </div>
       </div>
 
@@ -84,7 +126,15 @@ export function FnbReportTable({
                   key={column.key}
                   className={isNumeric(column.format) ? "num" : undefined}
                 >
-                  {column.label}
+                  <button
+                    type="button"
+                    className="fnb-sort-btn"
+                    onClick={() => toggleSort(column)}
+                    disabled={column.isSortable === false}
+                  >
+                    <span>{column.label}</span>
+                    {renderSortMarker(column)}
+                  </button>
                 </th>
               ))}
             </tr>
@@ -97,10 +147,10 @@ export function FnbReportTable({
                   colSpan={Math.max(visibleColumns.length, 1)}
                   className="fnb-empty"
                 >
-                  Loading report…
+                  Loading report...
                 </td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : sortedRows.length === 0 ? (
               <tr>
                 <td
                   colSpan={Math.max(visibleColumns.length, 1)}
@@ -110,38 +160,62 @@ export function FnbReportTable({
                 </td>
               </tr>
             ) : (
-              rows.map((row, index) => (
-                <tr
-                  key={`${row.itemId ?? "row"}-${row.locationId ?? "all"}-${index}`}
-                  className={onRowOpen ? "is-clickable" : ""}
-                  onClick={() => handleRowClick(row)}
-                >
-                  {visibleColumns.map((column) => (
-                    <td
-                      key={column.key}
-                      className={isNumeric(column.format) ? "num" : undefined}
-                    >
-                      {column.key === "itemName" ? (
-                        <>
-                          <strong>
-                            {String(row.itemName || "Unnamed item")}
-                          </strong>
-                          <span>
-                            {String(row.itemCode || "—")} ·{" "}
-                            {String(row.uomName || "—")}
-                          </span>
-                        </>
-                      ) : (
-                        formatCell(row[column.key], column.format)
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))
+              sortedRows.map((row, index) => {
+                const canOpen = Boolean(onRowOpen && row.itemId);
+
+                return (
+                  <tr
+                    key={`${row.itemId ?? "row"}-${row.locationId ?? "all"}-${index}`}
+                    className={canOpen ? "is-clickable" : undefined}
+                    onClick={() => handleRowClick(row)}
+                  >
+                    {visibleColumns.map((column) => (
+                      <td
+                        key={column.key}
+                        className={isNumeric(column.format) ? "num" : undefined}
+                      >
+                        {renderCell(row, column)}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
+
+      {!loading && sortedRows.length > 0 ? (
+        <div className="fnb-mobile-list" aria-label={`${reportName} mobile rows`}>
+          {sortedRows.map((row, index) => {
+            const canOpen = Boolean(onRowOpen && row.itemId);
+
+            return (
+              <button
+                key={`${row.itemId ?? "row"}-${row.locationId ?? "all"}-${index}-card`}
+                type="button"
+                className={canOpen ? "fnb-mobile-row is-clickable" : "fnb-mobile-row"}
+                onClick={() => handleRowClick(row)}
+                disabled={!canOpen}
+              >
+                <strong>{String(row.itemName || row.itemCode || "Report row")}</strong>
+                <span>{String(row.locationName || row.categoryName || "-")}</span>
+                <dl>
+                  {visibleColumns
+                    .filter((column) => column.key !== "itemName")
+                    .slice(0, 6)
+                    .map((column) => (
+                      <div key={column.key}>
+                        <dt>{column.label}</dt>
+                        <dd>{renderCell(row, column)}</dd>
+                      </div>
+                    ))}
+                </dl>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

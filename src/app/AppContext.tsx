@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { loadAuth } from "../auth/auth.storage";
+import { loadAuth, saveAuth } from "../auth/auth.storage";
 import {
   loadWorkspaceAuth,
   saveWorkspaceAuth,
@@ -91,9 +91,13 @@ const EMPTY_SCOPE: AppScopeState = {
 const AppContext = createContext<AppContextValue | null>(null);
 
 function clean(value: unknown): string | null {
-  return typeof value === "string" && value.trim()
-    ? value.trim()
-    : null;
+  if (typeof value !== "string") return null;
+
+  const text = value.trim();
+
+  if (!text || text.startsWith(":")) return null;
+
+  return text;
 }
 
 function normalizeTenantSlug(value: unknown): string | null {
@@ -370,10 +374,31 @@ export function AppProvider({
 
   const setBranch = useCallback(
     (branch: SetBranchInput) => {
+      const branchId = clean(branch.id);
+      const branchName = clean(branch.name);
+      const auth = loadAuth();
+      const workspace = loadWorkspaceAuth();
+
+      if (auth?.accessToken) {
+        saveAuth({
+          ...auth,
+          branchId,
+          branchName,
+        });
+      }
+
+      if (workspace?.accessToken) {
+        saveWorkspaceAuth({
+          ...workspace,
+          branchId,
+          branchName,
+        });
+      }
+
       commitScope((current) => ({
         ...current,
-        branchId: clean(branch.id),
-        branchName: clean(branch.name),
+        branchId,
+        branchName,
 
         /*
          * Child location choices may no longer be valid.

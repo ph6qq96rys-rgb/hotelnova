@@ -144,8 +144,8 @@ export function RecipeCostingPanel({
   return (
     <div className="p-section">
       <div className="p-section__head p-section__head--slate">
-        <span style={{ color: "#7c3aed" }}>＄</span>
-        COSTING — Menu engineering and theoretical food cost
+        <span style={{ color: "#7c3aed" }}></span>
+        COSTING - Menu engineering and theoretical food cost
         <span className="p-section__badge" style={{ background: "#ede9fe", color: "#5b21b6" }}>
           FIFO based
         </span>
@@ -225,7 +225,7 @@ export function RecipeCostingPanel({
                   className="p-costing-card__value"
                   style={{ color: foodCostColor(cost.foodCostPct, cost.targetFoodCostPct) }}
                 >
-                  {cost.foodCostPct != null ? `${fmt(cost.foodCostPct, 1)}%` : "—"}
+                  {cost.foodCostPct != null ? `${fmt(cost.foodCostPct, 1)}%` : "-"}
                 </div>
                 <div className="p-costing-card__sub">target {fmt(cost.targetFoodCostPct, 0)}%</div>
               </div>
@@ -233,7 +233,7 @@ export function RecipeCostingPanel({
               <div className="p-costing-card" style={{ background: "#fff7ed" }}>
                 <div className="p-costing-card__label">Suggested Price</div>
                 <div className="p-costing-card__value" style={{ color: "var(--p-warning)" }}>
-                  {cost.suggestedSellingPrice != null ? fmt(cost.suggestedSellingPrice) : "—"}
+                  {cost.suggestedSellingPrice != null ? fmt(cost.suggestedSellingPrice) : "-"}
                 </div>
                 <div className="p-costing-card__sub">target margin pricing</div>
               </div>
@@ -286,8 +286,8 @@ export function RecipeCostingPanel({
                           </span>
                         </td>
                         <td className="num">{fmt(line.qtyPerMenuUnit, 4)}</td>
-                        <td className="num">{line.wastePct != null ? `${fmt(line.wastePct, 1)}%` : "—"}</td>
-                        <td className="num">{line.uomName || "—"}</td>
+                        <td className="num">{line.wastePct != null ? `${fmt(line.wastePct, 1)}%` : "-"}</td>
+                        <td className="num">{line.uomName || "-"}</td>
                         <td className="num">{fmt(line.unitCost, 4)}</td>
                         <td className="num" style={{ fontWeight: 700 }}>{fmt(line.lineCost, 4)}</td>
                         <td className="num">{fmt(pctOfTotal, 1)}%</td>

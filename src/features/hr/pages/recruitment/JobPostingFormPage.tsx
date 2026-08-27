@@ -218,7 +218,7 @@ export default function JobPostingFormPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Recruitment</div>
+          <div className="page-kicker">Human Resources - Recruitment</div>
           <div className="page-title">New Job Posting</div>
           <div className="page-sub">Create a new vacancy for applicants</div>
         </div>

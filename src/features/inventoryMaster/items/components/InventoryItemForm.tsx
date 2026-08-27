@@ -1,7 +1,7 @@
-﻿// src/features/inventoryMaster/items/components/InventoryItemForm.tsx
+// src/features/inventoryMaster/items/components/InventoryItemForm.tsx
 //
 // Inline create / edit form used by InventoryItemsPage (slide-in panel mode).
-// Full-page upsert lives in ItemUpsertPage — this component is the lightweight
+// Full-page upsert lives in ItemUpsertPage - this component is the lightweight
 // inline variant for the list page.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,7 +11,7 @@ import UomConversionGrid from "./UomConversionGrid";
 import { useAppScope }   from "../../../../app/useAppScope";
 import { inventoryItemsApi } from "../api/inventoryItemsApi";
 
-// ── Exported types (consumed by InventoryItemsPage) ───────────────────────────
+//  Exported types (consumed by InventoryItemsPage) 
 
 export interface SelectOption {
   id:    string;
@@ -46,7 +46,7 @@ interface Props {
   onCancel:   () => void;
 }
 
-// ── Pure helpers ──────────────────────────────────────────────────────────────
+//  Pure helpers 
 
 function nullableText(value: string): string | null {
   return value.trim() || null;
@@ -62,7 +62,7 @@ function parseOptionalNumber(value: string, label: string): number | null {
 function parseReorderLevel(value: string): number {
   if (!value.trim()) return 0;
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) throw new Error("Reorder level must be ≥ 0.");
+  if (!Number.isFinite(n) || n < 0) throw new Error("Reorder level must be  0.");
   return Math.floor(n);
 }
 
@@ -79,7 +79,7 @@ function getInitialType(initial: InventoryItemDto | null | undefined): ItemType 
   return (initial as any)?.type ?? (initial as any)?.itemType ?? "RawMaterial";
 }
 
-// ── UOM helpers ───────────────────────────────────────────────────────────────
+//  UOM helpers 
 
 function buildBaseRow(baseUomId: string, uoms: SelectOption[]): ItemUomDto {
   const uom = uoms.find(x => x.id === baseUomId);
@@ -132,7 +132,7 @@ function normalizeRows(
 }
 
 /**
- * ERP-grade UOM validation — mirrors the server-side BuildItemUomEntries rules
+ * ERP-grade UOM validation - mirrors the server-side BuildItemUomEntries rules
  * so errors are caught before the round-trip.
  */
 function validateUoms(rows: ItemUomDto[]): string | null {
@@ -155,7 +155,7 @@ function validateUoms(rows: ItemUomDto[]): string | null {
   return null;
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+//  Sub-components 
 
 function Section({
   title, subtitle, children,
@@ -198,7 +198,7 @@ function Field({
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+//  Component 
 
 export default function InventoryItemForm({
   mode, initial, categories, uoms, saving: externalSaving, onSubmit, onCancel,
@@ -206,7 +206,7 @@ export default function InventoryItemForm({
   const { companyId }  = useAppScope();
   const factorCache    = useRef<Map<string, number>>(new Map());
 
-  // ── Field state ─────────────────────────────────────────────────────────────
+  //  Field state 
   const [name,           setName]           = useState("");
   const [localName,      setLocalName]      = useState("");
   const [sku,            setSku]            = useState("");
@@ -231,7 +231,7 @@ export default function InventoryItemForm({
   const isServiceLike = isServiceLikeType(type);
   const uomById       = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms]);
 
-  // ── Factor hydration from conversion DB ─────────────────────────────────────
+  //  Factor hydration from conversion DB 
 
   const fetchFactor = useCallback(async (
     baseId: string, uomId: string,
@@ -291,7 +291,7 @@ export default function InventoryItemForm({
     );
   }, [baseUomId, fetchFactor, uomById]);
 
-  // ── Seed from initial item on edit ───────────────────────────────────────────
+  //  Seed from initial item on edit 
 
   useEffect(() => {
     if (mode === "create") {
@@ -355,7 +355,7 @@ export default function InventoryItemForm({
     setAllowedUoms(cur => applyIssueUom(cur, baseUomId, issueUomId));
   }, [baseUomId, ensureNonBaseRow, isServiceLike, issueUomId]);
 
-  // ── Submit ───────────────────────────────────────────────────────────────────
+  //  Submit 
 
   const submit = useCallback(async () => {
     setError(null);
@@ -404,7 +404,7 @@ export default function InventoryItemForm({
     isServiceLike, mode, uoms, onSubmit,
   ]);
 
-  // ── Derived display values ───────────────────────────────────────────────────
+  //  Derived display values 
 
   const chipTone  = mode === "create" ? "draft" : isActive ? "success" : "danger";
   const chipLabel = mode === "create" ? "Draft"  : isActive ? "Active"  : "Inactive";
@@ -415,12 +415,12 @@ export default function InventoryItemForm({
 
   const uomGridRows = allowedUoms.filter(r => !r.isBase);
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  //  Render 
 
   return (
     <div className="iif-shell">
 
-      {/* ── Header ── */}
+      {/*  Header  */}
       <div className="iif-header">
         <div className="iif-header__left">
           <div className="iif-header__kicker">Item master</div>
@@ -430,7 +430,7 @@ export default function InventoryItemForm({
           <div className="iif-header__subtitle">
             {isServiceLike
               ? "Service / non-stock item"
-              : "Stock item — define FUOM, store UOM, and conversion rules"}
+              : "Stock item - define FUOM, store UOM, and conversion rules"}
           </div>
         </div>
         <div className="iif-header__actions">
@@ -449,19 +449,19 @@ export default function InventoryItemForm({
             onClick={submit}
             disabled={saving}
           >
-            {saving ? "Saving…" : "Save item"}
+            {saving ? "Saving..." : "Save item"}
           </button>
         </div>
       </div>
 
-      {/* ── Error banner ── */}
+      {/*  Error banner  */}
       {error && <div className="iif-alert">{error}</div>}
 
       <div className="iif-body">
 
-        {/* ════════════════════════════════════════════════════════════════ */}
-        {/* SECTION 1 — Item information                                    */}
-        {/* ════════════════════════════════════════════════════════════════ */}
+        {/*  */}
+        {/* SECTION 1 - Item information                                    */}
+        {/*  */}
         <Section
           title="Item information"
           subtitle="Basic identity and classification"
@@ -503,7 +503,7 @@ export default function InventoryItemForm({
                 className="inv-input"
                 value={localName}
                 onChange={e => setLocalName(e.target.value)}
-                placeholder="Optional — Arabic / RTL"
+                placeholder="Optional - Arabic / RTL"
                 disabled={saving}
                 dir="auto"
               />
@@ -548,7 +548,7 @@ export default function InventoryItemForm({
                   disabled={isServiceLike || saving}
                   onChange={e => setTrackInventory(e.target.checked)}
                 />
-                <span>Yes — track stock movements</span>
+                <span>Yes - track stock movements</span>
               </label>
             </Field>
 
@@ -569,9 +569,9 @@ export default function InventoryItemForm({
           </div>
         </Section>
 
-        {/* ════════════════════════════════════════════════════════════════ */}
-        {/* SECTION 2 — Unit of measurement                                 */}
-        {/* ════════════════════════════════════════════════════════════════ */}
+        {/*  */}
+        {/* SECTION 2 - Unit of measurement                                 */}
+        {/*  */}
         <Section title="Unit of measurement" subtitle={uomSubtitle}>
           <div className="inv-form-grid">
 
@@ -579,7 +579,7 @@ export default function InventoryItemForm({
               label="FUOM / base UOM"
               span={4}
               required={!isServiceLike}
-              hint="Fundamental stocking unit — all conversions are relative to this"
+              hint="Fundamental stocking unit - all conversions are relative to this"
             >
               <select
                 className="inv-input"
@@ -587,7 +587,7 @@ export default function InventoryItemForm({
                 onChange={e => setBaseUomId(e.target.value)}
                 disabled={isServiceLike || saving}
               >
-                <option value="">—</option>
+                <option value="">-</option>
                 {uoms.map(u => (
                   <option key={u.id} value={u.id}>
                     {u.code ? `${u.name} (${u.code})` : u.name}
@@ -607,7 +607,7 @@ export default function InventoryItemForm({
                 onChange={e => setIssueUomId(e.target.value)}
                 disabled={isServiceLike || !baseUomId || saving}
               >
-                <option value="">—</option>
+                <option value="">-</option>
                 {uoms.map(u => (
                   <option key={u.id} value={u.id}>
                     {u.code ? `${u.name} (${u.code})` : u.name}
@@ -658,9 +658,9 @@ export default function InventoryItemForm({
           )}
         </Section>
 
-        {/* ════════════════════════════════════════════════════════════════ */}
-        {/* SECTION 3 — Costing & control                                   */}
-        {/* ════════════════════════════════════════════════════════════════ */}
+        {/*  */}
+        {/* SECTION 3 - Costing & control                                   */}
+        {/*  */}
         <Section
           title="Costing & control"
           subtitle="Default values used by inventory and recipe costing"

@@ -1,4 +1,4 @@
-﻿// src/features/organization/components/StoreForm.tsx
+// src/features/organization/components/StoreForm.tsx
 
 import { useMemo, useState } from "react";
 import type { CreateStoreDto, StoreDto, UpdateStoreDto } from "../types";
@@ -145,7 +145,7 @@ export default function StoreForm(props: Props) {
         </button>
 
         <button type="submit" className="btn btn-primary" disabled={saving || !canSubmit}>
-          {saving ? "Saving…" : isCreate ? "Create" : "Save"}
+          {saving ? "Saving..." : isCreate ? "Create" : "Save"}
         </button>
       </div>
     </form>

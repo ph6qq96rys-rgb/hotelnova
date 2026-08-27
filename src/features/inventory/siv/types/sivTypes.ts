@@ -1,5 +1,6 @@
 // src/features/inventory/siv/types/sivTypes.ts
 
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import type {
   SivDetailsDto,
   SivListItemDto as SivListItemRaw,
@@ -140,10 +141,22 @@ export interface SivAuditVm {
   reversedAtUtc: string | null;
 }
 
+export interface SivRecommendationOverrideVm {
+  reason: string;
+  warnings: string | null;
+  snapshotJson: string | null;
+  evaluatedAtUtc: string | null;
+  overriddenAtUtc: string | null;
+  overriddenByUserId: string | null;
+  decision: string | null;
+  riskLevel: string | null;
+  riskScore: number | null;
+}
 export interface SivVm {
   id: string;
   companyId: string;
   branchId: string;
+  branchName: string;
   number: string;
   docStatus: SivStatus;
   issueDate: string;
@@ -161,8 +174,26 @@ export interface SivVm {
   id_alias: string;
   createdAt: string | null;
   updatedAt: string | null;
+  recommendationOverride: SivRecommendationOverrideVm | null;
 }
 
+function mapRecommendationOverride(raw: SivDetailsDto): SivRecommendationOverrideVm | null {
+  const anyRaw = raw as any;
+  const reason = String(anyRaw.recommendationOverrideReason ?? anyRaw.RecommendationOverrideReason ?? "").trim();
+  if (!reason && !Boolean(anyRaw.hasRecommendationOverride ?? anyRaw.HasRecommendationOverride)) return null;
+
+  return {
+    reason,
+    warnings: anyRaw.recommendationOverrideWarnings ?? anyRaw.RecommendationOverrideWarnings ?? null,
+    snapshotJson: anyRaw.recommendationSnapshotJson ?? anyRaw.RecommendationSnapshotJson ?? null,
+    evaluatedAtUtc: anyRaw.recommendationEvaluatedAtUtc ?? anyRaw.RecommendationEvaluatedAtUtc ?? null,
+    overriddenAtUtc: anyRaw.recommendationOverriddenAtUtc ?? anyRaw.RecommendationOverriddenAtUtc ?? null,
+    overriddenByUserId: anyRaw.recommendationOverriddenByUserId ?? anyRaw.RecommendationOverriddenByUserId ?? null,
+    decision: anyRaw.recommendationDecision ?? anyRaw.RecommendationDecision ?? null,
+    riskLevel: anyRaw.recommendationRiskLevel ?? anyRaw.RecommendationRiskLevel ?? null,
+    riskScore: anyRaw.recommendationRiskScore ?? anyRaw.RecommendationRiskScore ?? null,
+  };
+}
 function num(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -183,7 +214,7 @@ export function mapToVm(raw: SivDetailsDto): SivVm {
     qty: num(line.qty),
     requestedQty: num(line.requestedQty, num(line.qty)),
     approvedQty: line.approvedQty != null ? num(line.approvedQty) : null,
-    issuedQty: num(line.issuedBaseQty),
+    issuedQty: num(line.issuedQty ?? line.issuedBaseQty),
     batchNo: line.batchNo ?? "",
     expiryDate: line.expiryDate ?? null,
     remarks: line.remarks ?? "",
@@ -208,7 +239,8 @@ export function mapToVm(raw: SivDetailsDto): SivVm {
     id: raw.id ?? "",
     companyId: raw.companyId ?? "",
     branchId: raw.branchId ?? "",
-    number: raw.number ?? raw.id ?? "",
+    branchName: (raw as any).branchName ?? "",
+    number: raw.number ?? "",
     docStatus: status,
     issueDate: raw.issueDate ?? "",
     departmentId: raw.departmentId ?? null,
@@ -225,6 +257,7 @@ export function mapToVm(raw: SivDetailsDto): SivVm {
     id_alias: raw.id ?? "",
     createdAt: raw.audit?.submittedAtUtc ?? null,
     updatedAt: raw.audit?.postedAtUtc ?? raw.audit?.approvedAtUtc ?? null,
+      recommendationOverride: mapRecommendationOverride(raw),
   };
 }
 
@@ -245,6 +278,12 @@ export interface SivListItemDto {
   totalQty: number;
   requestedByName: string;
   remarks: string | null;
+  hasRecommendationOverride: boolean;
+  recommendationOverrideReason: string | null;
+  recommendationOverriddenAtUtc: string | null;
+  recommendationDecision: string | null;
+  recommendationRiskLevel: string | null;
+  recommendationRiskScore: number | null;
 }
 
 export interface PostSivRequest {
@@ -267,7 +306,7 @@ export function mapToListItem(
 
   return {
     id: String(raw.id ?? ""),
-    number: String(raw.number ?? raw.sivNo ?? raw.id ?? ""),
+    number: String(raw.number ?? raw.sivNo ?? ""),
     issueDate: String(raw.issueDate ?? ""),
     branchId: String(raw.branchId ?? ""),
     branchName: String(raw.branchName ?? ""),
@@ -282,6 +321,12 @@ export function mapToListItem(
     totalQty: num(raw.totalQuantity ?? raw.totalQty),
     requestedByName: String(raw.requestedByName ?? ""),
     remarks: raw.remarks ?? null,
+      hasRecommendationOverride: Boolean(raw.hasRecommendationOverride ?? raw.HasRecommendationOverride),
+    recommendationOverrideReason: raw.recommendationOverrideReason ?? raw.RecommendationOverrideReason ?? null,
+    recommendationOverriddenAtUtc: raw.recommendationOverriddenAtUtc ?? raw.RecommendationOverriddenAtUtc ?? null,
+    recommendationDecision: raw.recommendationDecision ?? raw.RecommendationDecision ?? null,
+    recommendationRiskLevel: raw.recommendationRiskLevel ?? raw.RecommendationRiskLevel ?? null,
+    recommendationRiskScore: raw.recommendationRiskScore ?? raw.RecommendationRiskScore ?? null,
   };
 }
 
@@ -293,7 +338,7 @@ export interface PagedResult<T> {
 }
 
 export function fmtDate(s: string | null | undefined): string {
-  if (!s) return "—";
+  if (!s) return "-";
   const d = new Date(s);
   return Number.isNaN(d.getTime())
     ? s
@@ -305,7 +350,7 @@ export function fmtDate(s: string | null | undefined): string {
 }
 
 export function fmtDateTime(s: string | null | undefined): string {
-  if (!s) return "—";
+  if (!s) return "-";
   const d = new Date(s);
   return Number.isNaN(d.getTime())
     ? s
@@ -320,7 +365,7 @@ export function fmtDateTime(s: string | null | undefined): string {
 
 export function fmtQty(n: number | null | undefined): string {
   const value = Number(n ?? 0);
-  if (!Number.isFinite(value)) return "—";
+  if (!Number.isFinite(value)) return "-";
   return value === Math.floor(value)
     ? value.toLocaleString()
     : value.toFixed(3).replace(/\.?0+$/, "");
@@ -335,21 +380,7 @@ export function getApiError(
   e: unknown,
   fallback = "An error occurred.",
 ): string {
-  if (!e) return fallback;
-
-  const err = e as any;
-  const data = err?.response?.data;
-
-  if (typeof data === "string") return data;
-
-  return (
-    data?.error ??
-    data?.Error ??
-    data?.message ??
-    data?.title ??
-    err?.message ??
-    fallback
-  );
+  return toUserFriendlyError(e, fallback);
 }
 
 export type {

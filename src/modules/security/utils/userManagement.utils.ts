@@ -118,8 +118,7 @@ export function canManageTargetUser(
 
   return (
     isCompanyAdmin(actor) ||
-    Boolean(hasPermission?.("users.manage")) ||
-    Boolean(hasPermission?.("security.manage"))
+    Boolean(hasPermission?.("users.update"))
   );
 }
 
@@ -130,8 +129,7 @@ export function canCreateUsers(
   return (
     isSystemAdmin(actor) ||
     isCompanyAdmin(actor) ||
-    Boolean(hasPermission?.("users.manage")) ||
-    Boolean(hasPermission?.("security.manage"))
+    Boolean(hasPermission?.("users.create"))
   );
 }
 
@@ -197,19 +195,20 @@ export function toBoolean(value: unknown, fallback: boolean): boolean {
 }
 
 export function employeeIdOf(user: UserDto): string {
-  return String((user as UserWithEmployee).employeeId ?? "");
+  return String((user as UserWithEmployee).companyEmployeeId ?? (user as UserWithEmployee).employeeId ?? "");
 }
 
 export function buildCreatePayload(
   request: CreateSecurityUserRequest,
   branchId?: string | null,
 ): CreateSecurityUserRequest {
-  const branchIds = normalizeBranchIds(request, branchId);
+  const isCompanyScoped = String(request.scope ?? "").toLowerCase() === "company";
+  const branchIds = normalizeBranchIds(request, isCompanyScoped ? null : branchId);
   const roles = roleValuesFromRequest(request);
 
   return {
     ...request,
-    branchId: resolveDefaultId(request.branchId ?? branchId, branchIds),
+    branchId: resolveDefaultId(request.branchId ?? (isCompanyScoped ? null : branchId), branchIds),
     branchIds,
     roles,
     isActive: request.isActive ?? true,
@@ -220,12 +219,13 @@ export function buildUpdatePayload(
   request: UpdateSecurityUserRequest,
   branchId?: string | null,
 ): UpdateSecurityUserRequest {
-  const branchIds = normalizeBranchIds(request, branchId);
+  const isCompanyScoped = String(request.scope ?? "").toLowerCase() === "company";
+  const branchIds = normalizeBranchIds(request, isCompanyScoped ? null : branchId);
   const roles = roleValuesFromRequest(request);
 
   return {
     ...request,
-    branchId: resolveDefaultId(request.branchId ?? branchId, branchIds),
+    branchId: resolveDefaultId(request.branchId ?? (isCompanyScoped ? null : branchId), branchIds),
     branchIds,
     roles,
   };

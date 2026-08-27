@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppContext } from "../../../../app/AppContext";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useStockLocations } from "../hooks/useStockLocations";
@@ -40,7 +40,7 @@ export default function StockLocationsPage() {
 
   const debouncedQ = useDebouncedValue(q, 250);
 
-  // ── Branches ───────────────────────────────────────────────────────────────
+  //  Branches 
 
   const loadBranches = useCallback(async () => {
     if (!companyId) return;
@@ -60,7 +60,7 @@ export default function StockLocationsPage() {
 
   useEffect(() => { loadBranches(); }, [loadBranches]);
 
-  // ── Stock locations ────────────────────────────────────────────────────────
+  //  Stock locations 
 
   const { items: rawItems, loading, error, refresh } =
     useStockLocations(companyId ?? null, selectedBranchId);
@@ -75,7 +75,7 @@ export default function StockLocationsPage() {
     );
   }, [rawItems, activeOnly, debouncedQ]);
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  //  Actions 
 
   // FIX: original create/update/toggleActive didn't pass companyId or branchId,
   // which the refactored stockLocationsApi now requires. All three are updated.
@@ -137,10 +137,10 @@ export default function StockLocationsPage() {
     setActionError(null);
   };
 
-  // Branches rarely change — only refresh locations on manual refresh.
+  // Branches rarely change - only refresh locations on manual refresh.
   const onRefresh = async () => { await refresh(); };
 
-  // ── Early exit ─────────────────────────────────────────────────────────────
+  //  Early exit 
 
   if (!companyId) {
     return (
@@ -158,7 +158,7 @@ export default function StockLocationsPage() {
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  //  Render 
 
   return (
     <div className="page">
@@ -175,7 +175,7 @@ export default function StockLocationsPage() {
             onClick={onRefresh}
             disabled={loading}
           >
-            {loading ? "Refreshing…" : "Refresh"}
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
           <button
             className="btn primary"
@@ -219,7 +219,7 @@ export default function StockLocationsPage() {
                 disabled={branchesLoading}
               >
                 <option value="">
-                  {branchesLoading ? "Loading branches…" : "Select branch…"}
+                  {branchesLoading ? "Loading branches..." : "Select branch..."}
                 </option>
                 {branches.map(b => (
                   <option key={b.id} value={b.id}>{b.name}</option>
@@ -233,7 +233,7 @@ export default function StockLocationsPage() {
               </div>
               <input
                 className="input"
-                placeholder="Search name / code…"
+                placeholder="Search name / code..."
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 disabled={!selectedBranchId}
@@ -258,7 +258,7 @@ export default function StockLocationsPage() {
         </div>
       </div>
 
-      {loading && <div className="muted">Loading…</div>}
+      {loading && <div className="muted">Loading...</div>}
 
       <StockLocationsTable
         items={items}

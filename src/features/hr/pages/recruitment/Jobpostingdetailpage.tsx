@@ -14,7 +14,7 @@ function Field({ label, value }: { label: string; value?: string | number | null
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '—'}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '-'}</div>
     </div>
   );
 }
@@ -50,7 +50,7 @@ export default function JobPostingDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Load the posting summary separately — it comes from the list,
+  // Load the posting summary separately - it comes from the list,
   // so we re-fetch by filtering the postings list for this id.
   useEffect(() => {
     if (!companyId || !postingId) return;
@@ -67,10 +67,10 @@ export default function JobPostingDetailPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Recruitment</div>
+          <div className="page-kicker">Human Resources - Recruitment</div>
           <div className="page-title">{posting?.title ?? 'Job Posting'}</div>
           <div className="page-sub">
-            {posting ? `${posting.postingNo} · ${posting.departmentName} · ${posting.employmentType}` : ''}
+            {posting ? `${posting.postingNo} - ${posting.departmentName} - ${posting.employmentType}` : ''}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -78,7 +78,7 @@ export default function JobPostingDetailPage() {
           <button className="btn btn-primary" onClick={() => nav(`/hr/recruitment/new`)}>
             + New Posting
           </button>
-          <button className="btn" onClick={() => nav('/hr/recruitment')}>← Back</button>
+          <button className="btn" onClick={() => nav('/hr/recruitment')}>Back</button>
         </div>
       </div>
 
@@ -88,7 +88,7 @@ export default function JobPostingDetailPage() {
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 20 }}>
         <div className="kpi">
           <div className="kpi-label">Vacancies</div>
-          <div className="kpi-val">{posting?.vacancyCount ?? '—'}</div>
+          <div className="kpi-val">{posting?.vacancyCount ?? '-'}</div>
           <div className="kpi-sub">open positions</div>
         </div>
         <div className="kpi">
@@ -99,7 +99,7 @@ export default function JobPostingDetailPage() {
         <div className="kpi">
           <div className="kpi-label">Closing Date</div>
           <div className="kpi-val" style={{ fontSize: 14 }}>
-            {posting ? fmtDate(posting.closingDate) : '—'}
+            {posting ? fmtDate(posting.closingDate) : '-'}
           </div>
           <div className="kpi-sub">
             {posting ? (() => {
@@ -113,7 +113,7 @@ export default function JobPostingDetailPage() {
           <div className="kpi-val" style={{ color: 'var(--success)' }}>
             {pipeline?.hired ?? 0}
           </div>
-          <div className="kpi-sub">of {posting?.vacancyCount ?? '—'} vacancies</div>
+          <div className="kpi-sub">of {posting?.vacancyCount ?? '-'} vacancies</div>
         </div>
       </div>
 
@@ -187,7 +187,7 @@ export default function JobPostingDetailPage() {
       <div className="card" style={{ padding: 0 }}>
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-            Applications {statusFilter && `· ${statusFilter}`}
+            Applications {statusFilter && `- ${statusFilter}`}
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
             <select
@@ -245,7 +245,7 @@ export default function JobPostingDetailPage() {
                 <td style={{ textAlign: 'right' }}>
                   <button className="btn btn-sm"
                     onClick={e => { e.stopPropagation(); nav(`/hr/recruitment/${postingId}/applications/${a.id}`); }}>
-                    Open →
+                    Open to
                   </button>
                 </td>
               </tr>

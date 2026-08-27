@@ -129,7 +129,10 @@ export function getTelegramUserId(): number | undefined {
 }
 
 export function getTelegramStartParam(): string | undefined {
-  return getTelegramWebApp()?.initDataUnsafe?.start_param;
+  return (
+    cleanStartParam(getTelegramWebApp()?.initDataUnsafe?.start_param) ??
+    readTelegramStartParamFromUrl()
+  );
 }
 
 export function getTelegramHeaders(): Record<string, string> {
@@ -158,11 +161,37 @@ export function getTelegramRuntimeState(): TelegramRuntimeState {
     hasInitData: Boolean(tg?.initData?.trim()),
     user: tg?.initDataUnsafe?.user,
     userId: tg?.initDataUnsafe?.user?.id,
-    startParam: tg?.initDataUnsafe?.start_param,
+    startParam: getTelegramStartParam(),
     platform: tg?.platform,
     version: tg?.version,
     colorScheme: tg?.colorScheme,
   };
+}
+
+function readTelegramStartParamFromUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+
+  const candidates = [
+    new URLSearchParams(window.location.search),
+    new URLSearchParams(window.location.hash.replace(/^#/, "")),
+  ];
+
+  for (const params of candidates) {
+    const value =
+      cleanStartParam(params.get("tgWebAppStartParam")) ??
+      cleanStartParam(params.get("startapp")) ??
+      cleanStartParam(params.get("start_param")) ??
+      cleanStartParam(params.get("tenant"));
+
+    if (value) return value;
+  }
+
+  return undefined;
+}
+
+function cleanStartParam(value: string | null | undefined): string | undefined {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned : undefined;
 }
 
 export function initializeTelegramMiniApp(): boolean {

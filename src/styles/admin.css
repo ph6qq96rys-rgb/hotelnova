@@ -1,5 +1,5 @@
 /* =========================================================
-   MERGED CSS (HotelNova Admin + InventoryItemsPage)
+   MERGED CSS (Hotel Nova Admin + InventoryItemsPage)
    Goal: eliminate conflicts by SCOPING variables + generic classes
    ========================================================= */
 
@@ -58,10 +58,10 @@ textarea::placeholder {
 }
 
 /* =========================================================
-   1) HotelNova Admin Shell (SCOPED)
+   1) Hotel Nova Admin Shell (SCOPED)
    ========================================================= */
 
-/* Put HotelNova theme tokens on the shell (NOT :root) */
+/* Put Hotel Nova theme tokens on the shell (NOT :root) */
 .hna-shell {
   --sidebar-w: 280px;
   --topbar-h: 56px;
@@ -216,7 +216,7 @@ textarea::placeholder {
 .hna-shell .hna-page-header h1 { margin:0; font-size:22px; }
 .hna-shell .hna-page-header p { margin:6px 0 0; opacity:.75; }
 
-/* Legacy helpers you pasted (.page/.grid/.card etc) — keep them ONLY inside hna-shell */
+/* Legacy helpers you pasted (.page/.grid/.card etc) - keep them ONLY inside hna-shell */
 .hna-shell .page { padding: 24px; }
 .hna-shell .page-header { margin-bottom: 20px; }
 .hna-shell .page-header h1 { margin: 0; }

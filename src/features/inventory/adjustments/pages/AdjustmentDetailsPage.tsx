@@ -19,10 +19,10 @@ type ConfirmAction = "reject" | "reverse" | null;
 const CURRENCY = "ETB";
 
 function fmtDate(value?: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
 
   return date.toLocaleDateString(undefined, {
     day: "2-digit",
@@ -32,10 +32,10 @@ function fmtDate(value?: string | null): string {
 }
 
 function fmtDateTime(value?: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
 
   return date.toLocaleString(undefined, {
     day: "2-digit",
@@ -79,7 +79,7 @@ function friendlyStatus(status: string): string {
     case "Submitted":
       return "Waiting for Approval";
     case "Approved":
-      return "Approved · Ready to Post";
+      return "Approved - Ready to Post";
     case "Posted":
       return "Posted to Inventory";
     case "Rejected":
@@ -155,7 +155,7 @@ function InfoField({
         {label}
       </div>
       <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
-        {value || "—"}
+        {value || "-"}
       </div>
     </div>
   );
@@ -242,7 +242,7 @@ function ConfirmModal({
               disabled={working || (requireText && !text.trim())}
               onClick={() => onConfirm(text.trim())}
             >
-              {working ? "Working…" : confirmLabel}
+              {working ? "Working..." : confirmLabel}
             </button>
           </div>
         </section>
@@ -381,7 +381,7 @@ export default function AdjustmentDetailsPage() {
 
         {adjustmentBasePath && (
           <button type="button" className="btn" onClick={goBack}>
-            ← Back to Adjustments
+            Back to Adjustments
           </button>
         )}
       </div>
@@ -392,7 +392,7 @@ export default function AdjustmentDetailsPage() {
     return (
       <div className="page">
         <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
-          Loading stock adjustment…
+          Loading stock adjustment...
         </div>
       </div>
     );
@@ -408,7 +408,7 @@ export default function AdjustmentDetailsPage() {
         </div>
 
         <button type="button" className="btn" onClick={goBack}>
-          ← Back to Adjustments
+          Back to Adjustments
         </button>
       </div>
     );
@@ -456,7 +456,7 @@ export default function AdjustmentDetailsPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Inventory · Stock Control</div>
+          <div className="page-kicker">Inventory - Stock Control</div>
 
           <div
             className="page-title"
@@ -468,13 +468,13 @@ export default function AdjustmentDetailsPage() {
 
           <div className="page-sub">
             {friendlyAdjustmentType(item.adjustmentType)}
-            {item.adjustmentDate ? <> · {fmtDate(item.adjustmentDate)}</> : null}
-            {item.referenceNo ? <> · Ref: {item.referenceNo}</> : null}
+            {item.adjustmentDate ? <> - {fmtDate(item.adjustmentDate)}</> : null}
+            {item.referenceNo ? <> - Ref: {item.referenceNo}</> : null}
           </div>
         </div>
 
         <button type="button" className="btn" onClick={goBack}>
-          ← Back
+          Back
         </button>
       </div>
 
@@ -652,7 +652,7 @@ export default function AdjustmentDetailsPage() {
                       ) : null}
                     </td>
 
-                    <td>{line.uomName || "—"}</td>
+                    <td>{line.uomName || "-"}</td>
 
                     <td style={{ textAlign: "right", fontFamily: "var(--mono)" }}>
                       {fmtQty(line.systemQty)}
@@ -691,7 +691,7 @@ export default function AdjustmentDetailsPage() {
                     <td style={{ textAlign: "right" }}>
                       {line.isHighVariance ? (
                         <span style={{ color: "var(--warn)", fontWeight: 700 }}>
-                          ⚠ {variance.toFixed(1)}%
+                          Warning: {variance.toFixed(1)}%
                         </span>
                       ) : (
                         <span style={{ color: "var(--text-muted)" }}>{variance.toFixed(1)}%</span>
@@ -699,7 +699,7 @@ export default function AdjustmentDetailsPage() {
                     </td>
 
                     <td style={{ color: "var(--text-soft)", fontSize: 12 }}>
-                      {line.notes || "—"}
+                      {line.notes || "-"}
                     </td>
                   </tr>
                 );

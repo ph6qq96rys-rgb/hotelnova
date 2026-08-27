@@ -1,4 +1,4 @@
-﻿export type UomDto = {
+export type UomDto = {
   id: string;
   name: string;
   code?: string | null;

@@ -1,4 +1,14 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import {
+  CreditCard,
+  MapPin,
+  PauseCircle,
+  ReceiptText,
+  Search,
+  ShoppingBag,
+  Trash2,
+  Utensils,
+} from "lucide-react";
 import { SessionBanner, SessionGate } from "../components/SessionGate";
 import {
   Button,
@@ -555,7 +565,7 @@ export function PosSalesPage() {
       );
 
       resetOrder();
-      setMessage(`Sale ${sale.saleNo ?? sale.id} completed successfully.`);
+      setMessage(`Sale ${sale.saleNo ?? "document"} completed successfully.`);
     } catch (err) {
       setMessage(extractApiError(err, "The operation could not be completed. Please try again."));
     } finally {
@@ -590,11 +600,11 @@ export function PosSalesPage() {
             <header className="erp-pos-header">
               <div>
                 <div className="erp-pos-title">
-                  RestaurantFNB POS Workstation
+                  Hotel Nova POS Workstation
                 </div>
                 <div className="erp-pos-subtitle">
-                  Order {orderContext.orderNo} ·{" "}
-                  {orderTypeLabel(orderContext.orderType)} · {clock}
+                  Order {orderContext.orderNo} -{" "}
+                  {orderTypeLabel(orderContext.orderType)} - {clock}
                 </div>
               </div>
 
@@ -642,22 +652,57 @@ export function PosSalesPage() {
             )}
 
             <section className="erp-pos-toolbar">
-              <Button onClick={() => setView("MENU")}>Menu</Button>
-              <Button onClick={() => setView("HELD_ORDERS")}>
-                Held Orders ({heldOrders.length})
+              <Button
+                onClick={() => setView("MENU")}
+                variant={view === "MENU" ? "gold" : "ghost"}
+                title="Menu"
+              >
+                <Utensils size={16} /> Menu
               </Button>
-              <Button onClick={holdOrder}>Hold Order · F5</Button>
-              <Button onClick={() => setView("PAYMENT")} variant="gold">
-                Payment · F8
+              <Button
+                onClick={() => setView("HELD_ORDERS")}
+                variant={view === "HELD_ORDERS" ? "gold" : "ghost"}
+                title="Held orders"
+              >
+                <PauseCircle size={16} /> Held Orders ({heldOrders.length})
               </Button>
-              <Button onClick={resetOrder} variant="danger">
-                Cancel Order
+              <Button onClick={holdOrder} title="Hold order">
+                <PauseCircle size={16} /> Hold
               </Button>
+              <Button
+                onClick={() => setView("PAYMENT")}
+                variant={view === "PAYMENT" ? "gold" : "ghost"}
+                title="Payment"
+              >
+                <CreditCard size={16} /> Payment
+              </Button>
+              <Button onClick={resetOrder} variant="danger" title="Cancel order">
+                <Trash2 size={16} /> Cancel
+              </Button>
+            </section>
+
+            <section className="erp-pos-metrics" aria-label="Current POS order summary">
+              <div>
+                <span>Lines</span>
+                <strong>{cart.length}</strong>
+              </div>
+              <div>
+                <span>Items</span>
+                <strong>{cart.reduce((sum, item) => sum + item.qty, 0)}</strong>
+              </div>
+              <div>
+                <span>Subtotal</span>
+                <strong>{money(totals.subtotal)}</strong>
+              </div>
+              <div className="accent">
+                <span>Total</span>
+                <strong>{money(totals.total)}</strong>
+              </div>
             </section>
 
             <main className="erp-pos-workspace">
               <aside className="erp-pos-left">
-                <Card>
+                <Card className="erp-service-card">
                   <div className="erp-section-title">Service Context</div>
 
                   <label className="erp-pos-label">Operating Location</label>
@@ -680,8 +725,9 @@ export function PosSalesPage() {
                   </select>
 
                   {selectedStore && (
-                    <div className="erp-muted" style={{ marginTop: 6 }}>
-                      Operating location: {storeLabel(selectedStore)}
+                    <div className="erp-location-note">
+                      <MapPin size={13} />
+                      <span>{storeLabel(selectedStore)}</span>
                     </div>
                   )}
 
@@ -749,23 +795,19 @@ export function PosSalesPage() {
                   />
                 </Card>
 
-                <Card>
-                  <div className="erp-section-title">Menu Categories</div>
-                  <div className="erp-category-list">
-                    {categories.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        className={
-                          c === category
-                            ? "erp-category active"
-                            : "erp-category"
-                        }
-                        onClick={() => setCategory(c)}
-                      >
-                        {c}
-                      </button>
-                    ))}
+                <Card className="erp-order-snapshot">
+                  <div className="erp-section-title">Order Snapshot</div>
+                  <div className="erp-snapshot-row">
+                    <span>Service</span>
+                    <strong>{orderTypeLabel(orderContext.orderType)}</strong>
+                  </div>
+                  <div className="erp-snapshot-row">
+                    <span>Table / Room</span>
+                    <strong>{orderContext.tableNo || "Unassigned"}</strong>
+                  </div>
+                  <div className="erp-snapshot-row">
+                    <span>Guest</span>
+                    <strong>{orderContext.customerName || "Walk-in"}</strong>
                   </div>
                 </Card>
               </aside>
@@ -773,16 +815,36 @@ export function PosSalesPage() {
               <section className="erp-pos-center">
                 {view === "MENU" && (
                   <>
-                    <Card className="erp-search-card">
+                    <Card className="erp-menu-control-card">
+                      <div className="erp-search-card">
+                        <Search size={18} />
                       <input
                         id="pos-search"
                         className="erp-pos-search"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search item, category, code, or barcode...  F2"
+                        placeholder="Search item, category, code, or barcode"
                       />
                       <div className="erp-pos-help">
-                        F5 Hold · F8 Payment · Esc Return to Menu
+                        F5 Hold - F8 Payment - Esc Return to Menu
+                      </div>
+                      </div>
+
+                      <div className="erp-category-strip" aria-label="Menu categories">
+                        {categories.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            className={
+                              c === category
+                                ? "erp-category active"
+                                : "erp-category"
+                            }
+                            onClick={() => setCategory(c)}
+                          >
+                            {c}
+                          </button>
+                        ))}
                       </div>
                     </Card>
 
@@ -851,8 +913,8 @@ export function PosSalesPage() {
                           >
                             <strong>{h.orderNo}</strong>
                             <span>
-                              {orderTypeLabel(h.orderType)} ·{" "}
-                              {h.tableNo || "No table assigned"} ·{" "}
+                              {orderTypeLabel(h.orderType)} -{" "}
+                              {h.tableNo || "No table assigned"} -{" "}
                               {h.cart.length} lines
                             </span>
                             <span>
@@ -951,7 +1013,7 @@ export function PosSalesPage() {
                     <div>
                       <div className="erp-section-title">Active Order</div>
                       <div className="erp-muted">
-                        {cart.length} item line(s)
+                        <ShoppingBag size={13} /> {cart.length} line{cart.length === 1 ? "" : "s"}
                       </div>
                     </div>
                     <Pill tone="gold">
@@ -970,7 +1032,7 @@ export function PosSalesPage() {
                           <div className="erp-cart-line-main">
                             <strong>{item.name}</strong>
                             <span>
-                              {money(item.price)} ·{" "}
+                              {money(item.price)} -{" "}
                               {item.categoryName || "Menu"}
                             </span>
                           </div>
@@ -1000,7 +1062,7 @@ export function PosSalesPage() {
                                 dispatchCart({ type: "REMOVE", id: item.id })
                               }
                             >
-                              ×
+                              
                             </button>
                           </div>
 
@@ -1036,9 +1098,11 @@ export function PosSalesPage() {
                   </div>
 
                   <div className="erp-order-actions">
-                    <Button onClick={holdOrder}>Hold Order</Button>
+                    <Button onClick={holdOrder}>
+                      <PauseCircle size={16} /> Hold
+                    </Button>
                     <Button onClick={() => setView("PAYMENT")} variant="gold">
-                      Complete Payment
+                      <ReceiptText size={16} /> Complete Payment
                     </Button>
                   </div>
                 </Card>
@@ -1057,6 +1121,7 @@ const css = `
   color: #fafaf9;
   min-height: 100%;
   padding: 16px;
+  overflow-x: hidden;
 }
 
 .erp-pos-store-select {
@@ -1080,11 +1145,14 @@ const css = `
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
+  min-width: 0;
 }
 
 .erp-pos-title {
   font-size: 24px;
   font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0;
 }
 
 .erp-pos-subtitle,
@@ -1101,6 +1169,7 @@ const css = `
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .erp-pos-workspace {
@@ -1108,6 +1177,7 @@ const css = `
   grid-template-columns: 280px minmax(0, 1fr) 360px;
   gap: 12px;
   align-items: start;
+  min-width: 0;
 }
 
 .erp-pos-left,
@@ -1116,6 +1186,7 @@ const css = `
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .erp-section-title {
@@ -1163,10 +1234,11 @@ const css = `
   border: 1px solid #3f3f46;
   background: #111113;
   color: #fafaf9;
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 10px 12px;
   text-align: left;
   cursor: pointer;
+  min-height: 42px;
 }
 
 .erp-category.active,
@@ -1179,6 +1251,7 @@ const css = `
   display: flex;
   gap: 12px;
   align-items: center;
+  min-width: 0;
 }
 
 .erp-pos-help {
@@ -1198,7 +1271,7 @@ const css = `
   border: 1px solid #3f3f46;
   background: #18181b;
   color: #fafaf9;
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 14px;
   text-align: left;
   display: flex;
@@ -1251,6 +1324,7 @@ const css = `
   align-items: center;
   border-bottom: 1px solid #27272a;
   padding: 8px 0;
+  min-width: 0;
 }
 
 .erp-cart-line-main span {
@@ -1311,6 +1385,382 @@ const css = `
 @media (max-width: 1180px) {
   .erp-pos-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .erp-pos-left {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .erp-pos-left > * {
+    min-width: 0;
+  }
+
+  .erp-pos-right {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+  }
+}
+
+@media (max-width: 760px) {
+  .erp-pos-page {
+    padding: 10px;
+  }
+
+  .erp-pos-shell {
+    min-height: auto;
+  }
+
+  .erp-pos-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .erp-pos-title {
+    font-size: 20px;
+  }
+
+  .erp-pos-header-actions,
+  .erp-pos-toolbar,
+  .erp-order-actions,
+  .erp-payment-methods {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .erp-pos-header-actions > *,
+  .erp-pos-toolbar > *,
+  .erp-order-actions > *,
+  .erp-payment-methods > * {
+    width: 100%;
+  }
+
+  .erp-pos-store-select {
+    min-width: 0;
+    width: 100%;
+    border-radius: 8px;
+  }
+
+  .erp-pos-left {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-pos-mini-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-search-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .erp-pos-help {
+    white-space: normal;
+  }
+
+  .erp-menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .erp-menu-card {
+    min-height: 112px;
+    padding: 12px;
+  }
+
+  .erp-cart-line {
+    grid-template-columns: 1fr auto;
+  }
+
+  .erp-cart-line-total {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
+
+@media (max-width: 430px) {
+  .erp-pos-header-actions,
+  .erp-pos-toolbar,
+  .erp-order-actions,
+  .erp-payment-methods {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .erp-menu-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.erp-pos-page {
+  background:
+    linear-gradient(180deg, #101014 0%, #09090b 42%, #0d0d10 100%);
+}
+
+.erp-pos-shell {
+  gap: 10px;
+}
+
+.erp-pos-header {
+  align-items: center;
+  padding: 10px 0 2px;
+}
+
+.erp-pos-title {
+  font-size: 22px;
+  font-weight: 850;
+}
+
+.erp-pos-subtitle {
+  margin-top: 4px;
+  color: #b8b1a5;
+}
+
+.erp-pos-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 8px;
+  background: rgba(15,15,18,.92);
+  backdrop-filter: blur(16px);
+}
+
+.erp-pos-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.erp-pos-metrics > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 8px;
+  background: #18181b;
+}
+
+.erp-pos-metrics span {
+  display: block;
+  color: #a1a1aa;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.erp-pos-metrics strong {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: #fafaf9;
+  font-size: 18px;
+}
+
+.erp-pos-metrics .accent {
+  border-color: rgba(212,168,83,.45);
+  background: rgba(212,168,83,.12);
+}
+
+.erp-pos-metrics .accent strong {
+  color: #f6c86b;
+}
+
+.erp-pos-workspace {
+  grid-template-columns: 270px minmax(360px, 1fr) 386px;
+}
+
+.erp-service-card,
+.erp-order-card,
+.erp-menu-control-card {
+  box-shadow: 0 16px 40px rgba(0,0,0,.18);
+}
+
+.erp-location-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: #d4a853;
+  font-size: 12px;
+}
+
+.erp-order-snapshot {
+  display: grid;
+  gap: 8px;
+}
+
+.erp-snapshot-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,.07);
+  color: #a1a1aa;
+  font-size: 12px;
+}
+
+.erp-snapshot-row strong {
+  max-width: 55%;
+  overflow: hidden;
+  color: #fafaf9;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.erp-menu-control-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px !important;
+}
+
+.erp-search-card {
+  gap: 10px;
+  padding: 0;
+  color: #d4a853;
+}
+
+.erp-pos-search {
+  min-height: 44px;
+  border-color: rgba(255,255,255,.1);
+  background: #111113;
+  font-size: 14px;
+}
+
+.erp-search-card .erp-pos-help {
+  display: none;
+}
+
+.erp-category-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.erp-category-strip .erp-category {
+  flex: 0 0 auto;
+  min-height: 36px;
+  border-radius: 999px;
+  padding: 8px 13px;
+  white-space: nowrap;
+}
+
+.erp-menu-grid {
+  grid-template-columns: repeat(auto-fill, minmax(162px, 1fr));
+}
+
+.erp-menu-card {
+  min-height: 132px;
+  border-color: rgba(255,255,255,.08);
+  background: linear-gradient(180deg, #1b1b1f, #151518);
+}
+
+.erp-menu-card:hover {
+  border-color: rgba(212,168,83,.55);
+  background: #202024;
+}
+
+.erp-menu-bottom strong {
+  color: #f6c86b;
+}
+
+.erp-order-card {
+  position: sticky;
+  top: 78px;
+  display: grid;
+  gap: 12px;
+}
+
+.erp-order-header {
+  align-items: flex-start;
+}
+
+.erp-order-header .erp-muted {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.erp-cart-lines {
+  max-height: min(44vh, 460px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.erp-cart-line {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 8px;
+  background: #111113;
+}
+
+.erp-cart-line-total {
+  grid-column: 1 / -1;
+  color: #f6c86b;
+}
+
+.erp-cart-controls button {
+  width: 32px;
+  height: 32px;
+}
+
+.erp-totals {
+  margin-top: 0;
+}
+
+.erp-totals .grand {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(212,168,83,.28);
+  color: #f6c86b;
+}
+
+@media (max-width: 1180px) {
+  .erp-pos-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-order-card {
+    top: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .erp-pos-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .erp-pos-toolbar {
+    position: static;
+  }
+
+  .erp-search-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .erp-cart-lines {
+    max-height: none;
+  }
+}
+
+@media (max-width: 430px) {
+  .erp-pos-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .erp-menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .erp-menu-card {
+    min-height: 118px;
+    padding: 10px;
   }
 }
 `;

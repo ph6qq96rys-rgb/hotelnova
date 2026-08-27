@@ -1,6 +1,7 @@
-﻿// src/features/inventory/items/hooks/useInventoryItems.ts
+// src/features/inventory/items/hooks/useInventoryItems.ts
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import { inventoryItemsApi } from "../api/inventoryItemsApi";
 import type { InventoryItemDto } from "../types";
 
@@ -34,18 +35,16 @@ export function useInventoryItems(companyId: string, q = ""): UseInventoryItemsR
       .then((data) => { if (!cancelled) setItems(data ?? []); })
       .catch((err) => {
         if (!cancelled) {
-          const data = (err as any)?.response?.data;
-          setError(
-            typeof data === "string"
-              ? data
-              : data?.message ?? err?.message ?? "Failed to load items."
-          );
+          setError(toUserFriendlyError(
+            err,
+            "Inventory items could not be loaded. Please try again."
+          ));
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, []); // no deps — reads from ref
+  }, []); // no deps - reads from ref
 
   // Re-run whenever companyId or q changes.
   useEffect(() => {

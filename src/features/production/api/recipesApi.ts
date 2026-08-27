@@ -2,9 +2,9 @@
 //
 // Three distinct recipe endpoint groups, kept in one file because they share types:
 //
-//   recipesApi          — legacy /companies/{id}/recipes (activate flow)
-//   productionRecipesApi— /companies/{id}/production/recipes (get/upsert by menu item)
-//   recipeEditorApi     — /companies/{id}/branches/{id}/menu/items/{id}/recipe-editor
+//   recipesApi          - legacy /companies/{id}/recipes (activate flow)
+//   productionRecipesApi- /companies/{id}/production/recipes (get/upsert by menu item)
+//   recipeEditorApi     - /companies/{id}/branches/{id}/menu/items/{id}/recipe-editor
 
 import { http } from "../../../api/http";
 import type {
@@ -14,7 +14,7 @@ import type {
   SaveMenuItemRecipeEditorRequest,
 } from "../types";
 
-// ── Legacy recipe endpoints ───────────────────────────────────────────────────
+//  Legacy recipe endpoints 
 
 export const recipesApi = {
   getActive(companyId: string, menuItemId: string): Promise<RecipeDto> {
@@ -35,7 +35,7 @@ export const recipesApi = {
       .then(() => undefined);
   },
 
-  /** No request body — omit it so ASP.NET Core doesn't require Content-Type. */
+  /** No request body - omit it so ASP.NET Core doesn't require Content-Type. */
   activate(companyId: string, recipeId: string): Promise<void> {
     return http
       .post(`/companies/${companyId}/recipes/${recipeId}/activate`)
@@ -43,7 +43,7 @@ export const recipesApi = {
   },
 };
 
-// ── Production recipe endpoints ───────────────────────────────────────────────
+//  Production recipe endpoints 
 
 export const productionRecipesApi = {
   getByMenuItem(companyId: string, menuItemId: string): Promise<RecipeDto> {
@@ -59,7 +59,7 @@ export const productionRecipesApi = {
   },
 };
 
-// ── Recipe editor endpoints (branch-scoped) ───────────────────────────────────
+//  Recipe editor endpoints (branch-scoped) 
 
 export const recipeEditorApi = {
   get(companyId: string, branchId: string, menuItemId: string): Promise<MenuItemRecipeEditorDto> {

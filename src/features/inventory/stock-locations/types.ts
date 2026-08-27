@@ -1,4 +1,4 @@
-﻿export type StockLocationType = "Store" | "Warehouse";
+export type StockLocationType = "Store" | "Warehouse";
 
 export type StockLocationDto = {
   id: string;

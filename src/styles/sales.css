@@ -1,4 +1,4 @@
-/* ── Status pills ──────────────────────────────────────────────────────────── */
+/*  Status pills  */
 
 .status-pill {
   display: inline-flex;
@@ -16,7 +16,7 @@
 .s-posted    { background: var(--color-background-success);   color: var(--color-text-success); }
 .s-reversed  { background: var(--color-background-danger);    color: var(--color-text-danger); }
 
-/* ── Toolbar ───────────────────────────────────────────────────────────────── */
+/*  Toolbar  */
 
 .toolbar {
   display: flex;
@@ -26,7 +26,7 @@
   flex-wrap: wrap;
 }
 
-/* ── Page header ───────────────────────────────────────────────────────────── */
+/*  Page header  */
 
 .page-header {
   display: flex;

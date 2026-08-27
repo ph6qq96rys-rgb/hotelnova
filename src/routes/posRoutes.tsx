@@ -10,6 +10,7 @@ export function getPostRoutes(): AppRoute[] {
       label: "POS",
       section: "Sales",
       nav: true,
+      permissions: ["pos.sell"],
     },
     {
       path: "sales/pos/session",
@@ -17,6 +18,7 @@ export function getPostRoutes(): AppRoute[] {
       label: "POS Session",
       section: "Sales",
       nav: true,
+      permissions: ["pos.close"],
     },
     {
       path: "sales/pos/operations",
@@ -24,6 +26,7 @@ export function getPostRoutes(): AppRoute[] {
       label: "POS Operations",
       section: "Sales",
       nav: true,
+      permissions: ["pos.view"],
     },
   ];
 }

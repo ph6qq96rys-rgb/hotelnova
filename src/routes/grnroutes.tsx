@@ -20,6 +20,7 @@ export type AppRoute = RouteObject & {
   nav?: boolean;
   section?: string;
   order?: number;
+  permissions?: string[];
 };
 
 const SECTION_INVENTORY = "Inventory";
@@ -29,6 +30,7 @@ function visibleRoute(
   label: string,
   element: ReactNode,
   order: number,
+  permissions: string[],
 ): AppRoute {
   return {
     path,
@@ -37,6 +39,7 @@ function visibleRoute(
     nav: true,
     section: SECTION_INVENTORY,
     order,
+    permissions,
   };
 }
 
@@ -64,6 +67,7 @@ function grnRoutes(prefix: string, visible: boolean): AppRoute[] {
           "Goods Receipts",
           <GrnListPage />,
           70,
+          ["grn.view"],
         )
       : hiddenRoute(
           listPath,
@@ -110,6 +114,7 @@ function companySivRoutes(
           "SIVs",
           <SivListPage />,
           80,
+          ["siv.view"],
         )
       : hiddenRoute(
           listPath,

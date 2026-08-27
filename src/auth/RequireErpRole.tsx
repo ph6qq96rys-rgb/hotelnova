@@ -3,19 +3,14 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAppContext } from "../app/AppContext";
+import { hasAnyErpRole } from "./erpAccess";
+import { useAuth } from "./AuthProvider";
 
 type Props = {
   roles: string[];
   children: ReactNode;
   fallbackPath?: string;
 };
-
-function normalizeRole(value: unknown): string {
-  return String(value ?? "")
-    .trim()
-    .replace(/[\s_-]+/g, "")
-    .toLowerCase();
-}
 
 function collectRoles(app: any): string[] {
   const user =
@@ -89,14 +84,16 @@ export default function RequireErpRole({
   fallbackPath = "/companies",
 }: Props) {
   const app = useAppContext() as any;
+  const auth = useAuth();
   const location = useLocation();
 
-  const allowed = new Set(roles.map(normalizeRole));
-  const userRoles = collectRoles(app);
+  const userRoles = [
+    ...collectRoles(app),
+    ...(auth.roles ?? []),
+    ...(auth.user?.roles ?? []),
+  ];
 
-  const hasRole = userRoles.some((role) =>
-    allowed.has(normalizeRole(role)),
-  );
+  const hasRole = hasAnyErpRole({ roles: userRoles }, roles);
 
   if (!hasRole) {
     console.warn("RequireErpRole denied", {

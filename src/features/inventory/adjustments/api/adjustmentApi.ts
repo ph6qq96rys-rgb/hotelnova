@@ -1,6 +1,7 @@
 // src/features/inventory/adjustments/api/adjustmentApi.ts
 
 import { http } from "../../../../api/http";
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import type {
   InventoryAdjustmentDto,
   AdjustmentCandidateDto,
@@ -9,12 +10,12 @@ import type {
   UpdateAdjustmentDraftCommand as UpdateAdjustmentCommand,
 } from "../types";
 
-// ── URL builder ───────────────────────────────────────────────────────────────
+//  URL builder 
 
 const base = (companyId: string, branchId: string) =>
   `/companies/${companyId}/branches/${branchId}/inventory-adjustments`;
 
-// ── Error extraction ──────────────────────────────────────────────────────────
+//  Error extraction 
 
 /**
  * Extracts a human-readable message from any API error.
@@ -25,20 +26,14 @@ const base = (companyId: string, branchId: string) =>
  *  - network/axios errors
  */
 export function getApiError(e: unknown, fallback: string): string {
-  const err = e as any;
-  const data = err?.response?.data;
-  if (typeof data === "string" && data.trim()) return data.trim();
-  if (data?.error)   return String(data.error);
-  if (data?.message) return String(data.message);
-  if (data?.title)   return String(data.title);
-  return err?.message ?? fallback;
+  return toUserFriendlyError(e, fallback);
 }
 
-// ── API client ────────────────────────────────────────────────────────────────
+//  API client 
 
 export const adjustmentApi = {
 
-  // ── Lookups ──────────────────────────────────────────────────────────────────
+  //  Lookups 
 
   /** FIFO-aware item list for the typeahead search at a location. */
   fifoItems: (
@@ -68,7 +63,7 @@ export const adjustmentApi = {
       )
       .then((r) => (Array.isArray(r.data) ? r.data : [])),
 
-  // ── Queries ──────────────────────────────────────────────────────────────────
+  //  Queries 
 
   list: (
     companyId: string,
@@ -92,7 +87,7 @@ export const adjustmentApi = {
       .get<InventoryAdjustmentDto>(`${base(companyId, branchId)}/${adjustmentId}`)
       .then((r) => r.data),
 
-  // ── Draft lifecycle ───────────────────────────────────────────────────────────
+  //  Draft lifecycle 
 
   /**
    * Creates a new Draft adjustment.
@@ -121,7 +116,7 @@ export const adjustmentApi = {
       .put(`${base(companyId, branchId)}/${adjustmentId}`, cmd)
       .then(() => undefined),
 
-  // ── Workflow transitions ──────────────────────────────────────────────────────
+  //  Workflow transitions 
 
   submit: (
     companyId:    string,

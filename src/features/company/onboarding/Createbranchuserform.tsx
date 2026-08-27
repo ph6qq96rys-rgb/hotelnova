@@ -321,7 +321,7 @@ export default function CreateBranchUserForm({
                     <small>
                       {[location.code, location.locationType]
                         .filter(Boolean)
-                        .join(" · ") || "Stock location"}
+                        .join(" - ") || "Stock location"}
                     </small>
                   </span>
 
@@ -378,7 +378,7 @@ export default function CreateBranchUserForm({
           disabled={busy}
           className="ob-btn ob-btn--primary"
         >
-          {busy ? "Creating…" : "Create user"}
+          {busy ? "Creating..." : "Create user"}
         </button>
       </div>
     </div>

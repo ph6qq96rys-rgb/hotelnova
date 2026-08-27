@@ -1,4 +1,4 @@
-﻿import { Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Boxes, List, Ruler, ArrowRight } from "lucide-react";
 
 const cards = [
@@ -15,7 +15,7 @@ const cards = [
     icon: <List size={18} />,
     title: "Item categories",
     description:
-      "Organize inventory items by type — raw material, semi-finished, finished goods, and packaging.",
+      "Organize inventory items by type - raw material, semi-finished, finished goods, and packaging.",
     cta: "Manage categories",
   },
   {

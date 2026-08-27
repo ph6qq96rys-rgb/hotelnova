@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { useAuth } from "../../../auth/AuthProvider";
 import { companyApi } from "../api/companyApi";
 import type { CompanySettingsDto } from "../types/company.types";
 import {
@@ -11,36 +12,80 @@ import {
 import { extractApiError } from "../utils/company.utils";
 
 const MONTHS = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ];
+
+const DEFAULT_SETTINGS: CompanySettingsDto = {
+  vatEnabled: false,
+  vatRate: 0,
+  pricesIncludeVat: false,
+  invoicePrefix: "INV",
+  receiptPrefix: "RCPT",
+  grnPrefix: "GRN",
+  sivPrefix: "SIV",
+  transferPrefix: "TRF",
+  adjustmentPrefix: "ADJ",
+  productionPrefix: "PRD",
+  allowNegativeStock: false,
+  requireApprovalForSiv: true,
+  autoPostGrn: false,
+  autoPostSiv: false,
+  enforceIssueLocationMapping: true,
+  costingMethod: "FIFO",
+  fiscalYearStartMonth: 1,
+  baseCurrency: "ETB",
+  attendanceEnabled: true,
+  overtimeEnabled: false,
+  telegramEnabled: false,
+  telegramAttendanceEnabled: false,
+  telegramStockRequestsEnabled: false,
+  auditInventoryTransactions: true,
+  auditFinancialTransactions: true,
+};
 
 export default function CompanySettingsPage() {
   const { companyId } = useParams<{ companyId: string }>();
+  const { hasPermission, user } = useAuth() as any;
+  const canUpdateSettings = Boolean(hasPermission?.("settings.update") || hasAnyRole(user, ["CompanyAdmin", "SystemAdmin", "SysAdmin"]));
 
-  const [value,   setValue]   = useState<CompanySettingsDto | null>(null);
+  const [value, setValue] = useState<CompanySettingsDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving,  setSaving]  = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
-  const [notice,  setNotice]  = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!companyId) return;
-    setLoading(true); setError(null);
+
+    setLoading(true);
+    setError(null);
     companyApi.getSettings(companyId)
-      .then(setValue)
-      .catch((e) => setError(extractApiError(e, "Failed to load settings")))
+      .then((settings) => setValue({ ...DEFAULT_SETTINGS, ...settings }))
+      .catch((e) => setError(extractApiError(e, "Company settings could not be loaded.")))
       .finally(() => setLoading(false));
   }, [companyId]);
 
   async function save() {
     if (!companyId || !value) return;
-    setSaving(true); setError(null); setNotice(null);
+    if (!canUpdateSettings) {
+      setError("You can view company settings, but you do not have permission to update them.");
+      return;
+    }
+
+    const normalized = normalize(value);
+    if (requiresOperationalConfirmation(normalized) && !window.confirm("These settings can affect stock posting, audit controls, or financial behavior across the company. Continue saving?")) return;
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+
     try {
-      const saved = await companyApi.updateSettings(companyId, value);
-      setValue(saved); setNotice("Settings saved successfully.");
+      const saved = await companyApi.updateSettings(companyId, normalized);
+      setValue({ ...DEFAULT_SETTINGS, ...saved });
+      setNotice("Company settings saved and applied to related modules.");
     } catch (e) {
-      setError(extractApiError(e, "Failed to save settings."));
+      setError(extractApiError(e, "Company settings could not be saved."));
     } finally {
       setSaving(false);
     }
@@ -50,94 +95,146 @@ export default function CompanySettingsPage() {
     setValue((s) => s ? { ...s, [k]: v } : s);
 
   if (!companyId) return <div style={{ padding: 24 }}>Missing company ID.</div>;
-  if (loading)    return <div style={{ padding: 24, display: "flex", gap: 10, alignItems: "center" }}><Spinner /> Loading settings…</div>;
-  if (!value)     return <div style={{ padding: 24 }}>{error ? <Alert tone="danger" title="Error" message={error} /> : "No settings found."}</div>;
+  if (loading) return <LoadingState />;
+  if (!value) return <div style={{ padding: 24 }}>{error ? <Alert tone="danger" title="Error" message={error} /> : "No settings found."}</div>;
 
   return (
     <PageShell
       title="Company settings"
-      subtitle="Applies to all branches and stores under this company."
-      action={<Btn variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save settings"}</Btn>}
+      subtitle="Company-wide defaults used by tax, documents, inventory, HR, Telegram, and audit modules."
+      action={<Btn variant="primary" onClick={save} disabled={saving || !canUpdateSettings}>{saving ? "Saving..." : canUpdateSettings ? "Save settings" : "View only"}</Btn>}
     >
-      {notice && <Alert tone="ok"     title="Saved"  message={notice} />}
-      {error  && <Alert tone="danger" title="Error"  message={error}  />}
+      {notice && <Alert tone="ok" title="Saved" message={notice} />}
+      {error && <Alert tone="danger" title="Action required" message={error} />}
 
-      {/* VAT */}
-      <Card title="Tax & VAT" subtitle="Value added tax configuration" style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>VAT enabled</div>
-              <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Apply VAT to sales and invoices</div>
-            </div>
-            <Toggle checked={value.vatEnabled} onChange={(v) => set("vatEnabled", v)} />
-          </div>
-
-          {value.vatEnabled && (
-            <>
-              <Field label="VAT rate (%)" hint="Enter as a percentage, e.g. 15 for 15%">
-                <Input
-                  value={String(value.vatRate)}
-                  onChange={(v) => set("vatRate", parseFloat(v) || 0)}
-                  placeholder="e.g. 15"
-                  type="number"
-                />
-              </Field>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>Prices include VAT</div>
-                  <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Displayed prices are VAT-inclusive</div>
-                </div>
-                <Toggle checked={value.pricesIncludeVat} onChange={(v) => set("pricesIncludeVat", v)} />
-              </div>
-            </>
-          )}
-        </div>
-      </Card>
-
-      {/* Documents */}
-      <Card title="Document numbering" subtitle="Prefix used for generated invoice and receipt numbers" style={{ marginBottom: 16 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-          <Field label="Invoice prefix" hint="e.g. INV-2024-">
-            <Input value={value.invoicePrefix} onChange={(v) => set("invoicePrefix", v)} placeholder="INV" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16 }}>
+        <Card title="Tax" subtitle="VAT behavior for sales, receipts, and invoices.">
+          <ToggleRow title="VAT enabled" subtitle="Apply VAT rules to taxable sales documents." checked={value.vatEnabled} onChange={(v) => set("vatEnabled", v)} />
+          <Field label="VAT rate (%)">
+            <Input value={String(value.vatRate ?? 0)} onChange={(v) => set("vatRate", Number(v) || 0)} type="number" />
           </Field>
-          <Field label="Receipt prefix" hint="e.g. RCPT-">
-            <Input value={value.receiptPrefix} onChange={(v) => set("receiptPrefix", v)} placeholder="RCPT" />
+          <ToggleRow title="Prices include VAT" subtitle="Treat displayed sale prices as VAT-inclusive." checked={value.pricesIncludeVat} onChange={(v) => set("pricesIncludeVat", v)} />
+        </Card>
+
+        <Card title="Fiscal defaults" subtitle="Financial year and base reporting currency.">
+          <Field label="Base currency">
+            <Input value={value.baseCurrency ?? "ETB"} onChange={(v) => set("baseCurrency", v.toUpperCase())} placeholder="ETB" />
           </Field>
-        </div>
-      </Card>
+          <Field label="Fiscal year start month">
+            <select className="ob-select" value={String(value.fiscalYearStartMonth ?? 1)} onChange={(e) => set("fiscalYearStartMonth", Number(e.target.value))}>
+              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+          </Field>
+          <InfoRow label="Current period starts" value={MONTHS[(value.fiscalYearStartMonth ?? 1) - 1]} />
+        </Card>
 
-      {/* Inventory */}
-      <Card title="Inventory" subtitle="Stock management rules" style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>Allow negative stock</div>
-            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Permit stock levels to go below zero</div>
+        <Card title="Document numbering" subtitle="Prefixes used when operational documents are generated.">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+            <PrefixField label="Invoice" value={value.invoicePrefix} onChange={(v) => set("invoicePrefix", v)} />
+            <PrefixField label="Receipt" value={value.receiptPrefix} onChange={(v) => set("receiptPrefix", v)} />
+            <PrefixField label="GRN" value={value.grnPrefix} onChange={(v) => set("grnPrefix", v)} />
+            <PrefixField label="SIV" value={value.sivPrefix} onChange={(v) => set("sivPrefix", v)} />
+            <PrefixField label="Transfer" value={value.transferPrefix} onChange={(v) => set("transferPrefix", v)} />
+            <PrefixField label="Adjustment" value={value.adjustmentPrefix} onChange={(v) => set("adjustmentPrefix", v)} />
+            <PrefixField label="Production" value={value.productionPrefix} onChange={(v) => set("productionPrefix", v)} />
           </div>
-          <Toggle checked={value.allowNegativeStock} onChange={(v) => set("allowNegativeStock", v)} />
-        </div>
-      </Card>
+        </Card>
 
-      {/* Fiscal year */}
-      <Card title="Fiscal year" subtitle="Defines the start of the financial reporting period">
-        <Field label="Fiscal year start month">
-          <select
-            value={String(value.fiscalYearStartMonth)}
-            onChange={(e) => set("fiscalYearStartMonth", Number(e.target.value))}
-            style={{
-              width: "100%", boxSizing: "border-box", fontFamily: "var(--font-sans)",
-              padding: "8px 12px", borderRadius: "var(--border-radius-md)", fontSize: 13,
-              border: "1px solid var(--color-border-tertiary)",
-              background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none",
-            }}
-          >
-            {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-          </select>
-        </Field>
-        <div style={{ marginTop: 12 }}>
-          <InfoRow label="Current selection" value={MONTHS[(value.fiscalYearStartMonth ?? 1) - 1]} />
-        </div>
-      </Card>
+        <Card title="Inventory workflow" subtitle="Controls applied to stock movement and posting modules.">
+          <Field label="Costing method">
+            <select className="ob-select" value={value.costingMethod ?? "FIFO"} onChange={(e) => set("costingMethod", e.target.value)}>
+              <option value="FIFO">FIFO</option>
+              <option value="WeightedAverage">Weighted average</option>
+            </select>
+          </Field>
+          <ToggleRow title="Allow negative stock" subtitle="Also updates company-level Inventory Control Settings." checked={value.allowNegativeStock} onChange={(v) => set("allowNegativeStock", v)} />
+          <ToggleRow title="Require SIV approval" subtitle="SIVs must be approved before issue/posting when enabled." checked={value.requireApprovalForSiv} onChange={(v) => set("requireApprovalForSiv", v)} />
+          <ToggleRow title="Auto-post GRN" subtitle="New GRN documents may be posted without a separate posting step when supported." checked={value.autoPostGrn} onChange={(v) => set("autoPostGrn", v)} />
+          <ToggleRow title="Auto-post SIV" subtitle="Approved SIV documents may be posted without a separate posting step when supported." checked={value.autoPostSiv} onChange={(v) => set("autoPostSiv", v)} />
+          <ToggleRow title="Enforce issue location mapping" subtitle="SIV, POS, and production consumption must use assigned issue locations." checked={value.enforceIssueLocationMapping} onChange={(v) => set("enforceIssueLocationMapping", v)} />
+        </Card>
+
+        <Card title="HR and attendance" subtitle="Attendance availability and payroll-related time policy.">
+          <ToggleRow title="Attendance enabled" subtitle="Attendance screens and QR attendance can be used by HR." checked={value.attendanceEnabled} onChange={(v) => set("attendanceEnabled", v)} />
+          <ToggleRow title="Overtime enabled" subtitle="Payroll can include overtime once payroll rules are configured." checked={value.overtimeEnabled} onChange={(v) => set("overtimeEnabled", v)} />
+        </Card>
+
+        <Card title="Telegram" subtitle="Telegram Mini App capabilities for employees and operations.">
+          <ToggleRow title="Telegram enabled" subtitle="Allows tenant Telegram features to be activated." checked={value.telegramEnabled} onChange={(v) => set("telegramEnabled", v)} />
+          <ToggleRow title="Telegram attendance" subtitle="Employees can check in through Telegram QR flows." checked={value.telegramAttendanceEnabled} onChange={(v) => set("telegramAttendanceEnabled", v)} />
+          <ToggleRow title="Telegram stock requests" subtitle="Telegram Mini App can create inventory requests." checked={value.telegramStockRequestsEnabled} onChange={(v) => set("telegramStockRequestsEnabled", v)} />
+        </Card>
+
+        <Card title="Audit" subtitle="Governance switches for operational and financial records.">
+          <ToggleRow title="Audit inventory transactions" subtitle="Record inventory movement audit metadata." checked={value.auditInventoryTransactions} onChange={(v) => set("auditInventoryTransactions", v)} />
+          <ToggleRow title="Audit financial transactions" subtitle="Record financial posting audit metadata." checked={value.auditFinancialTransactions} onChange={(v) => set("auditFinancialTransactions", v)} />
+        </Card>
+      </div>
     </PageShell>
   );
+}
+
+function LoadingState() {
+  return <div style={{ padding: 24, display: "flex", gap: 10, alignItems: "center" }}><Spinner /> Loading settings...</div>;
+}
+
+function ToggleRow({ title, subtitle, checked, onChange }: { title: string; subtitle: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "10px 0" }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-text-primary)" }}>{title}</div>
+        <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>{subtitle}</div>
+      </div>
+      <Toggle checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+function PrefixField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <Field label={label}>
+      <Input value={value ?? ""} onChange={(v) => onChange(v.toUpperCase())} />
+    </Field>
+  );
+}
+
+function hasAnyRole(user: any, allowedRoles: string[]) {
+  const roles = [
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+    ...(Array.isArray(user?.roleNames) ? user.roleNames : []),
+    user?.role,
+  ]
+    .filter(Boolean)
+    .map((role: string) => role.toLowerCase());
+
+  return allowedRoles.some((role) => roles.includes(role.toLowerCase()));
+}
+
+function requiresOperationalConfirmation(value: CompanySettingsDto) {
+  return Boolean(
+    value.allowNegativeStock ||
+    value.autoPostGrn ||
+    value.autoPostSiv ||
+    !value.auditInventoryTransactions ||
+    !value.auditFinancialTransactions
+  );
+}
+function normalize(value: CompanySettingsDto): CompanySettingsDto {
+  const prefix = (v: string | undefined, fallback: string) => (v || fallback).trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 20) || fallback;
+
+  return {
+    ...DEFAULT_SETTINGS,
+    ...value,
+    vatRate: Math.min(100, Math.max(0, Number(value.vatRate) || 0)),
+    fiscalYearStartMonth: value.fiscalYearStartMonth >= 1 && value.fiscalYearStartMonth <= 12 ? value.fiscalYearStartMonth : 1,
+    baseCurrency: (value.baseCurrency || "ETB").trim().toUpperCase().slice(0, 10) || "ETB",
+    costingMethod: value.costingMethod === "WeightedAverage" ? "WeightedAverage" : "FIFO",
+    invoicePrefix: prefix(value.invoicePrefix, "INV"),
+    receiptPrefix: prefix(value.receiptPrefix, "RCPT"),
+    grnPrefix: prefix(value.grnPrefix, "GRN"),
+    sivPrefix: prefix(value.sivPrefix, "SIV"),
+    transferPrefix: prefix(value.transferPrefix, "TRF"),
+    adjustmentPrefix: prefix(value.adjustmentPrefix, "ADJ"),
+    productionPrefix: prefix(value.productionPrefix, "PRD"),
+  };
 }

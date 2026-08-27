@@ -1,4 +1,4 @@
-﻿// src/features/inventory/items/constants/itemTypes.ts
+// src/features/inventory/items/constants/itemTypes.ts
 
 export type ItemType =
   | "RawMaterial"

@@ -38,13 +38,13 @@ function locationLabel(row: Record<string, unknown>): string {
   const name = clean(row.name) || "Location";
   const code = clean(row.code);
   const type = clean(row.locationType ?? row.type ?? row.stockLocationType);
-  return [name, code ? `(${code})` : "", type ? `— ${type}` : ""].filter(Boolean).join(" ");
+  return [name, code ? `(${code})` : "", type ? `- ${type}` : ""].filter(Boolean).join(" ");
 }
 
 function uomLabel(uomId: string, catalog: UomCatalog): string {
   const uom = catalog.get(uomId);
   if (!uom) return uomId;
-  return uom.code ? `${uom.code} — ${uom.name}` : uom.name;
+  return uom.code ? `${uom.code} - ${uom.name}` : uom.name;
 }
 
 function itemToVm(dto: InventoryItemDto, catalog: UomCatalog): GrnItemVm {
@@ -54,9 +54,9 @@ function itemToVm(dto: InventoryItemDto, catalog: UomCatalog): GrnItemVm {
 
   return {
     id: clean(dto.id),
-    label: sku && name ? `${sku} — ${name}` : name || sku || "Unnamed item",
+    label: sku && name ? `${sku} - ${name}` : name || sku || "Unnamed item",
     uoms: baseUomId
-      ? [{ value: baseUomId, label: `${uomLabel(baseUomId, catalog)} — Base / Purchasing` }]
+      ? [{ value: baseUomId, label: `${uomLabel(baseUomId, catalog)} - Base / Purchasing` }]
       : [],
     defaultUomId: baseUomId,
   };

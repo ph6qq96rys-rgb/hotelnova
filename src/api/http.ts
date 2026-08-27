@@ -1,6 +1,6 @@
 // src/api/http.ts
 //
-// Central Axios instance for RestaurantFNB / Hotelnova.
+// Central Axios instance for Hotel Nova.
 //
 // ERP-grade behavior:
 // - Uses VITE_API_BASE_URL when provided.
@@ -9,7 +9,8 @@
 // - Uses one Axios client for both platform and workspace requests.
 // - Selects the correct token from the request URL.
 // - Platform requests never carry tenant/company/branch headers.
-// - Workspace requests carry X-Tenant-Id as the tenant slug.
+// - Tenant identity is resolved by the backend from Host/X-Forwarded-Host.
+// - Workspace requests may carry company/branch scope headers only.
 // - Handles 401 responses with scope-aware, single-flight refresh and retry.
 // - Keeps legacy auth.storage support during the split-auth migration.
 
@@ -34,9 +35,9 @@ import {
   type WorkspaceAuth,
 } from "../auth/workspace-auth.storage";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // API Base URL
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function cleanBaseUrl(value: string): string {
   const trimmed = value.trim();
@@ -60,9 +61,9 @@ function resolveApiBase(): string {
 
 export const API_BASE = resolveApiBase();
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Shared Types / Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 type AuthScope = "platform" | "workspace";
 
@@ -98,9 +99,9 @@ function hasSystemAdminRole(
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Axios Instance
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 export const http = axios.create({
   baseURL: API_BASE,
@@ -110,9 +111,22 @@ export const http = axios.create({
   withCredentials: false,
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+function normalizeAxiosUrl(url?: string): string | undefined {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+
+  const basePath = API_BASE.replace(/\/+$/, "").toLowerCase();
+
+  if (basePath.endsWith("/api") && url.toLowerCase().startsWith("/api/")) {
+    return url.slice(4);
+  }
+
+  return url;
+}
+
+// -----------------------------------------------------------------------------
 // Endpoint / Scope Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function getUrlPath(url?: string): string {
   if (!url) {
@@ -138,12 +152,46 @@ function isPlatformEndpoint(url?: string): boolean {
     path === "/platform" ||
     path.startsWith("/platform/") ||
     path === "/api/platform" ||
-    path.startsWith("/api/platform/")
+    path.startsWith("/api/platform/") ||
+    path === "/system-admin" ||
+    path.startsWith("/system-admin/") ||
+    path === "/api/system-admin" ||
+    path.startsWith("/api/system-admin/")
   );
 }
 
+function isCompanyRegistryEndpoint(url?: string): boolean {
+  const path = getUrlPath(url).toLowerCase();
+
+  return path === "/companies" || path === "/api/companies";
+}
+
 function resolveRequestScope(url?: string): AuthScope {
-  return isPlatformEndpoint(url) ? "platform" : "workspace";
+  if (isPlatformEndpoint(url)) {
+    return "platform";
+  }
+
+  if (isCompanyRegistryEndpoint(url)) {
+    const platformAuth = getPlatformAuth();
+    const workspaceAuth = getWorkspaceAuth();
+
+    return platformAuth?.accessToken && !workspaceAuth?.accessToken
+      ? "platform"
+      : "workspace";
+  }
+
+  return "workspace";
+}
+
+function isLoginEndpoint(url?: string): boolean {
+  const path = getUrlPath(url).toLowerCase();
+
+  return (
+    path === "/api/auth/login" ||
+    path === "/api/auth/platform-login" ||
+    path === "/auth/login" ||
+    path === "/auth/platform-login"
+  );
 }
 
 function isAuthEndpoint(url?: string): boolean {
@@ -151,6 +199,7 @@ function isAuthEndpoint(url?: string): boolean {
 
   return [
     "/api/auth/login",
+    "/api/auth/platform-login",
     "/api/auth/register",
     "/api/auth/refresh",
     "/api/auth/logout",
@@ -158,6 +207,7 @@ function isAuthEndpoint(url?: string): boolean {
     "/api/auth/reset-password",
 
     "/auth/login",
+    "/auth/platform-login",
     "/auth/register",
     "/auth/refresh",
     "/auth/logout",
@@ -166,9 +216,9 @@ function isAuthEndpoint(url?: string): boolean {
   ].some((endpoint) => path.startsWith(endpoint));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Authentication Resolution
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function getPlatformAuth(): SessionAuth | null {
   const platformAuth = loadPlatformAuth();
@@ -192,14 +242,29 @@ function getPlatformAuth(): SessionAuth | null {
 
 function getWorkspaceAuth(): SessionAuth | null {
   const workspaceAuth = loadWorkspaceAuth();
+  const legacyAuth = loadAuth();
+
+  /*
+   * Direct tenant login currently writes the fresh role/permission claims to
+   * auth.storage first. Prefer it when company scoped so old tab-scoped
+   * workspaceAuth cannot keep sending an outdated token to protected APIs.
+   */
+  if (
+    clean(legacyAuth?.accessToken) &&
+    clean(legacyAuth?.companyId) &&
+    !(
+      hasSystemAdminRole(legacyAuth?.roles) &&
+      !clean(legacyAuth?.tenantSlug)
+    )
+  ) {
+    return legacyAuth;
+  }
 
   if (clean(workspaceAuth?.accessToken)) {
     return workspaceAuth;
   }
 
   // Temporary compatibility with tenant sessions created before auth was split.
-  const legacyAuth = loadAuth();
-
   if (!clean(legacyAuth?.accessToken)) {
     return null;
   }
@@ -216,9 +281,9 @@ function getWorkspaceAuth(): SessionAuth | null {
   return legacyAuth;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Tenant / Company / Branch Resolution
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 export function resolveTenantSlug(): string | null {
   const workspaceAuth = getWorkspaceAuth();
@@ -240,9 +305,9 @@ export function resolveBranchId(): string | null {
   return clean(getWorkspaceAuth()?.branchId);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Token Extraction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function extractToken(
   data: unknown,
@@ -340,9 +405,9 @@ function extractExpiresAt(data: unknown): string | null {
   return null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Auth Event
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 export function dispatchUnauthenticated(scope?: AuthScope): void {
   window.dispatchEvent(
@@ -352,9 +417,9 @@ export function dispatchUnauthenticated(scope?: AuthScope): void {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Header Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function asHeaders(
   config: InternalAxiosRequestConfig,
@@ -406,12 +471,8 @@ function attachTenantHeaders(
   // Prevent stale headers from a retried or reused request.
   removeTenantHeaders(headers);
 
-  const tenantSlug = resolveTenantSlug();
-
-  if (tenantSlug) {
-    headers["X-Tenant-Id"] = tenantSlug;
-  }
-
+  // Tenant slug stays session metadata. The API resolves tenant identity
+  // from Host/X-Forwarded-Host against the platform tenant registry.
   if (!includeScopeHeaders) {
     return;
   }
@@ -428,9 +489,9 @@ function attachTenantHeaders(
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Scope-Specific Persistence
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function clearScopeAuth(scope: AuthScope): void {
   if (scope === "platform") {
@@ -522,9 +583,9 @@ function persistRefreshedAuth(
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Refresh Token Flow
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 const refreshPromises: Record<
   AuthScope,
@@ -622,14 +683,22 @@ async function refreshAccessToken(
   return promise;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Request Interceptor
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 http.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    config.url = normalizeAxiosUrl(config.url);
+
     const headers = asHeaders(config);
     const scope = resolveRequestScope(config.url);
+
+    if (isAuthEndpoint(config.url)) {
+      removeTenantHeaders(headers);
+      removeHeader(headers, "Authorization");
+      return config;
+    }
 
     if (scope === "platform") {
       // Platform APIs must never receive tenant context.
@@ -659,9 +728,9 @@ http.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Response Interceptor: 401 → Scope-Aware Refresh → Retry
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 type RetryConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;

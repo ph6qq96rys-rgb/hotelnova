@@ -18,13 +18,13 @@ import type { InventoryItemLite } from "../api/lookups";
 import { productionRecipesApi } from "../api/recipesApi";
 import type { LocationLite, MenuItemLite, ProductionLineVm } from "../types";
 import ProductionWorkflowBar from "../components/ProductionWorkflowBar";
-import "./production-batch.css";
+import "../layout/production.css";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+//  Constants 
 
 const BatchStatus = { Draft: 2, Approved: 3, Posted: 4, Reversed: 5 } as const;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+//  Helpers 
 
 const hasText       = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
 const safeNum       = (value: unknown, fallback = 0): number => { const n = Number(value); return Number.isFinite(n) ? n : fallback; };
@@ -89,7 +89,7 @@ const isDraft       = (batch: ProductionBatchDto | null) => batch ? normaliseSta
 const isAbortError  = (e: unknown) => (e as any)?.name === "AbortError";
 
 function fmtDate(value?: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
 }
@@ -145,12 +145,12 @@ function batchStatusLabel(status: number): string {
   return "Draft";
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+//  Sub-components 
 
 function ScopeGuard({ message }: { message: string }) {
   return (
     <div className="p-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-      <div className="p-guard"><div className="p-guard__icon">⚙</div>{message}</div>
+      <div className="p-guard">{message}</div>
     </div>
   );
 }
@@ -175,7 +175,7 @@ function MetricBox({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+//  Component 
 
 export default function ProductionBatchPage() {
   const erpNavigation = useErpNavigate() as any;
@@ -203,6 +203,8 @@ export default function ProductionBatchPage() {
   const scope     = useAppScope();
   const companyId = scope.companyId?.trim() ?? "";
   const branchId  = scope.branchId?.trim()  ?? "";
+  const companyLabel = scope.companyName?.trim() || "Selected company";
+  const branchLabel = scope.branchName?.trim() || "Selected branch";
   const hasScope  = Boolean(companyId && branchId);
 
   const batchIdRef    = useRef<string | null>(hasText(routeBatchId) ? routeBatchId.trim() : null);
@@ -214,7 +216,7 @@ export default function ProductionBatchPage() {
     [hasScope, companyId, branchId]
   );
 
-  // ── State ─────────────────────────────────────────────────────────────────
+  //  State 
 
   const [locations,     setLocations]     = useState<LocationLite[]>([]);
   const [menuItems,     setMenuItems]     = useState<MenuItemLite[]>([]);
@@ -235,13 +237,15 @@ export default function ProductionBatchPage() {
   const [savingLines, setSavingLines] = useState(false);
   const [error,       setError]       = useState<string | null>(null);
 
-  // ── Derived ───────────────────────────────────────────────────────────────
+  //  Derived 
 
   const hasBatch = Boolean(activeBatchId);
   const canEdit  = !hasBatch || batch === null || isDraft(batch);
 
   const menuById = useMemo(() => new Map(menuItems.map((m) => [m.id, m.name])), [menuItems]);
   const itemById = useMemo(() => new Map(inventoryItems.map((i) => [i.id, i])), [inventoryItems]);
+  const menuItemLabel = menuById.get(menuItemId) ?? "";
+  const recipeLabel = menuItemLabel || (recipeId ? "Selected production recipe" : "");
 
   const totalInputQty = useMemo(() => inputs.reduce((s, l) => s + safeNum(l.qty, 0), 0), [inputs]);
 
@@ -255,7 +259,7 @@ export default function ProductionBatchPage() {
                    : rawStatus === BatchStatus.Approved  ? "p-badge--approved"
                    : "p-badge--draft";
 
-  // ── Sync form from batch ──────────────────────────────────────────────────
+  //  Sync form from batch 
 
   const syncFormFromBatch = useCallback((dto: ProductionBatchDto) => {
     setBatch(dto);
@@ -285,7 +289,7 @@ export default function ProductionBatchPage() {
     [api, activeBatchId, syncFormFromBatch]
   );
 
-  // ── Load catalog ──────────────────────────────────────────────────────────
+  //  Load catalog 
 
   useEffect(() => {
     if (!hasScope) { setLocations([]); setMenuItems([]); setInventoryItems([]); setCatalogReady(false); return; }
@@ -320,7 +324,7 @@ export default function ProductionBatchPage() {
     return () => ctrl.abort();
   }, [hasScope, companyId, branchId, isNewPage, menuItemIdFromQuery, recipeIdFromQuery]);
 
-  // ── Load existing batch ───────────────────────────────────────────────────
+  //  Load existing batch 
 
   useEffect(() => {
     const id = hasText(routeBatchId) ? routeBatchId.trim() : null;
@@ -334,7 +338,7 @@ export default function ProductionBatchPage() {
     return () => ctrl.abort();
   }, [routeBatchId, api, catalogReady, syncFormFromBatch]);
 
-  // ── Auto-resolve recipe from menu item ───────────────────────────────────
+  //  Auto-resolve recipe from menu item 
 
   useEffect(() => {
     if (!companyId || !menuItemId) {
@@ -371,7 +375,7 @@ export default function ProductionBatchPage() {
     return () => { cancelled = true; };
   }, [companyId, menuItemId, recipeIdFromQuery]);
 
-  // ── Line operations ───────────────────────────────────────────────────────
+  //  Line operations 
 
   const updateLine       = (lineNo: number, patch: Partial<ProductionLineVm>) =>
     setInputs((prev) => prev.map((l) => l.lineNo === lineNo ? { ...l, ...patch } : l));
@@ -388,7 +392,7 @@ export default function ProductionBatchPage() {
 
   const removeLine       = (lineNo: number) => setInputs((prev) => prev.filter((l) => l.lineNo !== lineNo));
 
-  // ── Validation ────────────────────────────────────────────────────────────
+  //  Validation 
 
   function validateCreate(): string | null {
     if (!nonEmptyGuid(recipeId))     return "Production recipe is required.";
@@ -402,7 +406,7 @@ export default function ProductionBatchPage() {
     return null;
   }
 
-  // ── Actions ───────────────────────────────────────────────────────────────
+  //  Actions 
 
   async function createBatch() {
     if (!api) return setError("Select company and branch first.");
@@ -495,7 +499,7 @@ export default function ProductionBatchPage() {
     finally { setLoading(false); }
   }
 
-  // ── Guards ────────────────────────────────────────────────────────────────
+  //  Guards 
 
   if (!companyId) return <ScopeGuard message="Select a company first." />;
   if (!branchId)  return <ScopeGuard message="Select a branch first." />;
@@ -503,7 +507,7 @@ export default function ProductionBatchPage() {
   const createDisabled = hasBatch || loading || catalogLoading || !nonEmptyGuid(recipeId)
     || !hasText(menuItemId) || !hasText(issueLocationId) || !hasText(outputLocationId) || plannedQty <= 0;
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  //  Render 
 
   return (
     <div className="p-page">
@@ -512,24 +516,84 @@ export default function ProductionBatchPage() {
       {/* Header */}
       <div className="p-page-header">
         <div>
-          <p className="p-kicker">ERP Production · Branch Execution</p>
+          <p className="p-kicker">ERP Production | Branch Execution</p>
           <h1 className="p-title">Production Batch Control</h1>
           <p className="p-subtitle">Execute recipe-controlled manufacturing, consume inputs, produce outputs, and post inventory with scoped ERP navigation.</p>
         </div>
         <div className="p-btn-row">
-          <button className="p-btn p-btn--ghost"    onClick={() => nav("/production")}      disabled={loading}>← Back</button>
+          <button className="p-btn p-btn--ghost" onClick={() => nav("/production")} disabled={loading}>Back</button>
           <button className="p-btn p-btn--outline"  onClick={() => void reloadBatch()}      disabled={!hasBatch || loading}>Refresh</button>
         </div>
       </div>
 
+      <section className="p-kitchen-hero" aria-label="Kitchen batch command center">
+        <div>
+          <p className="p-kicker">Kitchen Batch Run</p>
+          <h1 className="p-title">Prepare, produce, and post stock in one controlled flow</h1>
+          <p className="p-subtitle">
+            Start with the recipe, confirm where ingredients leave stock, confirm where finished output is received, then post when production is complete.
+          </p>
+        </div>
+
+        <div className="p-kitchen-status-grid">
+          <div className="p-kitchen-status">
+            <span>Status</span>
+            <strong>{statusLabel}</strong>
+          </div>
+          <div className="p-kitchen-status">
+            <span>Menu item</span>
+            <strong>{menuById.get(menuItemId) ?? "Not selected"}</strong>
+          </div>
+          <div className="p-kitchen-status">
+            <span>Planned output</span>
+            <strong>{plannedQty > 0 ? plannedQty : "Not set"}</strong>
+          </div>
+          <div className={`p-kitchen-status ${inputs.length ? "is-ready" : "is-warning"}`}>
+            <span>Input lines</span>
+            <strong>{inputs.length ? `${inputs.length} loaded` : "Apply recipe"}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="p-kitchen-steps" aria-label="Batch workflow">
+        <div className={`p-kitchen-step ${recipeId ? "is-active" : ""}`}>
+          <span>1</span>
+          <div>
+            <strong>Recipe ready</strong>
+            <small>Select a stocked production recipe.</small>
+          </div>
+        </div>
+        <div className={`p-kitchen-step ${hasBatch ? "is-active" : ""}`}>
+          <span>2</span>
+          <div>
+            <strong>Create batch</strong>
+            <small>Lock planned quantity and locations.</small>
+          </div>
+        </div>
+        <div className={`p-kitchen-step ${inputs.length ? "is-active" : ""}`}>
+          <span>3</span>
+          <div>
+            <strong>Apply recipe</strong>
+            <small>Load and adjust consumed ingredients.</small>
+          </div>
+        </div>
+        <div className={`p-kitchen-step ${rawStatus === BatchStatus.Posted ? "is-active" : ""}`}>
+          <span>4</span>
+          <div>
+            <strong>Post stock</strong>
+            <small>Consume inputs and receive output.</small>
+          </div>
+        </div>
+      </section>
+
       {error && (
         <div className="p-alert p-alert--error">
           <span className="p-alert__body">{error}</span>
-          <button className="p-dismiss" onClick={() => setError(null)}>✕</button>
+          <button className="p-dismiss" onClick={() => setError(null)}></button>
         </div>
       )}
 
-      {/* ── Batch header card ── */}
+      {/*  Batch header card  */}
       <div className="p-card">
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, padding: "18px 20px 14px", borderBottom: "1px solid var(--p-border)" }}>
           <div>
@@ -549,14 +613,14 @@ export default function ProductionBatchPage() {
           <div className="p-btn-row">
             {isNewPage && (
               <button className="p-btn p-btn--accent" onClick={() => void createBatch()} disabled={createDisabled}>
-                {loading && !hasBatch ? "Creating…" : "Create Batch"}
+                {loading && !hasBatch ? "Creating..." : "Create Batch"}
               </button>
             )}
             <button className="p-btn p-btn--outline" onClick={() => void applyRecipe()} disabled={loading || !hasBatch || !canEdit || !recipeId}>
               Apply Recipe
             </button>
             <button className="p-btn p-btn--outline" onClick={() => void saveLines()} disabled={savingLines || !hasBatch || !canEdit || !inputs.length || !batch?.outputs?.length}>
-              {savingLines ? "Saving…" : "Save Inputs"}
+              {savingLines ? "Saving..." : "Save Inputs"}
             </button>
             <div className="p-btn-divider" />
             <button className="p-btn p-btn--success" onClick={() => void postBatch()}    disabled={loading || !hasBatch || !isDraft(batch) || !inputs.length}>Post</button>
@@ -566,17 +630,17 @@ export default function ProductionBatchPage() {
 
         {/* Metrics strip */}
         <div className="p-metrics">
-          <MetricBox label="Company Scope" value={companyId ? `${companyId.slice(0, 8)}…` : "—"} />
-          <MetricBox label="Branch Scope"  value={branchId ? `${branchId.slice(0, 8)}…` : "—"} />
-          <MetricBox label="Recipe ID"      value={recipeId ? `${recipeId.slice(0, 8)}…` : "—"} />
-          <MetricBox label="Menu Item"      value={menuById.get(menuItemId) ?? "—"} />
-          <MetricBox label="Planned Qty"    value={plannedQty > 0 ? String(plannedQty) : "—"} />
+          <MetricBox label="Company" value={companyId ? companyLabel : "-"} />
+          <MetricBox label="Branch"  value={branchId ? branchLabel : "-"} />
+          <MetricBox label="Recipe"  value={recipeLabel || "-"} />
+          <MetricBox label="Menu Item" value={menuItemLabel || "-"} />
+          <MetricBox label="Planned Qty"    value={plannedQty > 0 ? String(plannedQty) : "-"} />
           <MetricBox label="Input Lines"    value={String(inputs.length)} />
-          <MetricBox label="Total Input Qty" value={inputs.length ? totalInputQty.toFixed(4) : "—"} />
+          <MetricBox label="Total Input Qty" value={inputs.length ? totalInputQty.toFixed(4) : "-"} />
         </div>
       </div>
 
-      {/* ── Batch configuration ── */}
+      {/*  Batch configuration  */}
       <div className="p-card">
         <div className="p-card__head">
           <div>
@@ -586,8 +650,8 @@ export default function ProductionBatchPage() {
         </div>
         <div className="p-card__body">
           <div className="p-grid-2">
-            <Field label="Recipe ID" required>
-              <input className="p-input p-input--locked" value={recipeId ?? ""} placeholder="Open from Recipe Editor or select a menu item" readOnly disabled />
+            <Field label="Recipe" required>
+              <input className="p-input p-input--locked" value={recipeLabel} placeholder="Open from Recipe Editor or select a menu item" readOnly disabled />
             </Field>
 
             <Field label="Menu Item Context" required>
@@ -597,7 +661,7 @@ export default function ProductionBatchPage() {
                 onChange={(e) => setMenuItemId(e.target.value)}
                 disabled={catalogLoading || loading || !canEdit || Boolean(recipeIdFromQuery)}
               >
-                <option value="">{catalogLoading ? "Loading menu items…" : "Select menu item"}</option>
+                <option value="">{catalogLoading ? "Loading menu items..." : "Select menu item"}</option>
                 {menuItems.map((m) => (
                   <option key={m.id} value={m.id}>{m.name}{m.code ? ` (${m.code})` : ""}</option>
                 ))}
@@ -616,26 +680,26 @@ export default function ProductionBatchPage() {
               />
             </Field>
 
-            <Field label="Issue Location — Raw Materials" required>
+            <Field label="Issue Location - Raw Materials" required>
               <select
                 className="p-select"
                 value={issueLocationId}
                 onChange={(e) => setIssueLocationId(e.target.value)}
                 disabled={catalogLoading || loading || !canEdit}
               >
-                <option value="">{catalogLoading ? "Loading locations…" : "Select issue location"}</option>
+                <option value="">{catalogLoading ? "Loading locations..." : "Select issue location"}</option>
                 {issueLocations.map((l: any) => <option key={locationIdOf(l)} value={locationIdOf(l)}>{locationLabel(l)}</option>)}
               </select>
             </Field>
 
-            <Field label="Output Location — Finished Goods" required>
+            <Field label="Output Location - Finished Goods" required>
               <select
                 className="p-select"
                 value={outputLocationId}
                 onChange={(e) => setOutputLocationId(e.target.value)}
                 disabled={catalogLoading || loading || !canEdit}
               >
-                <option value="">{catalogLoading ? "Loading locations…" : "Select output location"}</option>
+                <option value="">{catalogLoading ? "Loading locations..." : "Select output location"}</option>
                 {outputLocations.filter((l: any) => locationIdOf(l) !== issueLocationId).map((l: any) => (
                   <option key={locationIdOf(l)} value={locationIdOf(l)}>{locationLabel(l)}</option>
                 ))}
@@ -645,7 +709,7 @@ export default function ProductionBatchPage() {
         </div>
       </div>
 
-      {/* ── Input lines table ── */}
+      {/*  Input lines table  */}
       <div className="p-card">
         <div className="p-toolbar">
           <div>
@@ -689,7 +753,7 @@ export default function ProductionBatchPage() {
                         disabled={!canEdit}
                         onChange={(e) => selectInputItem(line.lineNo, e.target.value)}
                       >
-                        <option value="">— select item —</option>
+                        <option value="">Select item</option>
                         {inventoryItems.map((item) => (
                           <option key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</option>
                         ))}

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
+import { loadWorkspaceAuth } from "./workspace-auth.storage";
 import { safeReturnUrl } from "./returnUrl";
 
 interface RequireCompanyProps {
@@ -39,10 +40,17 @@ export default function RequireCompany({
 }: RequireCompanyProps) {
   const { isReady, isAuthenticated, companyId, user, roles } = useAuth();
   const location = useLocation();
+  const workspaceAuth = loadWorkspaceAuth();
+  const effectiveCompanyId = companyId ?? workspaceAuth?.companyId ?? null;
+  const effectiveRoles = [
+    ...(roles ?? []),
+    ...(user?.roles ?? []),
+    ...(workspaceAuth?.roles ?? []),
+  ];
 
   if (!isReady) return <>{fallback}</>;
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !workspaceAuth?.accessToken) {
     return (
       <Navigate
         to="/login"
@@ -53,14 +61,13 @@ export default function RequireCompany({
   }
 
   const pathname = location.pathname;
-  const isSystemAdmin =
-    hasSystemAdminRole(user?.roles) || hasSystemAdminRole(roles);
+  const isSystemAdmin = hasSystemAdminRole(effectiveRoles);
 
   if (allow(pathname)) {
     return children ? <>{children}</> : <Outlet />;
   }
 
-  if (companyId) {
+  if (effectiveCompanyId) {
     return children ? <>{children}</> : <Outlet />;
   }
   

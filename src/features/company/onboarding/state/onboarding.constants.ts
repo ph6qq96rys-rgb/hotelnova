@@ -9,7 +9,7 @@ import type {
 } from "../../types/company.types";
 import type { CostingMethod, StepDefinition, StoreType } from "./onboarding.types";
 
-// ── Wizard step definitions ───────────────────────────────────────────────────
+//  Wizard step definitions 
 
 export const ONBOARDING_STEPS: StepDefinition[] = [
   {
@@ -56,7 +56,7 @@ export const ONBOARDING_STEPS: StepDefinition[] = [
   },
 ];
 
-// ── Default form values ───────────────────────────────────────────────────────
+//  Default form values 
 
 // Cast required: CreateCompanyDto may have required fields (tinNumber, phone,
 // etc.) that are intentionally empty at form initialisation time.
@@ -82,7 +82,7 @@ export const DEFAULT_COMPANY_FORM = {
  */
 export const DEFAULT_SETTINGS: CompanySettingsDto = {
   vatEnabled:           true,
-  vatRate:              0.15,   // 15% — decimal fraction, NOT a percentage integer
+  vatRate:              0.15,   // 15% - decimal fraction, NOT a percentage integer
   pricesIncludeVat:     false,
   fiscalYearStartMonth: 1,
   allowNegativeStock:   false,
@@ -107,7 +107,7 @@ export const DEFAULT_USER_FORM: CreateBranchUserFormValue = {
   role:      "BranchAdmin",
 };
 
-// ── Lookup option lists ───────────────────────────────────────────────────────
+//  Lookup option lists 
 
 export const LOCATION_TYPES: { value: string; label: string }[] = [
   { value: "Warehouse",  label: "Warehouse"  },
@@ -128,12 +128,12 @@ export const STORE_TYPES: StoreType[] = [
 ];
 
 export const CURRENCY_OPTIONS: { value: string; label: string }[] = [
-  { value: "ETB", label: "ETB — Ethiopian Birr"  },
-  { value: "USD", label: "USD — US Dollar"       },
-  { value: "EUR", label: "EUR — Euro"            },
-  { value: "GBP", label: "GBP — British Pound"   },
-  { value: "AED", label: "AED — UAE Dirham"      },
-  { value: "KES", label: "KES — Kenyan Shilling" },
+  { value: "ETB", label: "ETB - Ethiopian Birr"  },
+  { value: "USD", label: "USD - US Dollar"       },
+  { value: "EUR", label: "EUR - Euro"            },
+  { value: "GBP", label: "GBP - British Pound"   },
+  { value: "AED", label: "AED - UAE Dirham"      },
+  { value: "KES", label: "KES - Kenyan Shilling" },
 ];
 
 export const TIMEZONE_OPTIONS: { value: string; label: string }[] = [

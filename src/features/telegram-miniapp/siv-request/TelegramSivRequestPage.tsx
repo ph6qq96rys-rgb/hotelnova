@@ -486,7 +486,7 @@ export default function TelegramMiniAppSivRequestPage() {
     <section style={styles.page}>
       <header style={styles.headerCard}>
         <div>
-          <div style={styles.eyebrow}>Inventory · SIV</div>
+          <div style={styles.eyebrow}>Inventory - SIV</div>
           <h2 style={styles.title}>New Store Issue Request</h2>
           <p style={styles.subtitle}>
             {context?.employeeName || telegramUserName
@@ -494,7 +494,7 @@ export default function TelegramMiniAppSivRequestPage() {
               : "Create a stock issue request for approval."}
           </p>
         </div>
-        <div style={styles.headerIcon}>🧾</div>
+        <div style={styles.headerIcon}></div>
       </header>
 
       {message && <Notice message={message} styles={styles} />}
@@ -544,7 +544,7 @@ export default function TelegramMiniAppSivRequestPage() {
 
         <div style={styles.routeBox}>
           <span>{fromLocation ? locationLabel(fromLocation, "from") : "From"}</span>
-          <strong>→</strong>
+          <strong>to</strong>
           <span>{toLocation ? locationLabel(toLocation, "to") : "To"}</span>
         </div>
 
@@ -611,7 +611,7 @@ export default function TelegramMiniAppSivRequestPage() {
             </div>
             <div>
               <span style={styles.metaLabel}>Code</span>
-              <strong>{selectedItem.itemCode || selectedItem.barcode || "—"}</strong>
+              <strong>{selectedItem.itemCode || selectedItem.barcode || "-"}</strong>
             </div>
           </div>
         )}
@@ -660,7 +660,7 @@ export default function TelegramMiniAppSivRequestPage() {
           disabled={!canAddLine}
           style={{ ...styles.primaryButton, ...(!canAddLine ? styles.buttonDisabled : null) }}
         >
-          ➕ Add Item
+           Add Item
         </button>
       </section>
 
@@ -677,9 +677,9 @@ export default function TelegramMiniAppSivRequestPage() {
                 <div style={styles.lineBody}>
                   <strong style={styles.lineTitle}>{line.itemName}</strong>
                   <span style={styles.lineMeta}>
-                    {line.itemCode || "No code"} · Qty {fmtQty(line.quantity)} {line.requestUomCode ?? ""}
-                    {line.batchNo ? ` · Batch ${line.batchNo}` : ""}
-                    {line.expiryDate ? ` · Exp ${fmtDate(line.expiryDate)}` : ""}
+                    {line.itemCode || "No code"} - Qty {fmtQty(line.quantity)} {line.requestUomCode ?? ""}
+                    {line.batchNo ? ` - Batch ${line.batchNo}` : ""}
+                    {line.expiryDate ? ` - Exp ${fmtDate(line.expiryDate)}` : ""}
                   </span>
                 </div>
                 <button
@@ -708,7 +708,7 @@ export default function TelegramMiniAppSivRequestPage() {
         disabled={!canSubmit}
         style={{ ...styles.submitButton, ...(!canSubmit ? styles.buttonDisabled : null) }}
       >
-        {submitting ? "Submitting..." : "✅ Submit for Approval"}
+        {submitting ? "Submitting..." : " Submit for Approval"}
       </button>
     </section>
   );
@@ -761,7 +761,7 @@ const SectionTitle = memo(function SectionTitle({ title, hint }: { title: string
 const WorkflowStep = memo(function WorkflowStep({ label, active, done }: { label: string; active: boolean; done: boolean }) {
   return (
     <div style={{ ...baseStyles.workflowStep, opacity: active || done ? 1 : 0.45 }}>
-      <span style={baseStyles.workflowDot}>{done ? "✓" : "•"}</span>
+      <span style={baseStyles.workflowDot}>{done ? "" : "-"}</span>
       <span>{label}</span>
     </div>
   );
@@ -786,7 +786,7 @@ const Notice = memo(function Notice({ message, styles }: { message: MessageState
 const LoadingState = memo(function LoadingState({ styles }: { styles: ReturnType<typeof createStyles> }) {
   return (
     <section style={styles.loadingCard}>
-      <div style={styles.loadingIcon}>⏳</div>
+      <div style={styles.loadingIcon}></div>
       <strong style={styles.loadingTitle}>Opening SIV Mini App...</strong>
       <span style={styles.loadingText}>Verifying Telegram session and loading ERP stock context.</span>
     </section>
@@ -796,13 +796,13 @@ const LoadingState = memo(function LoadingState({ styles }: { styles: ReturnType
 function locationLabel(location: SivLocationDto, mode: "from" | "to"): string {
   const prefix = mode === "from"
     ? location.isMainWarehouse
-      ? "🏬"
-      : "📦"
+      ? ""
+      : ""
     : location.isProductionCenter
-    ? "🍳"
+    ? ""
     : location.isConsumptionLocation
-    ? "🥘"
-    : "📍";
+    ? ""
+    : "";
 
   const code = location.code ? ` (${location.code})` : "";
   return `${prefix} ${location.name}${code}`;
@@ -811,9 +811,9 @@ function locationLabel(location: SivLocationDto, mode: "from" | "to"): string {
 
 function fifoLotLabel(lot: FifoLotDto): string {
   const batch = lot.batchNo?.trim() || "No batch";
-  const expiry = lot.expiryDate ? ` · Exp ${fmtDate(lot.expiryDate)}` : "";
-  const expired = lot.isExpired ? " · expired" : "";
-  return `${batch}${expiry} · ${fmtQty(lot.availableQty)} ${lot.uomCode ?? ""}${expired}`.trim();
+  const expiry = lot.expiryDate ? ` - Exp ${fmtDate(lot.expiryDate)}` : "";
+  const expired = lot.isExpired ? " - expired" : "";
+  return `${batch}${expiry} - ${fmtQty(lot.availableQty)} ${lot.uomCode ?? ""}${expired}`.trim();
 }
 
 function fmtDate(value: string): string {
@@ -826,7 +826,7 @@ function itemOptionLabel(item: AvailableItemDto): string {
   const code = item.itemCode || item.barcode;
   const uom = item.requestUomCode ? ` ${item.requestUomCode}` : "";
   const available = `${fmtQty(item.availableQty)}${uom}`;
-  return `${code ? `${code} · ` : ""}${item.itemName} — Available ${available}`;
+  return `${code ? `${code} - ` : ""}${item.itemName} - Available ${available}`;
 }
 
 function getApiErrorMessage(error: unknown, fallback: string): string {

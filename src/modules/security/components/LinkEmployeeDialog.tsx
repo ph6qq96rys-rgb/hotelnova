@@ -32,7 +32,7 @@ export function LinkEmployeeDialog({
         <input
           className="lux-input"
           onChange={(event) => onSearch(event.target.value)}
-          placeholder="Search by employee name or code…"
+          placeholder="Search by employee name or code..."
           disabled={busy}
         />
       </label>
@@ -44,13 +44,13 @@ export function LinkEmployeeDialog({
           onChange={(event) => setSelectedId(event.target.value)}
           disabled={busy || loading}
         >
-          <option value="">{loading ? "Loading employees…" : "— Select employee —"}</option>
+          <option value="">{loading ? "Loading employees..." : "- Select employee -"}</option>
           {options.map((employee) => (
             <option key={employee.id} value={employee.id}>
-              {employee.employeeCode ? `${employee.employeeCode} · ` : ""}
+              {employee.employeeCode ? `${employee.employeeCode} - ` : ""}
               {employee.fullName}
-              {employee.departmentName ? ` · ${employee.departmentName}` : ""}
-              {employee.branchName ? ` · ${employee.branchName}` : ""}
+              {employee.departmentName ? ` - ${employee.departmentName}` : ""}
+              {employee.branchName ? ` - ${employee.branchName}` : ""}
             </option>
           ))}
         </select>

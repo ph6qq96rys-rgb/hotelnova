@@ -8,7 +8,7 @@ export function onboardingReducer(
 ): OnboardingState {
   switch (action.type) {
 
-    // ── Navigation ──────────────────────────────────────────────────────────
+    //  Navigation 
     // SET_ACTIVE is the ONLY action that may change state.active.
     // LOAD_SUCCESS and SAVE_SUCCESS explicitly omit "active" from their patch
     // types to make accidental navigation impossible at the type level.
@@ -23,7 +23,7 @@ export function onboardingReducer(
         branchId:  action.branchId  === undefined ? state.branchId  : action.branchId,
       };
 
-    // ── Loading ─────────────────────────────────────────────────────────────
+    //  Loading 
 
     case "LOAD_START":
       return { ...state, loading: true, error: null };
@@ -42,7 +42,7 @@ export function onboardingReducer(
         ...omitNullish(action.patch),
       };
 
-    // ── Saving ──────────────────────────────────────────────────────────────
+    //  Saving 
 
     case "SAVE_START":
       return { ...state, saving: true, error: null, notice: null };
@@ -59,7 +59,7 @@ export function onboardingReducer(
         ...(action.patch ? omitNullish(action.patch) : {}),
       };
 
-    // ── Utilities ────────────────────────────────────────────────────────────
+    //  Utilities 
 
     case "CLEAR_MESSAGES":
       return { ...state, error: null, notice: null };
@@ -69,7 +69,7 @@ export function onboardingReducer(
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+//  Helpers 
 
 /**
  * Returns a copy of obj with all `undefined` values removed.

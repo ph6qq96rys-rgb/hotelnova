@@ -59,7 +59,7 @@ export default function SivIssuedPrintPage() {
 
   if (loading) {
     return <div style={{ padding: 32, fontFamily: "Arial", color: "#111" }}>
-      Loading print page…
+      Loading print page...
     </div>;
   }
 
@@ -172,7 +172,7 @@ export default function SivIssuedPrintPage() {
       <div className="pp">
         <div className="no-print">
           <button className="print-btn" onClick={() => window.print()}>
-            🖨 Print
+            Print
           </button>
         </div>
 
@@ -183,17 +183,17 @@ export default function SivIssuedPrintPage() {
 
         <div className="meta">
           {[
-            { label: "SIV No.",       value: doc.number || doc.id },
+            { label: "SIV No.",       value: doc.number || "Pending SIV number" },
             { label: "Status",        value: doc.docStatus },
             { label: "Issue date",    value: fmtDate(doc.issueDate) },
-            { label: "Branch",        value: doc.branchId },
-            { label: "From location", value: doc.fromLocationName || "—" },
-            { label: "Department",    value: doc.departmentName   || "—" },
-            { label: "Remarks",       value: doc.remarks || doc.notes || "—" },
+            { label: "Branch",        value: doc.branchName || "Unassigned branch" },
+            { label: "From location", value: doc.fromLocationName || "-" },
+            { label: "Department",    value: doc.departmentName   || "-" },
+            { label: "Remarks",       value: doc.remarks || doc.notes || "-" },
           ].map(({ label, value }) => (
             <div className="meta-item" key={label}>
               <div className="label">{label}</div>
-              <div>{value || "—"}</div>
+              <div>{value || "-"}</div>
             </div>
           ))}
         </div>
@@ -221,8 +221,8 @@ export default function SivIssuedPrintPage() {
             ) : doc.lines.map((line, i) => (
               <tr key={line.id || i}>
                 <td>{i + 1}</td>
-                <td style={{ fontWeight: 600 }}>{line.itemName || "—"}</td>
-                <td>{line.uomCode || line.uomName || "—"}</td>
+                <td style={{ fontWeight: 600 }}>{line.itemName || "-"}</td>
+                <td>{line.uomCode || line.uomName || "-"}</td>
                 <td className="num" style={{ fontWeight: 600 }}>
                   {fmtQty(
                     line.issuedQty > 0
@@ -230,9 +230,9 @@ export default function SivIssuedPrintPage() {
                       : line.approvedQty ?? 0,
                   )}
                 </td>
-                <td>{line.batchNo || "—"}</td>
-                <td>{line.expiryDate ? fmtDate(line.expiryDate) : "—"}</td>
-                <td style={{ color: "#6b7280" }}>{line.remarks || "—"}</td>
+                <td>{line.batchNo || "-"}</td>
+                <td>{line.expiryDate ? fmtDate(line.expiryDate) : "-"}</td>
+                <td style={{ color: "#6b7280" }}>{line.remarks || "-"}</td>
               </tr>
             ))}
           </tbody>

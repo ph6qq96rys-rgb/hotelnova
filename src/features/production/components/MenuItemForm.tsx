@@ -50,10 +50,9 @@ export default function MenuItemForm({
     <div className="p-card">
       <div className="p-card__head">
         <div>
-          <p className="p-card__title">Commercial, POS & Inventory Controls</p>
+          <p className="p-card__title">Sales Item, POS & Consumption Controls</p>
           <p className="p-card__subtitle">
-            Configure the sales identity, price, POS status, recipe category, and stock
-            consumption source for this menu item.
+            Menu Items are sales items. Production outputs are Semi-Finished or Finished Goods in Inventory Master and are selected in Recipe Editor OUTPUT.
           </p>
         </div>
 
@@ -139,10 +138,13 @@ export default function MenuItemForm({
               onChange={(event) => patch("itemType", Number(event.target.value))}
               disabled={saving}
             >
-              <option value={1}>Food / Recipe Item</option>
-              <option value={2}>Beverage</option>
-              <option value={3}>Service / Non-stock</option>
+              <option value={1}>Prepared Food - POS sales item</option>
+              <option value={2}>Beverage - POS sales item</option>
+              <option value={3}>Service / Non-stock sales item</option>
             </select>
+            <span className="p-field__hint">
+              If this is a prep-only production output, create it in Inventory Master as Semi-Finished and select it in Recipe Editor OUTPUT.
+            </span>
           </label>
 
           <label className="p-field">
@@ -156,7 +158,7 @@ export default function MenuItemForm({
               <option value="">
                 Use category default
                 {selectedCategory?.defaultConsumptionLocationName
-                  ? ` — ${selectedCategory.defaultConsumptionLocationName}`
+                  ? ` - ${selectedCategory.defaultConsumptionLocationName}`
                   : ""}
               </option>
 

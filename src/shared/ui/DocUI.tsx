@@ -90,7 +90,7 @@ export function Info({ label, value }: { label: string; value: any }) {
   return (
     <div>
       <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-sm font-semibold text-slate-900">{value ?? "—"}</div>
+      <div className="text-sm font-semibold text-slate-900">{value ?? "-"}</div>
     </div>
   );
 }

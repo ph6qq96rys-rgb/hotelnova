@@ -144,8 +144,8 @@ if (data && typeof data === "object") {
 return err?.message ?? fallback;
 }
 
-function fifoBusinessDate(option: Partial<FifoIssueCandidateDto>): string {
-  return dateOnly(option.expiryDate) || dateOnly(option.receivedDate) || "";
+function fifoExpirySortDate(option: Partial<FifoIssueCandidateDto>): string {
+  return dateOnly(option.expiryDate) || "";
 }
 
 function makeFifoBaseKey(option: Partial<FifoIssueCandidateDto>): string {
@@ -184,8 +184,8 @@ export function getFifoOptionKey(option: Partial<FifoIssueCandidateDto>): string
 
 function sortFifoLots(lots: FifoIssueCandidateDto[]): FifoIssueCandidateDto[] {
   return [...lots].sort((a, b) => {
-    const aDate = fifoBusinessDate(a) || "9999-12-31";
-    const bDate = fifoBusinessDate(b) || "9999-12-31";
+    const aDate = fifoExpirySortDate(a) || "9999-12-31";
+    const bDate = fifoExpirySortDate(b) || "9999-12-31";
     if (aDate !== bDate) return aDate.localeCompare(bDate);
 
     const aReceived = dateOnly(a.receivedDate) || "9999-12-31";
@@ -388,7 +388,7 @@ function mapDraftLine(line: DraftLineLike): SIVLine {
     availableQty: savedAvailableQty,
     availableBaseQty: savedAvailableBaseQty,
     batchNo: text(line.batchNo),
-    expiryDate: dateOnly(line.expiryDate ?? line.receivedDate),
+    expiryDate: dateOnly(line.expiryDate),
     selectedFifoKey,
     fifoOptions,
     loadingFifo: false,
@@ -618,7 +618,7 @@ export function useSivScreenController({
           fifoOptions: lots,
           selectedFifoKey: first?.__fifoOptionKey ?? "",
           batchNo: first?.batchNo ?? "",
-          expiryDate: dateOnly(first?.expiryDate ?? first?.receivedDate),
+          expiryDate: dateOnly(first?.expiryDate),
           availableQty: first ? num(first.availableQty ?? first.availableBaseQty) : undefined,
           availableBaseQty: first ? num(first.availableBaseQty ?? first.availableQty) : undefined,
           loadingFifo: false,
@@ -663,7 +663,7 @@ export function useSivScreenController({
           ...line,
           selectedFifoKey: selected.__fifoOptionKey,
           batchNo: selected.batchNo ?? "",
-          expiryDate: dateOnly(selected.expiryDate ?? selected.receivedDate),
+          expiryDate: dateOnly(selected.expiryDate),
           availableQty: num(selected.availableQty ?? selected.availableBaseQty),
           availableBaseQty: num(selected.availableBaseQty ?? selected.availableQty),
           lineError: "",

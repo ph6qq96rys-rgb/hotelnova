@@ -165,7 +165,7 @@ export default function MenuCategoriesPage() {
     return (
       <div className="p-page">
         <div className="p-guard">
-          <div className="p-guard__icon">⚙</div>
+          <div className="p-guard__icon"></div>
           Select a company and branch to continue.
         </div>
       </div>
@@ -200,7 +200,7 @@ export default function MenuCategoriesPage() {
         <div className="p-alert p-alert--error">
           <span className="p-alert__body">{error}</span>
           <button className="p-dismiss" onClick={() => setError(null)}>
-            ✕
+            
           </button>
         </div>
       )}
@@ -209,7 +209,7 @@ export default function MenuCategoriesPage() {
         <div className="p-alert p-alert--success">
           <span className="p-alert__body">{notice}</span>
           <button className="p-dismiss" onClick={() => setNotice(null)}>
-            ✕
+            
           </button>
         </div>
       )}
@@ -376,7 +376,7 @@ export default function MenuCategoriesPage() {
                     {sortedCategories.map((row) => (
                       <tr key={row.id}>
                         <td style={{ fontWeight: 700 }}>{row.name}</td>
-                        <td>{row.code || "—"}</td>
+                        <td>{row.code || "-"}</td>
                         <td>
                           {row.defaultConsumptionLocationName ? (
                             <span className="p-badge p-badge--active">

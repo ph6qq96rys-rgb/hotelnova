@@ -19,7 +19,7 @@ export type AdjustmentStatus =
   | "Reversed"
   | "Rejected";
 
-// ── Read DTOs ────────────────────────────────────────────────────────────────
+//  Read DTOs 
 
 export type InventoryAdjustmentLineDto = {
   id?: string;
@@ -97,7 +97,7 @@ export type InventoryAdjustmentDto = {
   lines: InventoryAdjustmentLineDto[];
 };
 
-// ── Candidates ───────────────────────────────────────────────────────────────
+//  Candidates 
 
 export type AdjustmentCandidateDto = {
   itemId: string;
@@ -135,7 +135,7 @@ export type AdjustmentCandidateDto = {
   isBaseUnit?: boolean;
 };
 
-// ── Stock locations ──────────────────────────────────────────────────────────
+//  Stock locations 
 
 export type StockLocationOption = {
   /**
@@ -177,7 +177,7 @@ export type StockLocationOption = {
   isDefaultIssue?: boolean;
 };
 
-// ── Write commands ───────────────────────────────────────────────────────────
+//  Write commands 
 
 export type AdjustmentLineDraftItem = {
   fifoLotId: string;
@@ -231,7 +231,7 @@ export type AdjustmentReverseCommand = {
   reason: string;
 };
 
-// ── Legacy DTOs ──────────────────────────────────────────────────────────────
+//  Legacy DTOs 
 
 export type CreateInventoryAdjustmentDto = {
   adjustmentDate: string;
@@ -295,7 +295,7 @@ export type ManualAdjustmentCreateDto = {
   }[];
 };
 
-// ── Legacy lookup DTOs ───────────────────────────────────────────────────────
+//  Legacy lookup DTOs 
 
 export type AdjustmentFifoItemDto = {
   fifoLotId: string;

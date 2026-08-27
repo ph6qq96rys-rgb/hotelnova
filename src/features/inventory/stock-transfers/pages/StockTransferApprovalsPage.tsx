@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
@@ -153,12 +153,12 @@ export default function StockTransferApprovalsPage() {
                         <td>
                           <div className="font-semibold">{row.transferNumber}</div>
                           <div className="text-xs text-slate-500">
-                            {(row as any).reference ?? "—"}
+                            {(row as any).reference ?? "-"}
                           </div>
                         </td>
 
                         <td>
-                          {row.fromLocationName} {" → "} {row.toLocationName}
+                          {row.fromLocationName} {" to "} {row.toLocationName}
                         </td>
 
                         <td>{fmtDateTime((row as any).transferDateUtc)}</td>

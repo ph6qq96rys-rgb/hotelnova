@@ -1,7 +1,6 @@
 // src/auth/auth.types.ts
 
 export interface LoginRequest {
-  tenantSlug?: string | null;
   email: string;
   password: string;
 }
@@ -52,6 +51,7 @@ export interface TokenObject {
   token?: string | null;
   refreshToken?: string | null;
   expiresAt?: string | null;
+  expiresAtUtc?: string | null;
   user?: Partial<AuthUser> | null;
 }
 
@@ -60,6 +60,10 @@ export interface LoginResponse {
   accessToken?: string | null;
   refreshToken?: string | null;
   expiresAt?: string | null;
+  expiresAtUtc?: string | null;
+
+  roles?: string[] | null;
+  permissions?: string[] | null;
 
   user?: Partial<AuthUser> | null;
 

@@ -14,8 +14,8 @@ export default function GrnEditorFooter({ id, busy, saving, posting, onCancel, o
       <span>{id ? `Draft saved: ${id}` : "Unsaved draft"}</span>
       <div>
         <button type="button" className="btn" disabled={busy} onClick={onCancel}>Cancel</button>
-        <button type="button" className="btn" disabled={busy} onClick={onSave}>{saving ? "Saving…" : "Save Draft"}</button>
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={onPost}>{posting ? "Posting…" : "Post Receipt"}</button>
+        <button type="button" className="btn" disabled={busy} onClick={onSave}>{saving ? "Saving..." : "Save Draft"}</button>
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={onPost}>{posting ? "Posting..." : "Post Receipt"}</button>
       </div>
     </footer>
   );

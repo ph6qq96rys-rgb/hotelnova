@@ -1,4 +1,4 @@
-﻿export type StockLocationDto = {
+export type StockLocationDto = {
   id: string;
   companyId: string;
   branchId?: string | null;

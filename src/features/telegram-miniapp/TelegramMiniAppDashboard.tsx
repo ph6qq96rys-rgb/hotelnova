@@ -13,6 +13,7 @@ import "./telegram-miniapp-dashboard.css";
 
 const DEFAULT_TAB: TelegramTabKey = "workspace";
 const STORAGE_KEY = "hotelnova.telegram.activeTab";
+const DIAGNOSTIC_BUILD = "diag-20260806-telegram-auth";
 
 function readSavedTab(): TelegramTabKey {
   if (typeof window === "undefined") return DEFAULT_TAB;
@@ -53,7 +54,7 @@ export default function TelegramMiniAppDashboard() {
     if (session.state !== "ready") {
       return {
         title: "Telegram Mini App",
-        subtitle: "HotelNova ERP mobile workspace",
+        subtitle: "Hotel Nova mobile workspace",
       };
     }
 
@@ -75,7 +76,7 @@ export default function TelegramMiniAppDashboard() {
 
         {session.state === "missing-init-data" && (
           <StateCard
-            icon="⚠️"
+            icon="Warning:"
             title="Telegram authentication data is missing"
             message={
               session.message ??
@@ -83,12 +84,13 @@ export default function TelegramMiniAppDashboard() {
             }
             actionLabel="Try again"
             onAction={refresh}
+            diagnostic={DIAGNOSTIC_BUILD}
           />
         )}
 
         {session.state === "loading" && (
           <StateCard
-            icon="⏳"
+            icon=""
             title="Preparing workspace"
             message={session.message ?? "Please wait..."}
           />
@@ -96,11 +98,12 @@ export default function TelegramMiniAppDashboard() {
 
         {session.state === "error" && (
           <StateCard
-            icon="❌"
+            icon=""
             title="Unable to open workspace"
             message={session.message}
             actionLabel="Try again"
             onAction={refresh}
+            diagnostic={DIAGNOSTIC_BUILD}
           />
         )}
 
@@ -127,12 +130,14 @@ function StateCard({
   message,
   actionLabel,
   onAction,
+  diagnostic,
 }: {
   icon: string;
   title: string;
   message: string;
   actionLabel?: string;
   onAction?: () => void;
+  diagnostic?: string;
 }) {
   return (
     <section className="tg-mini-empty">
@@ -144,6 +149,10 @@ function StateCard({
         <button type="button" className="tg-mini-primary" onClick={onAction}>
           {actionLabel}
         </button>
+      ) : null}
+
+      {diagnostic ? (
+        <small className="tg-mini-empty__diagnostic">{diagnostic}</small>
       ) : null}
     </section>
   );

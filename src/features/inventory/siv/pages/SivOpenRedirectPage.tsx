@@ -177,7 +177,7 @@ export default function SivOpenRedirectPage() {
           />
 
           <div className="siv-route-state__title">
-            Opening SIV…
+            Opening SIV...
           </div>
 
           <div className="siv-route-state__desc">
@@ -214,7 +214,7 @@ export default function SivOpenRedirectPage() {
                 })
               }
             >
-              Open detail page instead →
+              Open detail page instead to
             </button>
           )}
         </div>

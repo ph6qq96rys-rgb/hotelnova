@@ -8,7 +8,7 @@ export function Th({
   children,
   align = "left"
 }: {
-  children?: React.ReactNode; // ✅ now optional
+  children?: React.ReactNode; //  now optional
   align?: "left" | "right";
 }) {
   const alignClass = align === "right" ? "text-right" : "text-left";

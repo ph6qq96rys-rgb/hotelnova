@@ -12,7 +12,7 @@ type Props = {
 
 export default function GrnHeaderForm({ form, errors, locations, loadingLocations, busy, onPatch }: Props) {
   const locationPlaceholder = loadingLocations
-    ? "Loading locations…"
+    ? "Loading locations..."
     : locations.length
       ? "Select receiving location"
       : "No active receiving locations found";

@@ -24,11 +24,11 @@ interface TelegramTabBarProps {
 }
 
 const defaultTabs: TelegramTabItem[] = [
-  { key: "workspace", label: "Home", icon: "🏠" },
-  { key: "attendance", label: "Scan", icon: "📷" },
-  { key: "inventory", label: "Inventory", icon: "📦" },
-  { key: "requests", label: "Requests", icon: "📋" },
-  { key: "profile", label: "Me", icon: "👤" },
+  { key: "workspace", label: "Home", icon: "" },
+  { key: "attendance", label: "Scan", icon: "" },
+  { key: "inventory", label: "Inventory", icon: "" },
+  { key: "requests", label: "Requests", icon: "" },
+  { key: "profile", label: "Me", icon: "" },
 ];
 
 export default function TelegramTabBar({

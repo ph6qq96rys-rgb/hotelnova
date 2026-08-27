@@ -268,7 +268,7 @@ export function PosOperationsPage() {
               <div>
                 <label className="erp-pos-label">Processing Window</label>
                 <div className="erp-readonly-box">
-                  {rangeDays > 0 ? `${rangeDays} day(s)` : "—"}
+                  {rangeDays > 0 ? `${rangeDays} day(s)` : "-"}
                 </div>
               </div>
             </div>
@@ -308,7 +308,7 @@ export function PosOperationsPage() {
                 value={
                   typeof result?.totalCogsAmount === "number"
                     ? money(result.totalCogsAmount)
-                    : "—"
+                    : "-"
                 }
               />
             </div>

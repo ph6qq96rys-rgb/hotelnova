@@ -23,7 +23,9 @@ import EmployeeConfirmPage from "../features/hr/pages/Employees/EmployeeConfirmP
 import EmployeeTerminatePage from "../features/hr/pages/Employees/Employeeterminatepage";
 
 import AttendancePage from "../features/hr/pages/attendance/AttendancePage";
+import AttendanceConfigurationPage from "../features/hr/pages/attendance/AttendanceConfigurationPage";
 import BranchAttendanceQrGeneratorPage from "../features/hr/pages/attendance/BranchAttendanceQrGeneratorPage";
+import OvertimeGovernancePage from "../features/hr/pages/attendance/OvertimeGovernancePage";
 
 import LeaveRequestFormPage from "../features/hr/pages/leave/LeaveRequestFormPage";
 import LeaveBalancePage from "../features/hr/pages/leave/LeaveBalancePage";
@@ -53,6 +55,7 @@ export type AppRoute = RouteObject & {
   nav?: boolean;
   section?: string;
   order?: number;
+  permissions?: string[];
 };
 
 const HR_SECTION = "Human Resources";
@@ -67,6 +70,7 @@ export function getHrRoutes(): AppRoute[] {
       nav: true,
       section: HR_SECTION,
       order: 10,
+      permissions: ["hr.view"],
     },
 
     {
@@ -74,9 +78,10 @@ export function getHrRoutes(): AppRoute[] {
       label: "Employees",
       element: <EmployeeListPage />,
       icon: <UserCheck size={18} />,
-      nav: false,
+      nav: true,
       section: HR_SECTION,
       order: 20,
+      permissions: ["hr.employees.view"],
     },
 
     {
@@ -114,9 +119,10 @@ export function getHrRoutes(): AppRoute[] {
       label: "Payroll",
       element: <PayrollListPage />,
       icon: <CreditCard size={18} />,
-      nav: false,
+      nav: true,
       section: HR_SECTION,
       order: 30,
+      permissions: ["hr.payroll.view"],
     },
 
     {
@@ -142,9 +148,10 @@ export function getHrRoutes(): AppRoute[] {
       label: "Leave",
       element: <LeaveListPage />,
       icon: <CalendarOff size={18} />,
-      nav: false,
+      nav: true,
       section: HR_SECTION,
       order: 40,
+      permissions: ["hr.leave.view"],
     },
 
     {
@@ -164,18 +171,40 @@ export function getHrRoutes(): AppRoute[] {
       label: "Attendance",
       element: <AttendancePage />,
       icon: <Clock size={18} />,
-      nav: false,
+      nav: true,
       section: HR_SECTION,
       order: 50,
+      permissions: ["hr.attendance.view"],
+    },
+    {
+      path: "hr/attendance/configuration",
+      label: "Attendance Configuration",
+      element: <AttendanceConfigurationPage />,
+      icon: <Clock size={18} />,
+      nav: true,
+      section: HR_SECTION,
+      order: 54,
+      permissions: ["hr.attendance.manage"],
     },
     {
       path: "hr/attendance/qr-generator",
       label: "Attendance QR Generator",
       element: <BranchAttendanceQrGeneratorPage />,
       icon: <Clock size={18} />,
-      nav: false,
+      nav: true,
       section: HR_SECTION,
       order: 55,
+      permissions: ["hr.attendance.manage"],
+    },
+    {
+      path: "hr/overtime",
+      label: "Overtime Governance",
+      element: <OvertimeGovernancePage />,
+      icon: <Clock size={18} />,
+      nav: true,
+      section: HR_SECTION,
+      order: 56,
+      permissions: ["hr.overtime.view"],
     },
 
     {
@@ -183,9 +212,10 @@ export function getHrRoutes(): AppRoute[] {
       label: "Recruitment",
       element: <RecruitmentPage />,
       icon: <Briefcase size={18} />,
-      nav: false,
+      nav: true,
       section: HR_SECTION,
       order: 60,
+      permissions: ["hr.recruitment.view"],
     },
 
     {
@@ -211,9 +241,10 @@ export function getHrRoutes(): AppRoute[] {
       label: "Performance",
       element: <PerformancePage />,
       icon: <Star size={18} />,
-      nav: false,
+      nav: true,
       section: HR_SECTION,
       order: 70,
+      permissions: ["hr.performance.view"],
     },
 
     {
@@ -239,9 +270,10 @@ export function getHrRoutes(): AppRoute[] {
       label: "Training",
       element: <TrainingPage />,
       icon: <School size={18} />,
-      nav: false,
+      nav: true,
       section: HR_SECTION,
       order: 80,
+      permissions: ["hr.training.view"],
     },
 
     {

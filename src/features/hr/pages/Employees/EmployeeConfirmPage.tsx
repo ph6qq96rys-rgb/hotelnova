@@ -117,7 +117,7 @@ export default function EmployeeConfirmPage() {
 
           <div style={{ marginTop: 16 }}>
             <button type="button" className="btn" onClick={goToEmployees}>
-              ← Back to Employees
+              Back to Employees
             </button>
           </div>
         </section>
@@ -129,10 +129,10 @@ export default function EmployeeConfirmPage() {
     <main className="page">
       <header className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Employees</div>
+          <div className="page-kicker">Human Resources - Employees</div>
           <h1 className="page-title">Confirm Employee</h1>
           <p className="page-sub">
-            {employee.fullName} · {employee.employeeNo} ·{" "}
+            {employee.fullName} - {employee.employeeNo} -{" "}
             {employee.positionTitle || "No position assigned"}
           </p>
         </div>
@@ -265,7 +265,7 @@ export default function EmployeeConfirmPage() {
           <strong style={{ color: "var(--text)" }}>Probation</strong> to{" "}
           <strong style={{ color: "var(--text)" }}>Active</strong> and record{" "}
           <strong style={{ color: "var(--text)" }}>
-            {confirmationDate ? fmtDate(confirmationDate) : "—"}
+            {confirmationDate ? fmtDate(confirmationDate) : "-"}
           </strong>{" "}
           as the confirmation date.
         </div>

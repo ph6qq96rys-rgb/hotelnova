@@ -187,7 +187,7 @@ export default function ImportInventoryItemsPage() {
       setState({
         step: "importing",
         progress: 25,
-        label: "Uploading spreadsheet…",
+        label: "Uploading spreadsheet...",
         message: null,
         result: null,
       });
@@ -195,7 +195,7 @@ export default function ImportInventoryItemsPage() {
       setState((prev) => ({
         ...prev,
         progress: 55,
-        label: "Validating and processing rows…",
+        label: "Validating and processing rows...",
       }));
 
       const response = await http.post<ImportResult>(
@@ -245,7 +245,7 @@ export default function ImportInventoryItemsPage() {
     return (
       <div className="inv-page">
         <div className="inv-page-guard">
-          <div style={{ fontSize: 32 }}>⚙</div>
+          <div style={{ fontSize: 32 }}></div>
           <div>Select a company to import inventory items.</div>
         </div>
       </div>
@@ -256,7 +256,7 @@ export default function ImportInventoryItemsPage() {
     <div className="inv-page">
       <div className="inv-banner">
         <div>
-          <p className="inv-banner__kicker">Inventory · Items</p>
+          <p className="inv-banner__kicker">Inventory - Items</p>
           <h1 className="inv-banner__title">Import Inventory Items</h1>
           <p className="inv-banner__subtitle">
             Upload the approved Excel template to create inventory items,
@@ -271,7 +271,7 @@ export default function ImportInventoryItemsPage() {
           onClick={() => go(`/companies/${companyId}/inventory-master/items`)}
           disabled={busy}
         >
-          ← Back to Items
+          Back to Items
         </button>
       </div>
 
@@ -371,13 +371,13 @@ export default function ImportInventoryItemsPage() {
         }}
         aria-label="Click or drop to upload spreadsheet"
       >
-        <span className="inv-import-dropzone__icon">📄</span>
+        <span className="inv-import-dropzone__icon"></span>
 
         {fileSummary ? (
           <>
             <p className="inv-import-dropzone__title">{fileSummary.name}</p>
             <p className="inv-import-dropzone__sub">
-              {fileSummary.size} · {fileSummary.extension} · click to change
+              {fileSummary.size} - {fileSummary.extension} - click to change
             </p>
           </>
         ) : (
@@ -386,7 +386,7 @@ export default function ImportInventoryItemsPage() {
               Drop spreadsheet here, or click to browse
             </p>
             <p className="inv-import-dropzone__sub">
-              .xlsx or .xlsm · max 10 MB
+              .xlsx or .xlsm - max 10 MB
             </p>
           </>
         )}
@@ -459,7 +459,7 @@ export default function ImportInventoryItemsPage() {
           disabled={!canImport}
           onClick={() => void runImport()}
         >
-          {busy ? "Importing…" : "Import Items"}
+          {busy ? "Importing..." : "Import Items"}
         </button>
 
         {file && !busy ? (
@@ -560,7 +560,7 @@ function ImportResults({ result }: { result: ImportResult }) {
 
       {result.inserted > 0 ? (
         <div className="inv-alert inv-alert--success" style={{ marginBottom: 16 }}>
-          ✓ {result.inserted} item{result.inserted !== 1 ? "s" : ""} imported
+           {result.inserted} item{result.inserted !== 1 ? "s" : ""} imported
           successfully.
         </div>
       ) : null}
@@ -596,7 +596,7 @@ function ImportResults({ result }: { result: ImportResult }) {
                     >
                       {error.row}
                     </td>
-                    <td>{error.itemName || "—"}</td>
+                    <td>{error.itemName || "-"}</td>
                     <td
                       style={{
                         color: "var(--erp-danger)",

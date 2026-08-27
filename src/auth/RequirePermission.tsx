@@ -1,4 +1,4 @@
-﻿// src/auth/RequirePermission.tsx
+// src/auth/RequirePermission.tsx
 
 import type { ReactNode } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";

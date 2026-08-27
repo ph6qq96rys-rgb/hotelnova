@@ -1,5 +1,7 @@
 // src/api/getApiError.ts
 
+import { toUserFriendlyError } from "../shared/errors/errorMessage.utils";
+
 type ApiErrorPayload = {
   error?: string;
   Error?: string;
@@ -20,34 +22,17 @@ function flattenValidationErrors(errors: Record<string, string[] | string>): str
 export function getApiError(error: unknown, fallback: string): string {
   const maybeAxiosError = error as {
     response?: { data?: string | ApiErrorPayload };
-    message?: string;
   };
 
   const data = maybeAxiosError.response?.data;
 
-  if (typeof data === "string" && data.trim()) {
-    return data;
-  }
+  if (data && typeof data === "object" && data.errors && Object.keys(data.errors).length > 0) {
+    const validationMessage = flattenValidationErrors(data.errors);
 
-  if (data && typeof data === "object") {
-    if (data.errors && Object.keys(data.errors).length > 0) {
-      const validationMessage = flattenValidationErrors(data.errors);
-
-      if (validationMessage) {
-        return validationMessage;
-      }
+    if (validationMessage) {
+      return validationMessage;
     }
-
-    return (
-      data.error ||
-      data.Error ||
-      data.detail ||
-      data.message ||
-      data.title ||
-      maybeAxiosError.message ||
-      fallback
-    );
   }
 
-  return maybeAxiosError.message || fallback;
+  return toUserFriendlyError(error, fallback);
 }

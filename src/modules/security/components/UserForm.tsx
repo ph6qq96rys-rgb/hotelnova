@@ -1,8 +1,10 @@
-﻿// src/modules/security/components/UserForm.tsx
+// src/modules/security/components/UserForm.tsx
 
 import { useEffect, useMemo, useState } from "react";
 import { useAppScope } from "../../../app/useAppScope";
 import { securityApi } from "../api/securityApi";
+import { branchApi } from "../../../features/hr/api/hrApi";
+import { isStrongPassword } from "../utils/userManagement.utils";
 import type {
   CreateSecurityUserRequest,
   EmployeeOption,
@@ -12,6 +14,7 @@ import type {
   UpdateSecurityUserRequest,
   UserDto,
 } from "../api/securityApi";
+import type { BranchDto } from "../../../features/hr/api/hrApi";
 
 type Props = {
   mode: "create" | "edit";
@@ -150,7 +153,7 @@ function normalizeIds(value: unknown): string[] {
 }
 
 function getInitialEmployeeId(user?: UserDto): string {
-  return cleanText((user as any)?.employeeId);
+  return cleanText((user as any)?.companyEmployeeId ?? (user as any)?.employeeId ?? (user as any)?.employee?.id);
 }
 
 function getInitialBranchIds(user?: UserDto): string[] {
@@ -176,6 +179,27 @@ function getInitialStockLocationIds(user?: UserDto): string[] {
     (user as any)?.stockLocationIds ??
       (user as any)?.allowedStockLocationIds
   );
+}
+
+function getInitialScope(user?: UserDto): "Company" | "Branch" {
+  return cleanText((user as any)?.scope).toLowerCase() === "company"
+    ? "Company"
+    : "Branch";
+}
+
+function getLinkedEmployeeLabel(user?: UserDto): string {
+  const employee = (user as any)?.employee;
+  const code = cleanText(
+    (user as any)?.employeeCode ?? employee?.employeeCode ?? employee?.employeeNo
+  );
+  const name = cleanText(
+    (user as any)?.employeeName ??
+      (user as any)?.employeeFullName ??
+      employee?.fullName
+  );
+
+  if (code && name) return `${code} - ${name}`;
+  return name || code || "Not linked";
 }
 
 function autoUserName(employee?: EmployeeOption | null): string {
@@ -214,11 +238,13 @@ export default function UserForm({
     []
   );
   const [stores, setStores] = useState<StoreOption[]>([]);
+  const [branches, setBranches] = useState<BranchDto[]>([]);
   const [selectedStockLocationIds, setSelectedStockLocationIds] = useState<
     string[]
   >([]);
 
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
+  const [scope, setScope] = useState<"Company" | "Branch">("Branch");
   const [storeId, setStoreId] = useState("");
 
   const [userName, setUserName] = useState("");
@@ -228,6 +254,7 @@ export default function UserForm({
 
   const [employeesLoading, setEmployeesLoading] = useState(false);
   const [rolesLoading, setRolesLoading] = useState(false);
+  const [branchesLoading, setBranchesLoading] = useState(false);
   const [stockLocationsLoading, setStockLocationsLoading] = useState(false);
   const [storesLoading, setStoresLoading] = useState(false);
   const [error, setError] = useState("");
@@ -240,6 +267,7 @@ export default function UserForm({
     setIsActive(initial?.isActive ?? true);
     setSelectedRoleValues([]);
     setSelectedBranchIds(getInitialBranchIds(initial));
+    setScope(getInitialScope(initial));
     setStoreId(getInitialStoreId(initial));
     setSelectedStockLocationIds(getInitialStockLocationIds(initial));
     setError("");
@@ -256,15 +284,29 @@ export default function UserForm({
     [employees, employeeId]
   );
 
+  const branchOptions = useMemo(
+    () =>
+      branches
+        .filter((branch) => branch?.id && branch.isActive !== false)
+        .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")),
+    [branches]
+  );
+
   const effectiveBranchIds = useMemo(() => {
-    const employeeBranchId = cleanText(selectedEmployee?.branchId);
+    if (scope === "Company") {
+      return unique([...selectedBranchIds]);
+    }
+
+    const employeeBranchId = cleanText(
+      selectedEmployee?.branchId ?? (initial as any)?.employee?.branchId
+    );
 
     return unique([
       ...selectedBranchIds,
       employeeBranchId,
       branchId ?? "",
     ]);
-  }, [selectedBranchIds, selectedEmployee?.branchId, branchId]);
+  }, [selectedBranchIds, selectedEmployee?.branchId, branchId, scope, initial]);
 
   const validRoleValues = useMemo(
     () => new Set(roleOptions.map(getRoleValue).filter(Boolean)),
@@ -274,6 +316,31 @@ export default function UserForm({
   const requiresStockLocation = selectedRoleValues.some((roleValue) =>
     INVENTORY_ROLE_VALUES.has(normalizeRoleValue(roleValue))
   );
+  const branchCount = effectiveBranchIds.length;
+  const stockLocationCount = selectedStockLocationIds.length;
+  const selectedRoleCount = selectedRoleValues.length;
+
+  useEffect(() => {
+    if (!companyId) return;
+
+    const controller = new AbortController();
+
+    async function loadBranches() {
+      try {
+        setBranchesLoading(true);
+        const rows = await branchApi.list(companyId, { activeOnly: true });
+        if (!controller.signal.aborted) setBranches(rows);
+      } catch {
+        if (!controller.signal.aborted) setBranches([]);
+      } finally {
+        if (!controller.signal.aborted) setBranchesLoading(false);
+      }
+    }
+
+    void loadBranches();
+
+    return () => controller.abort();
+  }, [companyId]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -485,6 +552,14 @@ export default function UserForm({
     );
   }
 
+  function toggleBranch(id: string) {
+    setSelectedBranchIds((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : unique([...current, id])
+    );
+  }
+
   async function submit() {
     setError("");
 
@@ -520,12 +595,12 @@ export default function UserForm({
       return;
     }
 
-    if (isCreate && cleanPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
+    if (isCreate && !isStrongPassword(cleanPassword)) {
+      setError("Password must include upper and lower case letters, a number, and at least 8 characters.");
       return;
     }
 
-    if (finalBranchIds.length === 0) {
+    if (scope === "Branch" && finalBranchIds.length === 0) {
       setError("At least one branch assignment is required.");
       return;
     }
@@ -541,10 +616,11 @@ export default function UserForm({
     }
 
     const commonPayload: UpdateSecurityUserRequest = {
-      employeeId: cleanEmployeeId,
+      companyEmployeeId: cleanEmployeeId,
       userName: cleanUserName,
       ...(cleanEmail ? { email: cleanEmail } : {}),
       isActive,
+      scope,
       ...(storeId ? { storeId } : {}),
       branchIds: finalBranchIds,
       stockLocationIds: finalStockLocationIds,
@@ -563,16 +639,21 @@ export default function UserForm({
 
   return (
     <div className="lux-form lux-userCreate">
-      <div className="lux-form__header">
+      <div className="lux-form__header userCreate__header">
         <div>
           <div className="lux-kicker">Identity & Operations Access</div>
           <h2 className="lux-form__title">
             {isCreate ? "Create ERP User" : "Edit ERP User"}
           </h2>
           <p className="lux-form__subtitle">
-            Link the login account to employee context, branches, stock
-            locations, and ERP roles.
+            Define the employee login, ERP role, and operational access scope.
           </p>
+        </div>
+        <div className="userCreate__summary" aria-label="User setup summary">
+          <span>{scope} scope</span>
+          <span>{selectedRoleCount} role{selectedRoleCount === 1 ? "" : "s"}</span>
+          <span>{branchCount} branch{branchCount === 1 ? "" : "es"}</span>
+          <span>{stockLocationCount} stock location{stockLocationCount === 1 ? "" : "s"}</span>
         </div>
       </div>
 
@@ -582,10 +663,16 @@ export default function UserForm({
         </div>
       )}
 
-      <div className="lux-grid lux-grid--2">
+      <div className="userCreate__identityGrid">
         {isCreate && (
-          <section className="lux-panel">
-            <div className="lux-panel__title">Employee Context</div>
+          <section className="lux-panel userCreate__panel">
+            <div className="userCreate__sectionHead">
+              <div>
+                <div className="lux-panel__title">Employee</div>
+                <p>Select the employee this login belongs to.</p>
+              </div>
+              <span className="userCreate__step">1</span>
+            </div>
 
             <label className="lux-label">
               Search employee
@@ -593,7 +680,7 @@ export default function UserForm({
                 className="lux-input"
                 value={employeeSearch}
                 onChange={(event) => setEmployeeSearch(event.target.value)}
-                placeholder="Search by name, code, email…"
+                placeholder="Search by name, code, email..."
                 disabled={busy}
               />
             </label>
@@ -608,20 +695,20 @@ export default function UserForm({
               >
                 <option value="">
                   {employeesLoading
-                    ? "Loading employees…"
-                    : "— Select employee —"}
+                    ? "Loading employees..."
+                    : "- Select employee -"}
                 </option>
 
                 {employees.map((employee) => (
                   <option key={employee.id} value={employee.id}>
                     {employee.employeeCode || employee.employeeNo
-                      ? `${employee.employeeCode ?? employee.employeeNo} · `
+                      ? `${employee.employeeCode ?? employee.employeeNo} - `
                       : ""}
                     {employee.fullName}
                     {employee.departmentName
-                      ? ` · ${employee.departmentName}`
+                      ? ` - ${employee.departmentName}`
                       : ""}
-                    {employee.branchName ? ` · ${employee.branchName}` : ""}
+                    {employee.branchName ? ` - ${employee.branchName}` : ""}
                   </option>
                 ))}
               </select>
@@ -642,43 +729,72 @@ export default function UserForm({
                 <div className="lux-employeeCard__meta">
                   {selectedEmployee.employeeCode ??
                     selectedEmployee.employeeNo ??
-                    "—"}{" "}
-                  · {selectedEmployee.branchName ?? "No branch"} ·{" "}
+                    "-"}{" "}
+                  - {selectedEmployee.branchName ?? "No branch"} -{" "}
                   {selectedEmployee.departmentName ?? "No department"}
                 </div>
                 <div className="lux-employeeCard__meta">
-                  Position: {selectedEmployee.positionName ?? "—"}
+                  Position: {selectedEmployee.positionName ?? "-"}
                 </div>
               </div>
             )}
           </section>
         )}
 
-        <section className="lux-panel">
-          <div className="lux-panel__title">Login Credentials</div>
+        {!isCreate && (
+          <section className="lux-panel userCreate__panel">
+            <div className="userCreate__sectionHead">
+              <div>
+                <div className="lux-panel__title">Employee</div>
+                <p>Linked HR record for this account.</p>
+              </div>
+              <span className="userCreate__step">1</span>
+            </div>
+            <div className="lux-employeeCard">
+              <div className="lux-employeeCard__name">
+                {getLinkedEmployeeLabel(initial)}
+              </div>
+              <div className="lux-employeeCard__meta">
+                Employee linking is managed through the dedicated Employee action
+                on the user list.
+              </div>
+            </div>
+          </section>
+        )}
 
-          <label className="lux-label">
-            Username <span className="lux-required">*</span>
-            <input
-              className="lux-input"
-              value={userName}
-              onChange={(event) => setUserName(event.target.value)}
-              placeholder="e.g. emp001"
-              disabled={busy}
-            />
-          </label>
+        <section className="lux-panel userCreate__panel">
+          <div className="userCreate__sectionHead">
+            <div>
+              <div className="lux-panel__title">Login</div>
+              <p>Credentials and account status.</p>
+            </div>
+            <span className="userCreate__step">2</span>
+          </div>
 
-          <label className="lux-label">
-            Email
-            <input
-              className="lux-input"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="user@company.com"
-              disabled={busy}
-            />
-          </label>
+          <div className="userCreate__fieldGrid">
+            <label className="lux-label">
+              Username <span className="lux-required">*</span>
+              <input
+                className="lux-input"
+                value={userName}
+                onChange={(event) => setUserName(event.target.value)}
+                placeholder="e.g. emp001"
+                disabled={busy}
+              />
+            </label>
+
+            <label className="lux-label">
+              Email
+              <input
+                className="lux-input"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="user@company.com"
+                disabled={busy}
+              />
+            </label>
+          </div>
 
           {isCreate && (
             <label className="lux-label">
@@ -706,10 +822,16 @@ export default function UserForm({
         </section>
       </div>
 
-      <section className="lux-panel" style={{ marginTop: 16 }}>
-        <div className="lux-panel__title">Roles & Approval Authority</div>
+      <section className="lux-panel userCreate__panel userCreate__panelBlock">
+        <div className="userCreate__sectionHead">
+          <div>
+            <div className="lux-panel__title">Roles</div>
+            <p>Choose what this user can do. Approval limits remain controlled by backend policy.</p>
+          </div>
+          <span className="userCreate__step">3</span>
+        </div>
 
-        {rolesLoading && <div className="lux-muted">Loading roles…</div>}
+        {rolesLoading && <div className="lux-muted">Loading roles...</div>}
 
         {!rolesLoading && roleOptions.length === 0 && (
           <div className="lux-alert lux-alert--warning">
@@ -718,7 +840,7 @@ export default function UserForm({
           </div>
         )}
 
-        <div className="lux-roleGrid">
+        <div className="lux-roleGrid userCreate__optionGrid userCreate__optionGrid--roles">
           {roleOptions.map((role) => {
             const value = getRoleValue(role);
             const displayName = getRoleDisplayName(role);
@@ -739,20 +861,84 @@ export default function UserForm({
           })}
         </div>
 
-        <div className="lux-hint" style={{ marginTop: 10 }}>
+        <div className="lux-hint userCreate__footnote">
           Display names are shown for users, but only valid normalized backend
           role values are submitted.
         </div>
       </section>
 
-      <section className="lux-panel" style={{ marginTop: 16 }}>
-        <div className="lux-panel__title">Organization & Stock Access</div>
-
-        <div className="lux-hint" style={{ marginBottom: 10 }}>
-          Branch assignments are derived from the selected employee and active
-          company scope. Stock locations are only required for inventory-related
-          roles.
+      <section className="lux-panel userCreate__panel userCreate__panelBlock">
+        <div className="userCreate__sectionHead">
+          <div>
+            <div className="lux-panel__title">Access Scope</div>
+            <p>Define company, branch, POS store, and stock-location access.</p>
+          </div>
+          <span className="userCreate__step">4</span>
         </div>
+
+        <div className="lux-hint userCreate__footnote">
+          Choose whether this account can operate across the assigned company or
+          only selected branches. Stock locations are only required for
+          inventory-related roles.
+        </div>
+
+        <div className="userCreate__scopeGrid">
+          <label className="userCreate__scopeCard">
+            <input
+              type="radio"
+              name="user-scope"
+              value="Branch"
+              checked={scope === "Branch"}
+              onChange={() => setScope("Branch")}
+              disabled={busy}
+            />
+            <span>
+              <strong>Branch scoped</strong>
+              <small>Restrict work to selected branches.</small>
+            </span>
+          </label>
+          <label className="userCreate__scopeCard">
+            <input
+              type="radio"
+              name="user-scope"
+              value="Company"
+              checked={scope === "Company"}
+              onChange={() => setScope("Company")}
+              disabled={busy}
+            />
+            <span>
+              <strong>Company scoped</strong>
+              <small>Allow company-wide ERP access where permissions allow.</small>
+            </span>
+          </label>
+        </div>
+
+        <div className="lux-label">
+          Branch Access {scope === "Branch" && <span className="lux-required">*</span>}
+        </div>
+
+        {branchesLoading && <div className="lux-muted">Loading branches...</div>}
+
+        <div className="lux-roleGrid userCreate__optionGrid">
+          {branchOptions.map((branch) => (
+            <label key={branch.id} className="lux-rolePill">
+              <input
+                type="checkbox"
+                value={branch.id}
+                checked={selectedBranchIds.includes(branch.id)}
+                onChange={() => toggleBranch(branch.id)}
+                disabled={busy}
+              />
+              <span>{branch.code ? `${branch.code} - ` : ""}{branch.name}</span>
+            </label>
+          ))}
+        </div>
+
+        {!branchesLoading && branchOptions.length === 0 && (
+          <div className="lux-hint" style={{ marginBottom: 16 }}>
+            No active branches found for this company.
+          </div>
+        )}
 
         <label className="lux-label">
           Store / POS
@@ -763,14 +949,14 @@ export default function UserForm({
             disabled={busy || storesLoading}
           >
             <option value="">
-              {storesLoading ? "Loading stores…" : "— Select Store / POS —"}
+              {storesLoading ? "Loading stores..." : "- Select Store / POS -"}
             </option>
 
             {stores.map((store) => (
               <option key={store.id} value={store.id}>
-                {store.code ? `${store.code} · ` : ""}
+                {store.code ? `${store.code} - ` : ""}
                 {store.name}
-                {store.branchName ? ` · ${store.branchName}` : ""}
+                {store.branchName ? ` - ${store.branchName}` : ""}
               </option>
             ))}
           </select>
@@ -788,10 +974,10 @@ export default function UserForm({
         </div>
 
         {stockLocationsLoading && (
-          <div className="lux-muted">Loading stock locations…</div>
+          <div className="lux-muted">Loading stock locations...</div>
         )}
 
-        <div className="lux-roleGrid">
+        <div className="lux-roleGrid userCreate__optionGrid">
           {stockLocations.map((location) => (
             <label key={location.id} className="lux-rolePill">
               <input
@@ -802,9 +988,9 @@ export default function UserForm({
                 disabled={busy}
               />
               <span>
-                {location.code ? `${location.code} · ` : ""}
+                {location.code ? `${location.code} - ` : ""}
                 {location.name}
-                {location.branchName ? ` · ${location.branchName}` : ""}
+                {location.branchName ? ` - ${location.branchName}` : ""}
               </span>
             </label>
           ))}
@@ -833,7 +1019,7 @@ export default function UserForm({
           onClick={submit}
           disabled={busy || rolesLoading}
         >
-          {busy ? "Saving…" : isCreate ? "Create User" : "Save Changes"}
+          {busy ? "Saving..." : isCreate ? "Create User" : "Save Changes"}
         </button>
       </div>
     </div>

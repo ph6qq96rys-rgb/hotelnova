@@ -281,7 +281,7 @@ export default function SivDraftEditorPage({
             fontSize: 13,
           }}
         >
-          Loading SIV draft…
+          Loading SIV draft...
         </div>
       </div>
     );

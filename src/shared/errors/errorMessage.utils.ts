@@ -5,10 +5,16 @@ export function toUserFriendlyError(
   fallback = "Something went wrong. Please try again.",
 ): string {
   const raw = extractRawError(error);
+  const status = getHttpStatus(error);
 
-  if (!raw) return fallback;
+  if (!raw) return statusMessage(status, fallback);
 
-  return sanitizeErrorMessage(raw, fallback);
+  return sanitizeErrorMessage(raw, fallback, status);
+}
+
+function getHttpStatus(error: any): number | null {
+  const status = error?.response?.status ?? error?.status;
+  return typeof status === "number" ? status : null;
 }
 
 function extractRawError(error: any): string | null {
@@ -37,12 +43,16 @@ function extractRawError(error: any): string | null {
   return null;
 }
 
-function sanitizeErrorMessage(message: string, fallback: string): string {
+function sanitizeErrorMessage(message: string, fallback: string, status: number | null): string {
   const value = message.trim();
 
-  if (!value) return fallback;
+  if (!value) return statusMessage(status, fallback);
 
   const lower = value.toLowerCase();
+
+  if (looksLikeHtmlError(value)) {
+    return statusMessage(status, fallback);
+  }
 
   if (lower.includes("duplicate entry") && lower.includes("aspnetusers.primary")) {
     return "This employee already has a login account.";
@@ -76,27 +86,53 @@ function sanitizeErrorMessage(message: string, fallback: string): string {
     return "You do not have permission to perform this action.";
   }
 
-  if (lower.includes("unauthorized") || lower.includes("401")) {
+  if (status === 401 || lower.includes("unauthorized") || lower.includes("401")) {
     return "Your session has expired. Please sign in again.";
   }
 
-  if (lower.includes("forbidden") || lower.includes("403")) {
-    return "You do not have access to this action.";
+  if (status === 403 || lower.includes("forbidden") || lower.includes("403")) {
+    return "You do not have permission to view or change this area. Ask your Company Administrator to update your role or branch assignment.";
   }
 
-  if (lower.includes("not found") || lower.includes("404")) {
-    return "The requested record was not found.";
+  if (status === 404 || lower.includes("404")) {
+    return "The requested record was not found. Refresh the page and try again.";
   }
 
   if (lower.includes("timeout")) {
     return "The request took too long. Please try again.";
   }
 
+  if (lower.includes("network error") || lower.includes("failed to fetch")) {
+    return "Cannot reach the server. Check your connection and try again.";
+  }
+
   if (isTechnicalError(value)) {
-    return fallback;
+    return statusMessage(status, fallback);
   }
 
   return cleanupMessage(value);
+}
+
+function statusMessage(status: number | null, fallback: string): string {
+  switch (status) {
+    case 400:
+      return "Some information is missing or invalid. Please review the form and try again.";
+    case 401:
+      return "Your session has expired. Please sign in again.";
+    case 403:
+      return "You do not have permission to view or change this area. Ask your Company Administrator to update your role or branch assignment.";
+    case 404:
+      return "The requested record was not found. Refresh the page and try again.";
+    case 409:
+      return "This action conflicts with existing data. Refresh the page and try again.";
+    case 422:
+      return "Some information is missing or invalid. Please review the form and try again.";
+    default:
+      if (status && status >= 500) {
+        return "The server could not complete the request. Please try again or contact support if it continues.";
+      }
+      return fallback;
+  }
 }
 
 function isTechnicalError(value: string): boolean {
@@ -108,6 +144,7 @@ function isTechnicalError(value: string): boolean {
     lower.includes("microsoft.entityframeworkcore") ||
     lower.includes("mysqlconnector") ||
     lower.includes("dbupdateexception") ||
+    lower.includes("request failed with status code") ||
     lower.includes("system.invalidoperationexception") ||
     lower.includes("system.exception") ||
     lower.includes(" at ") ||
@@ -116,10 +153,22 @@ function isTechnicalError(value: string): boolean {
   );
 }
 
+function looksLikeHtmlError(value: string): boolean {
+  const lower = value.toLowerCase();
+
+  return (
+    lower.startsWith("<!doctype html") ||
+    lower.startsWith("<html") ||
+    lower.includes("<body") ||
+    lower.includes("<title>") ||
+    lower.includes("</html>")
+  );
+}
+
 function cleanupMessage(value: string): string {
   return value
     .replace(/\s+/g, " ")
-    .replace(/--->.*$/g, "")
+    .replace(/--to.*$/g, "")
     .trim()
     .replace(/\.$/, "") + ".";
 }

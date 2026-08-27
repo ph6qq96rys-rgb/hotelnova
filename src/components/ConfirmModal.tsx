@@ -43,7 +43,7 @@ export default function ConfirmModal({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? "Working…" : confirmText}
+            {busy ? "Working..." : confirmText}
           </button>
         </div>
       </div>

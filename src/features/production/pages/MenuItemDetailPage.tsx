@@ -66,7 +66,7 @@ export default function MenuItemDetailPage() {
 
         <div className="p-page-header">
           <div>
-            <p className="p-kicker">ERP Menu Master · Branch Scope</p>
+            <p className="p-kicker">ERP Menu Master - Branch Scope</p>
             <h1 className="p-title">Invalid Menu Item Route</h1>
             <p className="p-subtitle">
               This page edits existing menu items only. Use the create workflow for new menu items.
@@ -79,7 +79,7 @@ export default function MenuItemDetailPage() {
               onClick={() => nav("/production/menu/items")}
               type="button"
             >
-              ← Menu Items
+              - Menu Items
             </button>
 
             <button
@@ -107,7 +107,7 @@ export default function MenuItemDetailPage() {
     return (
       <div className="p-page">
         <div className="p-guard">
-          <div className="p-guard__icon">⚙</div>
+          <div className="p-guard__icon"></div>
           Company, branch, or menu item context is missing.
         </div>
       </div>
@@ -120,7 +120,7 @@ export default function MenuItemDetailPage() {
 
       <div className="p-page-header">
         <div>
-          <p className="p-kicker">ERP Menu Master · Branch Scope</p>
+          <p className="p-kicker">ERP Menu Master - Branch Scope</p>
           <h1 className="p-title">{vm.item?.name || "Menu Item"}</h1>
           <p className="p-subtitle">
             Govern branch sales behavior, selling price, POS availability, recipe linkage,
@@ -135,7 +135,7 @@ export default function MenuItemDetailPage() {
             disabled={vm.saving}
             type="button"
           >
-            ← Back
+            Back
           </button>
 
           <button
@@ -162,7 +162,7 @@ export default function MenuItemDetailPage() {
         <div className="p-alert p-alert--error">
           <span className="p-alert__body">{vm.error}</span>
           <button className="p-dismiss" onClick={() => vm.setError(null)} type="button">
-            ✕
+            
           </button>
         </div>
       )}
@@ -171,7 +171,7 @@ export default function MenuItemDetailPage() {
         <div className="p-alert p-alert--success">
           <span className="p-alert__body">{vm.notice}</span>
           <button className="p-dismiss" onClick={() => vm.setNotice(null)} type="button">
-            ✕
+            
           </button>
         </div>
       )}

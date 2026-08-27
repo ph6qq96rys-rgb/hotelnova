@@ -35,13 +35,6 @@ function normalizeTenantSlug(value: unknown): string | null {
   return clean(value)?.toLowerCase() ?? null;
 }
 
-function getStoredTenantSlug(): string | null {
-  return normalizeTenantSlug(
-    localStorage.getItem("tenantSlug") ??
-      sessionStorage.getItem("tenantSlug")
-  );
-}
-
 function rememberTenantSlug(tenantSlug: string | null): void {
   const cleanSlug = normalizeTenantSlug(tenantSlug);
 
@@ -64,12 +57,6 @@ function clearTenantScope(): void {
   sessionStorage.removeItem("tenantId");
   sessionStorage.removeItem("companyId");
   sessionStorage.removeItem("branchId");
-}
-
-function tenantHeaders(
-  tenantSlug: string | null
-): Record<string, string> | undefined {
-  return tenantSlug ? { "X-Tenant-Id": tenantSlug } : undefined;
 }
 
 function extractValidationErrors(errors: unknown): string | null {
@@ -138,28 +125,39 @@ function attachTenantSlug(
 export const authApi = {
   async login(request: LoginRequest): Promise<LoginResponse> {
     try {
-      const tenantSlug = normalizeTenantSlug(request.tenantSlug);
       const email = normalizeEmail(request.email);
 
-      const response = await http.post<LoginResponse>(
-        "/auth/login",
-        {
-          tenantSlug,
-          email,
-          password: request.password,
-        },
-        {
-          headers: tenantHeaders(tenantSlug),
-        }
-      );
+      const response = await http.post<LoginResponse>("/auth/login", {
+        email,
+        password: request.password,
+      });
 
-      if (tenantSlug) {
-        rememberTenantSlug(tenantSlug);
+      const loginResponse = attachTenantSlug(response.data, null);
+
+      if (loginResponse.tenantSlug) {
+        rememberTenantSlug(loginResponse.tenantSlug);
       } else {
         clearTenantScope();
       }
 
-      return attachTenantSlug(response.data, tenantSlug);
+      return loginResponse;
+    } catch (error) {
+      normalizeError(error);
+    }
+  },
+
+  async platformLogin(request: LoginRequest): Promise<LoginResponse> {
+    try {
+      const email = normalizeEmail(request.email);
+
+      const response = await http.post<LoginResponse>("/auth/platform-login", {
+        email,
+        password: request.password,
+      });
+
+      clearTenantScope();
+
+      return attachTenantSlug(response.data, null);
     } catch (error) {
       normalizeError(error);
     }
@@ -170,6 +168,30 @@ export const authApi = {
       "Self-registration is disabled. Please contact your company administrator.",
       403
     );
+  },
+
+  async refresh(request: {
+    refreshToken: string;
+    companyId?: string | null;
+    branchId?: string | null;
+  }): Promise<LoginResponse> {
+    try {
+      const response = await http.post<LoginResponse>("/auth/refresh", {
+        refreshToken: request.refreshToken,
+        companyId: request.companyId ?? null,
+        branchId: request.branchId ?? null,
+      });
+
+      const loginResponse = attachTenantSlug(response.data, null);
+
+      if (loginResponse.tenantSlug) {
+        rememberTenantSlug(loginResponse.tenantSlug);
+      }
+
+      return loginResponse;
+    } catch (error) {
+      normalizeError(error);
+    }
   },
 
   async me(): Promise<AuthUser> {
@@ -193,26 +215,14 @@ export const authApi = {
     request: ForgotPasswordRequest | string
   ): Promise<void> {
     try {
-      const tenantSlug =
-        typeof request === "string"
-          ? getStoredTenantSlug()
-          : normalizeTenantSlug(request.tenantSlug) ?? getStoredTenantSlug();
-
       const email =
         typeof request === "string"
           ? normalizeEmail(request)
           : normalizeEmail(request.email);
 
-      await http.post(
-        "/auth/forgot-password",
-        {
-          tenantSlug,
-          email,
-        },
-        {
-          headers: tenantHeaders(tenantSlug),
-        }
-      );
+      await http.post("/auth/forgot-password", {
+        email,
+      });
     } catch (error) {
       normalizeError(error);
     }
@@ -220,21 +230,11 @@ export const authApi = {
 
   async resetPassword(request: ResetPasswordRequest): Promise<void> {
     try {
-      const tenantSlug =
-        normalizeTenantSlug(request.tenantSlug) ?? getStoredTenantSlug();
-
-      await http.post(
-        "/auth/reset-password",
-        {
-          tenantSlug,
-          email: normalizeEmail(request.email),
-          token: request.token,
-          newPassword: request.newPassword,
-        },
-        {
-          headers: tenantHeaders(tenantSlug),
-        }
-      );
+      await http.post("/auth/reset-password", {
+        email: normalizeEmail(request.email),
+        token: request.token,
+        newPassword: request.newPassword,
+      });
     } catch (error) {
       normalizeError(error);
     }

@@ -1,6 +1,6 @@
 /* src/features/sales/styles/pos.css */
 
-/* ── Layout ──────────────────────────────────────────────────────────────── */
+/*  Layout  */
 .pos-root {
   display: grid;
   grid-template-columns: 1fr 360px;
@@ -9,7 +9,7 @@
   background: var(--color-background-tertiary);
 }
 
-/* ── Catalog (left panel) ────────────────────────────────────────────────── */
+/*  Catalog (left panel)  */
 .pos-catalog {
   display: flex;
   flex-direction: column;
@@ -108,7 +108,7 @@
   background: var(--color-background-secondary);
 }
 
-/* ── Cart (right panel) ──────────────────────────────────────────────────── */
+/*  Cart (right panel)  */
 .pos-cart {
   display: flex;
   flex-direction: column;
@@ -220,7 +220,7 @@
   color: var(--color-text-primary);
 }
 
-/* ── Discount / tax row ──────────────────────────────────────────────────── */
+/*  Discount / tax row  */
 .pos-adj-row {
   padding: 10px 16px;
   border-top: 0.5px solid var(--color-border-tertiary);
@@ -237,7 +237,7 @@
   margin-bottom: 3px;
 }
 
-/* ── Totals ───────────────────────────────────────────────────────────────── */
+/*  Totals  */
 .pos-totals {
   padding: 10px 16px;
   border-top: 0.5px solid var(--color-border-tertiary);
@@ -265,7 +265,7 @@
 
 .pos-grand-total span:last-child { font-family: var(--font-mono); }
 
-/* ── Footer actions ──────────────────────────────────────────────────────── */
+/*  Footer actions  */
 .pos-footer {
   padding: 12px 16px;
   display: flex;
@@ -282,7 +282,7 @@
   border-top: 0.5px solid var(--color-border-danger);
 }
 
-/* ── Overlay backdrop (no fixed — use flex wrapper) ──────────────────────── */
+/*  Overlay backdrop (no fixed - use flex wrapper)  */
 .pos-overlay {
   position: absolute;
   inset: 0;
@@ -302,7 +302,7 @@
   z-index: 20;
 }
 
-/* ── Payment modal ───────────────────────────────────────────────────────── */
+/*  Payment modal  */
 .pos-modal {
   background: var(--color-background-primary);
   border-radius: var(--border-radius-lg);
@@ -364,7 +364,7 @@
 
 .pos-modal-footer { display: flex; gap: 8px; }
 
-/* ── Parked drawer ───────────────────────────────────────────────────────── */
+/*  Parked drawer  */
 .pos-drawer {
   width: 360px;
   background: var(--color-background-primary);
@@ -423,7 +423,7 @@
   margin-top: 2px;
 }
 
-/* ── No session guard ────────────────────────────────────────────────────── */
+/*  No session guard  */
 .pos-no-session {
   display: flex;
   align-items: center;
@@ -454,7 +454,7 @@
   margin-bottom: 20px;
 }
 
-/* ── Responsive ──────────────────────────────────────────────────────────── */
+/*  Responsive  */
 @media (max-width: 768px) {
   .pos-root { grid-template-columns: 1fr; }
   .pos-cart { display: none; }

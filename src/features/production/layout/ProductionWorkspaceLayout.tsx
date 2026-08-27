@@ -4,11 +4,11 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ChefHat, ClipboardList, Factory, LayoutDashboard, Utensils } from "lucide-react";
 import "./production.css";
 
-// ── Types ────────────────────────────────────────────────────────────────────
+//  Types 
 
 type ActiveModule = "dashboard" | "menu" | "recipe" | "batch";
 
-// ── Nav config ────────────────────────────────────────────────────────────────
+//  Nav config 
 
 const NAV_ITEMS = [
   { label: "Dashboard",         to: "/production",              icon: LayoutDashboard, end: true },
@@ -25,7 +25,7 @@ const MODULE_TITLES: Record<ActiveModule, string> = {
   batch:     "Production Execution",
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+//  Helpers 
 
 function getActiveModule(pathname: string): ActiveModule {
   if (pathname.includes("/menu"))   return "menu";
@@ -34,7 +34,7 @@ function getActiveModule(pathname: string): ActiveModule {
   return "dashboard";
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+//  Component 
 
 export default function ProductionWorkspaceLayout() {
   const nav      = useNavigate();
@@ -43,13 +43,13 @@ export default function ProductionWorkspaceLayout() {
 
   return (
     <div className="p-shell">
-      {/* ── Sidebar ── */}
+      {/*  Sidebar  */}
       <aside className="p-sidebar">
         <div className="p-brand">
           <div className="p-brand__mark">P</div>
           <div>
             <div className="p-brand__name">Production</div>
-            <div className="p-brand__sub">Menu · Recipe · Batch</div>
+            <div className="p-brand__sub">Menu - Recipe - Batch</div>
           </div>
         </div>
 
@@ -74,15 +74,15 @@ export default function ProductionWorkspaceLayout() {
           <div className="p-flow-tracker__label">Current flow</div>
           <div className="p-flow-steps">
             <span className={module === "menu"   ? "is-active" : ""}>Menu</span>
-            <span className="sep">→</span>
+            <span className="sep">to</span>
             <span className={module === "recipe" ? "is-active" : ""}>Recipe</span>
-            <span className="sep">→</span>
+            <span className="sep">to</span>
             <span className={module === "batch"  ? "is-active" : ""}>Batch</span>
           </div>
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/*  Main  */}
       <main className="p-main">
         <header className="p-topbar">
           <div>

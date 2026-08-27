@@ -67,7 +67,7 @@ export function SelectDropdown<T extends string | number>({
   label,
   value,
   options,
-  placeholder = "Select…",
+  placeholder = "Select...",
   loading,
   disabled,
   clearable = true,
@@ -80,7 +80,7 @@ export function SelectDropdown<T extends string | number>({
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // ── Open/close ────────────────────────────────────────────────────────────
+  //  Open/close 
 
   const closePanel = useCallback(() => {
     setOpen(false);
@@ -89,7 +89,7 @@ export function SelectDropdown<T extends string | number>({
 
   const openPanel = useCallback(() => {
     if (disabled || !triggerRef.current) return;
-    // Synchronous position calculation — panel renders with correct coords
+    // Synchronous position calculation - panel renders with correct coords
     // on its very first paint, no useEffect delay.
     setPos(calcPosition(triggerRef.current));
     setOpen(true);
@@ -100,7 +100,7 @@ export function SelectDropdown<T extends string | number>({
     else openPanel();
   }, [open, openPanel, closePanel]);
 
-  // ── Close on outside click ────────────────────────────────────────────────
+  //  Close on outside click 
 
   useEffect(() => {
     if (!open) return;
@@ -117,8 +117,8 @@ export function SelectDropdown<T extends string | number>({
     return () => document.removeEventListener("mousedown", handler);
   }, [open, closePanel]);
 
-  // ── Close on scroll (panel position would drift) ──────────────────────────
-  // Only close when the scroll happens outside the panel itself — scrolling
+  //  Close on scroll (panel position would drift) 
+  // Only close when the scroll happens outside the panel itself - scrolling
   // through the options list should not dismiss the dropdown.
 
   useEffect(() => {
@@ -131,7 +131,7 @@ export function SelectDropdown<T extends string | number>({
     return () => window.removeEventListener("scroll", handler, { capture: true });
   }, [open, closePanel]);
 
-  // ── Derived state ─────────────────────────────────────────────────────────
+  //  Derived state 
 
   const selected = useMemo(
     () => options.find((o) => o.value === value) ?? null,
@@ -144,7 +144,7 @@ export function SelectDropdown<T extends string | number>({
     return options.filter((o) => o.label.toLowerCase().includes(term));
   }, [q, options]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  //  Render 
 
   return (
     <div ref={triggerRef} style={{ position: "relative" }}>
@@ -179,9 +179,9 @@ export function SelectDropdown<T extends string | number>({
             fontSize: 14,
           }}
         >
-          {loading ? "Loading…" : selected?.label ?? placeholder}
+          {loading ? "Loading..." : selected?.label ?? placeholder}
         </span>
-        <span style={{ opacity: 0.4, flexShrink: 0 }}>▾</span>
+        <span style={{ opacity: 0.4, flexShrink: 0 }}></span>
       </button>
 
       {open && pos && createPortal(
@@ -206,7 +206,7 @@ export function SelectDropdown<T extends string | number>({
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search…"
+              placeholder="Search..."
               style={{
                 width: "100%",
                 padding: "8px 10px",
@@ -232,7 +232,7 @@ export function SelectDropdown<T extends string | number>({
 
             {filtered.length === 0 ? (
               <div style={{ padding: "12px 14px", opacity: 0.5, fontSize: 13 }}>
-                {loading ? "Loading…" : "No results"}
+                {loading ? "Loading..." : "No results"}
               </div>
             ) : (
               filtered.map((o) => (

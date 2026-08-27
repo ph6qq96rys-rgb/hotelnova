@@ -15,7 +15,7 @@ function Field({ label, value }: { label: string; value?: string | number | null
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '—'}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '-'}</div>
     </div>
   );
 }
@@ -91,7 +91,7 @@ export default function PaySlipDetailPage() {
     return (
       <div className="page">
         {error && <div className="alert alert-danger">{error}</div>}
-        <button className="btn" onClick={() => nav(-1)}>← Back</button>
+        <button className="btn" onClick={() => nav(-1)}>Back</button>
       </div>
     );
   }
@@ -105,17 +105,17 @@ export default function PaySlipDetailPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Payroll</div>
+          <div className="page-kicker">Human Resources - Payroll</div>
           <div className="page-title">Pay Slip</div>
           <div className="page-sub">
-            {slip.employeeName} · {slip.employeeNo} · {slip.periodName}
+            {slip.employeeName} - {slip.employeeNo} - {slip.periodName}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn" onClick={() => window.print()}>
             <i className="ti ti-printer" /> Print
           </button>
-          <button className="btn" onClick={() => nav(-1)}>← Back</button>
+          <button className="btn" onClick={() => nav(-1)}>Back</button>
         </div>
       </div>
 
@@ -130,10 +130,14 @@ export default function PaySlipDetailPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 20 }}>
           <Field label="Employee"    value={slip.employeeName} />
           <Field label="Employee No" value={slip.employeeNo} />
+          <Field label="TIN number"  value={slip.tinNumber} />
           <Field label="Pay Period"  value={slip.periodName} />
           <Field label="Status"      value={slip.status} />
           <Field label="Days Worked" value={`${slip.daysWorked} / ${slip.workingDays}`} />
           <Field label="Basic Salary" value={fmtMoney(slip.basicSalary)} />
+          <Field label="Bank" value={slip.bankName} />
+          <Field label="Bank Account" value={slip.bankAccountNo} />
+          <Field label="Bank Branch" value={slip.bankBranch} />
         </div>
       </div>
 
@@ -193,7 +197,7 @@ export default function PaySlipDetailPage() {
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Net Pay</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              Gross {fmtMoney(slip.grossPay)} − Deductions {fmtMoney(slip.totalDeductions)}
+              Gross {fmtMoney(slip.grossPay)} - Deductions {fmtMoney(slip.totalDeductions)}
             </div>
           </div>
           <div style={{

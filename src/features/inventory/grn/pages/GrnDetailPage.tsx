@@ -103,10 +103,10 @@ function getApiError(error: unknown, fallback: string): string {
 }
 
 function formatDate(value?: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
 
   return new Intl.DateTimeFormat(undefined, {
     day: "2-digit",
@@ -116,10 +116,10 @@ function formatDate(value?: string | null): string {
 }
 
 function formatDateTime(value?: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
 
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
@@ -137,7 +137,7 @@ function formatMoney(value?: number | null): string {
 
 function getWarehouseLabel(grn: GrnDetailDto & { branchName?: string | null }): string {
   const warehouse = getGrnLocationName(grn) || "Warehouse not recorded";
-  return grn.branchName ? `${grn.branchName} • ${warehouse}` : warehouse;
+  return grn.branchName ? `${grn.branchName} - ${warehouse}` : warehouse;
 }
 
 function getLineQty(line: GrnLineView): number {
@@ -266,7 +266,7 @@ export default function GrnDetailPage() {
   if (loading) {
     return (
       <main className="page erp-grn-page">
-        <section className="erp-inline-state">Loading goods receipt…</section>
+        <section className="erp-inline-state">Loading goods receipt...</section>
       </main>
     );
   }
@@ -295,12 +295,12 @@ export default function GrnDetailPage() {
             className="erp-back-link"
             onClick={() => navigate(buildGrnPath(companyId))}
           >
-            ← Goods Receipts
+            - Goods Receipts
           </button>
           <div className="erp-kicker">Goods Receipt</div>
           <h1>{getGrnNumber(doc)}</h1>
           <p>
-            {doc.supplierName || "Supplier not recorded"} • {getWarehouseLabel(doc)}
+            {doc.supplierName || "Supplier not recorded"} - {getWarehouseLabel(doc)}
           </p>
         </div>
 
@@ -324,7 +324,7 @@ export default function GrnDetailPage() {
               disabled={posting}
               onClick={() => void postReceipt()}
             >
-              {posting ? "Posting…" : "Post Receipt"}
+              {posting ? "Posting..." : "Post Receipt"}
             </button>
           ) : null}
 
@@ -380,9 +380,9 @@ export default function GrnDetailPage() {
           <div className="card">
             <h3>Document Summary</h3>
             <Info label="Status" value={formatGrnStatusLabel(status)} />
-            <Info label="Supplier" value={doc.supplierName || "—"} />
-            <Info label="Branch" value={doc.branchName || "—"} />
-            <Info label="Warehouse" value={getGrnLocationName(doc) || "—"} />
+            <Info label="Supplier" value={doc.supplierName || "-"} />
+            <Info label="Branch" value={doc.branchName || "-"} />
+            <Info label="Warehouse" value={getGrnLocationName(doc) || "-"} />
             <Info label="Received" value={formatDate(getGrnReceiptDate(doc))} />
             <Info label="Value" value={formatMoney(totalValue)} />
           </div>
@@ -478,10 +478,10 @@ function ItemsTable({ lines }: { lines: GrnLineView[] }) {
                     <small>{line.itemCode || ""}</small>
                   </td>
                   <td className="num">{formatQty(qty)}</td>
-                  <td>{line.uomCode || line.uomName || "—"}</td>
+                  <td>{line.uomCode || line.uomName || "-"}</td>
                   <td className="num">{formatMoney(line.unitCost)}</td>
                   <td className="num">{formatMoney(lineValue)}</td>
-                  <td>{line.batchNo || "—"}</td>
+                  <td>{line.batchNo || "-"}</td>
                   <td>{formatDate(line.expiryDate)}</td>
                 </tr>
               );
@@ -551,7 +551,7 @@ function AuditTrail({ doc }: { doc: GrnDetailView }) {
             <strong>{event.label}</strong>
             <p>
               {formatDateTime(event.at)}
-              {event.by ? ` • ${event.by}` : ""}
+              {event.by ? ` - ${event.by}` : ""}
             </p>
             {event.note ? <p>{event.note}</p> : null}
           </div>

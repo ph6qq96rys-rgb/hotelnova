@@ -12,10 +12,10 @@ import {
 } from "../utils/adjustmentWorkflow";
 
 function formatDate(value?: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
 
   return date.toLocaleDateString(undefined, {
     day: "2-digit",
@@ -163,7 +163,7 @@ export default function AdjustmentApprovalPage() {
   if (loading) {
     return (
       <div className="page">
-        <div className="card">Loading approval page…</div>
+        <div className="card">Loading approval page...</div>
       </div>
     );
   }
@@ -181,7 +181,7 @@ export default function AdjustmentApprovalPage() {
             className="btn"
             onClick={() => navigate(adjustmentBasePath)}
           >
-            ← Back to adjustments
+            Back to adjustments
           </button>
         )}
       </div>
@@ -192,7 +192,7 @@ export default function AdjustmentApprovalPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Inventory · Adjustment Approval</div>
+          <div className="page-kicker">Inventory - Adjustment Approval</div>
 
           <div
             className="page-title"
@@ -208,7 +208,7 @@ export default function AdjustmentApprovalPage() {
         </div>
 
         <button type="button" className="btn" onClick={goBack}>
-          ← Back
+          Back
         </button>
       </div>
 
@@ -235,7 +235,7 @@ export default function AdjustmentApprovalPage() {
       >
         <div className="kpi">
           <div className="kpi-label">Adjustment No</div>
-          <div className="kpi-val">{item.adjustmentNo || "—"}</div>
+          <div className="kpi-val">{item.adjustmentNo || "-"}</div>
           <div className="kpi-sub">{formatDate(item.adjustmentDate)}</div>
         </div>
 
@@ -310,7 +310,7 @@ export default function AdjustmentApprovalPage() {
                   <tr key={line.id ?? `${line.itemId}-${index}`}>
                     <td>
                       <div style={{ fontWeight: 500, fontSize: 13 }}>
-                        {line.itemName || line.itemId}
+                        {line.itemName || "Unnamed item"}
                       </div>
 
                       {line.batchNo && (
@@ -327,7 +327,7 @@ export default function AdjustmentApprovalPage() {
                       )}
                     </td>
 
-                    <td>{line.uomName || line.uomId}</td>
+                    <td>{line.uomName || "Unspecified UOM"}</td>
 
                     <td style={{ textAlign: "right", fontFamily: "var(--mono)" }}>
                       {formatQty(line.systemQty)}
@@ -358,7 +358,7 @@ export default function AdjustmentApprovalPage() {
                       {formatMoney(amount)}
                     </td>
 
-                    <td>{line.notes || "—"}</td>
+                    <td>{line.notes || "-"}</td>
                   </tr>
                 );
               })
@@ -453,7 +453,7 @@ export default function AdjustmentApprovalPage() {
             }}
             style={{ background: "transparent" }}
           >
-            {working && showReject ? "Rejecting…" : showReject ? "Confirm reject" : "Reject"}
+            {working && showReject ? "Rejecting..." : showReject ? "Confirm reject" : "Reject"}
           </button>
 
           <button
@@ -462,7 +462,7 @@ export default function AdjustmentApprovalPage() {
             disabled={!canApprove || working}
             onClick={() => void approve()}
           >
-            {working ? "Approving…" : "Approve adjustment"}
+            {working ? "Approving..." : "Approve adjustment"}
           </button>
         </div>
       </div>

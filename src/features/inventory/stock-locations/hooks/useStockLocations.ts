@@ -1,4 +1,4 @@
-﻿// hooks/useStockLocations.ts
+// hooks/useStockLocations.ts
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { stockLocationsApi } from "../api/stockLocationsApi";
 import type { StockLocationDto } from "../types";

@@ -1,4 +1,4 @@
-﻿// src/features/inventory/stock-transfers/api/stockTransfersApi.ts
+// src/features/inventory/stock-transfers/api/stockTransfersApi.ts
 
 import { http } from "../../../../api/http";
 import type {

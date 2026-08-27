@@ -23,12 +23,85 @@ export interface SivRecommendationCardProps {
 function normalizeRecommendation(
   value: SivApprovalCopilotResponse,
 ): SivRecommendationResult | null {
+  const normalizeResult = (
+    result: SivRecommendationResult,
+  ): SivRecommendationResult => ({
+    ...result,
+    riskLevel: result.riskLevel ?? (result as any).risk,
+    warnings: result.warnings ?? [],
+    lines: (result.lines ?? []).map((line) => {
+      const raw = line as any;
+      const toBaseFactor = positiveNumber(raw.toBaseFactor, 1);
+
+      return {
+        ...line,
+        riskLevel: line.riskLevel ?? raw.risk,
+        reasons: line.reasons ?? [],
+        warnings: line.warnings ?? [],
+        onHandQty: coalesceNumber(
+          line.onHandQty,
+          convertBaseQty(raw.onHandBaseQty, toBaseFactor),
+        ),
+        reservedQty: coalesceNumber(
+          line.reservedQty,
+          convertBaseQty(raw.reservedBaseQty, toBaseFactor),
+        ),
+        availableQty: coalesceNumber(
+          line.availableQty,
+          convertBaseQty(raw.availableBaseQty, toBaseFactor),
+        ),
+        projectedQtyAfterApproval: coalesceNumber(
+          line.projectedQtyAfterApproval,
+          convertBaseQty(raw.projectedAvailableBaseQty, toBaseFactor),
+        ),
+        weeklyAverageUsage: coalesceNumber(
+          line.weeklyAverageUsage,
+          convertBaseQty(raw.averageWeeklyUsageBaseQty, toBaseFactor),
+        ),
+        weeksOfSupplyAfterApproval: coalesceNumber(
+          line.weeksOfSupplyAfterApproval,
+          raw.weeksOfSupplyAfter,
+        ),
+      };
+    }),
+  });
+
   if ("recommendation" in value && value.recommendation) {
-    return value.recommendation;
+    return normalizeResult(value.recommendation);
   }
 
   const direct = value as unknown as SivRecommendationResult;
-  return Array.isArray(direct.lines) ? direct : null;
+  return Array.isArray(direct.lines) ? normalizeResult(direct) : null;
+}
+
+function coalesceNumber(
+  value: number | null | undefined,
+  fallback: unknown,
+): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return toFiniteNumber(fallback);
+}
+
+function positiveNumber(value: unknown, fallback: number): number {
+  const parsed = toFiniteNumber(value);
+  return parsed && parsed > 0 ? parsed : fallback;
+}
+
+function convertBaseQty(
+  value: unknown,
+  toBaseFactor: number,
+): number | undefined {
+  const parsed = toFiniteNumber(value);
+  if (parsed == null) return undefined;
+  return parsed / toBaseFactor;
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export function SivRecommendationCard({
@@ -147,7 +220,7 @@ export function SivRecommendationCard({
           disabled={loading}
           onClick={() => void load()}
         >
-          {loading ? "Refreshing…" : "↻ Refresh"}
+          {loading ? "Refreshing..." : " Refresh"}
         </button>
       </div>
 
@@ -279,7 +352,7 @@ export function SivRecommendationCard({
                 <div>
                   <h3>{selectedLine.itemName}</h3>
                   <span>
-                    Line {selectedLine.lineNo} · {selectedLine.uomCode}
+                    Line {selectedLine.lineNo} - {selectedLine.uomCode}
                   </span>
                 </div>
 

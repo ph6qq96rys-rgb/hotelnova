@@ -24,7 +24,7 @@ export type AppRoute = RouteObject & {
   };
 };
 
-// Plain function — not a hook. Renamed from useStockTransferRoutes to avoid
+// Plain function - not a hook. Renamed from useStockTransferRoutes to avoid
 // the 'use' prefix convention that implies React hook rules apply.
 //
 // Static routes (/new, /approvals) are listed before the dynamic /:id segment

@@ -81,7 +81,7 @@ export default function TrainingPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</td></tr>
+                <tr><td colSpan={8} style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
               ) : programs.map(p => (
                 <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => nav(`/hr/training/programs/${p.id}`)}>
                   <td style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-muted)' }}>{p.code}</td>
@@ -94,7 +94,7 @@ export default function TrainingPage() {
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 12 }}>{p.durationHours}h</td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 12 }}>{p.upcomingSessions}</td>
                   <td>{p.isMandatory ? <span className="badge badge-danger">Required</span> : <span className="badge badge-neutral">Optional</span>}</td>
-                  <td style={{ textAlign: 'right' }}><button className="btn btn-sm">Open →</button></td>
+                  <td style={{ textAlign: 'right' }}><button className="btn btn-sm">Open to</button></td>
                 </tr>
               ))}
             </tbody>

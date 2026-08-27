@@ -1,3 +1,4 @@
+import { formatAppDate, formatAppDateTime } from "../../../../shared/datetime/dateFormat";
 import type { GrnDetailDto, GrnLineDto, GrnListDto } from "../types/grn.types";
 
 function cleanText(value: unknown): string {
@@ -10,17 +11,11 @@ function safeNumber(value: unknown): number {
 }
 
 export function formatDate(value?: string | null): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric" }).format(date);
+  return formatAppDate(value);
 }
 
 export function formatDateTime(value?: string | null): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return formatAppDateTime(value);
 }
 
 export function formatMoney(value?: number | null, currency = "USD"): string {
@@ -49,7 +44,7 @@ export function getGrnLocationName(
 
 export function getGrnBranchWarehouse(grn: Pick<GrnListDto, "branchName" | "receivingLocationName" | "locationName" | "warehouseName">): string {
   const warehouse = getGrnLocationName(grn) || "Warehouse not set";
-  return grn.branchName ? `${grn.branchName} • ${warehouse}` : warehouse;
+  return grn.branchName ? `${grn.branchName} - ${warehouse}` : warehouse;
 }
 
 export function getGrnLineAmount(line: Pick<GrnLineDto, "quantity" | "unitCost" | "lineAmount">): number {

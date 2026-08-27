@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { inventoryItemsApi } from "../items/api/inventoryItemsApi";
 import type { CategoryDto } from "../items/types";
 import { useAppScope } from "../../../app/useAppScope";
@@ -115,7 +115,7 @@ export default function CategoriesPage() {
                   <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{x.name}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>{x.description ?? ""}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                    {"isActive" in x ? ((x as any).isActive ? "Active" : "Inactive") : "—"}
+                    {"isActive" in x ? ((x as any).isActive ? "Active" : "Inactive") : "-"}
                   </td>
                 </tr>
               ))}
@@ -123,7 +123,7 @@ export default function CategoriesPage() {
           </table>
         </div>
 
-        {loading && <div style={{ marginTop: 10, opacity: 0.7 }}>Loading…</div>}
+        {loading && <div style={{ marginTop: 10, opacity: 0.7 }}>Loading...</div>}
       </div>
     </div>
   );

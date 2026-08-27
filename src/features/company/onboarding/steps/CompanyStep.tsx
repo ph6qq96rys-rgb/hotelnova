@@ -145,7 +145,7 @@ function ReadonlyRow(props: { label: string; value?: React.ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <span style={{ color: "#94a3b8", fontSize: 12 }}>{props.label}</span>
-      <strong style={{ color: "#334155", fontSize: 13 }}>{props.value || "—"}</strong>
+      <strong style={{ color: "#334155", fontSize: 13 }}>{props.value || "-"}</strong>
     </div>
   );
 }
@@ -353,7 +353,7 @@ export function CompanyStep(props: Props) {
                   <span className={badgeFor(x.status)}>{x.status ?? (x.isActive === false ? "Inactive" : "Active")}</span>
                   {active && <span className="ob-badge ob-badge--success">Selected</span>}
                 </div>
-                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>{x.city ?? "—"} · {x.defaultCurrency ?? (props.defaultSettings as any)?.defaultCurrency ?? "ETB"}</div>
+                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>{x.city ?? "-"} - {x.defaultCurrency ?? (props.defaultSettings as any)?.defaultCurrency ?? "ETB"}</div>
               </div>
 
               {props.access.canSwitchCompany ? (
@@ -373,7 +373,7 @@ export function CompanyStep(props: Props) {
                 <CompanyFields value={editForm} errors={editErrors} onChange={setEditForm} disabled={!props.access.canEditCompanyProfile} />
                 <SettingsEditor value={editSettings} onChange={setEditSettings} disabled={!props.access.canEditCompanySettings} />
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <Btn variant="primary" onClick={() => void saveEdit(companyId)} disabled={editSaving || props.saving}>{editSaving ? "Saving…" : "Save company"}</Btn>
+                  <Btn variant="primary" onClick={() => void saveEdit(companyId)} disabled={editSaving || props.saving}>{editSaving ? "Saving..." : "Save company"}</Btn>
                 </div>
               </div>
             )}
@@ -395,7 +395,7 @@ export function CompanyStep(props: Props) {
               <CompanyFields value={createForm} errors={createErrors} onChange={setCreateForm} />
               <SettingsEditor value={createSettings} onChange={setCreateSettings} />
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <Btn variant="primary" onClick={() => void createCompany()} disabled={createSaving || props.saving}>{createSaving ? "Registering…" : "Register company"}</Btn>
+                <Btn variant="primary" onClick={() => void createCompany()} disabled={createSaving || props.saving}>{createSaving ? "Registering..." : "Register company"}</Btn>
               </div>
             </div>
           )}

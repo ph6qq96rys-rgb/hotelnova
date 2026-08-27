@@ -1,5 +1,6 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Building2,
@@ -15,6 +16,13 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "../auth/useAuth";
+import { branchesApi } from "../features/company/api/branchesApi";
+import {
+  canAccessRoute as canAccessErpRoute,
+  hasCompanyAdminRole,
+  hasSystemAdminRole,
+  normalizePermission,
+} from "../auth/erpAccess";
 import { useAppContext } from "../app/AppContext";
 import { useAppRoutes } from "../routes/routeDefConfig";
 import type { AppRoute } from "../routes/routeConfig";
@@ -44,23 +52,28 @@ type SidebarItem = {
   icon?: ReactNode;
 };
 
-const SIDEBAR_COLLAPSED_KEY = "hotelnova.sidebar.collapsed.v1";
+type BranchOption = {
+  id: string;
+  name: string;
+};
 
-const SYSTEM_ADMIN_ROLES = ["SYSTEMADMIN", "SYSADMIN"];
-const COMPANY_ADMIN_ROLES = ["COMPANYADMIN"];
+const SIDEBAR_COLLAPSED_KEY = "hotelnova.sidebar.collapsed.v1";
 
 const SECTION_ORDER = [
   "System",
   "Dashboard",
   "General",
   "Setup",
+  "Administration",
   "Security",
   "Sales",
   "Inventory",
   "Procurement",
   "Production",
   "Finance",
+  "Human Resources",
   "HR",
+  "Operations",
   "Reports",
   "Telegram Bot",
   "Settings",
@@ -68,22 +81,6 @@ const SECTION_ORDER = [
 
 function readCollapsedPreference(): boolean {
   return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
-}
-
-function normalizeRole(role: string): string {
-  return role.trim().toUpperCase();
-}
-
-function isSystemAdminRole(role: string): boolean {
-  return SYSTEM_ADMIN_ROLES.includes(normalizeRole(role));
-}
-
-function isCompanyAdminRole(role: string): boolean {
-  return COMPANY_ADMIN_ROLES.includes(normalizeRole(role));
-}
-
-function normalizePermission(permission: string): string {
-  return permission.trim().toLowerCase();
 }
 
 function isVisibleRoute(route: SidebarRoute): boolean {
@@ -142,27 +139,6 @@ function resolveSidebarPath(
   if (path.includes(":")) return null;
 
   return normalizePath(path);
-}
-
-function routeHasAnyPermission(
-  route: SidebarRoute,
-  hasPermission: (permission: string) => boolean
-): boolean {
-  const permissions = route.permissions ?? [];
-
-  if (permissions.length === 0) return true;
-
-  return permissions.some((permission) => hasPermission(permission));
-}
-
-function routeHasAnyRole(route: SidebarRoute, roles: string[]): boolean {
-  const requiredRoles = route.roles ?? [];
-
-  if (requiredRoles.length === 0) return true;
-
-  const userRoles = new Set(roles.map(normalizeRole));
-
-  return requiredRoles.some((role) => userRoles.has(normalizeRole(role)));
 }
 
 function buildSidebarItems(
@@ -230,6 +206,22 @@ function getInitials(name: string): string {
   return initials || "U";
 }
 
+function getBranchOptionName(branch: unknown): string {
+  const row = branch as Record<string, unknown>;
+  const value = row?.name ?? row?.branchName ?? row?.tradeName ?? row?.code;
+
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : "Unnamed branch";
+}
+
+function getBranchOptionId(branch: unknown): string | null {
+  const row = branch as Record<string, unknown>;
+  const value = row?.id ?? row?.branchId;
+
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 export default function Sidebar({
   open = false,
   onClose,
@@ -243,6 +235,8 @@ export default function Sidebar({
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readCollapsedPreference);
+  const [branches, setBranches] = useState<BranchOption[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
@@ -266,9 +260,11 @@ export default function Sidebar({
     "No company selected";
 
   const branchName =
-    auth.auth?.branchName ??
     appScope.branchName ??
+    auth.auth?.branchName ??
     "No branch selected";
+
+  const branchId = appScope.branchId ?? auth.auth?.branchId ?? null;
 
   const userName =
     auth.user?.fullName ??
@@ -288,9 +284,9 @@ export default function Sidebar({
   );
 
   const isSystemAdmin =
-    Boolean(auth.isSystemAdmin) || roleNames.some(isSystemAdminRole);
+    Boolean(auth.isSystemAdmin) || hasSystemAdminRole(roleNames);
 
-  const isCompanyAdmin = roleNames.some(isCompanyAdminRole);
+  const isCompanyAdmin = hasCompanyAdminRole(roleNames);
 
   const permissionNames = useMemo(
     () =>
@@ -308,26 +304,60 @@ export default function Sidebar({
     [permissionNames]
   );
 
-  function hasPermission(permission: string): boolean {
-    const normalized = normalizePermission(permission);
-
-    if (!normalized) return false;
-    if (isSystemAdmin) return true;
-    if (isCompanyAdmin) return true;
-
-    if (typeof (auth as any).hasPermission === "function") {
-      return Boolean((auth as any).hasPermission(permission));
+  useEffect(() => {
+    if (!companyId || (isSystemAdmin && !appScope.companyId)) {
+      setBranches([]);
+      return;
     }
 
-    return permissionSet.has(normalized);
-  }
+    let cancelled = false;
+
+    setBranchesLoading(true);
+    branchesApi
+      .list(companyId, { page: 1, pageSize: 100, activeOnly: true })
+      .then((rows) => {
+        if (cancelled) return;
+
+        const nextBranches = rows
+          .map((branch) => {
+            const id = getBranchOptionId(branch);
+
+            return id
+              ? {
+                  id,
+                  name: getBranchOptionName(branch),
+                }
+              : null;
+          })
+          .filter((branch): branch is BranchOption => Boolean(branch))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        setBranches(nextBranches);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBranches([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setBranchesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, isSystemAdmin, appScope.companyId]);
 
   function canAccessRoute(route: SidebarRoute): boolean {
-    if (isSystemAdmin) return true;
-
-    if (!routeHasAnyRole(route, roleNames)) return false;
-
-    return routeHasAnyPermission(route, hasPermission);
+    return canAccessErpRoute(
+      {
+        roles: roleNames,
+        permissions: [...permissionSet],
+      },
+      route
+    );
   }
 
   const dashboardPath = companyId
@@ -416,7 +446,17 @@ export default function Sidebar({
     auth.logout();
   }
 
-  return (
+  function handleBranchChange(nextBranchId: string) {
+    const selected = branches.find((branch) => branch.id === nextBranchId);
+
+    appScope.setBranch({
+      id: selected?.id ?? null,
+      name: selected?.name ?? null,
+    });
+    setUserMenuOpen(false);
+  }
+
+  const sidebarContent = (
     <>
       <style>{SIDEBAR_CSS}</style>
 
@@ -446,7 +486,7 @@ export default function Sidebar({
             </div>
 
             <div className="hnav-brand-text">
-              <span className="hnav-brand-name">HotelNova</span>
+              <span className="hnav-brand-name">Hotel Nova</span>
               <span className="hnav-brand-env">ERP Console</span>
             </div>
           </button>
@@ -486,6 +526,26 @@ export default function Sidebar({
             <span className="hnav-scope-label">{scopeLabel}</span>
             <span className="hnav-scope-name">{companyName}</span>
             <span className="hnav-scope-branch">{scopeBranch}</span>
+
+            {companyId && branches.length > 0 && (
+              <label className="hnav-branch-select-wrap">
+                <span className="hnav-branch-select-label">Branch</span>
+                <select
+                  className="hnav-branch-select"
+                  value={branchId ?? ""}
+                  onChange={(event) => handleBranchChange(event.target.value)}
+                  disabled={branchesLoading}
+                  aria-label="Select active branch"
+                >
+                  <option value="">Select branch</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
         </div>
 
@@ -613,6 +673,12 @@ export default function Sidebar({
       </aside>
     </>
   );
+
+  if (typeof document === "undefined") {
+    return sidebarContent;
+  }
+
+  return createPortal(sidebarContent, document.body);
 }
 
 const SIDEBAR_CSS = `
@@ -636,7 +702,7 @@ const SIDEBAR_CSS = `
 .hnav-root {
   position: fixed;
   inset: 0 auto 0 0;
-  z-index: 45;
+  z-index: 2147483000;
   display: flex;
   width: var(--hnav-width);
   height: 100dvh;
@@ -657,10 +723,11 @@ const SIDEBAR_CSS = `
 .hnav-overlay {
   position: fixed;
   inset: 0;
-  z-index: 44;
+  z-index: 2147482990;
   border: 0;
   background: rgba(15, 23, 42, 0.55);
   backdrop-filter: blur(2px);
+  touch-action: none;
 }
 
 .hnav-brand {
@@ -792,6 +859,43 @@ const SIDEBAR_CSS = `
   margin-top: 1px;
   color: var(--hnav-muted);
   font-size: 12px;
+}
+
+.hnav-branch-select-wrap {
+  display: grid;
+  gap: 4px;
+  margin-top: 9px;
+}
+
+.hnav-branch-select-label {
+  color: var(--hnav-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.hnav-branch-select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 30px 0 10px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 650;
+  outline: none;
+}
+
+.hnav-branch-select:focus {
+  border-color: rgba(96, 165, 250, 0.72);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.16);
+}
+
+.hnav-branch-select:disabled {
+  opacity: 0.62;
 }
 
 .hnav-scroll {
@@ -1071,8 +1175,13 @@ const SIDEBAR_CSS = `
 
 @media (max-width: 1024px) {
   .hnav-root {
+    width: min(336px, 90vw);
+    max-width: calc(100vw - 28px);
+    border-top-right-radius: 18px;
+    border-bottom-right-radius: 18px;
     transform: translateX(-105%);
-    transition: transform 180ms ease;
+    transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    will-change: transform;
   }
 
   .hnav-root.hnav-open {
@@ -1085,6 +1194,47 @@ const SIDEBAR_CSS = `
 
   .hnav-collapse-btn {
     display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .hnav-root {
+    width: min(328px, 92vw);
+    max-width: calc(100vw - 18px);
+  }
+
+  .hnav-brand {
+    min-height: 64px;
+    padding: 12px 14px 8px;
+  }
+
+  .hnav-brand-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+
+  .hnav-scope-card {
+    margin-inline: 10px;
+    border-radius: 12px;
+    padding: 10px;
+  }
+
+  .hnav-scroll {
+    padding-inline: 8px;
+  }
+
+  .hnav-item {
+    min-height: 44px;
+    border-radius: 10px;
+  }
+
+  .hnav-section-head {
+    padding-top: 9px;
+  }
+
+  .hnav-footer {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
   }
 }
 

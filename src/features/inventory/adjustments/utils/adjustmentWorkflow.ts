@@ -41,7 +41,7 @@ export function normalizeAdjustmentStatus(
   }
 }
 
-// ── Transition guards ─────────────────────────────────────────────────────────
+//  Transition guards 
 
 export const canEdit    = (s: AdjustmentStatus) => s === "Draft";
 export const canSubmit  = (s: AdjustmentStatus) => s === "Draft";
@@ -50,7 +50,7 @@ export const canReject  = (s: AdjustmentStatus) => s === "Submitted";
 export const canPost    = (s: AdjustmentStatus) => s === "Approved";
 export const canReverse = (s: AdjustmentStatus) => s === "Posted";
 
-// ── Badge class map ───────────────────────────────────────────────────────────
+//  Badge class map 
 
 export const STATUS_BADGE: Record<AdjustmentStatus, string> = {
   Draft:     "badge badge-neutral",

@@ -1,8 +1,10 @@
-﻿// src/hooks/useAppScope.ts
+// src/hooks/useAppScope.ts
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useAppContext } from "./AppContext";
 import { loadAuth } from "../auth/auth.storage";
+import { hasCompanyAdminRole, hasSystemAdminRole } from "../auth/erpAccess";
+import { branchesApi } from "../features/company/api/branchesApi";
 
 export type AppScope = {
   companyId: string;
@@ -27,7 +29,22 @@ export type AppScope = {
 
 function normalizeId(value?: string | null): string {
   const text = String(value ?? "").trim();
-  return text.length > 0 ? text : "";
+  return text.length > 0 && !text.startsWith(":") ? text : "";
+}
+
+let branchHydrationKey: string | null = null;
+
+function getBranchName(branch: unknown): string | null {
+  const row = branch as Record<string, unknown>;
+  const value =
+    row?.name ??
+    row?.branchName ??
+    row?.tradeName ??
+    row?.code;
+
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : null;
 }
 
 export function useAppScope(): AppScope {
@@ -44,9 +61,13 @@ export function useAppScope(): AppScope {
     auth?.user?.branchId
   );
 
-  return useMemo(() => {
+  const roles = auth?.roles ?? auth?.user?.roles ?? [];
+  const canUseAnyBranch =
+    hasCompanyAdminRole(roles) || hasSystemAdminRole(roles);
+
+  const resolvedScope = useMemo(() => {
     const companyId = authCompanyId || normalizeId(scope.companyId);
-    const branchId = authBranchId || normalizeId(scope.branchId);
+    const branchId = normalizeId(scope.branchId) || authBranchId;
 
     return {
       companyId,
@@ -82,4 +103,46 @@ export function useAppScope(): AppScope {
     scope.stockLocationId,
     scope.stockLocationName,
   ]);
+
+  useEffect(() => {
+    if (!canUseAnyBranch) return;
+    if (!resolvedScope.companyId || resolvedScope.branchId) return;
+
+    const key = `${resolvedScope.companyId}:company-admin-branch`;
+    if (branchHydrationKey === key) return;
+
+    branchHydrationKey = key;
+
+    let cancelled = false;
+
+    branchesApi
+      .list(resolvedScope.companyId, { page: 1, pageSize: 1, activeOnly: true })
+      .then((branches) => {
+        if (cancelled) return;
+
+        const branch = branches[0] as any;
+        const id = normalizeId(branch?.id ?? branch?.branchId);
+
+        if (!id) return;
+
+        scope.setBranch({
+          id,
+          name: getBranchName(branch),
+        });
+      })
+      .catch(() => {
+        branchHydrationKey = null;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canUseAnyBranch,
+    resolvedScope.companyId,
+    resolvedScope.branchId,
+    scope,
+  ]);
+
+  return resolvedScope;
 }

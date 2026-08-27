@@ -179,7 +179,7 @@ export default function RecruitmentPage() {
             {loading ? (
               <tr>
                 <td colSpan={9} style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
-                  Loading…
+                  Loading...
                 </td>
               </tr>
             ) : postings.length === 0 ? (
@@ -222,7 +222,7 @@ export default function RecruitmentPage() {
                         erpNav(`hr/recruitment/${p.id}`);
                       }}
                     >
-                      Open →
+                      Open to
                     </button>
                   </td>
                 </tr>

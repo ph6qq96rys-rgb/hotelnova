@@ -1,6 +1,6 @@
 // src/features/inventory/siv/components/SivWorkflowActionBar.tsx
 // Replaced: lux-btn-* dark-only classes with global .btn .btn-primary .btn-danger etc.
-// Removed: inline <style> block — buttons now use global.css
+// Removed: inline <style> block - buttons now use global.css
 
 import { getAllowedSivActions, type SivWorkflowAction } from "../utils/sivWorkflow";
 
@@ -83,7 +83,7 @@ export default function SivWorkflowActionBar(props: Props) {
         return (
           <button key={action} className="btn" onClick={props.onRefresh} disabled={disabled}>
             <i className="ti ti-refresh" aria-hidden />
-            {disabled ? "Loading…" : "Refresh"}
+            {disabled ? "Loading..." : "Refresh"}
           </button>
         );
       default:

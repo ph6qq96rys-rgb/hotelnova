@@ -33,7 +33,7 @@ function Field({ label, value }: { label: string; value?: string | number | null
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '—'}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '-'}</div>
     </div>
   );
 }
@@ -66,7 +66,7 @@ export default function JobApplicationDetailPage() {
     if (!companyId || !postingId || !applicationId) return;
     setLoading(true); setError(null);
     try {
-      // Applications come from the posting's application list —
+      // Applications come from the posting's application list -
       // fetch all and find the matching one.
       const apps = await recruitmentApi.getApplications(companyId, postingId);
       const found = apps.find(a => a.id === applicationId);
@@ -132,7 +132,7 @@ export default function JobApplicationDetailPage() {
     return (
       <div className="page">
         <div className="alert alert-danger">{error}</div>
-        <button className="btn" onClick={() => nav(`/hr/recruitment/${postingId}`)}>← Back</button>
+        <button className="btn" onClick={() => nav(`/hr/recruitment/${postingId}`)}>Back</button>
       </div>
     );
   }
@@ -146,10 +146,10 @@ export default function JobApplicationDetailPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Recruitment · Applications</div>
+          <div className="page-kicker">Human Resources - Recruitment - Applications</div>
           <div className="page-title">{application.applicantName}</div>
           <div className="page-sub">
-            {application.applicationNo} · Applied {fmtDate(application.appliedOn)}
+            {application.applicationNo} - Applied {fmtDate(application.appliedOn)}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -160,7 +160,7 @@ export default function JobApplicationDetailPage() {
           }}>
             {stage}
           </span>
-          <button className="btn" onClick={() => nav(`/hr/recruitment/${postingId}`)}>← Back</button>
+          <button className="btn" onClick={() => nav(`/hr/recruitment/${postingId}`)}>Back</button>
         </div>
       </div>
 
@@ -260,7 +260,7 @@ export default function JobApplicationDetailPage() {
                 setWorking(true);
                 try {
                   // Move to rejected via an offer/interview with rejected status,
-                  // or use the apply endpoint with status override — adjust to
+                  // or use the apply endpoint with status override - adjust to
                   // match your actual "reject application" API endpoint.
                   await recruitmentApi.apply(companyId, {
                     ApplicationId: applicationId,

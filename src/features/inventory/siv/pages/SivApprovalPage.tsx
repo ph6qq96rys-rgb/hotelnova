@@ -532,7 +532,7 @@ export default function SivApprovalPage() {
           className="siv-approval-loading"
           aria-busy="true"
         >
-          Loading SIV approval workspace…
+          Loading SIV approval workspace...
         </div>
       </div>
     );
@@ -573,11 +573,11 @@ export default function SivApprovalPage() {
       <header className="siv-approval-page-header">
         <div>
           <div className="page-kicker">
-            Inventory · SIV · F&amp;B Controller Approval
+            Inventory - SIV - F&amp;B Controller Approval
           </div>
 
           <div className="page-title siv-approval-document-number">
-            {document.number || document.id}
+            {document.number || "Pending SIV number"}
           </div>
 
           <div className="page-sub">
@@ -600,7 +600,7 @@ export default function SivApprovalPage() {
             }
             onClick={handleApprove}
           >
-            {actionBusy ? "Working…" : "✓ Approve"}
+            {actionBusy ? "Working..." : " Approve"}
           </button>
 
           <button
@@ -611,7 +611,7 @@ export default function SivApprovalPage() {
               setDialogMode("requestChanges")
             }
           >
-            ↩ Request Changes
+             Request Changes
           </button>
 
           <button
@@ -620,7 +620,7 @@ export default function SivApprovalPage() {
             disabled={actionBusy}
             onClick={() => setDialogMode("reject")}
           >
-            ✕ Reject
+             Reject
           </button>
 
           <button
@@ -629,7 +629,7 @@ export default function SivApprovalPage() {
             disabled={actionBusy}
             onClick={() => navigate(-1)}
           >
-            ← Back
+            Back
           </button>
         </div>
       </header>
@@ -691,21 +691,21 @@ export default function SivApprovalPage() {
                 {
                   label: "From Location",
                   value:
-                    document.fromLocationName || "—",
+                    document.fromLocationName || "-",
                 },
                 {
                   label: "To Location",
                   value:
-                    document.toLocationName || "—",
+                    document.toLocationName || "-",
                 },
                 {
                   label: "Department",
                   value:
-                    document.departmentName || "—",
+                    document.departmentName || "-",
                 },
                 {
                   label: "Remarks",
-                  value: document.remarks || "—",
+                  value: document.remarks || "-",
                 },
               ].map(({ label, value }) => (
                 <div
@@ -728,7 +728,7 @@ export default function SivApprovalPage() {
             <div className="card-header siv-lines-card-header">
               <div>
                 <div className="card-title">
-                  Line Items — Set Approved Quantities
+                  Line Items - Set Approved Quantities
                 </div>
 
                 <div className="card-subtitle">
@@ -840,16 +840,16 @@ export default function SivApprovalPage() {
 
                             <td>
                               <div className="siv-item-link">
-                                {line.itemName || "—"}
+                                {line.itemName || "-"}
                               </div>
 
                               <div className="siv-item-code">
-                                {line.itemCode || "—"}
+                                {line.itemCode || "-"}
                               </div>
                             </td>
 
                             <td className="siv-mono-cell">
-                              {line.uomCode || "—"}
+                              {line.uomCode || "-"}
                             </td>
 
                             <td className="siv-number-cell">
@@ -873,7 +873,7 @@ export default function SivApprovalPage() {
                                   )}
                                 </button>
                               ) : (
-                                "—"
+                                "-"
                               )}
                             </td>
 
@@ -954,7 +954,7 @@ export default function SivApprovalPage() {
                             </td>
 
                             <td>
-                              {line.batchNo || "—"}
+                              {line.batchNo || "-"}
                             </td>
 
                             <td
@@ -968,7 +968,7 @@ export default function SivApprovalPage() {
                                 ? fmtDate(
                                     line.expiryDate,
                                   )
-                                : "—"}
+                                : "-"}
                             </td>
                           </tr>
                         );
@@ -1128,7 +1128,7 @@ export default function SivApprovalPage() {
                 onClick={handleReject}
               >
                 {actionBusy
-                  ? "Rejecting…"
+                  ? "Rejecting..."
                   : "Confirm Reject"}
               </button>
             </div>
@@ -1197,7 +1197,7 @@ export default function SivApprovalPage() {
                 onClick={handleRequestChanges}
               >
                 {actionBusy
-                  ? "Sending…"
+                  ? "Sending..."
                   : "Send Request"}
               </button>
             </div>

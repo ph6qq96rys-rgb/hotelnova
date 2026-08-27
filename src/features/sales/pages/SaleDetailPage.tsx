@@ -63,8 +63,21 @@ function percent(value: number): string {
   return `${value.toFixed(2)}%`;
 }
 
-function safeText(value: unknown, fallback = "—"): string {
+function safeText(value: unknown, fallback = "-"): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function joinBusinessLabel(...parts: Array<unknown>): string {
+  return parts
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function shortReference(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+
+  return text ? text.slice(0, 8).toUpperCase() : "";
 }
 
 function getSaleValue<T = unknown>(sale: SaleDto, key: string): T | undefined {
@@ -345,7 +358,7 @@ export default function SaleDetailPage() {
           <DocumentSummaryCard sale={sale} totals={totals} />
           <DocumentStatusCard sale={sale} />
           <PaymentsCard sale={sale} totals={totals} />
-          <AuditCard sale={sale} />
+          <AuditTraceCard sale={sale} />
         </aside>
       </div>
     </div>
@@ -361,7 +374,7 @@ function InfoField({
   return (
     <div className="erp-info-field">
       <div className="erp-info-label">{label}</div>
-      <div className="erp-info-value">{value ?? "—"}</div>
+      <div className="erp-info-value">{value ?? "-"}</div>
     </div>
   );
 }
@@ -393,7 +406,7 @@ function DocumentHeader({
         <p className="erp-doc-kicker">Sales Document Workspace</p>
         <h1>{sale.saleNo}</h1>
         <p className="erp-doc-subtitle">
-          {customerName} · {orderType} · {cashierName} · {terminal}
+          {customerName} - {orderType} - {cashierName} - {terminal}
         </p>
 
         <div className="erp-doc-badges">
@@ -606,7 +619,7 @@ function PaymentsCard({ sale, totals }: { sale: SaleDto; totals: DocumentTotals 
               payments.map((payment) => (
                 <tr key={payment.id}>
                   <td>{payment.method}</td>
-                  <td>{payment.referenceCode || "—"}</td>
+                  <td>{payment.referenceCode || "-"}</td>
                   <td style={{ textAlign: "right" }}>{money(payment.amount)}</td>
                 </tr>
               ))
@@ -623,21 +636,60 @@ function PaymentsCard({ sale, totals }: { sale: SaleDto; totals: DocumentTotals 
   );
 }
 
-function AuditCard({ sale }: { sale: SaleDto }) {
-  const cashierName = safeText(getSaleValue(sale, "cashierName"), "—");
-  const terminal = safeText(getSaleValue(sale, "terminal"), "—");
-  const sessionNo = safeText(getSaleValue(sale, "sessionNo"), "—");
-  const branchName = safeText(getSaleValue(sale, "branchName"), "—");
+function AuditTraceCard({ sale }: { sale: SaleDto }) {
+  const branchLabel = safeText(
+    joinBusinessLabel(
+      getSaleValue(sale, "branchCode"),
+      getSaleValue(sale, "branchName")
+    )
+  );
+  const cashierName = safeText(getSaleValue(sale, "cashierName"));
+  const terminal = safeText(
+    getSaleValue(sale, "terminal") ??
+      joinBusinessLabel(getSaleValue(sale, "storeCode"), getSaleValue(sale, "storeName"))
+  );
+  const sessionLabel = safeText(
+    getSaleValue(sale, "sessionLabel") ??
+      shortReference(getSaleValue(sale, "posSessionId"))
+  );
+  const documentType = safeText(
+    getSaleValue(sale, "documentType") ??
+      getSaleValue(sale, "sourceName"),
+    "Sales Document"
+  );
+  const externalReference = safeText(getSaleValue(sale, "externalReferenceNo"));
 
   return (
-    <Card title="inAudit Information" subtitle="Operational traceability">
+    <Card title="Audit Information" subtitle="Operational traceability">
+      <div className="erp-doc-audit-grid">
+        <InfoField label="Branch" value={branchLabel} />
+        <InfoField label="Cashier" value={cashierName} />
+        <InfoField label="Terminal" value={terminal} />
+        <InfoField label="Session" value={sessionLabel} />
+        <InfoField label="Document Type" value={documentType} />
+        <InfoField label="Document No" value={sale.saleNo} />
+        <InfoField label="Sold At" value={dateTime(sale.soldAtUtc)} />
+        <InfoField label="Reference" value={externalReference} />
+      </div>
+    </Card>
+  );
+}
+
+function AuditCard({ sale }: { sale: SaleDto }) {
+  const cashierName = safeText(getSaleValue(sale, "cashierName"), "-");
+  const terminal = safeText(getSaleValue(sale, "terminal"), "-");
+  const sessionNo = safeText(getSaleValue(sale, "sessionNo"), "-");
+  const branchName = safeText(getSaleValue(sale, "branchName"), "-");
+
+  return (
+    <Card title="Audit Information" subtitle="Operational traceability">
       <div className="erp-doc-audit-grid">
         <InfoField label="Branch" value={branchName} />
         <InfoField label="Cashier" value={cashierName} />
         <InfoField label="Terminal" value={terminal} />
         <InfoField label="Session" value={sessionNo} />
         <InfoField label="Sold At" value={dateTime(sale.soldAtUtc)} />
-        <InfoField label="Document ID" value={sale.id} />
+        <InfoField label="Document No" value={sale.saleNo} />
       </div>
     </Card>
   );

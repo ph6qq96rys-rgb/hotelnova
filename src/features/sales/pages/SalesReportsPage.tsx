@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatAppDateTime } from "../../../shared/datetime/dateFormat";
 import { salesApi } from "../api/salesApi";
 import type { SaleListItemDto } from "../api/salesTypes";
 import {
@@ -104,13 +105,7 @@ function today(): string {
 }
 
 function formatDate(value?: string | null): string {
-  if (!value) return "—";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return date.toLocaleString();
+  return formatAppDateTime(value);
 }
 
 function normalizeSalesList(response: unknown): SaleListItemDto[] {
@@ -296,14 +291,7 @@ export default function SalesReportsPage() {
 
       {err && <Alert tone="danger">{err}</Alert>}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, minmax(150px, 1fr))",
-          gap: 12,
-          marginBottom: 14,
-        }}
-      >
+      <div className="sales-kpi-grid">
         <Kpi label="Sales" value={money(summary.sales)} />
         <Kpi label="COGS" value={money(summary.cogs)} />
         <Kpi label="Gross Profit" value={money(summary.grossProfit)} />
@@ -315,49 +303,51 @@ export default function SalesReportsPage() {
       </div>
 
       <Card title="Report Detail">
-        <table className="pos-table">
-          <thead>
-            <tr>
-              <th>Sale</th>
-              <th>Date</th>
-              <th style={{ textAlign: "right" }}>Sales</th>
-              <th style={{ textAlign: "right" }}>COGS</th>
-              <th style={{ textAlign: "right" }}>Profit</th>
-              <th>Inventory</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {items.length === 0 && (
+        <div className="sales-table-shell">
+          <table className="pos-table">
+            <thead>
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", padding: 24 }}>
-                  {loading ? "Loading sales..." : "No sales found for this date range."}
-                </td>
+                <th>Sale</th>
+                <th>Date</th>
+                <th style={{ textAlign: "right" }}>Sales</th>
+                <th style={{ textAlign: "right" }}>COGS</th>
+                <th style={{ textAlign: "right" }}>Profit</th>
+                <th>Inventory</th>
               </tr>
-            )}
+            </thead>
 
-            {items.map((row) => {
-              const totalAmount = Number(row.totalAmount || 0);
-              const totalCogs = Number(row.totalCogs || 0);
-
-              const grossProfit =
-                typeof row.grossProfit === "number"
-                  ? row.grossProfit
-                  : totalAmount - totalCogs;
-
-              return (
-                <tr key={row.id}>
-                  <td>{row.saleNo || row.id}</td>
-                  <td>{formatDate(row.soldAtUtc)}</td>
-                  <td style={{ textAlign: "right" }}>{money(totalAmount)}</td>
-                  <td style={{ textAlign: "right" }}>{money(totalCogs)}</td>
-                  <td style={{ textAlign: "right" }}>{money(grossProfit)}</td>
-                  <td>{row.isInventoryPosted ? "Posted" : "Pending"}</td>
+            <tbody>
+              {items.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="sales-empty-cell">
+                    {loading ? "Loading sales..." : "No sales found for this date range."}
+                  </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              )}
+
+              {items.map((row) => {
+                const totalAmount = Number(row.totalAmount || 0);
+                const totalCogs = Number(row.totalCogs || 0);
+
+                const grossProfit =
+                  typeof row.grossProfit === "number"
+                    ? row.grossProfit
+                    : totalAmount - totalCogs;
+
+                return (
+                  <tr key={row.id}>
+                    <td className="sales-mono">{row.saleNo || "Pending sale number"}</td>
+                    <td>{formatDate(row.soldAtUtc)}</td>
+                    <td style={{ textAlign: "right" }}>{money(totalAmount)}</td>
+                    <td style={{ textAlign: "right" }}>{money(totalCogs)}</td>
+                    <td style={{ textAlign: "right" }}>{money(grossProfit)}</td>
+                    <td>{row.isInventoryPosted ? "Posted" : "Pending"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

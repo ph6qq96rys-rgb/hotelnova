@@ -48,7 +48,7 @@ export function getApiError(error: unknown, fallback = "Request failed."): strin
 
   if (data && typeof data === "object") {
     const title = data.title || data.error || data.message || fallback;
-    const detail = data.detail && data.detail !== title ? ` — ${data.detail}` : "";
+    const detail = data.detail && data.detail !== title ? ` - ${data.detail}` : "";
     const traceId = data.traceId ? ` (traceId: ${data.traceId})` : "";
 
     const validation =

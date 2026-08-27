@@ -1,4 +1,4 @@
-﻿// src/routes/inventoryMasterRoutes.tsx
+// src/routes/inventoryMasterRoutes.tsx
 
 import type { AppRoute } from "./sales-cogsroute";
 
@@ -18,6 +18,7 @@ export const inventoryMasterRoutes: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 10,
+    permissions: ["inventory.view"],
   },
 
   {
@@ -27,6 +28,7 @@ export const inventoryMasterRoutes: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 20,
+    permissions: ["items.view"],
   },
 
   {
@@ -54,5 +56,6 @@ export const inventoryMasterRoutes: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 30,
+    permissions: ["inventory.ledger.view"],
   },
 ];

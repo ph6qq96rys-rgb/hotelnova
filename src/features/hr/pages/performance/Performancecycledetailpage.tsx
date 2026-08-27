@@ -11,7 +11,7 @@ function Field({ label, value }: { label: string; value?: string | number | null
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '—'}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{value ?? '-'}</div>
     </div>
   );
 }
@@ -42,7 +42,7 @@ export default function PerformanceCycleDetailPage() {
       // Fetch cycle summary from the list, and reviews for this cycle.
       const [cycles, cycleReviews] = await Promise.all([
         performanceApi.listCycles(companyId),
-        // getReview is per-review — we need a cycle-level reviews list.
+        // getReview is per-review - we need a cycle-level reviews list.
         // Using the cycle list to get summary, then individual reviews aren't
         // bulk-fetchable from the current API. Show what we have from the DTO.
         Promise.resolve([] as PerformanceReviewDetailDto[]),
@@ -67,7 +67,7 @@ export default function PerformanceCycleDetailPage() {
     return (
       <div className="page">
         <div className="alert alert-danger">{error}</div>
-        <button className="btn" onClick={() => nav('/hr/performance')}>← Back</button>
+        <button className="btn" onClick={() => nav('/hr/performance')}>Back</button>
       </div>
     );
   }
@@ -84,13 +84,13 @@ export default function PerformanceCycleDetailPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources · Performance</div>
+          <div className="page-kicker">Human Resources - Performance</div>
           <div className="page-title">{cycle.name}</div>
-          <div className="page-sub">{cycle.type} · {fmtDate(cycle.startDate)} – {fmtDate(cycle.endDate)}</div>
+          <div className="page-sub">{cycle.type} - {fmtDate(cycle.startDate)} - {fmtDate(cycle.endDate)}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span className={CYCLE_STATUS_CLASS[cycle.status as CycleStatus]}>{cycle.status}</span>
-          <button className="btn" onClick={() => nav('/hr/performance')}>← Back</button>
+          <button className="btn" onClick={() => nav('/hr/performance')}>Back</button>
         </div>
       </div>
 
@@ -167,7 +167,7 @@ export default function PerformanceCycleDetailPage() {
         </div>
       </div>
 
-      {/* Reviews table — populated when the API supports bulk listing by cycle */}
+      {/* Reviews table - populated when the API supports bulk listing by cycle */}
       <div className="card" style={{ padding: 0 }}>
         <div style={{
           padding: '14px 16px', borderBottom: '1px solid var(--border)',
@@ -211,10 +211,10 @@ export default function PerformanceCycleDetailPage() {
                   </span>
                 </td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600 }}>
-                  {r.finalRating != null ? r.finalRating.toFixed(1) : '—'}
+                  {r.finalRating != null ? r.finalRating.toFixed(1) : '-'}
                 </td>
                 <td style={{ textAlign: 'right' }}>
-                  <button className="btn btn-sm">Open →</button>
+                  <button className="btn btn-sm">Open to</button>
                 </td>
               </tr>
             ))}

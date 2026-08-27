@@ -81,7 +81,7 @@ function ReadonlyRow(props: { label: string; value?: React.ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <span style={{ color: "#94a3b8", fontSize: 12 }}>{props.label}</span>
-      <strong style={{ color: "#334155", fontSize: 13 }}>{props.value || "—"}</strong>
+      <strong style={{ color: "#334155", fontSize: 13 }}>{props.value || "-"}</strong>
     </div>
   );
 }
@@ -289,7 +289,7 @@ export function BranchStep(props: Props) {
     props.onSelected(branchId);
   }
 
-  if (loading) return <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "24px 0", color: "#64748b" }}><Spinner /> Loading branches…</div>;
+  if (loading) return <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "24px 0", color: "#64748b" }}><Spinner /> Loading branches...</div>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -317,7 +317,7 @@ export function BranchStep(props: Props) {
                   {x.hasSalesOperations !== false && <span className="ob-badge ob-badge--info">Sales-enabled</span>}
                   {active && <span className="ob-badge ob-badge--success">Current branch</span>}
                 </div>
-                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>{x.city ?? "—"} · supports one or more POS/stores</div>
+                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>{x.city ?? "-"} - supports one or more POS/stores</div>
               </div>
 
               <Btn variant="ghost" onClick={() => selectBranch(branchId)} disabled={!branchId || active}>Use branch</Btn>
@@ -325,7 +325,7 @@ export function BranchStep(props: Props) {
               {canEdit ? <Btn variant="ghost" onClick={() => (expanded ? setExpandedId(null) : openEdit(branch))}>{expanded ? "Close" : "Configure"}</Btn> : null}
 
               {props.access.canDeleteBranch ? (
-                <Btn variant="ghost" onClick={() => void deleteBranch(branch)} disabled={!canDelete || deleteSavingId === branchId || props.saving}>{deleteSavingId === branchId ? "Deleting…" : "Delete"}</Btn>
+                <Btn variant="ghost" onClick={() => void deleteBranch(branch)} disabled={!canDelete || deleteSavingId === branchId || props.saving}>{deleteSavingId === branchId ? "Deleting..." : "Delete"}</Btn>
               ) : null}
             </div>
 
@@ -333,7 +333,7 @@ export function BranchStep(props: Props) {
               <div className="ob-inner-card-body" style={{ borderTop: "1px solid #e2e8f0", display: "flex", flexDirection: "column", gap: 16 }}>
                 {Object.values(editErrors).filter(Boolean).map((m) => <Alert key={m} tone="danger" title="Validation" message={m!} />)}
                 <BranchForm value={editForm} errors={editErrors} onChange={setEditForm} />
-                <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn variant="primary" onClick={() => void saveEdit(branchId)} disabled={editSaving || props.saving}>{editSaving ? "Saving…" : "Save branch"}</Btn></div>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn variant="primary" onClick={() => void saveEdit(branchId)} disabled={editSaving || props.saving}>{editSaving ? "Saving..." : "Save branch"}</Btn></div>
               </div>
             )}
 
@@ -352,7 +352,7 @@ export function BranchStep(props: Props) {
             <div className="ob-inner-card-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {Object.values(createErrors).filter(Boolean).map((m) => <Alert key={m} tone="danger" title="Validation" message={m!} />)}
               <BranchForm value={createForm} errors={createErrors} onChange={setCreateForm} />
-              <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn variant="primary" onClick={() => void createBranch()} disabled={createSaving || props.saving || !props.companyId}>{createSaving ? "Creating…" : "Create branch"}</Btn></div>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn variant="primary" onClick={() => void createBranch()} disabled={createSaving || props.saving || !props.companyId}>{createSaving ? "Creating..." : "Create branch"}</Btn></div>
             </div>
           )}
         </div>

@@ -63,7 +63,7 @@ export default function PerformancePage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
             ) : cycles.map(c => {
               const pct = c.totalReviews > 0 ? c.completedReviews / c.totalReviews * 100 : 0;
               return (
@@ -71,7 +71,7 @@ export default function PerformancePage() {
                   <td style={{ fontWeight: 500, fontSize: 13 }}>{c.name}</td>
                   <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.type}</td>
                   <td style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text-muted)' }}>
-                    {fmtDate(c.startDate)} – {fmtDate(c.endDate)}
+                    {fmtDate(c.startDate)} - {fmtDate(c.endDate)}
                   </td>
                   <td><span className={CYCLE_STATUS_CLASS[c.status]}>{c.status}</span></td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 12 }}>{c.totalReviews}</td>
@@ -85,7 +85,7 @@ export default function PerformancePage() {
                     </div>
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <button className="btn btn-sm">Open →</button>
+                    <button className="btn btn-sm">Open to</button>
                   </td>
                 </tr>
               );

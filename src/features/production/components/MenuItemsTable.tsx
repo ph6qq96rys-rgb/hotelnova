@@ -1,7 +1,7 @@
 import type { MenuItemDto } from "../types";
 
 function money(value?: number | null): string {
-  if (value == null) return "—";
+  if (value == null) return "-";
   return value.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -39,7 +39,7 @@ export default function MenuItemsTable({ items, loading, onOpen, onOpenRecipe }:
     return (
       <div className="p-card">
         <div className="p-card__body mi-empty-state">
-          <div className="mi-empty-state__icon">☰</div>
+          <div className="mi-empty-state__icon"></div>
           <div>
             <strong>No menu items found.</strong>
             <p>Adjust your filters or create/import menu items for this branch.</p>
@@ -69,7 +69,7 @@ export default function MenuItemsTable({ items, loading, onOpen, onOpenRecipe }:
             {items.map((item) => {
               const ready = isReady(item);
               const margin = (item.sellingPrice ?? 0) - (item.cost ?? 0);
-              const categoryName = (item as any).categoryName ?? item.categoryName ?? "—";
+              const categoryName = (item as any).categoryName ?? item.categoryName ?? "-";
               const subCategoryName = (item as any).subCategoryName ?? item.subCategoryName ?? null;
 
               return (
@@ -85,7 +85,7 @@ export default function MenuItemsTable({ items, loading, onOpen, onOpenRecipe }:
                     {subCategoryName && <div className="mi-muted">{subCategoryName}</div>}
                   </td>
                   <td>
-                    <div>{item.code || "—"}</div>
+                    <div>{item.code || "-"}</div>
                     {item.externalCode && <div className="mi-muted">POS: {item.externalCode}</div>}
                   </td>
                   <td className="mi-number">{money(item.sellingPrice)}</td>

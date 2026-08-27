@@ -32,5 +32,6 @@ export type AuthUserLike = {
 };
 
 export type UserWithEmployee = UserDto & {
+  companyEmployeeId?: string | null;
   employeeId?: string | null;
 };

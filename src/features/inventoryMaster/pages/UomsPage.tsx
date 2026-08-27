@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppScope } from "../../../app/useAppScope";
 import { inventoryItemsApi } from "../items/api/inventoryItemsApi";
 import type { UomDto } from "../items/types";
@@ -52,7 +52,7 @@ export default function UomsPage() {
     try {
       await inventoryItemsApi.createUom(companyId, {
         name: name.trim(),
-        symbol: code.trim() ? code.trim().toUpperCase() : null, // UI code -> API symbol
+        symbol: code.trim() ? code.trim().toUpperCase() : null, // UI code to API symbol
         isBase: false,
       });
 
@@ -82,7 +82,7 @@ export default function UomsPage() {
         </div>
 
         <button style={secondaryBtn} onClick={load} disabled={loadingList || saving}>
-          {loadingList ? "Refreshing…" : "Refresh"}
+          {loadingList ? "Refreshing..." : "Refresh"}
         </button>
       </div>
 
@@ -136,7 +136,7 @@ export default function UomsPage() {
               Clear
             </button>
             <button style={primaryBtn} onClick={add} disabled={!canAdd || saving}>
-              {saving ? "Saving…" : "Add UOM"}
+              {saving ? "Saving..." : "Add UOM"}
             </button>
           </div>
         </div>
@@ -162,7 +162,7 @@ export default function UomsPage() {
               {loadingList ? (
                 <tr>
                   <td colSpan={3} style={{ padding: 18, opacity: 0.75 }}>
-                    Loading…
+                    Loading...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
@@ -182,7 +182,7 @@ export default function UomsPage() {
                       <td style={tdStyle}>{uomCode(u)}</td>
                       <td style={tdStyle}>
                         <div style={{ fontWeight: 700 }}>{u.name}</div>
-                        <div style={{ fontSize: 12, opacity: 0.7 }}>{u.id}</div>
+                        <div style={{ fontSize: 12, opacity: 0.7 }}>{uomCode(u)}</div>
                       </td>
                       <td style={tdStyle}>{active ? "Active" : "Inactive"}</td>
                     </tr>
@@ -193,7 +193,7 @@ export default function UomsPage() {
           </table>
         </div>
 
-        {loadingList && <div style={{ marginTop: 10, opacity: 0.7 }}>Loading…</div>}
+        {loadingList && <div style={{ marginTop: 10, opacity: 0.7 }}>Loading...</div>}
       </div>
     </div>
   );

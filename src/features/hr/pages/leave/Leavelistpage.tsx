@@ -80,7 +80,7 @@ export default function LeaveListPage() {
           </select>
         </label>
         <button className="btn" onClick={load} disabled={loading}>
-          <i className="ti ti-refresh" /> {loading ? 'Loading…' : 'Refresh'}
+          <i className="ti ti-refresh" /> {loading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
@@ -102,14 +102,14 @@ export default function LeaveListPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
             ) : items.map(r => (
               <tr key={r.id}>
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-muted)' }}>{r.requestNo}</td>
                 <td style={{ fontWeight: 500, fontSize: 13 }}>{r.employeeName}</td>
                 <td style={{ fontSize: 13 }}>{r.leaveTypeName}</td>
                 <td style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text-muted)' }}>
-                  {fmtDate(r.startDate)} – {fmtDate(r.endDate)}
+                  {fmtDate(r.startDate)} - {fmtDate(r.endDate)}
                 </td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 500 }}>
                   {r.numberOfDays}

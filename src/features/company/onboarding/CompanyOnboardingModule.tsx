@@ -219,7 +219,7 @@ function getCurrentBranchId(app: any, scope: any, paramsBranchId?: string): stri
       "",
   ).trim();
 
-  return value || null;
+  return value && !value.startsWith(":") ? value : null;
 }
 
 function collectBranchIds(...sources: unknown[]): string[] {
@@ -459,7 +459,12 @@ export default function CompanyOnboardingModule() {
     const hasBranch = Boolean(state.branchId);
     const hasStockLocations = state.stockLocations.length > 0;
     const hasStores = state.stores.length > 0;
-    const hasBranchAdmin = Boolean(state.readiness?.hasBranchAdmin);
+    const hasOperationalUser = Boolean(
+      state.readiness?.hasUser &&
+      state.readiness?.hasUserBranchAssignment &&
+      state.readiness?.hasUserStockLocationAssignment,
+    );
+    const canActivate = Boolean(state.readiness?.canActivate ?? state.readiness?.canFinish);
 
     return {
       company: {
@@ -479,11 +484,11 @@ export default function CompanyOnboardingModule() {
         locked: !canManageOrganization || !hasBranch,
       },
       users: {
-        done: hasBranchAdmin,
+        done: hasOperationalUser,
         locked: !canManageOrganization || !hasBranch,
       },
       review: {
-        done: hasCompany && hasBranch && hasStockLocations && hasBranchAdmin,
+        done: canActivate,
         locked: !canManageOrganization || !hasBranch,
       },
     };
@@ -493,9 +498,12 @@ export default function CompanyOnboardingModule() {
     state.branchId,
     state.stockLocations.length,
     state.stores.length,
-    state.readiness?.hasBranchAdmin,
+    state.readiness?.hasUser,
+    state.readiness?.hasUserBranchAssignment,
+    state.readiness?.hasUserStockLocationAssignment,
+    state.readiness?.canActivate,
+    state.readiness?.canFinish,
   ]);
-
   const syncAppScope = useCallback(
     (patch: ReturnType<typeof buildSnapshotPatch>) => {
       if (patch.companyId) {
@@ -813,23 +821,19 @@ export default function CompanyOnboardingModule() {
 
     try {
       await onboardingApi.complete(state.companyId, state.branchId);
+      await reloadSnapshot(state.companyId, state.branchId);
 
       dispatch({
         type: "SAVE_SUCCESS",
-        notice: "Onboarding completed.",
-      });
-
-      navigate(companyDashboardPath(state.companyId), {
-        replace: true,
+        notice: "Company activated. Onboarding readiness has been refreshed.",
       });
     } catch (err) {
       dispatch({
         type: "SAVE_ERROR",
-        error: extractApiError(err, "Failed to complete onboarding."),
+        error: extractApiError(err, "Failed to activate company."),
       });
     }
   }
-
   if (!canManageOrganization) {
     return <AccessDeniedCard />;
   }
@@ -933,7 +937,7 @@ export default function CompanyOnboardingModule() {
                   }
                   aria-label="Switch branch"
                 >
-                  <option value="">Select branch…</option>
+                  <option value="">Select branch...</option>
 
                   {state.branches
                     .filter((branch) => canAccessBranch(idOf(branch)))
@@ -1084,30 +1088,21 @@ export default function CompanyOnboardingModule() {
               onClick={back}
               disabled={activeIndex <= 0}
             >
-              ← Back
+              Back
             </button>
 
             <span className="ob-wizard-step-lbl">
               Step {activeIndex + 1} of {ONBOARDING_STEPS.length}
             </span>
 
-            {state.active === "review" ? (
-              <button
-                type="button"
-                className="ob-btn ob-btn--primary"
-                onClick={() => void finish()}
-                disabled={!readiness.review.done || state.saving}
-              >
-                {state.saving ? "Finishing…" : "Finish setup"}
-              </button>
-            ) : (
+            {state.active !== "review" && (
               <button
                 type="button"
                 className="ob-btn ob-btn--primary"
                 onClick={next}
                 disabled={activeIndex >= ONBOARDING_STEPS.length - 1}
               >
-                Continue →
+                Continue
               </button>
             )}
           </div>

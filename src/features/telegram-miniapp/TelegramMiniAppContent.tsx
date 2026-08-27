@@ -1,6 +1,7 @@
 import { memo } from "react";
 
 import TelegramAttendanceScannerPage from "./attendance/TelegramAttendanceScannerPage";
+import TelegramHrRequestsPage from "./hr-requests/TelegramHrRequestsPage";
 import TelegramSivRequestPage from "./siv-request/TelegramSivRequestPage";
 import TelegramMiniAppHome from "./TelegramMiniAppHome";
 import TelegramComingSoon from "./TelegramComingSoon";
@@ -49,14 +50,14 @@ function TelegramMiniAppContent({
               className="tg-mini-menu-card"
               onClick={() => onOpenTab("requests")}
             >
-              <span className="tg-mini-menu-card__icon">📋</span>
+              <span className="tg-mini-menu-card__icon">REQ</span>
               <span className="tg-mini-menu-card__body">
                 <span className="tg-mini-menu-card__title-row">
                   <strong>My Requests</strong>
                 </span>
-                <small>Track submitted SIV requests.</small>
+                <small>Track leave, overtime, and SIV requests.</small>
               </span>
-              <span className="tg-mini-menu-card__chevron">›</span>
+              <span className="tg-mini-menu-card__chevron">&gt;</span>
             </button>
 
             <TelegramSivRequestPage />
@@ -65,18 +66,12 @@ function TelegramMiniAppContent({
       );
 
     case "requests":
-      return (
-        <TelegramComingSoon
-          icon="📋"
-          title="My Requests"
-          description="Submitted SIVs, approvals, rejections, and request history will be connected to the backend request list next."
-        />
-      );
+      return <TelegramHrRequestsPage auth={auth} />;
 
     case "approvals":
       return (
         <TelegramComingSoon
-          icon="✅"
+          icon="OK"
           title="Approvals"
           description="Assigned approvals will appear here once approval list endpoints are connected."
         />
@@ -107,7 +102,7 @@ function TelegramProfilePanel({
 }) {
   return (
     <section className="tg-profile-card">
-      <div className="tg-profile-card__icon">👤</div>
+      <div className="tg-profile-card__icon">ME</div>
 
       <h2>{auth.employeeName ?? "Employee"}</h2>
       <p>{auth.employeeCode ?? "No employee code"}</p>
@@ -115,7 +110,7 @@ function TelegramProfilePanel({
       <dl>
         <div>
           <dt>Company</dt>
-          <dd>{auth.companyId ?? "—"}</dd>
+          <dd>{auth.companyId ?? "-"}</dd>
         </div>
 
         <div>
@@ -139,7 +134,7 @@ function TelegramProfilePanel({
 
         <div>
           <dt>Telegram ID</dt>
-          <dd>{auth.telegramUserId ?? runtime.userId ?? "—"}</dd>
+          <dd>{auth.telegramUserId ?? runtime.userId ?? "-"}</dd>
         </div>
       </dl>
     </section>

@@ -1,7 +1,7 @@
 // src/modules/company/onboarding/steps/ReviewStep.tsx
 // ERP-grade onboarding readiness review.
 // CompanyAdmin is recommended, not required.
-// Rule hierarchy for POS issue source: item -> category -> POS rule -> POS fallback -> branch default -> block.
+// Rule hierarchy for POS issue source: item to category to POS rule to POS fallback to branch default to block.
 
 import { useCallback, useState } from "react";
 import { AlertCircle, CheckCircle, XCircle } from "lucide-react";
@@ -19,7 +19,7 @@ type Props = {
 
 type Tone = "success" | "warn" | "info" | "default";
 
-function text(value: unknown, fallback = "—") {
+function text(value: unknown, fallback = "-") {
   const s = String(value ?? "").trim();
   return s || fallback;
 }
@@ -380,18 +380,20 @@ export function ReviewStep(props: Props) {
         hasAnyId(m.stockLocations),
     );
 
-  const canActivate =
+  const serverCanActivate = backend?.canActivate ?? backend?.canFinish;
+  const localCanActivate =
     hasCompany &&
     hasBranch &&
     hasWarehouse &&
     hasTransitLocation &&
-    hasReceiving &&
-    hasIssue &&
     hasStore &&
-    hasIssueHierarchy &&
     hasActiveUser &&
     hasUserBranch &&
     hasUserLocation;
+  const canActivate = Boolean(serverCanActivate ?? localCanActivate);
+  const missingItems: string[] = Array.isArray(backend?.missingItems)
+    ? backend.missingItems.filter(Boolean).map(String)
+    : [];
 
   const handleActivate = useCallback(
     async (event?: React.MouseEvent<HTMLButtonElement>) => {
@@ -439,7 +441,7 @@ export function ReviewStep(props: Props) {
             />
             <InfoRow
               label="Issue hierarchy"
-              value="Item → Category → POS → Branch → Block"
+              value="Item to Category to POS to Branch to Block"
             />
             <InfoRow
               label="Activation"
@@ -611,6 +613,18 @@ export function ReviewStep(props: Props) {
         </div>
       </div>
 
+      {!canActivate && missingItems.length > 0 && (
+        <div className="ob-inner-card">
+          <div className="ob-inner-card-body">
+            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
+              Required before activation
+            </div>
+            {missingItems.map((item) => (
+              <CheckRow key={item} done={false} required label={item} />
+            ))}
+          </div>
+        </div>
+      )}
       {activateError && (
         <div className="ob-inner-card">
           <div className="ob-inner-card-body">
@@ -632,7 +646,7 @@ export function ReviewStep(props: Props) {
           onClick={handleActivate}
         >
           {activating
-            ? "Activating…"
+            ? "Activating..."
             : canActivate
               ? "Activate company"
               : "Complete required setup"}

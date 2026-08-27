@@ -1,4 +1,4 @@
-﻿// src/features/inventory/stockTransfers/pages/StockTransferDetailPage.tsx
+// src/features/inventory/stockTransfers/pages/StockTransferDetailPage.tsx
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -13,19 +13,19 @@ import {
   type StockTransferStatus,
 } from "../types";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+//  Helpers 
 
 function fmt(iso?: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-US", {
+  return isNaN(d.getTime()) ? "-" : d.toLocaleDateString("en-US", {
     year: "numeric", month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
 }
 
 function money(n?: number | null) {
-  if (n == null || !isFinite(n)) return "—";
+  if (n == null || !isFinite(n)) return "-";
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -33,9 +33,9 @@ function apiErr(e: unknown): string {
   return getApiError(e);
 }
 
-// ── Status normalisation ──────────────────────────────────────────────────────
+//  Status normalisation 
 //
-// FIX: original used `data?.status as StockTransferStatus` — a direct cast
+// FIX: original used `data?.status as StockTransferStatus` - a direct cast
 // that silently produces the wrong value when the API returns lowercase
 // ("submitted") or numeric status codes. canApprove / canReject were always
 // false for Submitted transfers, so the buttons never rendered.
@@ -65,24 +65,24 @@ function normalizeStatus(raw: unknown): StockTransferStatus {
   }
 }
 
-// ── Status config ─────────────────────────────────────────────────────────────
+//  Status config 
 
 const STATUS_CONFIG: Record<StockTransferStatus, {
   label: string; bg: string; color: string; icon: string;
 }> = {
-  Draft:     { label: "Draft",     bg: "#f1f5f9", color: "#475569", icon: "✎"  },
-  Submitted: { label: "Submitted", bg: "#fef3c7", color: "#92400e", icon: "⏳" },
-  Approved:  { label: "Approved",  bg: "#dbeafe", color: "#1e40af", icon: "✓"  },
-  Rejected:  { label: "Rejected",  bg: "#fee2e2", color: "#991b1b", icon: "✕"  },
-  Posted:    { label: "Posted",    bg: "#d1fae5", color: "#065f46", icon: "⬆"  },
-  Reversed:  { label: "Reversed",  bg: "#ede9fe", color: "#5b21b6", icon: "↩"  },
-  Cancelled: { label: "Cancelled", bg: "#f3f4f6", color: "#374151", icon: "○"  },
-  Failed:    { label: "Failed",    bg: "#fee2e2", color: "#991b1b", icon: "✗"  },
-  Issued:    { label: "Issued",    bg: "#dbeafe", color: "#1e40af", icon: "📦"  },
-  ChangesRequested: { label: "Changes Requested", bg: "#fef3c7", color: "#92400e", icon: "✏"  },
+  Draft:     { label: "Draft",     bg: "#f1f5f9", color: "#475569", icon: ""  },
+  Submitted: { label: "Submitted", bg: "#fef3c7", color: "#92400e", icon: "" },
+  Approved:  { label: "Approved",  bg: "#dbeafe", color: "#1e40af", icon: ""  },
+  Rejected:  { label: "Rejected",  bg: "#fee2e2", color: "#991b1b", icon: ""  },
+  Posted:    { label: "Posted",    bg: "#d1fae5", color: "#065f46", icon: ""  },
+  Reversed:  { label: "Reversed",  bg: "#ede9fe", color: "#5b21b6", icon: ""  },
+  Cancelled: { label: "Cancelled", bg: "#f3f4f6", color: "#374151", icon: ""  },
+  Failed:    { label: "Failed",    bg: "#fee2e2", color: "#991b1b", icon: ""  },
+  Issued:    { label: "Issued",    bg: "#dbeafe", color: "#1e40af", icon: ""  },
+  ChangesRequested: { label: "Changes Requested", bg: "#fef3c7", color: "#92400e", icon: ""  },
 };
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+//  Sub-components 
 
 function StatusBadge({ status }: { status: StockTransferStatus }) {
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.Draft;
@@ -112,7 +112,7 @@ function WorkflowStep({ label, done, current, icon }: {
         boxShadow: current ? "0 0 0 3px #eff6ff" : "none",
         transition: "all .2s",
       }}>
-        {done ? "✓" : icon}
+        {done ? "" : icon}
       </div>
       <span style={{
         fontSize: 11, marginTop: 6,
@@ -140,7 +140,7 @@ function Field({ label, value, mono }: {
         fontSize: 13, fontWeight: 500, color: "#0f172a",
         fontFamily: mono ? "monospace" : undefined,
       }}>
-        {value || "—"}
+        {value || "-"}
       </div>
     </div>
   );
@@ -160,9 +160,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-// ── RejectModal ───────────────────────────────────────────────────────────────
+//  RejectModal 
 //
-// FIX: original used browser prompt() — a blocking, unstyled native dialog
+// FIX: original used browser prompt() - a blocking, unstyled native dialog
 // that can't be customised and is disabled in some iframe / CSP contexts.
 // Replaced with an inline modal consistent with the rest of the codebase.
 
@@ -189,7 +189,7 @@ function RejectModal({
           Reject transfer
         </div>
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>
-          Provide a reason — this will be visible to the submitter.
+          Provide a reason - this will be visible to the submitter.
         </div>
         <textarea
           style={{
@@ -226,7 +226,7 @@ function RejectModal({
               opacity: working || !text.trim() ? 0.6 : 1,
             }}
           >
-            {working ? "Rejecting…" : "Confirm reject"}
+            {working ? "Rejecting..." : "Confirm reject"}
           </button>
         </div>
       </div>
@@ -234,7 +234,7 @@ function RejectModal({
   );
 }
 
-// ── ActionBtn ─────────────────────────────────────────────────────────────────
+//  ActionBtn 
 
 const BTN_STYLES: Record<string, React.CSSProperties> = {
   primary:   { background: "#2563eb", color: "#fff",     border: "1px solid #2563eb"  },
@@ -261,12 +261,12 @@ function ActionBtn({ label, busy, name, variant, onClick }: {
         ...BTN_STYLES[variant],
       }}
     >
-      {isMe ? "…" : label}
+      {isMe ? "..." : label}
     </button>
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+//  Page 
 
 export default function StockTransferDetailPage() {
   const nav = useNavigate();
@@ -281,7 +281,7 @@ export default function StockTransferDetailPage() {
   const [success,      setSuccess]      = useState<string | null>(null);
   const [showReject,   setShowReject]   = useState(false);
 
-  // Ref guard — prevents double-submit before React re-renders busy state.
+  // Ref guard - prevents double-submit before React re-renders busy state.
   const inFlight = useRef(false);
 
   const load = useCallback(async () => {
@@ -298,7 +298,7 @@ export default function StockTransferDetailPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // FIX: was recreated on every render without useCallback — passed into
+  // FIX: was recreated on every render without useCallback - passed into
   // multiple button onClick handlers, causing unnecessary re-renders.
   const act = useCallback(async (
     name: string,
@@ -354,10 +354,10 @@ export default function StockTransferDetailPage() {
             fontSize: 11, fontWeight: 700, textTransform: "uppercase",
             letterSpacing: "0.08em", color: "#94a3b8", marginBottom: 6,
           }}>
-            Inventory · Stock Transfers
+            Inventory - Stock Transfers
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
-            {loading && !data ? "Loading…" : (data?.transferNumber ?? "Stock Transfer")}
+            {loading && !data ? "Loading..." : (data?.transferNumber ?? "Stock Transfer")}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
             {data && <StatusBadge status={status} />}
@@ -370,7 +370,7 @@ export default function StockTransferDetailPage() {
                   cursor: "pointer", color: "#475569", fontWeight: 600,
                 }}
               >
-                ✎ Edit
+                 Edit
               </button>
             )}
           </div>
@@ -381,14 +381,14 @@ export default function StockTransferDetailPage() {
               padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0",
               background: "#f8fafc", cursor: "pointer", fontSize: 13, color: "#475569",
             }}>
-            {loading ? "…" : "↻ Refresh"}
+            {loading ? "..." : " Refresh"}
           </button>
           <button onClick={() => paths && nav(paths.list)}
             style={{
               padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0",
               background: "#f8fafc", cursor: "pointer", fontSize: 13, color: "#475569",
             }}>
-            ← Back
+            Back
           </button>
         </div>
       </div>
@@ -400,7 +400,7 @@ export default function StockTransferDetailPage() {
           border: "1px solid #fecaca", color: "#991b1b", fontSize: 13,
           marginBottom: 16, display: "flex", gap: 10,
         }}>
-          <span>✕</span><div>{error}</div>
+          <span></span><div>{error}</div>
         </div>
       )}
       {success && (
@@ -409,7 +409,7 @@ export default function StockTransferDetailPage() {
           border: "1px solid #bbf7d0", color: "#166534", fontSize: 13,
           marginBottom: 16, display: "flex", gap: 10,
         }}>
-          <span>✓</span><div>{success}</div>
+          <span></span><div>{success}</div>
         </div>
       )}
       {status === STOCK_TRANSFER_STATUS.Rejected && data?.rejectionReason && (
@@ -446,10 +446,10 @@ export default function StockTransferDetailPage() {
               height: 2, background: "#059669", zIndex: 0, transition: "width .4s",
             }} />
             {([
-              { label: "Draft",     icon: "✎"  },
-              { label: "Submitted", icon: "⏳" },
-              { label: "Approved",  icon: "✓"  },
-              { label: "Posted",    icon: "⬆"  },
+              { label: "Draft",     icon: ""  },
+              { label: "Submitted", icon: "" },
+              { label: "Approved",  icon: ""  },
+              { label: "Posted",    icon: ""  },
             ] as const).map((s, i) => (
               <WorkflowStep
                 key={s.label}
@@ -466,10 +466,10 @@ export default function StockTransferDetailPage() {
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
         {[
-          { label: "Lines",       value: data?.items.length ?? "—"                            },
+          { label: "Lines",       value: data?.items.length ?? "-"                            },
           { label: "Total Qty",   value: totalQty.toLocaleString()                            },
-          { label: "Total Value", value: totalValue > 0 ? money(totalValue) : "—"            },
-          { label: "From → To",   value: data ? `${data.fromLocationName} → ${data.toLocationName}` : "—" },
+          { label: "Total Value", value: totalValue > 0 ? money(totalValue) : "-"            },
+          { label: "From to To",   value: data ? `${data.fromLocationName} to ${data.toLocationName}` : "-" },
         ].map(k => (
           <div key={k.label} style={{
             background: "#fff", borderRadius: 12,
@@ -554,14 +554,14 @@ export default function StockTransferDetailPage() {
                         {idx + 1}
                       </td>
                       <td style={{ padding: "12px 16px" }}>
-                        <div style={{ fontWeight: 600, color: "#0f172a" }}>{l.itemName || "—"}</div>
+                        <div style={{ fontWeight: 600, color: "#0f172a" }}>{l.itemName || "-"}</div>
                         {l.itemCode && (
                           <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace", marginTop: 2 }}>
                             {l.itemCode}
                           </div>
                         )}
                       </td>
-                      <td style={{ padding: "12px 16px", color: "#475569" }}>{l.uom || "—"}</td>
+                      <td style={{ padding: "12px 16px", color: "#475569" }}>{l.uom || "-"}</td>
                       <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, fontFamily: "monospace" }}>
                         {l.quantity}
                       </td>
@@ -604,11 +604,11 @@ export default function StockTransferDetailPage() {
         zIndex: 50, flexWrap: "wrap", justifyContent: "center",
       }}>
         <span style={{ fontSize: 12, color: "#94a3b8", marginRight: 4 }}>
-          <b style={{ color: "#475569" }}>Workflow:</b> Draft → Submit → Approve → Post
+          <b style={{ color: "#475569" }}>Workflow:</b> Draft to Submit to Approve to Post
         </span>
 
         {canEdit && (
-          <ActionBtn label="✎ Edit" busy={busy} name="edit" variant="secondary"
+          <ActionBtn label=" Edit" busy={busy} name="edit" variant="secondary"
             onClick={() => paths && nav(paths.edit(id!))} />
         )}
         {canSubmit && (
@@ -619,16 +619,16 @@ export default function StockTransferDetailPage() {
         )}
         {canApprove && (
           <>
-            <ActionBtn label="✓ Approve" busy={busy} name="approve" variant="success"
+            <ActionBtn label=" Approve" busy={busy} name="approve" variant="success"
               onClick={() => act("approve",
                 () => stockTransfersApi.approve(companyId, branchId, id!),
                 "Transfer approved.")} />
-            <ActionBtn label="✕ Reject" busy={busy} name="reject" variant="danger"
+            <ActionBtn label=" Reject" busy={busy} name="reject" variant="danger"
               onClick={() => setShowReject(true)} />
           </>
         )}
         {canPost && (
-          <ActionBtn label="⬆ Post (FIFO + Ledger)" busy={busy} name="post" variant="primary"
+          <ActionBtn label=" Post (FIFO + Ledger)" busy={busy} name="post" variant="primary"
             onClick={() => act("post",
               () => stockTransfersApi.post(companyId, branchId, id!),
               "Transfer posted to ledger.")} />

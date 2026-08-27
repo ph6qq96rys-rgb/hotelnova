@@ -23,12 +23,19 @@ export interface SivLineRecommendation {
   uomCode: string;
   requestedQty: number;
   recommendedQty: number;
-  onHandQty: number;
-  reservedQty: number;
-  availableQty: number;
-  projectedQtyAfterApproval: number;
-  weeklyAverageUsage: number;
+  onHandQty?: number | null;
+  reservedQty?: number | null;
+  availableQty?: number | null;
+  projectedQtyAfterApproval?: number | null;
+  weeklyAverageUsage?: number | null;
+  toBaseFactor?: number | null;
+  onHandBaseQty?: number | null;
+  reservedBaseQty?: number | null;
+  availableBaseQty?: number | null;
+  projectedAvailableBaseQty?: number | null;
+  averageWeeklyUsageBaseQty?: number | null;
   weeksOfSupplyBefore?: number | null;
+  weeksOfSupplyAfter?: number | null;
   weeksOfSupplyAfterApproval?: number | null;
   earliestExpiryUtc?: string | null;
   inventoryIsBalanced: boolean;
@@ -81,7 +88,7 @@ export function formatRecommendationNumber(
   value: number | null | undefined,
   maximumFractionDigits = 3,
 ): string {
-  if (value == null || !Number.isFinite(value)) return "—";
+  if (value == null || !Number.isFinite(value)) return "-";
 
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits,
@@ -91,10 +98,10 @@ export function formatRecommendationNumber(
 export function formatRecommendationDate(
   value: string | null | undefined,
 ): string {
-  if (!value) return "—";
+  if (!value) return "-";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
 
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",

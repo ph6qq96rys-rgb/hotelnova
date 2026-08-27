@@ -3,6 +3,7 @@
 // Pure security utility functions.
 // No React. No side effects. Fully testable.
 
+import { toUserFriendlyError } from "../../../shared/errors/errorMessage.utils";
 import type {
   PermissionCatalogItem,
   UserAssignmentDto,
@@ -301,26 +302,7 @@ export function extractSecurityError(
   error: unknown,
   fallback = "An unexpected error occurred."
 ): string {
-  const err = error as any;
-  const data = err?.response?.data;
-
-  if (typeof data === "string") return data;
-
-  if (Array.isArray(data?.errors)) {
-    return data.errors.join("; ");
-  }
-
-  if (data?.errors && typeof data.errors === "object") {
-    return Object.values(data.errors).flat().join("; ");
-  }
-
-  return (
-    data?.message ??
-    data?.title ??
-    data?.error ??
-    err?.message ??
-    fallback
-  );
+  return toUserFriendlyError(error, fallback);
 }
 
 export function isCancelled(error: unknown): boolean {

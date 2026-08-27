@@ -5,3 +5,9 @@ dist/
 *.log
 .env
 .env.local
+playwright-report/
+test-results/
+*.tsbuildinfo
+obj/
+src/obj/
+vite.config.d.ts

@@ -435,11 +435,11 @@ export default function GrnDraftEditorPage() {
               )
             }
           >
-            ← Goods Receipts
+            - Goods Receipts
           </button>
 
           <div className="erp-kicker">
-            Inventory • Receiving
+            Inventory - Receiving
           </div>
 
           <h1>
@@ -488,7 +488,7 @@ export default function GrnDraftEditorPage() {
 
       {draft.loadingDraft ? (
         <div className="erp-inline-state">
-          Loading goods receipt draft…
+          Loading goods receipt draft...
         </div>
       ) : null}
 

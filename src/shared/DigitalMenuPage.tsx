@@ -278,7 +278,7 @@ export default function RestaurantMenuPage({
 
       <header className="menu-hero">
         <div className="menu-brand">
-          <div className="menu-logo">🍴</div>
+          <div className="menu-logo"></div>
 
           <div>
             <h1>{restaurantName}</h1>
@@ -305,7 +305,7 @@ export default function RestaurantMenuPage({
 
       <section className="menu-trust">
         <article>
-          <span>🍲</span>
+          <span></span>
           <div>
             <strong>FRESH INGREDIENTS</strong>
             <small>Carefully selected</small>
@@ -313,7 +313,7 @@ export default function RestaurantMenuPage({
         </article>
 
         <article>
-          <span>👨‍🍳</span>
+          <span></span>
           <div>
             <strong>EXPERT CHEFS</strong>
             <small>Crafted to perfection</small>
@@ -321,7 +321,7 @@ export default function RestaurantMenuPage({
         </article>
 
         <article>
-          <span>🌿</span>
+          <span></span>
           <div>
             <strong>QUALITY & HYGIENE</strong>
             <small>Always our priority</small>
@@ -329,7 +329,7 @@ export default function RestaurantMenuPage({
         </article>
 
         <article>
-          <span>♡</span>
+          <span></span>
           <div>
             <strong>MADE WITH LOVE</strong>
             <small>Just for you</small>
@@ -467,9 +467,9 @@ export default function RestaurantMenuPage({
         )}
 
         <section className="menu-legend">
-          <span>🌿 Vegetarian</span>
-          <span>🌶️ Spicy</span>
-          <span>👨‍🍳 Chef&apos;s Special</span>
+          <span> Vegetarian</span>
+          <span> Spicy</span>
+          <span> Chef&apos;s Special</span>
           <span className="allergy">
             Food allergy? Please inform our staff before ordering.
           </span>
@@ -479,7 +479,7 @@ export default function RestaurantMenuPage({
       <footer className="menu-footer">
         <div>
           <strong>OPENING HOURS</strong>
-          <span>Mon – Sun · 11:00 AM – 11:00 PM</span>
+          <span>Mon - Sun - 11:00 AM - 11:00 PM</span>
         </div>
 
         <div>
@@ -489,7 +489,7 @@ export default function RestaurantMenuPage({
 
         <div>
           <strong>CONTACT US</strong>
-          <span>+1 234 567 8900 · info@hotelnova.com</span>
+          <span>+1 234 567 8900 - info@hotelnova.com</span>
         </div>
 
         <div>

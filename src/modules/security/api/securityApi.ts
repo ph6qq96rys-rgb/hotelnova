@@ -107,6 +107,7 @@ export type StoreQuery = {
 };
 
 export type CreateSecurityUserRequest = CreateUserRequest & {
+  companyEmployeeId?: string | null;
   employeeId?: string | null;
   branchId?: string | null;
   branchIds?: string[];

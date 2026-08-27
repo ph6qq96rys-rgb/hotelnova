@@ -1190,7 +1190,7 @@ export function StockLocationsStep(props: Props) {
   if (loading) {
     return (
       <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "24px 0", color: "#64748b" }}>
-        <Spinner /> Loading stock locations…
+        <Spinner /> Loading stock locations...
       </div>
     );
   }
@@ -1247,7 +1247,7 @@ export function StockLocationsStep(props: Props) {
               disabled={!dirtyAssignments || assignmentSaving || props.saving}
               onClick={() => void saveAssignments()}
             >
-              {assignmentSaving ? "Saving…" : "Save assignments"}
+              {assignmentSaving ? "Saving..." : "Save assignments"}
             </Btn>
           </div>
         </div>
@@ -1327,7 +1327,7 @@ export function StockLocationsStep(props: Props) {
                 <LocationFormView form={editForm} errors={editErrors} onChange={setEditForm} />
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <Btn variant="primary" disabled={editSaving || props.saving} onClick={() => void saveLocation(id)}>
-                    {editSaving ? "Saving…" : "Save location"}
+                    {editSaving ? "Saving..." : "Save location"}
                   </Btn>
                 </div>
               </div>
@@ -1373,7 +1373,7 @@ export function StockLocationsStep(props: Props) {
             <LocationFormView form={createForm} errors={createErrors} onChange={setCreateForm} />
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <Btn variant="primary" disabled={!canManage || createSaving || props.saving} onClick={() => void createLocation()}>
-                {createSaving ? "Creating…" : "Create and assign"}
+                {createSaving ? "Creating..." : "Create and assign"}
               </Btn>
             </div>
           </div>

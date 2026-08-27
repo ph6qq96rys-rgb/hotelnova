@@ -1,9 +1,9 @@
 /* src/features/hr/pages/employees/EmployeeFormPage.module.css */
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   Employee Master Form — ERP-grade UI
+/* 
+   Employee Master Form - ERP-grade UI
    Scope: CSS Module used by EmployeeFormPage.tsx
-   ───────────────────────────────────────────────────────────────────────────── */
+    */
 
 .root {
   min-height: 100%;
@@ -23,7 +23,7 @@
     linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
-/* ── Page header ───────────────────────────────────────────────────────────── */
+/*  Page header  */
 
 .header {
   position: sticky;
@@ -87,7 +87,7 @@
   flex-wrap: wrap;
 }
 
-/* ── Buttons ───────────────────────────────────────────────────────────────── */
+/*  Buttons  */
 
 .btn {
   display: inline-flex;
@@ -151,7 +151,7 @@
   opacity: 0.46;
 }
 
-/* ── Body layout ───────────────────────────────────────────────────────────── */
+/*  Body layout  */
 
 .body {
   display: grid;
@@ -161,7 +161,7 @@
   padding: 24px 32px 48px;
 }
 
-/* ── Sidebar ───────────────────────────────────────────────────────────────── */
+/*  Sidebar  */
 
 .sidebar {
   position: sticky;
@@ -240,7 +240,7 @@
   color: #be123c;
 }
 
-/* ── Section cards ─────────────────────────────────────────────────────────── */
+/*  Section cards  */
 
 .section {
   position: relative;
@@ -322,7 +322,7 @@
   grid-column: span 3;
 }
 
-/* ── Form fields ───────────────────────────────────────────────────────────── */
+/*  Form fields  */
 
 .label {
   display: flex;
@@ -427,7 +427,7 @@
   color: #be123c;
 }
 
-/* ── Alert ─────────────────────────────────────────────────────────────────── */
+/*  Alert  */
 
 .alert {
   display: flex;
@@ -452,7 +452,7 @@
   margin-top: 1px;
 }
 
-/* ── Status pills ──────────────────────────────────────────────────────────── */
+/*  Status pills  */
 
 .statusRow {
   display: flex;
@@ -496,7 +496,7 @@
   box-shadow: 0 10px 20px rgba(37, 99, 235, 0.22);
 }
 
-/* ── Currency prefix input ─────────────────────────────────────────────────── */
+/*  Currency prefix input  */
 
 .prefixWrap {
   position: relative;
@@ -520,7 +520,7 @@
   padding-left: 58px;
 }
 
-/* ── Footer action bar ─────────────────────────────────────────────────────── */
+/*  Footer action bar  */
 
 .footer {
   position: sticky;
@@ -552,7 +552,7 @@
   font-size: 15px;
 }
 
-/* ── Loading skeleton ──────────────────────────────────────────────────────── */
+/*  Loading skeleton  */
 
 .skeleton {
   border-radius: 18px;
@@ -577,7 +577,7 @@
   }
 }
 
-/* ── Responsive ────────────────────────────────────────────────────────────── */
+/*  Responsive  */
 
 @media (max-width: 1180px) {
   .body {

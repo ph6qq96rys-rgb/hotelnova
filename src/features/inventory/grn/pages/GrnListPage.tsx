@@ -99,7 +99,7 @@ export default function GrnListPage() {
     <main className="page erp-grn-page">
       <header className="erp-grn-hero">
         <div>
-          <div className="erp-kicker">Inventory • Receiving</div>
+          <div className="erp-kicker">Inventory - Receiving</div>
           <h1>Goods Receipts</h1>
           <p>
             Track supplier receipts, posting, FIFO creation, and reversal readiness

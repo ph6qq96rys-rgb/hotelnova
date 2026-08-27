@@ -86,7 +86,7 @@ export default function GrnLinesTable({
                       className={lineError.itemId ? "is-invalid" : ""}
                       onChange={(event) => onItemSelected(event.target.value, index)}
                     >
-                      <option value="">{loadingItems ? "Loading items…" : "Select item"}</option>
+                      <option value="">{loadingItems ? "Loading items..." : "Select item"}</option>
                       {itemOptions.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}

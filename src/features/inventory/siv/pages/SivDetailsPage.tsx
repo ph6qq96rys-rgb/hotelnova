@@ -1,13 +1,13 @@
 // src/features/inventory/siv/pages/SivDetailsPage.tsx
 //
 // Full SIV detail view with:
-//   • Workflow progress bar
-//   • Command bar (role-gated action buttons)
-//   • Line items table (Requested / Approved / Issued / Cost columns)
-//   • Audit trail tab
-//   • FIFO preview tab (lazy-loaded per line)
-//   • Properties panel
-//   • All workflow action modals wired to real API
+//   ' Workflow progress bar
+//   ' Command bar (role-gated action buttons)
+//   ' Line items table (Requested / Approved / Issued / Cost columns)
+//   ' Audit trail tab
+//   ' FIFO preview tab (lazy-loaded per line)
+//   ' Properties panel
+//   ' All workflow action modals wired to real API
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams }                         from "react-router-dom";
@@ -28,7 +28,7 @@ import {
   sivPrintPath,
 } from "../utils/sivWorkflowRoutes";
 
-// ── Issue modal — per-line issued quantities ───────────────────────────────────
+// '-' Issue modal '-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-'
 
 function IssueModal({
   lines, busy,
@@ -36,7 +36,7 @@ function IssueModal({
 }: {
   lines:      SivLineVm[];
   busy:       boolean;
-  onConfirm:  (lines: IssueSivLineRequest[], remarks: string) => void;
+  onConfirm:  (lines: IssueSivLineRequest[], remarks: string) => Promise<void> | void;
   onCancel:   () => void;
 }) {
   const [qtys,    setQtys]    = useState<Record<string, string>>({});
@@ -72,7 +72,8 @@ function IssueModal({
         batchNo:   batches[l.id] || l.batchNo || null,
       };
     });
-    onConfirm(lineReqs, remarks);
+    void onConfirm(lineReqs, remarks);
+    onCancel();
   };
 
   return (
@@ -92,7 +93,7 @@ function IssueModal({
         <div style={{fontWeight:600,fontSize:15,marginBottom:4}}>Issue SIV</div>
         <div style={{fontSize:12,color:"var(--text-muted)",marginBottom:16}}>
           Confirm quantities physically picked from the warehouse.
-          IssuedQty ≤ ApprovedQty.
+          IssuedQty '-' ApprovedQty.
         </div>
 
         {errors._all && (
@@ -115,9 +116,9 @@ function IssueModal({
               return (
                 <tr key={l.id}>
                   <td>
-                    <div style={{fontWeight:500}}>{l.itemName || "—"}</div>
+                    <div style={{fontWeight:500}}>{l.itemName || "-"}</div>
                     <div style={{fontSize:10,color:"var(--text-muted)",fontFamily:"var(--mono)"}}>
-                      {l.itemCode} · {l.uomCode}
+                      {l.itemCode} '- {l.uomCode}
                     </div>
                   </td>
                   <td style={{textAlign:"right",fontFamily:"var(--mono)",fontWeight:500}}>
@@ -159,7 +160,7 @@ function IssueModal({
             className="input"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Warehouse notes…"
+            placeholder="Warehouse notes'"
             style={{minHeight:56}}
           />
         </div>
@@ -167,7 +168,7 @@ function IssueModal({
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
           <button className="btn btn-primary" onClick={handleConfirm} disabled={busy}>
-            {busy ? "Issuing…" : "Confirm Issue"}
+            {busy ? "Issuing'" : "Confirm Issue"}
           </button>
         </div>
       </div>
@@ -175,7 +176,7 @@ function IssueModal({
   );
 }
 
-// ── Remarks modal (Reject / Request Changes / Reverse) ────────────────────────
+// '-' Remarks modal (Reject / Request Changes / Reverse) '-''-''-''-''-''-''-''-''-''-''-''-'
 
 function RemarksModal({
   title, subtitle, fieldLabel, confirmLabel, confirmClass,
@@ -238,7 +239,7 @@ function RemarksModal({
             }}
             disabled={busy || !valid}
           >
-            {busy ? "Processing…" : confirmLabel}
+            {busy ? "Processing'" : confirmLabel}
           </button>
         </div>
       </div>
@@ -246,7 +247,7 @@ function RemarksModal({
   );
 }
 
-// ── Post confirmation modal ───────────────────────────────────────────────────
+// '-' Post confirmation modal '-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''
 
 function PostModal({
   doc, busy,
@@ -279,16 +280,15 @@ function PostModal({
           inventory ledger entries. This cannot be undone without a formal reversal.
         </div>
         <div className="alert alert-success" style={{marginBottom:14}}>
-          ▲ {issued.length} line{issued.length !== 1 ? "s" : ""} · {fmtQty(total)} units
-          will be posted from {doc.fromLocationName} → {doc.toLocationName || doc.departmentName || "—"}.
+          {issued.length} line{issued.length !== 1 ? "s" : ""} - {fmtQty(total)} units will be posted from {doc.fromLocationName} to {doc.toLocationName || doc.departmentName || "-"}.
         </div>
         <div className="alert alert-warn" style={{marginBottom:18}}>
-          ⚠ Posting is permanent. Verify all quantities before proceeding.
+          Warning: Posting is permanent. Verify all quantities before proceeding.
         </div>
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
           <button className="btn btn-primary" onClick={onConfirm} disabled={busy}>
-            {busy ? "Posting…" : "Post to Ledger"}
+            {busy ? "Posting..." : "Post to Ledger"}
           </button>
         </div>
       </div>
@@ -296,8 +296,35 @@ function PostModal({
   );
 }
 
-// ── FIFO Preview panel ────────────────────────────────────────────────────────
+// FIFO Preview panel
 
+function getRecommendationOverrideLines(doc: SivVm) {
+  const snapshotJson = doc.recommendationOverride?.snapshotJson;
+  if (!snapshotJson) return [] as Array<{ lineNo: number; itemName: string; recommendedQty: number; approvedQty: number; uomCode: string; warnings: string }>;
+
+  try {
+    const snapshot = JSON.parse(snapshotJson) as { Lines?: any[]; lines?: any[] };
+    const snapshotLines = Array.isArray(snapshot.lines) ? snapshot.lines : Array.isArray(snapshot.Lines) ? snapshot.Lines : [];
+    return snapshotLines
+      .map((line) => {
+        const lineId = String(line.sivLineId ?? line.SivLineId ?? "");
+        const approved = doc.lines.find((x) => x.id === lineId)?.approvedQty ?? null;
+        const recommendedQty = Number(line.recommendedQty ?? line.RecommendedQty ?? 0);
+        if (approved == null || approved <= recommendedQty) return null;
+        return {
+          lineNo: Number(line.lineNo ?? line.LineNo ?? 0),
+          itemName: String(line.itemName ?? line.ItemName ?? "-"),
+          recommendedQty,
+          approvedQty: approved,
+          uomCode: String(line.uomCode ?? line.UomCode ?? ""),
+          warnings: (line.warnings ?? line.Warnings ?? []).join(" | "),
+        };
+      })
+      .filter(Boolean) as Array<{ lineNo: number; itemName: string; recommendedQty: number; approvedQty: number; uomCode: string; warnings: string }>;
+  } catch {
+    return [];
+  }
+}
 function FifoPreviewPanel({
   companyId, sivId, lines,
 }: {
@@ -335,7 +362,7 @@ function FifoPreviewPanel({
             void loadPreview(e.target.value);
           }}
         >
-          <option value="">— choose a line —</option>
+          <option value="">'-'</option>
           {lines.map((l) => (
             <option key={l.id} value={l.id}>
               {l.itemName || l.itemCode} ({fmtQty(l.qty)} {l.uomCode})
@@ -346,7 +373,7 @@ function FifoPreviewPanel({
 
       {loading && (
         <div style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>
-          Loading FIFO preview…
+          Loading FIFO preview'
         </div>
       )}
 
@@ -356,7 +383,7 @@ function FifoPreviewPanel({
         <div>
           <div style={{marginBottom:12,fontSize:13}}>
             <strong>{preview.itemName}</strong>
-            {" · "} Need:{" "}
+            {" '- "} Need:{" "}
             <span style={{fontFamily:"var(--mono)",fontWeight:500}}>
               {fmtQty(preview.requestedQty)} {preview.uomCode}
             </span>
@@ -382,10 +409,10 @@ function FifoPreviewPanel({
                 {preview.allocations.map((alloc) => (
                   <tr key={alloc.fifoLayerId}>
                     <td style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--accent)"}}>
-                      {alloc.sourceNumber || alloc.fifoLayerId.slice(0, 8)}
+                      {alloc.sourceNumber || "FIFO layer"}
                     </td>
                     <td style={{fontSize:12}}>{fmtDate(alloc.receivedDate)}</td>
-                    <td style={{fontSize:12}}>{alloc.batchNo || "—"}</td>
+                    <td style={{fontSize:12}}>{alloc.batchNo || "-"}</td>
                     <td
                       style={{
                         fontSize: 12,
@@ -394,7 +421,7 @@ function FifoPreviewPanel({
                             ? "var(--danger)" : "var(--text)",
                       }}
                     >
-                      {alloc.expiryDate ? fmtDate(alloc.expiryDate) : "—"}
+                      {alloc.expiryDate ? fmtDate(alloc.expiryDate) : "-"}
                     </td>
                     <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:12}}>
                       {fmtQty(alloc.availableBaseQty)}
@@ -427,7 +454,7 @@ function FifoPreviewPanel({
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// Main page
 
 type ModalType = "none" | "issue" | "post" | "reverse";
 
@@ -460,7 +487,7 @@ export default function SivDetailsPage() {
   const [modal,   setModal]   = useState<ModalType>("none");
   const [tab,     setTab]     = useState<"lines"|"audit"|"fifo">("lines");
 
-  // ── Load ──────────────────────────────────────────────────────────────────
+// Load
 
   const load = useCallback(async () => {
     if (!companyId || !sivId) return;
@@ -487,29 +514,29 @@ export default function SivDetailsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // ── Generic action runner ─────────────────────────────────────────────────
+// Generic action runner
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(true); setErr(null); setSuccess(null);
     try {
       await fn();
       setSuccess(`${label} successful.`);
-      setModal("none");
       await load();
     } catch (e) {
       setErr(getApiError(e, `${label} failed.`));
     } finally {
+      setModal("none");
       setBusy(false);
     }
   }
 
-  // ── Guards ────────────────────────────────────────────────────────────────
+// Guards
 
   if (loading) {
     return (
       <div className="page">
         <div style={{padding:48,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>
-          Loading SIV…
+          Loading SIV'
         </div>
       </div>
     );
@@ -529,23 +556,24 @@ export default function SivDetailsPage() {
   const totalReq = doc.lines.reduce((s, l) => s + l.qty, 0);
   const totalApp = doc.lines.reduce((s, l) => s + (l.approvedQty ?? 0), 0);
   const totalIss = doc.lines.reduce((s, l) => s + l.issuedQty, 0);
+  const overrideLines = getRecommendationOverrideLines(doc);
 
   const statusBanners: Record<string, React.ReactNode> = {
     ChangesRequested: (
       <div className="alert alert-warn" style={{marginBottom:14}}>
-        ↩ <strong>Changes Requested</strong> — This SIV has been returned for
+        '-' <strong>Changes Requested</strong> ' This SIV has been returned for
         amendment. Review the remarks below, update lines, and resubmit.
       </div>
     ),
     Rejected: (
       <div className="alert alert-danger" style={{marginBottom:14}}>
-        ✕ <strong>Rejected</strong> — This SIV has been rejected and is closed.
+        ...'-' This SIV has been rejected and is closed.
         Create a new SIV if required.
       </div>
     ),
     Reversed: (
       <div className="alert" style={{marginBottom:14}}>
-        ↺ <strong>Reversed</strong> — FIFO consumption has been undone and stock
+        '-' <strong>Reversed</strong> ' FIFO consumption has been undone and stock
         balances have been restored.
       </div>
     ),
@@ -560,15 +588,15 @@ export default function SivDetailsPage() {
       {/* Page header */}
       <div className="page-header" style={{marginTop:16}}>
         <div>
-          <div className="page-kicker">Inventory · SIV</div>
+          <div className="page-kicker">Inventory '- SIV</div>
           <div className="page-title" style={{fontFamily:"var(--mono)",fontSize:20}}>
-            {doc.number || doc.id}
+            {doc.number || "Pending SIV number"}
           </div>
           <div className="page-sub">
             {fmtDate(doc.issueDate)}
-            {doc.fromLocationName && ` · ${doc.fromLocationName}`}
-            {doc.toLocationName   && ` → ${doc.toLocationName}`}
-            {doc.departmentName   && ` · ${doc.departmentName}`}
+            {doc.fromLocationName && ` '- ${doc.fromLocationName}`}
+            {doc.toLocationName   && ` '-'" ${doc.toLocationName}`}
+            {doc.departmentName   && ` '- ${doc.departmentName}`}
           </div>
         </div>
 
@@ -579,28 +607,28 @@ export default function SivDetailsPage() {
           {p.canIssue && (
             <button className="btn btn-primary" disabled={busy}
               onClick={() => setModal("issue")}>
-              ◉ Issue
+              '-' Issue
             </button>
           )}
           {p.canPost && (
             <button className="btn btn-primary" disabled={busy}
               onClick={() => setModal("post")}>
-              ▲ Post to Ledger
+              '-' Post to Ledger
             </button>
           )}
           {p.canReverse && (
             <button className="btn btn-danger" disabled={busy}
               onClick={() => setModal("reverse")}>
-              ↺ Reverse
+              '-' Reverse
             </button>
           )}
           {p.canPrint && (
             <button className="btn"
               onClick={() => nav(sivPrintPath(companyId, doc.id))}>
-              ⎙ Print
+              ... Print
             </button>
           )}
-          <button className="btn" onClick={() => nav(-1)}>← Back</button>
+          <button className="btn" onClick={() => nav(-1)}>'-' Back</button>
         </div>
       </div>
 
@@ -677,28 +705,28 @@ export default function SivDetailsPage() {
                       <tr key={line.id || i}>
                         <td style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--text-muted)"}}>{String(line.lineNo).padStart(2,"0")}</td>
                         <td>
-                          <div style={{fontWeight:500,fontSize:13}}>{line.itemName||"—"}</div>
+                          <div style={{fontWeight:500,fontSize:13}}>{line.itemName||"-"}</div>
                           <div style={{fontSize:10,color:"var(--text-muted)",fontFamily:"var(--mono)",marginTop:1}}>{line.itemCode}</div>
                           {line.remarks && <div style={{fontSize:10,color:"var(--text-muted)",marginTop:1,fontStyle:"italic"}}>{line.remarks}</div>}
                         </td>
-                        <td style={{fontSize:12,fontFamily:"var(--mono)",color:"var(--text-muted)"}}>{line.uomCode||line.uomName||"—"}</td>
+                        <td style={{fontSize:12,fontFamily:"var(--mono)",color:"var(--text-muted)"}}>{line.uomCode||line.uomName||"-"}</td>
                         <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:13,fontWeight:500}}>{fmtQty(line.qty)}</td>
                         <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:13}}>
                           {line.approvedQty !== null
                             ? <span style={{color:partial?"var(--warn)":"inherit",fontWeight:partial?600:400}}>
-                                {partial && "▼ "}{fmtQty(line.approvedQty)}
+                                {partial && "-"}{fmtQty(line.approvedQty)}
                               </span>
-                            : <span style={{color:"var(--text-soft)"}}>—</span>}
+                            : <span style={{color:"var(--text-soft)"}}>'</span>}
                         </td>
                         <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:13}}>
                           {line.issuedQty
                             ? <span style={{color:"var(--accent)",fontWeight:500}}>{fmtQty(line.issuedQty)}</span>
-                            : <span style={{color:"var(--text-soft)"}}>—</span>}
+                            : <span style={{color:"var(--text-soft)"}}>'</span>}
                         </td>
-                        <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:12,color:"var(--text-muted)"}}>—</td>
-                        <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:12,color:"var(--text-muted)"}}>—</td>
+                        <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:12,color:"var(--text-muted)"}}>'</td>
+                        <td style={{textAlign:"right",fontFamily:"var(--mono)",fontSize:12,color:"var(--text-muted)"}}>'</td>
                         <td style={{fontSize:12,color:expired?"var(--danger)":"var(--text-muted)"}}>
-                          {line.batchNo || "—"}
+                          {line.batchNo || "-"}
                           {line.expiryDate && (
                             <div style={{fontSize:10,marginTop:1}}>
                               Exp: {fmtDate(line.expiryDate)}
@@ -714,10 +742,10 @@ export default function SivDetailsPage() {
                     <td colSpan={3} style={{padding:"8px 14px",fontSize:11,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text-muted)"}}>Totals</td>
                     <td style={{textAlign:"right",fontFamily:"var(--mono)",padding:"8px 14px"}}>{fmtQty(totalReq)}</td>
                     <td style={{textAlign:"right",fontFamily:"var(--mono)",padding:"8px 14px",color:totalApp<totalReq?"var(--warn)":"inherit"}}>
-                      {doc.lines.some((l)=>l.approvedQty!==null)?fmtQty(totalApp):"—"}
+                      {doc.lines.some((l)=>l.approvedQty!==null)?fmtQty(totalApp):"-"}
                     </td>
                     <td style={{textAlign:"right",fontFamily:"var(--mono)",padding:"8px 14px",color:"var(--accent)"}}>
-                      {doc.lines.some((l)=>l.issuedQty>0)?fmtQty(totalIss):"—"}
+                      {doc.lines.some((l)=>l.issuedQty>0)?fmtQty(totalIss):"-"}
                     </td>
                     <td colSpan={3}/>
                   </tr>
@@ -772,6 +800,31 @@ export default function SivDetailsPage() {
 
         {/* Right: document properties panel */}
         <div>
+          {doc.recommendationOverride && (
+            <div className="card" style={{marginBottom:14,borderColor:"rgba(245,158,11,.45)"}}>
+              <div className="card-header">
+                <div className="card-title">Recommendation Override</div>
+              </div>
+              <div className="card-body">
+                <div className="alert alert-warn" style={{marginBottom:12}}>
+                  The approval decision overrode the system recommendation.
+                </div>
+                {[
+                  {label:"Original Decision", value:doc.recommendationOverride.decision||"-"},
+                  {label:"Risk", value:[doc.recommendationOverride.riskLevel, doc.recommendationOverride.riskScore != null ? `${doc.recommendationOverride.riskScore}/100` : null].filter(Boolean).join(" - ") || "-"},
+                  {label:"Evaluated", value:fmtDateTime(doc.recommendationOverride.evaluatedAtUtc)},
+                  {label:"Overridden", value:fmtDateTime(doc.recommendationOverride.overriddenAtUtc)},
+                  {label:"Override Reason", value:doc.recommendationOverride.reason||"-"},
+                  ...(doc.recommendationOverride.warnings ? [{label:"Warnings Acknowledged", value:doc.recommendationOverride.warnings}] : []),
+                ].map(({label,value})=>(
+                  <div key={label} style={{marginBottom:10}}>
+                    <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:"var(--text-muted)",fontFamily:"var(--mono)",marginBottom:3}}>{label}</div>
+                    <div style={{fontSize:13,color:"var(--text)",wordBreak:"break-word"}}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Document details card */}
           <div className="card" style={{marginBottom:14}}>
             <div className="card-header">
@@ -779,13 +832,13 @@ export default function SivDetailsPage() {
             </div>
             <div className="card-body">
               {[
-                {label:"Document No.",   value:doc.number||doc.id,     mono:true},
+                {label:"Document No.",   value:doc.number||"Pending SIV number",     mono:true},
                 {label:"Status",         value:status},
                 {label:"Issue Date",     value:fmtDate(doc.issueDate)},
-                {label:"From Location",  value:doc.fromLocationName||"—"},
-                {label:"To Location",    value:doc.toLocationName||"—"},
-                {label:"Department",     value:doc.departmentName||"—"},
-                {label:"Remarks",        value:doc.remarks||doc.notes||"—"},
+                {label:"From Location",  value:doc.fromLocationName||"-"},
+                {label:"To Location",    value:doc.toLocationName||"-"},
+                {label:"Department",     value:doc.departmentName||"-"},
+                {label:"Remarks",        value:doc.remarks||doc.notes||"-"},
               ].map(({label,value,mono})=>(
                 <div key={label} style={{marginBottom:10}}>
                   <div style={{
@@ -834,7 +887,7 @@ export default function SivDetailsPage() {
         </div>
       </div>
 
-      {/* ── Modals ── */}
+      {/* '-' Modals '-' */}
 
       {modal==="issue" && (
         <IssueModal
@@ -853,7 +906,8 @@ export default function SivDetailsPage() {
           doc={doc}
           busy={busy}
           onConfirm={() => run("Post", () =>
-            sivApi.post(companyId, sivId).then(() => undefined)
+            sivApi.post(companyId, sivId, { rowVersion: doc.rowVersion })
+              .then(() => undefined)
           )}
           onCancel={() => setModal("none")}
         />

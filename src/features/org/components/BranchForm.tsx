@@ -1,4 +1,4 @@
-﻿// src/features/organization/components/BranchForm.tsx
+// src/features/organization/components/BranchForm.tsx
 
 import { useMemo, useState } from "react";
 import type { BranchDto, CreateBranchDto, UpdateBranchDto } from "../types";
@@ -129,7 +129,7 @@ export default function BranchForm(props: Props) {
         </button>
 
         <button type="submit" className="btn btn-primary" disabled={saving || !canSubmit}>
-          {saving ? "Saving…" : isCreate ? "Create" : "Save"}
+          {saving ? "Saving..." : isCreate ? "Create" : "Save"}
         </button>
       </div>
     </form>

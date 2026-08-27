@@ -5,14 +5,17 @@ import { http } from '../../../api/http';
 import type {
   EmployeeListDto,
   EmployeeDetailDto,
+  EmployeeDocumentDto,
   OrgChartNodeDto,
   PayrollRunDto,
   PaySlipDetailDto,
   PaySlipSummaryDto,
   LeaveRequestDto,
+  LeaveTypeDto,
   LeaveBalanceDto,
   LeaveCalendarEntryDto,
   AttendanceReportDto,
+  AttendancePolicyDto,
   AttendanceRecordDto,
   JobPostingDto,
   JobApplicationDto,
@@ -34,7 +37,7 @@ import type {
   PositionDto,
 } from '../types/index';
 
-// ── Shared API Types ──────────────────────────────────────────────────────────
+//  Shared API Types 
 
 export interface BranchDto {
   id: string;
@@ -52,8 +55,10 @@ export interface LookupOptionDto {
 
 export interface EmployeeManagerLookupDto {
   id: string;
-  name: string;
+  name?: string | null;
+  fullName?: string | null;
   employeeNo?: string | null;
+  employeeCode?: string | null;
   branchId?: string | null;
   branchName?: string | null;
   departmentId?: string | null;
@@ -141,7 +146,7 @@ const normalizeLookups = (value: unknown): EmployeeRegistrationLookupsDto => {
   };
 };
 
-// ── Employees ─────────────────────────────────────────────────────────────────
+//  Employees 
 
 export const employeeApi = {
   list: (
@@ -164,6 +169,44 @@ export const employeeApi = {
   get: (companyId: string, id: string): Promise<EmployeeDetailDto> =>
     http.get<EmployeeDetailDto>(`${base(companyId)}/employees/${id}`).then((r) => r.data),
 
+  listDocuments: (companyId: string, employeeId: string): Promise<EmployeeDocumentDto[]> =>
+    http
+      .get<unknown>(`${base(companyId)}/employees/${employeeId}/documents`)
+      .then((r) => toArray<EmployeeDocumentDto>(r.data)),
+
+  createDocument: (
+    companyId: string,
+    employeeId: string,
+    body: {
+      documentType: string;
+      fileName: string;
+      expiryDate?: string | null;
+      file: File;
+    },
+  ) => {
+    const form = new FormData();
+    form.append("documentType", body.documentType);
+    form.append("fileName", body.fileName);
+    if (body.expiryDate) form.append("expiryDate", body.expiryDate);
+    form.append("file", body.file);
+
+    return http
+      .post(`${base(companyId)}/employees/${employeeId}/documents`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      .then((r) => r.data);
+  },
+
+  downloadDocument: (companyId: string, employeeId: string, documentId: string) =>
+    http
+      .get(`${base(companyId)}/employees/${employeeId}/documents/${documentId}/download`, {
+        responseType: "blob",
+      })
+      .then((r) => r.data as Blob),
+
+  deleteDocument: (companyId: string, employeeId: string, documentId: string) =>
+    http.delete(`${base(companyId)}/employees/${employeeId}/documents/${documentId}`).then((r) => r.data),
+
   orgChart: (companyId: string, rootId?: string): Promise<OrgChartNodeDto[]> =>
     http
       .get<unknown>(`${base(companyId)}/employees/org-chart`, {
@@ -173,7 +216,13 @@ export const employeeApi = {
 
   registrationLookups: (
     companyId: string,
-    params?: { branchId?: string; includeManagers?: boolean }
+    params?: {
+      branchId?: string;
+      search?: string;
+      page?: number;
+      pageSize?: number;
+      includeManagers?: boolean;
+    }
   ): Promise<EmployeeRegistrationLookupsDto> =>
     http
       .get<unknown>(`${base(companyId)}/employees/registration-lookups`, {
@@ -212,6 +261,9 @@ export const employeeApi = {
   updateCompensation: (companyId: string, id: string, body: Record<string, unknown>) =>
     http.put(`${base(companyId)}/employees/${id}/compensation`, body).then((r) => r.data),
 
+  updateRegistration: (companyId: string, id: string, body: Record<string, unknown>) =>
+    http.put(`${base(companyId)}/employees/${id}/registration`, body).then((r) => r.data),
+
   confirm: (companyId: string, id: string, confirmationDate: string) =>
     http.post(`${base(companyId)}/employees/${id}/confirm`, { confirmationDate }).then((r) => r.data),
 
@@ -225,7 +277,7 @@ export const employeeApi = {
   ) => http.post(`${base(companyId)}/employees/${id}/terminate`, body).then((r) => r.data),
 };
 
-// ── Payroll ───────────────────────────────────────────────────────────────────
+//  Payroll 
 
 export const payrollApi = {
   listRuns: (companyId: string, year: number, status?: PayrollRunStatus): Promise<PayrollRunDto[]> =>
@@ -250,6 +302,14 @@ export const payrollApi = {
   getPaySlip: (companyId: string, paySlipId: string): Promise<PaySlipDetailDto> =>
     http.get<PaySlipDetailDto>(`${base(companyId)}/payroll/payslips/${paySlipId}`).then((r) => r.data),
 
+  getRunPaySlips: (
+    companyId: string,
+    runId: string
+  ): Promise<PaySlipSummaryDto[]> =>
+    http
+      .get<unknown>(`${base(companyId)}/payroll/runs/${runId}/payslips`)
+      .then((r) => toArray<PaySlipSummaryDto>(r.data)),
+
   getEmployeePaySlips: (
     companyId: string,
     employeeId: string,
@@ -262,9 +322,14 @@ export const payrollApi = {
       .then((r) => toArray<PaySlipSummaryDto>(r.data)),
 };
 
-// ── Leave ─────────────────────────────────────────────────────────────────────
+//  Leave 
 
 export const leaveApi = {
+  listTypes: (companyId: string): Promise<LeaveTypeDto[]> =>
+    http
+      .get<unknown>(`${base(companyId)}/leave/types`)
+      .then((r) => toArray<LeaveTypeDto>(r.data)),
+
   listRequests: (
     companyId: string,
     params?: {
@@ -313,7 +378,7 @@ export const leaveApi = {
       .then((r) => toArray<LeaveCalendarEntryDto>(r.data)),
 };
 
-// ── Attendance ────────────────────────────────────────────────────────────────
+//  Attendance 
 
 export const attendanceApi = {
   clockIn: (companyId: string, body: Record<string, unknown>) =>
@@ -356,9 +421,32 @@ export const attendanceApi = {
     http
       .post(`${base(companyId)}/attendance/overtime/${id}/approve`, cleanParams({ approverId, note }))
       .then((r) => r.data),
+
+  listPolicies: (
+    companyId: string,
+    params?: {
+      branchId?: string | null;
+      includeInactive?: boolean;
+    }
+  ): Promise<AttendancePolicyDto[]> =>
+    http
+      .get<unknown>(`${base(companyId)}/attendance/policies`, {
+        params: cleanParams(params),
+      })
+      .then((r) => toArray<AttendancePolicyDto>(r.data)),
+
+  getEffectivePolicy: (companyId: string, branchId?: string | null): Promise<AttendancePolicyDto> =>
+    http
+      .get<AttendancePolicyDto>(`${base(companyId)}/attendance/policies/effective`, {
+        params: cleanParams({ branchId }),
+      })
+      .then((r) => r.data),
+
+  savePolicy: (companyId: string, body: Partial<AttendancePolicyDto> & Record<string, unknown>) =>
+    http.post(`${base(companyId)}/attendance/policies`, body).then((r) => r.data),
 };
 
-// ── Recruitment ───────────────────────────────────────────────────────────────
+//  Recruitment 
 
 export const recruitmentApi = {
   listPostings: (
@@ -403,7 +491,7 @@ export const recruitmentApi = {
       .then((r) => r.data),
 };
 
-// ── Performance ───────────────────────────────────────────────────────────────
+//  Performance 
 
 export const performanceApi = {
   listCycles: (companyId: string, status?: CycleStatus): Promise<PerformanceCycleDto[]> =>
@@ -431,7 +519,7 @@ export const performanceApi = {
     http.post(`${base(companyId)}/performance/goals`, body).then((r) => r.data),
 };
 
-// ── Training ──────────────────────────────────────────────────────────────────
+//  Training 
 
 export const trainingApi = {
   listPrograms: (
@@ -484,7 +572,7 @@ export const trainingApi = {
       .then((r) => toArray<TrainingComplianceDto>(r.data)),
 };
 
-// ── Branches ─────────────────────────────────────────────────────────────────
+//  Branches 
 
 export const branchApi = {
   list: (
@@ -492,13 +580,13 @@ export const branchApi = {
     params?: { activeOnly?: boolean; search?: string }
   ): Promise<BranchDto[]> =>
     http
-      .get<unknown>(`/companies/${companyId}/branches`, {
+      .get<unknown>(`${base(companyId)}/branches`, {
         params: cleanParams(params),
       })
       .then((r) => toArray<BranchDto>(r.data)),
 };
 
-// ── Organization Structure ───────────────────────────────────────────────────
+//  Organization Structure 
 
 export const orgStructureApi = {
   listDepartments: (
@@ -522,7 +610,7 @@ export const orgStructureApi = {
       .then((r) => toArray<PositionDto>(r.data)),
 };
 
-// ── Dashboard ─────────────────────────────────────────────────────────────────
+//  Dashboard 
 
 export const hrDashboardApi = {
   get: (companyId: string, branchId?: string): Promise<HRDashboardDto> =>

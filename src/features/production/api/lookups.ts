@@ -6,7 +6,7 @@
 
 import { http } from "../../../api/http";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+//  Types 
 
 export interface InventoryItemLite {
   id:            string;
@@ -28,7 +28,7 @@ export interface UomLite {
   isActive: boolean;
 }
 
-// ── API ───────────────────────────────────────────────────────────────────────
+//  API 
 
 export async function fetchInventoryItems(
   companyId: string,

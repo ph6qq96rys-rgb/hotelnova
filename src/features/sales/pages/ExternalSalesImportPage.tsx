@@ -400,7 +400,7 @@ export default function ExternalSalesImportPage() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {file ? file.name : "Click to choose a file…"}
+                    {file ? file.name : "Click to choose a file..."}
                   </span>
 
                   <input
@@ -453,7 +453,7 @@ export default function ExternalSalesImportPage() {
                 >
                   {busy ? (
                     <>
-                      <Spinner /> Processing…
+                      <Spinner /> Processing...
                     </>
                   ) : (
                     <>

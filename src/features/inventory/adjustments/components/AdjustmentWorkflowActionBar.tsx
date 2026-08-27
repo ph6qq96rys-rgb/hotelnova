@@ -60,14 +60,14 @@ export default function AdjustmentWorkflowActionBar({
       {canSubmit(s) && (
         <button className="btn btn-primary" disabled={working} onClick={onSubmit}>
           <i className="ti ti-send" aria-hidden />
-          {working ? "Submitting…" : "Submit for review"}
+          {working ? "Submitting..." : "Submit for review"}
         </button>
       )}
 
       {canApprove(s) && (
         <button className="btn btn-success" disabled={working} onClick={onApprove}>
           <i className="ti ti-thumb-up" aria-hidden />
-          {working ? "Approving…" : "Approve"}
+          {working ? "Approving..." : "Approve"}
         </button>
       )}
 
@@ -82,7 +82,7 @@ export default function AdjustmentWorkflowActionBar({
       {canPost(s) && (
         <button className="btn btn-primary" disabled={working} onClick={onPost}>
           <i className="ti ti-circle-check" aria-hidden />
-          {working ? "Posting…" : "Post to inventory"}
+          {working ? "Posting..." : "Post to inventory"}
         </button>
       )}
 

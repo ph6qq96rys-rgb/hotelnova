@@ -64,10 +64,15 @@ export type InventoryDashboardSummaryDto = {
   lowStockItems: number;
   inventoryValue?: number | null;
   openTransfers: number;
+  outOfStockItems?: number | null;
+  lockedStockItems?: number | null;
 };
 
 export type ProcurementDashboardSummaryDto = {
   pendingPurchaseOrders: number;
+  pendingFnbApprovals?: number | null;
+  pendingFinanceApprovals?: number | null;
+  approvedRequisitions?: number | null;
 };
 
 export type IdentityDashboardSummaryDto = {
@@ -79,6 +84,8 @@ export type HrDashboardSummaryDto = {
   employeesPresentToday?: number | null;
   employeesAbsentToday?: number | null;
   employeesLateToday?: number | null;
+  overtimeHoursToday?: number | null;
+  pendingLeaveRequests?: number | null;
 };
 
 export type DashboardOverviewDto = {

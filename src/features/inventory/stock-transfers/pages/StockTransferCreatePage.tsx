@@ -378,7 +378,7 @@ function HeaderCard({
             }}
           >
             <option value="">
-              {catalogsLoading ? "Loading locations..." : "Select from location…"}
+              {catalogsLoading ? "Loading locations..." : "Select from location..."}
             </option>
 
             {fromLocationOptions
@@ -407,7 +407,7 @@ function HeaderCard({
             }}
           >
             <option value="">
-              {catalogsLoading ? "Loading locations..." : "Select to location…"}
+              {catalogsLoading ? "Loading locations..." : "Select to location..."}
             </option>
 
             {toLocationOptions
@@ -440,7 +440,7 @@ function HeaderCard({
             value={form.notes}
             disabled={busy}
             onChange={(event) => onChange({ notes: event.target.value })}
-            placeholder="Optional transfer notes…"
+            placeholder="Optional transfer notes..."
           />
         </div>
       </div>
@@ -597,7 +597,7 @@ function TransferLineRow({
             });
           }}
         >
-          <option value="">{catalogsLoading ? "Loading items..." : "Select item…"}</option>
+          <option value="">{catalogsLoading ? "Loading items..." : "Select item..."}</option>
           {itemOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -627,7 +627,7 @@ function TransferLineRow({
           disabled={!itemId || busy}
           onChange={(event) => onUpdate({ unitId: event.target.value })}
         >
-          <option value="">{!itemId ? "Select item first…" : "Select unit…"}</option>
+          <option value="">{!itemId ? "Select item first..." : "Select unit..."}</option>
           {uomOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}

@@ -5,28 +5,28 @@ export const TELEGRAM_MENU_ITEMS: TelegramMenuItem[] = [
   {
     tab: "attendance",
     module: "hr",
-    icon: "📷",
+    icon: "",
     title: "Attendance",
     description: "Clock in or clock out using your branch QR code.",
   },
   {
     tab: "inventory",
     module: "inventory",
-    icon: "📦",
+    icon: "",
     title: "Inventory",
     description: "Submit store requests and check stock tools.",
   },
   {
     tab: "requests",
     module: "approval",
-    icon: "📋",
+    icon: "",
     title: "My Requests",
     description: "Track submitted SIVs and operational requests.",
   },
   {
     tab: "approvals",
     module: "approval",
-    icon: "✅",
+    icon: "",
     title: "Approvals",
     description: "Review approvals assigned to you.",
     badge: "Soon",
@@ -35,7 +35,7 @@ export const TELEGRAM_MENU_ITEMS: TelegramMenuItem[] = [
   {
     tab: "profile",
     module: "profile",
-    icon: "👤",
+    icon: "",
     title: "My Profile",
     description: "View employee, branch, and Telegram link status.",
   },
@@ -77,7 +77,7 @@ export function getTelegramPageMeta(tab: TelegramTabKey): TelegramPageMeta {
     default:
       return {
         title: "Workspace",
-        subtitle: "HotelNova ERP mobile workspace",
+        subtitle: "Hotel Nova mobile workspace",
       };
   }
 }

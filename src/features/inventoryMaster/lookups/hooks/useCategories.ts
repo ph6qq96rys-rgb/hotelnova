@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import { lookupsApi } from "../api/lookupsApi";
 import type { CategoryDto } from "../types";
 
@@ -16,7 +17,10 @@ export function useCategories(companyId: string) {
     lookupsApi
       .categories(companyId)
       .then(r => setCategories((r.data ?? []).filter(x => x.isActive)))
-      .catch(err => setError(err?.message ?? "Failed to load categories"))
+      .catch(err => setError(toUserFriendlyError(
+        err,
+        "Item categories could not be loaded. Please try again."
+      )))
       .finally(() => setLoading(false));
   }, [companyId]);
 

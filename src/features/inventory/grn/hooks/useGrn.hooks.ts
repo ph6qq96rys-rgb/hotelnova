@@ -1,4 +1,4 @@
-// ─── GRN Custom Hooks ─────────────────────────────────────────────────────────
+//  GRN Custom Hooks 
 // ERP-grade hooks for GRN list, detail, draft editor, posting, and reversal.
 //
 // Design rules:

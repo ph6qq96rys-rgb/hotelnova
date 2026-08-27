@@ -1,11 +1,11 @@
 // src/features/inventory/siv/utils/sivActionPrompts.ts
 //
 // window.prompt() and window.confirm() are removed.
-// These functions now throw to signal "cancelled" — callers that previously
+// These functions now throw to signal "cancelled" - callers that previously
 // checked for null should now catch the CancelledError.
 //
 // For actual UI prompts, use the inline modal pattern in SivDetailsPage /
-// SivApprovalPage — those pages render a proper <textarea> modal that works
+// SivApprovalPage - those pages render a proper <textarea> modal that works
 // correctly on mobile and inside iframes.
 
 export class CancelledError extends Error {

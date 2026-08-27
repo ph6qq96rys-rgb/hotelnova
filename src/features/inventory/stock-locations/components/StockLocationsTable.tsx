@@ -1,4 +1,4 @@
-﻿import type { StockLocationDto } from "../types";
+import type { StockLocationDto } from "../types";
 
 type Props = {
   items: StockLocationDto[];

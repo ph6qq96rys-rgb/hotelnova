@@ -6,7 +6,7 @@ function LotsTable({ lots }: { lots: InventoryLotDto[] }) {
     return <div className="inventory-ledger-empty-state" role="status"><div className="card-title">No open FIFO lots</div><div className="card-subtitle">Remaining layers appear after receipts or production output are posted.</div></div>;
   }
 
-  return <div style={{ width: "100%", overflowX: "auto" }}><table className="table" style={{ minWidth: 760 }}><thead><tr><th>Received</th><th>Item</th><th style={numeric}>Remaining Qty</th><th style={numeric}>Unit Cost</th><th style={numeric}>Remaining Value</th></tr></thead><tbody>{lots.map((lot) => <tr key={lot.id}><td>{date(lot.receivedAtUtc)}</td><td>{lot.itemName ?? lot.itemId}</td><td style={numeric}>{quantity(lot.remainingQty)}</td><td style={numeric}>{money(lot.unitCost)}</td><td style={numeric}>{money(lot.remainingQty * lot.unitCost)}</td></tr>)}</tbody></table></div>;
+  return <div style={{ width: "100%", overflowX: "auto" }}><table className="table" style={{ minWidth: 760 }}><thead><tr><th>Received</th><th>Item</th><th style={numeric}>Remaining Qty</th><th style={numeric}>Unit Cost</th><th style={numeric}>Remaining Value</th></tr></thead><tbody>{lots.map((lot) => <tr key={lot.id}><td>{date(lot.receivedAtUtc)}</td><td>{lot.itemName ?? "Unnamed item"}</td><td style={numeric}>{quantity(lot.remainingQty)}</td><td style={numeric}>{money(lot.unitCost)}</td><td style={numeric}>{money(lot.remainingQty * lot.unitCost)}</td></tr>)}</tbody></table></div>;
 }
 export default memo(LotsTable);
 

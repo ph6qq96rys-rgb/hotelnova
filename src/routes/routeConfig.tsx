@@ -13,6 +13,7 @@ import {
   Sliders,
   Upload,
   Users,
+  PackageCheck,
 } from "lucide-react";
 
 import DashboardPage from "../pages/DashboardPage";
@@ -48,6 +49,7 @@ import MenuItemListPage from "../features/production/pages/MenuItemsListPage";
 import FnbControlCenterPage from "../features/reports/fnb/pages/FnbControlCenterPage";
 import OrgLocationsPage from "../features/org/pages/OrgLocationsPage";
 import TelegramMiniAppDashboard from "../features/telegram-miniapp/TelegramMiniAppDashboard";
+import FixedAssetsPage from "../features/fixed-assets/pages/FixedAssetsPage";
 
 export type AppRoute = RouteObject & {
   path?: string;
@@ -78,6 +80,7 @@ export const appPaths = {
   branchOnboarding: "branches/:branchId/onboarding",
 
   inventorySettings: "inventory/control-settings",
+  fixedAssets: "fixed-assets",
 
   stockTransfers: "inventory/stock-transfers",
   stockTransferNew: "inventory/stock-transfers/new",
@@ -147,6 +150,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Setup",
     order: 10,
+    permissions: ["companies.view", "branches.view"],
   },
 
   {
@@ -158,8 +162,8 @@ export const routeConfig: AppRoute[] = [
     section: "Setup",
     order: 20,
     permissions: [
-      "company.view",
-      "company.manage",
+      "companies.view",
+      "companies.update",
       "onboarding.view",
       "onboarding.manage",
     ],
@@ -170,12 +174,12 @@ export const routeConfig: AppRoute[] = [
     label: "Branch Onboarding",
     element: <CompanyOnboardingModule />,
     icon: <ClipboardList size={18} />,
-    nav: true,
+    nav: false,
     section: "Setup",
     order: 30,
     permissions: [
-      "company.view",
-      "company.manage",
+      "branches.view",
+      "branches.update",
       "onboarding.view",
       "onboarding.manage",
     ],
@@ -191,9 +195,8 @@ export const routeConfig: AppRoute[] = [
     order: 10,
     permissions: [
       "users.view",
-      "users.manage",
-      "security.view",
-      "security.manage",
+      "users.create",
+      "users.update",
     ],
   },
 
@@ -206,11 +209,20 @@ export const routeConfig: AppRoute[] = [
     section: "Security",
     order: 20,
     permissions: [
-      "security.view",
-      "security.manage",
       "roles.view",
       "roles.manage",
     ],
+  },
+
+  {
+    path: appPaths.fixedAssets,
+    label: "Fixed Assets",
+    element: <FixedAssetsPage />,
+    icon: <PackageCheck size={18} />,
+    nav: true,
+    section: "Finance",
+    order: 20,
+    permissions: ["fixedassets.view"],
   },
 
   {
@@ -221,7 +233,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 40,
-    permissions: ["inventory.view", "inventory.manage", "settings.manage"],
+    permissions: ["inventory.view", "settings.view", "settings.update"],
   },
 
   {
@@ -232,7 +244,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 50,
-   // permissions: ["inventory.view", "inventory.manage", "stock-transfers.view"],
+    permissions: ["stocktransfers.view"],
   },
 
   {
@@ -272,7 +284,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 60,
-    //permissions: ["inventory.view", "inventory.manage", "adjustments.view"],
+    permissions: ["inventory.adjustments.view"],
   },
 
   {
@@ -318,7 +330,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 10,
-    //permissions: ["production.view", "menu.view"],
+    permissions: ["menu.view"],
   },
 
   {
@@ -329,16 +341,16 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 20,
-   // permissions: ["production.manage", "menu.manage"],
+    permissions: ["menu.manage"],
   },
 
   {
     path: appPaths.menuItemDetail,
     label: "Menu Configuration",
     element: <MenuItemDetailPage />,
-    nav: true,
+    nav: false,
     section: "Production",
-    //permissions: ["production.view", "menu.view"],
+    permissions: ["menu.view"],
   },
 {
     path: appPaths.menuItemsList,
@@ -346,7 +358,7 @@ export const routeConfig: AppRoute[] = [
     element: <MenuItemListPage />,
     nav: true,
     section: "Production",
-    //permissions: ["production.view", "menu.view"],
+    permissions: ["menu.view"],
   },
   {
     path: appPaths.recipeManagement,
@@ -356,7 +368,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 30,
-    //permissions: ["production.view", "recipes.view"],
+    permissions: ["recipes.view"],
   },
 
   {
@@ -376,7 +388,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 40,
-    //permissions: ["production.view", "production-batches.view"],
+    permissions: ["production.view"],
   },
 
   {
@@ -405,7 +417,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 50,
-    //permissions: ["production.view", "menu-engineering.view"],
+    permissions: ["menu.view"],
   },
 
   {
@@ -416,7 +428,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Reports",
     order: 10,
-    //permissions: ["reports.view", "reports.fnb.view"],
+    permissions: ["reports.view"],
   },
 
   {
@@ -427,7 +439,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Telegram Bot",
     order: 10,
-   // permissions: ["telegram.view", "telegram.manage"],
+    permissions: ["telegram.manage"],
   },
 
   {
@@ -438,6 +450,6 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Security",
     order: 30,
-    permissions: ["settings.view", "settings.manage", "security.manage"],
+    permissions: ["settings.view"],
   },
 ];

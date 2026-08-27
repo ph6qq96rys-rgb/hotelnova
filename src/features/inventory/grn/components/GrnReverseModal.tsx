@@ -33,9 +33,9 @@ function clean(value: unknown): string {
 }
 
 function formatDate(value?: string | Date | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
 
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
@@ -212,22 +212,22 @@ export default function GrnReversalModal({
             disabled={Boolean(submitting) || busy}
             aria-label="Close dialog"
           >
-            ×
+            
           </button>
         </header>
 
         <div className="grn-reversal-modal__summary">
           <div>
             <span>GRN Number</span>
-            <strong>{grn.grnNumber || grn.id}</strong>
+            <strong>{grn.grnNumber || "Pending GRN number"}</strong>
           </div>
           <div>
             <span>Supplier</span>
-            <strong>{grn.supplierName || "—"}</strong>
+            <strong>{grn.supplierName || "-"}</strong>
           </div>
           <div>
             <span>Receiving Warehouse</span>
-            <strong>{grn.receivingLocationName || "—"}</strong>
+            <strong>{grn.receivingLocationName || "-"}</strong>
           </div>
           <div>
             <span>Received Date</span>
@@ -260,7 +260,7 @@ export default function GrnReversalModal({
                 autoFocus
               />
               <small>
-                {cleanReason.length}/{MAX_REASON_LENGTH} characters · Minimum{" "}
+                {cleanReason.length}/{MAX_REASON_LENGTH} characters - Minimum{" "}
                 {MIN_REASON_LENGTH}.
               </small>
             </label>
@@ -318,7 +318,7 @@ export default function GrnReversalModal({
               disabled={!canRequest}
               onClick={() => void submitRequest()}
             >
-              {submitting === "request" ? "Submitting…" : "Request Reversal"}
+              {submitting === "request" ? "Submitting..." : "Request Reversal"}
             </button>
           ) : (
             <>
@@ -328,7 +328,7 @@ export default function GrnReversalModal({
                 disabled={!canReject}
                 onClick={() => void rejectReversal()}
               >
-                {submitting === "reject" ? "Rejecting…" : "Reject Request"}
+                {submitting === "reject" ? "Rejecting..." : "Reject Request"}
               </button>
 
               <button
@@ -337,7 +337,7 @@ export default function GrnReversalModal({
                 disabled={!canApprove}
                 onClick={() => void approveReversal()}
               >
-                {submitting === "approve" ? "Reversing…" : "Approve & Reverse"}
+                {submitting === "approve" ? "Reversing..." : "Approve & Reverse"}
               </button>
             </>
           )}

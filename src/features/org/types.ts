@@ -1,4 +1,4 @@
-﻿// src/features/organization/types.ts
+// src/features/organization/types.ts
 
 export type PagedResult<T> = {
   items: T[];

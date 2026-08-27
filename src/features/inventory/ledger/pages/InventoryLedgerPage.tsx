@@ -144,7 +144,7 @@ export default function InventoryLedgerPage() {
           </div>
 
           {dateError ? <Alert tone="danger"><strong>Check the dates:</strong> {dateError}</Alert> : null}
-          {loading ? <Alert tone="info">Loading inventory movements…</Alert> : null}
+          {loading ? <Alert tone="info">Loading inventory movements...</Alert> : null}
           {error ? <Alert tone="danger"><strong>Unable to load inventory movements:</strong> {error}</Alert> : null}
         </section>
 
@@ -155,7 +155,7 @@ export default function InventoryLedgerPage() {
             : <div className="inventory-ledger-table-wrap"><LedgerTable items={items} /></div>}
 
           <footer className="inventory-ledger-footer">
-            <span>{formatInt(totalCount)} movement{totalCount === 1 ? "" : "s"} • Page {currentPage} of {totalPages}</span>
+            <span>{formatInt(totalCount)} movement{totalCount === 1 ? "" : "s"} - Page {currentPage} of {totalPages}</span>
             <div className="inventory-ledger-footer-actions">
               <span>{formatInt(items.length)} shown</span>
               <button type="button" className="btn btn-sm" onClick={() => setPage((x) => Math.max(1, x - 1))} disabled={loading || currentPage <= 1}>Previous</button>

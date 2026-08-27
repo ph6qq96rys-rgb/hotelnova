@@ -135,12 +135,15 @@ export default function UsersPage() {
     setModal({ kind: "none" });
   }
 
-  function completeMutation(message: string): void {
+  function completeMutation(message: string, user?: UserDto): void {
+    if (user) {
+      usersQuery.upsertUser(user);
+    }
+
     setModal({ kind: "none" });
     setEmployeeSearch("");
     setLocalError(null);
     setNotice(message);
-    refresh();
     navigate(usersListPath, { replace: true });
   }
 
@@ -167,8 +170,8 @@ export default function UsersPage() {
 
     clearMessages();
     try {
-      await actions.create(request);
-      completeMutation("User created successfully.");
+      const created = await actions.create(request);
+      completeMutation("User created successfully.", created);
     } catch {
       // Error is exposed by useUserActions.
     }
@@ -182,8 +185,8 @@ export default function UsersPage() {
 
     clearMessages();
     try {
-      await actions.update(modal.user.id, request);
-      completeMutation("User updated successfully.");
+      const updated = await actions.update(modal.user.id, request);
+      completeMutation("User updated successfully.", updated);
     } catch {
       // Error is exposed by useUserActions.
     }
@@ -243,7 +246,7 @@ export default function UsersPage() {
   const pageSafe = clamp(page, 1, pageCount);
   const loading = usersQuery.loading;
   const error = usersQuery.error || actions.error || localError;
-  const shownCountText = loading ? "Loading…" : `${items.length} shown • ${total} total`;
+  const shownCountText = loading ? "Loading..." : `${items.length} shown - ${total} total`;
 
   const hasActiveFilters =
     Boolean(searchText) ||
@@ -285,18 +288,18 @@ export default function UsersPage() {
 
           <div className="lux-hero__actions">
             <div className="lux-search" role="search" aria-label="Search users">
-              <span className="lux-search__icon">⌕</span>
+              <span className="lux-search__icon">Search</span>
               <input
                 id="users-search"
                 className="lux-input lux-input--search"
-                placeholder="Search users by name, email, phone, or employee code…"
+                placeholder="Search users by name, email, phone, or employee code..."
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
                 disabled={busy}
               />
-              <span className="lux-kbd">⌘K</span>
+              <span className="lux-kbd">Ctrl+K</span>
               {searchText && (
-                <button className="lux-iconBtn" type="button" onClick={() => setSearchText("")} disabled={busy} aria-label="Clear search">×</button>
+                <button className="lux-iconBtn" type="button" onClick={() => setSearchText("")} disabled={busy} aria-label="Clear search">x</button>
               )}
             </div>
             {canCreate && (
@@ -354,9 +357,6 @@ export default function UsersPage() {
             <div className="lux-card__hint">{shownCountText}</div>
           </div>
           <div className="lux-row">
-            {canCreate && (
-              <button className="lux-btn lux-btn--primary" onClick={() => setModal({ kind: "create" })} disabled={busy} type="button">+ New User</button>
-            )}
             <button className="lux-btn lux-btn--soft" disabled={busy || loading} onClick={refresh} type="button">Refresh</button>
           </div>
         </div>
@@ -382,7 +382,7 @@ export default function UsersPage() {
                 busy={busy}
               />
             )}
-            {loading && <div className="lux-veil"><div className="lux-spinner" /><div className="lux-muted">Loading users…</div></div>}
+            {loading && <div className="lux-veil"><div className="lux-spinner" /><div className="lux-muted">Loading users...</div></div>}
           </div>
         </div>
       </section>

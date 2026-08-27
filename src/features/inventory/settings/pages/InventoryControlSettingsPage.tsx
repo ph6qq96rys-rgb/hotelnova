@@ -5,6 +5,8 @@ import {
   type InventoryControlSettingsDto,
   type UpsertInventoryControlSettingsRequest,
 } from "../api/inventoryControlSettingsApi";
+import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
+import type { StockLocationDto } from "../../stock-locations/types";
 import "./inventory-control-settings.css";
 
 function getError(e: unknown) {
@@ -23,6 +25,7 @@ const defaults: UpsertInventoryControlSettingsRequest = {
   warningVariancePercent: 5,
   highVariancePercent: 10,
   criticalVariancePercent: 25,
+  approvalThresholdPercent: 25,
   requireApprovalForHighVariance: true,
   blockPostingOnCriticalVariance: false,
   lockInventoryDuringCount: true,
@@ -38,7 +41,9 @@ export default function InventoryControlSettingsPage() {
   const [current, setCurrent] = useState<InventoryControlSettingsDto | null>(
     null
   );
-  const [scope, setScope] = useState<"company" | "branch">("branch");
+  const [scope, setScope] = useState<"company" | "branch" | "location">("branch");
+  const [selectedLocationId, setSelectedLocationId] = useState<string>("");
+  const [locations, setLocations] = useState<StockLocationDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -48,7 +53,10 @@ export default function InventoryControlSettingsPage() {
   useEffect(() => {
     if (!companyId) return;
 
-    const effectiveBranchId = scope === "branch" ? branchId : null;
+    const effectiveBranchId =
+      scope === "branch" || scope === "location" ? branchId : null;
+    const effectiveLocationId =
+      scope === "location" ? selectedLocationId || null : null;
 
     setLoading(true);
     setErr(null);
@@ -56,16 +64,17 @@ export default function InventoryControlSettingsPage() {
     inventoryControlSettingsApi
       .getEffective(companyId, {
         branchId: effectiveBranchId,
-        locationId: null,
+        locationId: effectiveLocationId,
       })
       .then((dto) => {
         setCurrent(dto);
         setForm({
           branchId: effectiveBranchId,
-          locationId: null,
+          locationId: effectiveLocationId,
           warningVariancePercent: dto.warningVariancePercent,
           highVariancePercent: dto.highVariancePercent,
           criticalVariancePercent: dto.criticalVariancePercent,
+          approvalThresholdPercent: dto.approvalThresholdPercent,
           requireApprovalForHighVariance: dto.requireApprovalForHighVariance,
           blockPostingOnCriticalVariance: dto.blockPostingOnCriticalVariance,
           lockInventoryDuringCount: dto.lockInventoryDuringCount,
@@ -75,7 +84,34 @@ export default function InventoryControlSettingsPage() {
       })
       .catch((e) => setErr(getError(e)))
       .finally(() => setLoading(false));
-  }, [companyId, branchId, scope]);
+  }, [companyId, branchId, scope, selectedLocationId]);
+
+  useEffect(() => {
+    if (!companyId || !branchId) {
+      setLocations([]);
+      setSelectedLocationId("");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    stockLocationsApi
+      .list(companyId, branchId, undefined, controller.signal)
+      .then((rows) => {
+        const activeRows = rows.filter((x) => x.isActive !== false);
+        setLocations(activeRows);
+
+        if (
+          selectedLocationId &&
+          !activeRows.some((x) => x.id === selectedLocationId)
+        ) {
+          setSelectedLocationId("");
+        }
+      })
+      .catch(() => setLocations([]));
+
+    return () => controller.abort();
+  }, [companyId, branchId, selectedLocationId]);
 
   function patch(p: Partial<UpsertInventoryControlSettingsRequest>) {
     setForm((prev) => ({ ...prev, ...p }));
@@ -85,6 +121,7 @@ export default function InventoryControlSettingsPage() {
     if (form.warningVariancePercent < 0) return "Warning threshold cannot be negative.";
     if (form.highVariancePercent < 0) return "High threshold cannot be negative.";
     if (form.criticalVariancePercent < 0) return "Critical threshold cannot be negative.";
+    if (form.approvalThresholdPercent < 0) return "Approval threshold cannot be negative.";
 
     if (form.warningVariancePercent > form.highVariancePercent) {
       return "Warning threshold cannot exceed high threshold.";
@@ -92,6 +129,10 @@ export default function InventoryControlSettingsPage() {
 
     if (form.highVariancePercent > form.criticalVariancePercent) {
       return "High threshold cannot exceed critical threshold.";
+    }
+
+    if (scope === "location" && !selectedLocationId) {
+      return "Select a stock location before saving a location policy.";
     }
 
     return null;
@@ -113,8 +154,9 @@ export default function InventoryControlSettingsPage() {
     try {
       const body: UpsertInventoryControlSettingsRequest = {
         ...form,
-        branchId: scope === "branch" ? branchId ?? null : null,
-        locationId: null,
+        branchId:
+          scope === "branch" || scope === "location" ? branchId ?? null : null,
+        locationId: scope === "location" ? selectedLocationId || null : null,
       };
 
       const dto = await inventoryControlSettingsApi.upsert(companyId, body);
@@ -148,7 +190,7 @@ export default function InventoryControlSettingsPage() {
           onClick={save}
           disabled={saving || loading}
         >
-          {saving ? "Saving…" : "Save Settings"}
+          {saving ? "Saving..." : "Save Settings"}
         </button>
       </div>
 
@@ -178,10 +220,46 @@ export default function InventoryControlSettingsPage() {
           >
             Active Branch
           </button>
+
+          <button
+            className={scope === "location" ? "active" : ""}
+            onClick={() => setScope("location")}
+            disabled={!branchId}
+          >
+            Stock Location
+          </button>
         </div>
 
+        {scope === "location" && (
+          <label className="ics-field ics-location-field">
+            <span>Stock Location</span>
+            <select
+              value={selectedLocationId}
+              onChange={(e) => setSelectedLocationId(e.target.value)}
+            >
+              <option value="">Select stock location...</option>
+              {locations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.code
+                    ? `${location.code} - ${location.name}`
+                    : location.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <div className="ics-scope-note">
-          Current effective setting ID: <strong>{current?.id || "Default policy"}</strong>
+          Current effective policy:{" "}
+          <strong>
+            {current?.locationId
+              ? "Stock location override"
+              : current?.branchId
+                ? "Active branch override"
+                : current
+                  ? "Company default"
+                  : "System default"}
+          </strong>
         </div>
       </div>
 
@@ -210,6 +288,12 @@ export default function InventoryControlSettingsPage() {
             label="Critical Variance %"
             value={form.criticalVariancePercent}
             onChange={(v) => patch({ criticalVariancePercent: v })}
+          />
+
+          <NumberField
+            label="Approval Threshold %"
+            value={form.approvalThresholdPercent}
+            onChange={(v) => patch({ approvalThresholdPercent: v })}
           />
         </div>
 

@@ -182,18 +182,18 @@ function displayName(value: any): string {
     value?.name ??
     value?.userName ??
     value?.email ??
-    "—"
+    "-"
   );
 }
 
 function employeeLabel(e: EmployeeLookupDto): string {
   const x = e as any;
-  return `${x.employeeCode ? `${x.employeeCode} — ` : ""}${x.fullName ?? x.workEmail ?? x.id}`;
+  return `${x.employeeCode ? `${x.employeeCode} - ` : ""}${x.fullName ?? x.workEmail ?? "Employee"}`;
 }
 
 function userLabel(user: CompanyUserDto): string {
   const email = (user as any).email ?? (user as any).userName;
-  return `${displayName(user)}${email ? ` — ${email}` : ""}`;
+  return `${displayName(user)}${email ? ` - ${email}` : ""}`;
 }
 
 function locationName(locations: StockLocation[], id?: string | null): string {
@@ -336,7 +336,7 @@ const CreateUserForm = memo(function CreateUserForm(props: {
 
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
           <Btn variant="primary" disabled={props.busy || props.saving || props.disabled} onClick={() => props.onCreate()}>
-            {props.busy ? "Saving…" : "Create user"}
+            {props.busy ? "Saving..." : "Create user"}
           </Btn>
         </div>
       </div>
@@ -391,7 +391,7 @@ const AssignExistingUserForm = memo(function AssignExistingUserForm(props: {
 
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
           <Btn variant="primary" disabled={props.busy || props.saving || props.disabled} onClick={() => props.onAssign()}>
-            {props.busy ? "Assigning…" : "Assign to branch"}
+            {props.busy ? "Assigning..." : "Assign to branch"}
           </Btn>
         </div>
       </div>
@@ -442,7 +442,7 @@ const EditUserPanel = memo(function EditUserPanel(props: {
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <Btn variant="ghost" onClick={props.onCancel}>Cancel</Btn>
           <Btn variant="primary" disabled={props.busy || props.saving} onClick={() => props.onSave()}>
-            {props.busy ? "Saving…" : "Save user"}
+            {props.busy ? "Saving..." : "Save user"}
           </Btn>
         </div>
       </div>
@@ -551,20 +551,20 @@ export function UsersStep(props: Props) {
   }, [selectedEmployee]);
 
   const roleOptions = useMemo<SelectOption[]>(
-    () => [{ value: "", label: "— Select role —" }, ...roles.map((role) => ({ value: role.value, label: role.label }))],
+    () => [{ value: "", label: "- Select role -" }, ...roles.map((role) => ({ value: role.value, label: role.label }))],
     [roles],
   );
 
   const locationOptions = useMemo<SelectOption[]>(
     () => [
-      { value: "", label: "— No default stock location —" },
+      { value: "", label: "- No default stock location -" },
       ...locations.map((x: any) => ({ value: stockLocationIdOf(x), label: `${x.name}${x.code ? ` (${x.code})` : ""}` })),
     ],
     [locations],
   );
 
   const employeeOptions = useMemo<SelectOption[]>(
-    () => [{ value: "", label: "— Select employee —" }, ...employees.map((e) => ({ value: idOf(e), label: employeeLabel(e) }))],
+    () => [{ value: "", label: "- Select employee -" }, ...employees.map((e) => ({ value: idOf(e), label: employeeLabel(e) }))],
     [employees],
   );
 
@@ -575,7 +575,7 @@ export function UsersStep(props: Props) {
       return userId && !memberIds.has(userId);
     });
 
-    return [{ value: "", label: "— Select existing user —" }, ...candidates.map((u) => ({ value: idOf(u), label: userLabel(u) }))];
+    return [{ value: "", label: "- Select existing user -" }, ...candidates.map((u) => ({ value: idOf(u), label: userLabel(u) }))];
   }, [companyUsers, members]);
 
   const validateCreate = useCallback(() => {
@@ -815,7 +815,7 @@ export function UsersStep(props: Props) {
   if (loading) {
     return (
       <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "24px 0", color: "#64748b" }}>
-        <Spinner /> Loading users…
+        <Spinner /> Loading users...
       </div>
     );
   }

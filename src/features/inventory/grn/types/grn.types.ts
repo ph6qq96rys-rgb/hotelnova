@@ -1,4 +1,4 @@
-﻿export type Guid = string;
+export type Guid = string;
 export type IsoDateString = string;
 export type DateOnlyString = string;
 export type DecimalNumber = number;

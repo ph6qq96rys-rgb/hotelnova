@@ -1,4 +1,4 @@
-// ─── Shared GRN UI Components ────────────────────────────────────────────────
+//  Shared GRN UI Components 
 // Reusable components scoped to the GRN module.
 
 import React from "react";
@@ -6,7 +6,7 @@ import { NavLink } from "react-router-dom";
 import { normalize, trim } from "../utils/grn.utils";
 import type { GrnStatus } from "../helpers/grn.status";
 
-// ── Design Tokens ─────────────────────────────────────────────────────────────
+//  Design Tokens 
 // Centralized so any redesign touches one place.
 
 export const tokens = {
@@ -54,7 +54,7 @@ export const tokens = {
   stickyShadow: "0 -4px 16px rgba(0,0,0,0.06)",
 } as const;
 
-// ── Base Button Styles ────────────────────────────────────────────────────────
+//  Base Button Styles 
 
 const btnBase: React.CSSProperties = {
   fontFamily: tokens.fontFamily,
@@ -99,7 +99,7 @@ export const ghostBtn: React.CSSProperties = {
   border: `1px solid transparent`,
 };
 
-// ── Form Primitives ───────────────────────────────────────────────────────────
+//  Form Primitives 
 
 export const labelStyle: React.CSSProperties = {
   display: "block",
@@ -132,7 +132,7 @@ export const errorInline: React.CSSProperties = {
   fontWeight: 500,
 };
 
-// ── Layout Primitives ─────────────────────────────────────────────────────────
+//  Layout Primitives 
 
 export const pageWrap: React.CSSProperties = {
   padding: "24px 28px",
@@ -205,7 +205,7 @@ export const totRow: React.CSSProperties = {
   borderTop: `1px solid #F1F5F9`,
 };
 
-// ── Status Badge ──────────────────────────────────────────────────────────────
+//  Status Badge 
 
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {
   DRAFT: { bg: "#FFFBEB", text: "#B45309", border: "#FDE68A" },
@@ -236,12 +236,12 @@ export function StatusBadge({ status }: { status?: string | null }) {
         fontFamily: tokens.fontFamily,
       }}
     >
-      {trim(status) || "—"}
+      {trim(status) || "-"}
     </span>
   );
 }
 
-// ── Issued Badge ──────────────────────────────────────────────────────────────
+//  Issued Badge 
 
 export function IssuedBadge({ issued }: { issued: boolean }) {
   return issued ? (
@@ -251,14 +251,14 @@ export function IssuedBadge({ issued }: { issued: boolean }) {
       fontWeight: 700, background: "#EFF6FF", color: "#1D4ED8",
       border: "1px solid #BFDBFE", letterSpacing: "0.04em",
     }}>
-      ✓ Issued
+       Issued
     </span>
   ) : (
-    <span style={{ fontSize: 12, color: tokens.colorHint }}>—</span>
+    <span style={{ fontSize: 12, color: tokens.colorHint }}>-</span>
   );
 }
 
-// ── Stat Card ─────────────────────────────────────────────────────────────────
+//  Stat Card 
 
 interface StatCardProps {
   label: string;
@@ -286,7 +286,7 @@ export function StatCard({ label, value, sub, accent }: StatCardProps) {
   );
 }
 
-// ── Page Header ───────────────────────────────────────────────────────────────
+//  Page Header 
 
 interface PageHeaderProps {
   title: string;
@@ -316,7 +316,7 @@ export function PageHeader({ title, subtitle, rightSlot, errorMsg, successMsg }:
   );
 }
 
-// ── Inline Alert ──────────────────────────────────────────────────────────────
+//  Inline Alert 
 
 interface InlineAlertProps {
   type: "error" | "success" | "warning" | "info";
@@ -324,8 +324,8 @@ interface InlineAlertProps {
 }
 
 const alertColors = {
-  error:   { bg: "#FFF1F2", text: "#9F1239", border: "#FECDD3", icon: "⚠" },
-  success: { bg: "#F0FDF4", text: "#14532D", border: "#BBF7D0", icon: "✓" },
+  error:   { bg: "#FFF1F2", text: "#9F1239", border: "#FECDD3", icon: "Warning:" },
+  success: { bg: "#F0FDF4", text: "#14532D", border: "#BBF7D0", icon: "" },
   warning: { bg: "#FFFBEB", text: "#78350F", border: "#FDE68A", icon: "!" },
   info:    { bg: "#EFF6FF", text: "#1E3A5F", border: "#BFDBFE", icon: "i" },
 } as const;
@@ -347,7 +347,7 @@ export function InlineAlert({ type, message }: InlineAlertProps) {
   );
 }
 
-// ── Empty State ───────────────────────────────────────────────────────────────
+//  Empty State 
 
 interface EmptyStateProps {
   message: string;
@@ -364,7 +364,7 @@ export function EmptyRow({ message, colSpan }: EmptyStateProps) {
   );
 }
 
-// ── Nav Button ────────────────────────────────────────────────────────────────
+//  Nav Button 
 
 interface NavButtonProps {
   to: string;
@@ -380,7 +380,7 @@ export function NavBtn({ to, style = secondaryBtn, children }: NavButtonProps) {
   );
 }
 
-// ── Loading Skeleton ──────────────────────────────────────────────────────────
+//  Loading Skeleton 
 
 export function LoadingRows({ colSpan, rows = 3 }: { colSpan: number; rows?: number }) {
   return (
@@ -398,7 +398,7 @@ export function LoadingRows({ colSpan, rows = 3 }: { colSpan: number; rows?: num
   );
 }
 
-// ── Section Divider ───────────────────────────────────────────────────────────
+//  Section Divider 
 
 export function SectionHead({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
   return (

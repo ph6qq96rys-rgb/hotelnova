@@ -48,7 +48,7 @@ export function ResetPasswordDialog({
             setValidationError(null);
           }}
           autoComplete="new-password"
-          placeholder="Minimum 8 characters, uppercase, lowercase, number…"
+          placeholder="Minimum 8 characters, uppercase, lowercase, number..."
           disabled={busy}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !busy) void submit();

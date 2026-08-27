@@ -1,9 +1,9 @@
 /* inventory-items.css
    Scoped to inv- and iif- prefixes. Reads tokens from global.css.
    UomConversionGrid classes (uom-) replace all inline CSSProperties.
-   ──────────────────────────────────────────────────────────────── */
+    */
 
-/* ── Page shell ──────────────────────────────────────────────────────────── */
+/*  Page shell  */
 .inv-page {
   padding: 24px;
   max-width: 1280px;
@@ -28,7 +28,7 @@
   text-align: center;
 }
 
-/* ── Banner ──────────────────────────────────────────────────────────────── */
+/*  Banner  */
 .inv-banner {
   position: relative;
   display: flex;
@@ -88,7 +88,7 @@
 .inv-banner__count-label { font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: rgba(255,255,255,0.38); font-family: var(--mono); }
 .inv-banner__count-value { font-size: 30px; font-weight: 200; letter-spacing: -0.04em; line-height: 1; color: var(--surface); }
 
-/* ── KPI strip ────────────────────────────────────────────────────────────── */
+/*  KPI strip  */
 .inv-kpi-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -110,7 +110,7 @@
 .inv-kpi--warn    { border-color: rgba(245,158,11,0.28); background: rgba(245,158,11,0.07); }
 .inv-kpi--warn    .inv-kpi__value { color: rgba(120,53,15,1); }
 
-/* ── Alerts ──────────────────────────────────────────────────────────────── */
+/*  Alerts  */
 .inv-alert {
   display: flex;
   align-items: flex-start;
@@ -125,7 +125,7 @@
 .inv-alert--warning { background: rgba(245,158,11,0.08); color: rgba(120,53,15,1); border-color: rgba(245,158,11,0.5); }
 .inv-alert--info    { background: rgba(37,99,235,0.06); color: #1e40af; border-color: rgba(37,99,235,0.3); }
 
-/* ── Card ────────────────────────────────────────────────────────────────── */
+/*  Card  */
 .inv-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -148,14 +148,14 @@
 .inv-card__title    { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; margin: 0; color: var(--text); }
 .inv-card__subtitle { font-size: 11px; color: var(--text-soft); margin-top: 2px; }
 
-/* ── Search ──────────────────────────────────────────────────────────────── */
+/*  Search  */
 .inv-search-wrap {
   min-width: 260px;
   position: relative;
 }
 
 .inv-search-wrap::before {
-  content: "⌕";
+  content: "";
   position: absolute;
   left: 10px;
   top: 50%;
@@ -183,7 +183,7 @@
 .inv-search::placeholder { color: var(--text-soft); }
 .inv-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(184,115,51,0.10); }
 
-/* ── Buttons ─────────────────────────────────────────────────────────────── */
+/*  Buttons  */
 .inv-btn {
   display: inline-flex;
   align-items: center;
@@ -222,7 +222,7 @@
 .inv-btn--solid { background: var(--surface); border-color: var(--surface); color: var(--text); }
 .inv-btn--solid:hover:not(:disabled) { opacity: 0.88; }
 
-/* ── Table ───────────────────────────────────────────────────────────────── */
+/*  Table  */
 .inv-table-wrap { overflow-x: auto; }
 
 .inv-table {
@@ -269,7 +269,7 @@
   font-size: 13px;
 }
 
-/* ── Item cell ───────────────────────────────────────────────────────────── */
+/*  Item cell  */
 .inv-item-cell   { display: flex; gap: 10px; align-items: center; }
 
 .inv-item-avatar {
@@ -289,11 +289,11 @@
 .inv-item-name { font-weight: 600; color: var(--text); line-height: 1.2; }
 .inv-item-sub  { margin-top: 2px; font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
 
-/* ── Row actions ─────────────────────────────────────────────────────────── */
+/*  Row actions  */
 .inv-row-actions  { display: flex; justify-content: flex-end; gap: 6px; }
 .inv-table__actions-col { width: 160px; }
 
-/* ── Status badges ───────────────────────────────────────────────────────── */
+/*  Status badges  */
 .inv-badge {
   display: inline-flex;
   align-items: center;
@@ -312,7 +312,7 @@
 .inv-badge--active   { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
 .inv-badge--inactive { background: var(--surface-3);  color: var(--text-soft); border-color: var(--border); }
 
-/* ── Skeleton ─────────────────────────────────────────────────────────────── */
+/*  Skeleton  */
 .inv-skeleton {
   display: inline-block;
   height: 10px;
@@ -327,7 +327,7 @@
   100% { background-position: -200% 0; }
 }
 
-/* ── Sticky action bar ────────────────────────────────────────────────────── */
+/*  Sticky action bar  */
 .inv-sticky-bar {
   position: sticky;
   bottom: 0;
@@ -346,7 +346,7 @@
 .inv-sticky-bar__count { font-size: 12px; color: var(--text-muted); }
 .inv-sticky-bar__count b { color: var(--text); }
 
-/* ── Empty state ─────────────────────────────────────────────────────────── */
+/*  Empty state  */
 .inv-empty {
   padding: 40px 24px;
   text-align: center;
@@ -361,7 +361,7 @@
 .inv-empty__subtitle { font-size: 12px; color: var(--text-muted); }
 .inv-empty__actions  { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
 
-/* ── Filter toggle bar ───────────────────────────────────────────────────── */
+/*  Filter toggle bar  */
 .inv-filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .inv-toggle-group {
@@ -389,9 +389,9 @@
 .inv-toggle-group__btn.is-active  { background: var(--text); color: var(--surface); }
 .inv-toggle-group__btn:hover:not(.is-active) { background: var(--surface-2); color: var(--text); }
 
-/* ═══════════════════════════════════════════════════════════════
+/* 
    INVENTORY ITEM FORM  (iif- prefix)
-   ═══════════════════════════════════════════════════════════════ */
+    */
 
 .iif-shell {
   background: var(--surface);
@@ -401,7 +401,7 @@
   overflow: hidden;
 }
 
-/* ── Header (dark) ───────────────────────────────────────────────────────── */
+/*  Header (dark)  */
 .iif-header {
   position: relative;
   padding: 18px 24px;
@@ -428,7 +428,7 @@
 .iif-header__subtitle { font-size: 12px; color: rgba(255,255,255,0.42); margin-top: 4px; }
 .iif-header__actions { display: flex; align-items: center; gap: 10px; }
 
-/* ── Status chip ─────────────────────────────────────────────────────────── */
+/*  Status chip  */
 .inv-status-chip {
   display: inline-flex;
   align-items: center;
@@ -448,7 +448,7 @@
 .inv-status-chip--success { background: rgba(34,197,94,0.15);   color: #86efac;                border-color: rgba(34,197,94,0.28); }
 .inv-status-chip--danger  { background: rgba(239,68,68,0.15);   color: #fca5a5;                border-color: rgba(239,68,68,0.28); }
 
-/* ── Form alert ──────────────────────────────────────────────────────────── */
+/*  Form alert  */
 .iif-alert {
   margin: 14px 24px 0;
   padding: 11px 14px;
@@ -459,7 +459,7 @@
   font-size: 13px;
 }
 
-/* ── Form body ───────────────────────────────────────────────────────────── */
+/*  Form body  */
 .iif-body {
   padding: 20px 24px 28px;
   display: flex;
@@ -467,7 +467,7 @@
   gap: 16px;
 }
 
-/* ── Sections ────────────────────────────────────────────────────────────── */
+/*  Sections  */
 .inv-section {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -479,7 +479,7 @@
 .inv-section__subtitle { font-size: 11px; color: var(--text-soft); margin-top: 2px; }
 .inv-section__body { padding: 16px; }
 
-/* ── 12-column form grid ─────────────────────────────────────────────────── */
+/*  12-column form grid  */
 .inv-form-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -514,7 +514,7 @@
 .inv-field__hint  { font-size: 11px; color: var(--text-soft); margin-top: 2px; }
 .inv-field__error { font-size: 11px; color: var(--danger); margin-top: 2px; }
 
-/* ── Inputs ──────────────────────────────────────────────────────────────── */
+/*  Inputs  */
 .inv-input {
   width: 100%;
   height: 36px;
@@ -535,7 +535,7 @@
 .inv-input:disabled { opacity: 0.35; cursor: not-allowed; }
 .inv-input--invalid { border-color: var(--danger) !important; background: var(--danger-bg) !important; }
 
-/* ── Checkbox row ────────────────────────────────────────────────────────── */
+/*  Checkbox row  */
 .inv-checkbox-row {
   height: 36px;
   display: flex;
@@ -556,7 +556,7 @@
 .inv-checkbox-row input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
 .inv-checkbox-row--disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
-/* ── Read-only field ─────────────────────────────────────────────────────── */
+/*  Read-only field  */
 .inv-readonly-field {
   height: 36px;
   display: flex;
@@ -570,16 +570,16 @@
   font-style: italic;
 }
 
-/* ── UOM conversion inset ────────────────────────────────────────────────── */
+/*  UOM conversion inset  */
 .iif-conv-section { margin-top: 16px; }
 .iif-conv-section__label { font-size: 10px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.09em; text-transform: uppercase; font-family: var(--mono); margin-bottom: 8px; }
 .iif-conv-section__body  { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 14px; background: var(--surface-2); }
 .iif-conv-section__empty { font-size: 13px; color: var(--text-soft); font-style: italic; }
 
-/* ═══════════════════════════════════════════════════════════════
+/* 
    UOM CONVERSION GRID  (uom- prefix)
    Replaces all inline CSSProperties in UomConversionGrid.tsx
-   ═══════════════════════════════════════════════════════════════ */
+    */
 
 .uom-grid { display: flex; flex-direction: column; gap: 0; }
 
@@ -710,7 +710,7 @@
   background: var(--surface-2);
 }
 
-/* ── Modal overlay ───────────────────────────────────────────────────────── */
+/*  Modal overlay  */
 .inv-modal-overlay {
   position: fixed;
   inset: 0;
@@ -762,7 +762,7 @@
 
 .inv-modal-label { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.07em; text-transform: uppercase; font-family: var(--mono); margin-bottom: 5px; display: block; }
 
-/* ── Responsive ──────────────────────────────────────────────────────────── */
+/*  Responsive  */
 @media (max-width: 1024px) {
   .inv-kpi-grid { grid-template-columns: repeat(3, 1fr); }
 }

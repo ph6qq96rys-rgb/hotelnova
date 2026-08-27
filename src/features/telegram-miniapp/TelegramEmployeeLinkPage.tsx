@@ -57,13 +57,13 @@ function TelegramEmployeeLinkPage({ auth, onLink }: Props) {
 
   return (
     <section className="tg-link-card">
-      <div className="tg-link-card__icon">🔐</div>
+      <div className="tg-link-card__icon"></div>
 
       <h2>Link Employee Account</h2>
 
       <p>
         Your Telegram account is authenticated. Enter the link code generated
-        from your employee profile to connect this Telegram account to HotelNova
+        from your employee profile to connect this Telegram account to Hotel Nova
         ERP.
       </p>
 
@@ -98,7 +98,7 @@ function TelegramEmployeeLinkPage({ auth, onLink }: Props) {
           />
 
           <span>
-            I consent to link my Telegram account to my RestaurantFNB employee
+            I consent to link my Telegram account to my Hotel Nova employee
             profile for attendance, store requests, approvals, and ERP
             notifications.
           </span>

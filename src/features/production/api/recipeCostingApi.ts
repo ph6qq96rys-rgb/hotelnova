@@ -21,6 +21,13 @@ export interface RecipeLineCostDto {
 }
 
 export interface RecipeCostDto {
+  contingencyRate: number;
+  contingencyAmount: number;
+  totalCostWithContingency: number;
+  costPerOutputWithContingency: number;
+  outputQuantity: number;
+  costPerOutputUnit: number;
+  isProduction: boolean;
   recipeId:              string;
   menuItemId:            string;
   totalRecipeCost:       number;

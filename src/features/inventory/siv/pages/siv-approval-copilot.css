@@ -216,18 +216,29 @@
 
 .siv-risk-button {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
   border: 1px solid var(--copilot-border);
-  border-radius: 999px;
-  padding: 4px 8px;
+  border-radius: 8px;
+  padding: 6px 8px;
   font-size: 10px;
   font-weight: 700;
+  line-height: 1.25;
+  min-width: 136px;
 }
 
 .siv-risk-button span {
   font-family: var(--mono);
   font-weight: 500;
+}
+
+.siv-risk-button small {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .siv-risk-button[data-risk="Low"],

@@ -22,10 +22,9 @@ function extractRawError(error: any): string | null {
 
   if (typeof data === "string") return data;
 
-  if (typeof data?.detail === "string") return data.detail;
-  if (typeof data?.title === "string") return data.title;
-  if (typeof data?.message === "string") return data.message;
-  if (typeof data?.error === "string") return data.error;
+  for (const value of [data?.detail, data?.message, data?.error]) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
 
   if (Array.isArray(data?.errors)) {
     return data.errors.filter(Boolean).join(" ");
@@ -37,6 +36,8 @@ function extractRawError(error: any): string | null {
       .filter(Boolean)
       .join(" ");
   }
+
+  if (typeof data?.title === "string" && data.title.trim()) return data.title;
 
   if (typeof error?.message === "string") return error.message;
 
@@ -147,7 +148,9 @@ function isTechnicalError(value: string): boolean {
     lower.includes("request failed with status code") ||
     lower.includes("system.invalidoperationexception") ||
     lower.includes("system.exception") ||
-    lower.includes(" at ") ||
+    // Stack frames contain a method call, not ordinary phrases such as
+    // "available stock at the source location".
+    /(?:^|\n)\s*at\s+(?:async\s+)?[\w.$<>+`]+\s*\([^\n]*\)/i.test(value) ||
     lower.includes(" in c:\\") ||
     lower.includes("/_/src/")
   );

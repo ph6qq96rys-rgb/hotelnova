@@ -111,7 +111,7 @@ function companySivRoutes(
     visible
       ? visibleRoute(
           listPath,
-          "SIVs",
+          "Stock Issue Vouchers",
           <SivListPage />,
           80,
           ["siv.view"],
@@ -119,7 +119,7 @@ function companySivRoutes(
       : hiddenRoute(
           listPath,
           <SivListPage />,
-          "SIVs",
+          "Stock Issue Vouchers",
         ),
 
     hiddenRoute(

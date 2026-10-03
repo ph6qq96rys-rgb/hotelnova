@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
 import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import { itemsApi } from "../api/itemsApi";
+import { useI18n } from "../../../../i18n";
 
 type ApiError = {
   summary: string;
@@ -74,6 +75,7 @@ function extractApiError(error: any): ApiError {
 
 export default function ItemsPage() {
   const navigate = useNavigate();
+  const { tx } = useI18n();
   const { companyId } = useAppScope();
 
   const [items, setItems] = useState<ItemRow[]>([]);
@@ -122,8 +124,8 @@ export default function ItemsPage() {
         setPageState({
           status: "error",
           error: {
-            summary: "Missing company scope.",
-            detail: "Open this page under /companies/{companyId}/inventory-master/items.",
+            summary: tx("Missing company scope."),
+            detail: tx("Open this page from the company workspace."),
           },
         });
         return;
@@ -182,20 +184,20 @@ export default function ItemsPage() {
   }, [items]);
 
   const rightStatus = isLoading
-    ? "Loading..."
+    ? tx("Loading...")
     : error
-    ? `Failed - ${new Date().toLocaleTimeString()}`
+    ? `${tx("Failed")} - ${new Date().toLocaleTimeString()}`
     : lastLoadedAt
-    ? `Updated ${lastLoadedAt.toLocaleTimeString()}`
+    ? `${tx("Updated")} ${lastLoadedAt.toLocaleTimeString()}`
     : "-";
 
   if (!companyId || !paths) {
     return (
       <div style={pageWrap}>
         <div style={cardStyle}>
-          <div style={{ fontSize: 13, fontWeight: 800 }}>Missing company scope</div>
+          <div style={{ fontSize: 13, fontWeight: 800 }}>{tx("Missing company scope")}</div>
           <div style={{ marginTop: 6, ...subtleText }}>
-            This page requires a valid route like{" "}
+            {tx("Open this page from the company workspace.")}{" "}
             <b>/companies/&lt;companyId&gt;/inventory-master/items</b>.
           </div>
         </div>
@@ -207,41 +209,41 @@ export default function ItemsPage() {
     <div style={pageWrap}>
       <div style={headerRow}>
         <div>
-          <div style={titleStyle}>Item Enrollment</div>
+          <div style={titleStyle}>{tx("Item Enrollment")}</div>
           <div style={subtitleStyle}>
-            Register, manage, and review inventory catalog items.
+            {tx("Register, manage, and review inventory catalog items.")}
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" style={secondaryBtn} onClick={() => go(paths.ledger)}>
-            View Ledger
+            {tx("View Ledger")}
           </button>
 
           <button type="button" style={secondaryBtn} onClick={() => go(paths.importItems)}>
-            Import
+            {tx("Import")}
           </button>
 
           <button type="button" style={primaryBtn} onClick={() => go(paths.newItem)}>
-            + New Item
+            + {tx("New Item")}
           </button>
         </div>
       </div>
 
       <div style={kpiGrid}>
-        <Kpi label="Total items" value={stats.total} tone="neutral" />
-        <Kpi label="Active" value={stats.active} tone="success" />
-        <Kpi label="Inactive" value={stats.inactive} tone="neutral" />
-        <Kpi label="Missing category" value={stats.missingCategory} tone="warn" />
-        <Kpi label="Missing base UOM" value={stats.missingBaseUom} tone="warn" />
+        <Kpi label={tx("Total items")} value={stats.total} tone="neutral" />
+        <Kpi label={tx("Active")} value={stats.active} tone="success" />
+        <Kpi label={tx("Inactive")} value={stats.inactive} tone="neutral" />
+        <Kpi label={tx("Missing category")} value={stats.missingCategory} tone="warn" />
+        <Kpi label={tx("Missing base UOM")} value={stats.missingBaseUom} tone="warn" />
       </div>
 
       <div style={cardStyle}>
         <div style={cardHeader}>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>Search & Filters</div>
+            <div style={{ fontSize: 13, fontWeight: 800 }}>{tx("Search & Filters")}</div>
             <div style={{ marginTop: 4, ...subtleText }}>
-              Search by name, category, or type depending on API support.
+              {tx("Search by name, category, or type depending on API support.")}
             </div>
           </div>
 
@@ -258,20 +260,20 @@ export default function ItemsPage() {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
           <div style={{ gridColumn: "span 8" }}>
-            <label style={labelStyle}>Search</label>
+            <label style={labelStyle}>{tx("Search")}</label>
             <input
               style={inputStyle}
-              placeholder="Search items..."
+              placeholder={tx("Search items...")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
             <div style={{ marginTop: 6, ...subtleText }}>
-              Tip: use short keywords for faster results.
+              {tx("Tip: use short keywords for faster results.")}
             </div>
           </div>
 
           <div style={{ gridColumn: "span 4" }}>
-            <label style={labelStyle}>Status</label>
+            <label style={labelStyle}>{tx("Status")}</label>
 
             <div style={{ display: "flex", gap: 8 }}>
               <button
@@ -279,7 +281,7 @@ export default function ItemsPage() {
                 style={activeOnly ? primaryBtnSm : secondaryBtnSm}
                 onClick={() => setActiveOnly(true)}
               >
-                Active only
+                {tx("Active only")}
               </button>
 
               <button
@@ -287,13 +289,13 @@ export default function ItemsPage() {
                 style={!activeOnly ? primaryBtnSm : secondaryBtnSm}
                 onClick={() => setActiveOnly(false)}
               >
-                All
+                {tx("All")}
               </button>
             </div>
 
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
               <div style={subtleText}>
-                Showing: <b style={{ opacity: 1 }}>{visibleItems.length}</b>
+                {tx("Showing")}: <b style={{ opacity: 1 }}>{visibleItems.length}</b>
               </div>
 
               <button
@@ -304,7 +306,7 @@ export default function ItemsPage() {
                   setActiveOnly(true);
                 }}
               >
-                Reset
+                {tx("Reset")}
               </button>
             </div>
 
@@ -316,9 +318,9 @@ export default function ItemsPage() {
       <div style={cardStyle}>
         <div style={cardHeader}>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>Item Register</div>
+            <div style={{ fontSize: 13, fontWeight: 800 }}>{tx("Item Register")}</div>
             <div style={{ marginTop: 4, ...subtleText }}>
-              Click a row to edit the item inside the current company workspace.
+              {tx("Click a row to edit the item inside the current company workspace.")}
             </div>
           </div>
 
@@ -328,7 +330,7 @@ export default function ItemsPage() {
             onClick={() => void loadItems()}
             disabled={isLoading}
           >
-            Refresh
+            {tx("Refresh")}
           </button>
         </div>
 
@@ -336,11 +338,11 @@ export default function ItemsPage() {
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={{ ...thStyle, width: 360 }}>Item</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Category</th>
-                <th style={thStyle}>Base UOM</th>
-                <th style={{ ...thStyle, width: 140 }}>Status</th>
+                <th style={{ ...thStyle, width: 360 }}>{tx("Item")}</th>
+                <th style={thStyle}>{tx("Type")}</th>
+                <th style={thStyle}>{tx("Category")}</th>
+                <th style={thStyle}>{tx("Base UOM")}</th>
+                <th style={{ ...thStyle, width: 140 }}>{tx("Status")}</th>
                 <th style={{ ...thStyle, width: 120 }} />
               </tr>
             </thead>
@@ -361,22 +363,22 @@ export default function ItemsPage() {
                     <EmptyState
                       title={
                         debouncedQuery
-                          ? "No matching items found"
+                          ? tx("No matching items found")
                           : activeOnly
-                          ? "No active items"
-                          : "No items yet"
+                          ? tx("No active items")
+                          : tx("No items yet")
                       }
                       subtitle={
                         debouncedQuery
-                          ? "Try a different keyword or clear search."
+                          ? tx("Try a different keyword or clear search.")
                           : activeOnly
-                          ? "Switch to All to see inactive items, or create a new item."
-                          : "Register your first item to start tracking inventory."
+                          ? tx("Switch to All to see inactive items, or create a new item.")
+                          : tx("Register your first item to start tracking inventory.")
                       }
-                      actionText="+ New Item"
+                      actionText={`+ ${tx("New Item")}`}
                       onAction={() => go(paths.newItem)}
                       secondaryText={
-                        debouncedQuery ? "Clear search" : activeOnly ? "Show all" : undefined
+                        debouncedQuery ? tx("Clear search") : activeOnly ? tx("Show all") : undefined
                       }
                       onSecondary={
                         debouncedQuery
@@ -404,22 +406,22 @@ export default function ItemsPage() {
 
         <div style={footerActions}>
           <div style={subtleText}>
-            Tip: keep Base UOM consistent for accurate costing and stock movement.
+            {tx("Tip: keep Base UOM consistent for accurate costing and stock movement.")}
           </div>
 
           <button type="button" style={secondaryBtn} onClick={() => go(paths.newItem)}>
-            + New Item
+            + {tx("New Item")}
           </button>
         </div>
       </div>
 
       <div style={stickyBar}>
         <div style={subtleText}>
-          Showing <b style={{ opacity: 1 }}>{visibleItems.length}</b> item(s)
+          {tx("Showing")} <b style={{ opacity: 1 }}>{visibleItems.length}</b> {tx("item(s)")}
           {debouncedQuery ? (
             <>
               {" "}
-              for <b style={{ opacity: 1 }}>{debouncedQuery}</b>
+              {tx("for")} <b style={{ opacity: 1 }}>{debouncedQuery}</b>
             </>
           ) : null}
         </div>
@@ -433,11 +435,11 @@ export default function ItemsPage() {
               setActiveOnly(true);
             }}
           >
-            Reset
+            {tx("Reset")}
           </button>
 
           <button type="button" style={primaryBtn} onClick={() => go(paths.newItem)}>
-            + New Item
+            + {tx("New Item")}
           </button>
         </div>
       </div>
@@ -446,6 +448,8 @@ export default function ItemsPage() {
 }
 
 function ErrorBanner({ error, onRetry }: { error: ApiError; onRetry: () => void }) {
+  const { tx } = useI18n();
+
   return (
     <div style={errorBannerStyle}>
       <div style={{ fontWeight: 800, marginBottom: 2 }}>{error.summary}</div>
@@ -464,7 +468,7 @@ function ErrorBanner({ error, onRetry }: { error: ApiError; onRetry: () => void 
       ) : null}
 
       <button type="button" style={linkButtonDanger} onClick={onRetry}>
-        Retry
+        {tx("Retry")}
       </button>
     </div>
   );
@@ -477,6 +481,7 @@ function ItemTableRow({
   item: ItemRow;
   onOpen: (itemId: string) => void;
 }) {
+  const { tx } = useI18n();
   const [isHovering, setIsHovering] = useState(false);
 
   return (
@@ -496,8 +501,8 @@ function ItemTableRow({
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 800, color: "#0f172a" }}>{item.name}</div>
             <div style={{ fontSize: 12, opacity: 0.7 }}>
-              {item.category !== "-" ? item.category : "No category"} -{" "}
-              {item.baseUom !== "-" ? `Base: ${item.baseUom}` : "No base UOM"}
+              {item.category !== "-" ? item.category : tx("No category")} -{" "}
+              {item.baseUom !== "-" ? `${tx("Base")}: ${item.baseUom}` : tx("No base UOM")}
             </div>
           </div>
         </div>
@@ -508,7 +513,7 @@ function ItemTableRow({
       <td style={tdStyle}>{item.baseUom}</td>
       <td style={tdStyle}>
         <span style={statusBadge(item.isActive)}>
-          {item.isActive ? "Active" : "Inactive"}
+          {item.isActive ? tx("Active") : tx("Inactive")}
         </span>
       </td>
       <td style={{ ...tdStyle, textAlign: "right" }}>
@@ -520,7 +525,7 @@ function ItemTableRow({
             onOpen(item.id);
           }}
         >
-          Edit
+          {tx("Edit")}
         </button>
       </td>
     </tr>

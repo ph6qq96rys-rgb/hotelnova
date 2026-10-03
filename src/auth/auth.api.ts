@@ -3,6 +3,9 @@
 import axios from "axios";
 
 import { http } from "../api/http";
+import { loadAuth } from "./auth.storage";
+import { loadWorkspaceAuth } from "./workspace-auth.storage";
+import { loadPlatformAuth } from "./platform-auth.storage";
 import type {
   AuthUser,
   ForgotPasswordRequest,
@@ -194,6 +197,17 @@ export const authApi = {
     }
   },
 
+  async updateLanguagePreference(language: "en" | "am"): Promise<{ preferredLanguage: string; defaultLanguage: string }> {
+    try {
+      const response = await http.put<{ preferredLanguage: string; defaultLanguage: string }>(
+        "/auth/language-preference",
+        { language }
+      );
+      return response.data;
+    } catch (error) {
+      normalizeError(error);
+    }
+  },
   async me(): Promise<AuthUser> {
     try {
       const response = await http.get<AuthUser>("/auth/me");
@@ -204,8 +218,14 @@ export const authApi = {
   },
 
   async logout(): Promise<void> {
+    const accessToken = loadAuth()?.accessToken
+      ?? loadWorkspaceAuth()?.accessToken
+      ?? loadPlatformAuth()?.accessToken;
+    if (!accessToken) return;
     try {
-      await http.post("/auth/logout", {});
+      await http.post("/auth/logout", {}, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
     } catch {
       // Local logout must continue even if server logout fails.
     }

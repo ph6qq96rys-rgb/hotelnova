@@ -13,6 +13,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import { useAppContext } from "../app/AppContext";
+import { useCompanyCurrency } from "../shared/currency/useCompanyCurrency";
 import {
   canAccessRoute,
   normalizePermission,
@@ -80,10 +81,32 @@ export default function AppShell() {
   const routes = useAppRoutes();
   const auth = useAuth();
   const appScope = useAppContext();
+  useCompanyCurrency();
 
   const meta = usePageMeta(location.pathname);
   const crumbs = meta.crumbs ?? [];
   const companyId = auth.companyId ?? appScope.companyId ?? null;
+  const companyName =
+    appScope.companyName ??
+    ((auth as any).companyName as string | null | undefined) ??
+    ((auth.user as any)?.companyName as string | null | undefined) ??
+    null;
+  const branchName =
+    appScope.branchName ??
+    ((auth as any).branchName as string | null | undefined) ??
+    ((auth.user as any)?.branchName as string | null | undefined) ??
+    null;
+  const storeName =
+    appScope.storeName ??
+    ((auth as any).storeName as string | null | undefined) ??
+    ((auth.user as any)?.storeName as string | null | undefined) ??
+    null;
+
+  const topbarSubtitle = useMemo(() => {
+    const context = [branchName, storeName].filter(Boolean).join(" / ");
+    if (context) return context;
+    return meta.title && meta.title !== "Dashboard" ? meta.title : "Company workspace";
+  }, [branchName, meta.title, storeName]);
 
   const roleNames = useMemo(
     () =>
@@ -159,8 +182,9 @@ export default function AppShell() {
   }, [routes, companyId, roleNames, permissionNames]);
 
   useEffect(() => {
-    document.title = `${meta.title || "Dashboard"} - Hotel Nova`;
-  }, [meta.title]);
+    const workspaceTitle = companyName ?? "Company";
+    document.title = `${meta.title || "Dashboard"} - ${workspaceTitle}`;
+  }, [companyName, meta.title]);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -181,8 +205,8 @@ export default function AppShell() {
           <Topbar
             onOpenSidebar={openSidebar}
             sidebarOpen={sidebarOpen}
-            title={meta.title || "Dashboard"}
-            subtitle={meta.subtitle}
+            title={companyName ?? "Company profile"}
+            subtitle={topbarSubtitle}
           />
         </div>
 

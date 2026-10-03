@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Card, EmptyState, Field, money, Pill, Spinner } from "./posUi";
 import type { Guid, PosSessionDto } from "../types/posTypes";
+import { useI18n } from "../../../i18n";
 
 export type PosStoreOption = {
   id: Guid;
@@ -9,6 +10,29 @@ export type PosStoreOption = {
   isActive?: boolean;
 };
 
+
+const sessionGateAmharicPhrases: Record<string, string> = {
+  "Loading POS session...": "የPOS ሴሽን በመጫን ላይ...",
+  "Open Cashier Session": "የካሸር ሴሽን ክፈት",
+  "Select a branch POS store before taking orders.": "ትዕዛዝ ከመቀበል በፊት የቅርንጫፍ POS መደብር ይምረጡ።",
+  "POS Store": "POS መደብር",
+  "Loading stores...": "መደብሮች በመጫን ላይ...",
+  "Select POS store": "POS መደብር ይምረጡ",
+  "No active POS stores are configured for this branch.": "ለዚህ ቅርንጫፍ ንቁ POS መደብሮች አልተዋቀሩም።",
+  "Cashier name": "የካሸር ስም",
+  "Terminal": "ተርሚናል",
+  "Opening float": "የመክፈቻ ጥሬ ገንዘብ",
+  "Open Session": "ሴሽን ክፈት",
+  "OPEN": "ክፍት",
+  "Cashier": "ካሸር",
+  "Opened": "ተከፍቷል",
+  "Opening Float": "የመክፈቻ ጥሬ ገንዘብ",
+  "Close Session": "ሴሽን ዝጋ"
+};
+
+function sgText(language: string, text: string): string {
+  return language === "am" ? sessionGateAmharicPhrases[text] ?? text : text;
+}
 type SessionGateProps = {
   loading: boolean;
   session: PosSessionDto | null;
@@ -65,6 +89,8 @@ export function SessionGate({
   onClose,
   children,
 }: SessionGateProps) {
+  const { language } = useI18n();
+  const tx = (text: string) => sgText(language, text);
   const activeStores = useMemo(
     () => stores.filter((x) => x.isActive !== false && !isEmptyGuid(x.id)),
     [stores]
@@ -141,7 +167,7 @@ export function SessionGate({
           color: "#71717A",
         }}
       >
-        <Spinner /> Loading POS session...
+        <Spinner /> {tx("Loading POS session...")}
       </div>
     );
   }
@@ -158,8 +184,8 @@ export function SessionGate({
       >
         <Card style={{ width: 460, maxWidth: "95vw" }}>
           <EmptyState
-            title="Open Cashier Session"
-            detail="Select a branch POS store before taking orders."
+            title={tx("Open Cashier Session")}
+            detail={tx("Select a branch POS store before taking orders.")}
           />
 
           {error && (
@@ -174,7 +200,7 @@ export function SessionGate({
             </div>
           )}
 
-          <label className="erp-pos-label">POS Store</label>
+          <label className="erp-pos-label">{tx("POS Store")}</label>
           <select
             className="erp-pos-input"
             value={effectiveStoreId}
@@ -182,7 +208,7 @@ export function SessionGate({
             onChange={(e) => handleStoreChange(e.target.value)}
           >
             <option value="">
-              {storesLoading ? "Loading stores..." : "Select POS store"}
+              {storesLoading ? tx("Loading stores...") : tx("Select POS store")}
             </option>
 
             {activeStores.map((store) => (
@@ -194,24 +220,24 @@ export function SessionGate({
 
           {!storesLoading && activeStores.length === 0 && (
             <div style={{ color: "#FBBF24", fontSize: 13, marginTop: 8 }}>
-              No active POS stores are configured for this branch.
+              {tx("No active POS stores are configured for this branch.")}
             </div>
           )}
 
           <div style={{ height: 12 }} />
 
-          <label className="erp-pos-label">Cashier name</label>
+          <label className="erp-pos-label">{tx("Cashier name")}</label>
           <input
             className="erp-pos-input"
             value={cashierName}
             disabled={busy}
             onChange={(e) => setCashierName(e.target.value)}
-            placeholder="Cashier name"
+            placeholder={tx("Cashier name")}
           />
 
           <div style={{ height: 12 }} />
 
-          <label className="erp-pos-label">Terminal</label>
+          <label className="erp-pos-label">{tx("Terminal")}</label>
           <input
             className="erp-pos-input"
             value={terminal}
@@ -222,7 +248,7 @@ export function SessionGate({
 
           <div style={{ height: 12 }} />
 
-          <label className="erp-pos-label">Opening float</label>
+          <label className="erp-pos-label">{tx("Opening float")}</label>
           <input
             className="erp-pos-input"
             type="number"
@@ -239,7 +265,7 @@ export function SessionGate({
             style={{ width: "100%", marginTop: 16 }}
             onClick={openSession}
           >
-            Open Session
+            {tx("Open Session")}
           </Button>
         </Card>
       </div>
@@ -256,6 +282,9 @@ export function SessionBanner({
   session: PosSessionDto;
   onClose: () => void;
 }) {
+  const { language } = useI18n();
+  const tx = (text: string) => sgText(language, text);
+
   return (
     <Card
       style={{
@@ -265,23 +294,23 @@ export function SessionBanner({
         padding: "12px 16px",
       }}
     >
-      <Pill tone="green">OPEN</Pill>
+      <Pill tone="green">{tx("OPEN")}</Pill>
 
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 14, fontWeight: 700 }}>
-          {session.terminal || "POS-1"} - {session.cashierName || "Cashier"}
+          {session.terminal || "POS-1"} - {session.cashierName || tx("Cashier")}
         </div>
 
         <div style={{ color: "#71717A", fontSize: 12 }}>
           {session.storeName ? `${session.storeName} - ` : ""}
-          Opened {new Date(session.openedAtUtc).toLocaleString()}
+          {tx("Opened")} {new Date(session.openedAtUtc).toLocaleString()}
         </div>
       </div>
 
-      <Field label="Opening Float" value={money(session.openingFloat)} accent />
+      <Field label={tx("Opening Float")} value={money(session.openingFloat)} accent />
 
       <Button variant="danger" onClick={onClose}>
-        Close Session
+        {tx("Close Session")}
       </Button>
     </Card>
   );

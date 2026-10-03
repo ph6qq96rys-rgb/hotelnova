@@ -13,7 +13,20 @@ export function formatReportDate(value?: string | Date | null): string {
   return formatAppDate(value);
 }
 
-export function formatReportDateTime(value?: string | Date | null): string {
+export function formatReportDateTime(value?: string | Date | null, timeZone?: string | null): string {
+  if (value && timeZone) {
+    const normalized = typeof value === "string" && value.includes("T") && !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+      ? `${value}Z` : value;
+    const date = new Date(normalized);
+    if (!Number.isNaN(date.getTime())) {
+      try {
+        return new Intl.DateTimeFormat("en-GB", {
+          day: "2-digit", month: "2-digit", year: "numeric",
+          hour: "2-digit", minute: "2-digit", hour12: false, timeZone,
+        }).format(date);
+      } catch { /* Fall back to the application's default for invalid legacy settings. */ }
+    }
+  }
   return formatAppDateTime(value);
 }
 

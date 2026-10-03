@@ -265,6 +265,11 @@ export type OvertimeCategory =
 export type OvertimeEffectiveness = 'Necessary' | 'Useful' | 'Avoidable' | 'Wasteful';
 
 export interface AttendanceRecordDto {
+  clockInSource?: string | null;
+  clockOutSource?: string | null;
+  isManualEntry?: boolean;
+  regularHours?: number | null;
+  earlyLeaveMinutes?: number | null;
   employeeId: string;
   employeeName: string;
   date: string;

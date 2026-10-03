@@ -1,36 +1,21 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
-import { AuthProvider } from "./auth/AuthProvider";
-import { AppProvider } from "./app/AppContext";
-import AppRoutes from "./routes/AppRoutes";
-
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import "./styles/global.css";
+import "./styles/design-system.css";
 
-// Created at module level - must NOT be inside a component or render call,
-// otherwise a new client is created on every render and the cache is wiped.
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime:            60_000,
-      retry:                1,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
+const StaffApp = lazy(() => import("./app/StaffApp"));
+const PublicMenuPage = lazy(() => import("./features/public-menu/PublicMenuPage"));
 
+function Application() {
+  const location = useLocation();
+  // QR visitors neither load staff modules nor initialize staff authentication.
+  return <Suspense fallback={<p role="status" style={{padding:32}}>Loading… / በመጫን ላይ…</p>}>
+    {location.pathname === "/menu" || location.pathname.startsWith("/menu/") ?
+      <Routes><Route path="/menu/:companyId/:branchId/:token" element={<PublicMenuPage />} /><Route path="*" element={<PublicMenuPage />} /></Routes> :
+      <StaffApp />}
+  </Suspense>;
+}
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <AppProvider>
-            <AppRoutes />
-          </AppProvider>
-        </AuthProvider>
-      </QueryClientProvider>
-    </BrowserRouter>
-  </React.StrictMode>
+  <React.StrictMode><BrowserRouter><Application /></BrowserRouter></React.StrictMode>
 );

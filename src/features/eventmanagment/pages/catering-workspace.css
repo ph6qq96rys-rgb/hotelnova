@@ -1,0 +1,293 @@
+/*
+ * src/features/eventmanagment/pages/catering-workspace.css
+ *
+ * Styles for the event-centric workspace additions: lifecycle rail, guided
+ * action centre and dialog, record tables and the reports task lists.
+ * Palette matches event-management.css.
+ */
+
+/* --- Event picker in the topbar ----------------------------------------- */
+
+.erp-event-picker {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid #cdd8d4;
+  border-radius: 8px;
+  background: #fff;
+  min-width: 0;
+}
+
+.erp-event-picker > span {
+  color: #64736f;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.erp-event-picker select {
+  min-width: 0;
+  max-width: 260px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #172522;
+  font-weight: 700;
+}
+
+.erp-event-alert--sample {
+  border-color: #9ec6e4;
+  background: #eef6fc;
+  color: #14496e;
+}
+
+/* --- Lifecycle rail ------------------------------------------------------ */
+
+.erp-lifecycle {
+  background: #fff;
+  border: 1px solid #dbe4e0;
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.erp-lifecycle__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.erp-lifecycle__head strong { display: block; font-size: 14px; }
+.erp-lifecycle__head span { color: #64736f; font-size: 12px; }
+
+.erp-lifecycle__progress { display: grid; gap: 4px; justify-items: end; min-width: 160px; }
+.erp-lifecycle__progress small { color: #64736f; font-size: 11px; }
+
+.erp-lifecycle__bar {
+  width: 160px;
+  height: 6px;
+  border-radius: 999px;
+  background: #e6ecea;
+  overflow: hidden;
+}
+
+.erp-lifecycle__bar span {
+  display: block;
+  height: 100%;
+  background: #0e766e;
+  transition: width 160ms ease-out;
+}
+
+.erp-lifecycle__stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(132px, 1fr);
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.erp-lifecycle__stage button {
+  width: 100%;
+  height: 100%;
+  text-align: left;
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border: 1px solid #dbe4e0;
+  border-top: 3px solid #c3cecb;
+  border-radius: 8px;
+  background: #fbfdfc;
+  color: inherit;
+  cursor: pointer;
+}
+
+.erp-lifecycle__stage button:hover { border-color: #7ab8ac; }
+.erp-lifecycle__stage strong { font-size: 12px; line-height: 1.25; }
+.erp-lifecycle__stage small { color: #6d7c78; font-size: 11px; line-height: 1.3; }
+.erp-lifecycle__icon { display: inline-flex; color: #90a29d; }
+
+.erp-lifecycle__stage.is-done button { border-top-color: #2f9e7d; background: #f2fbf7; }
+.erp-lifecycle__stage.is-done .erp-lifecycle__icon { color: #2f9e7d; }
+
+.erp-lifecycle__stage.is-current button { border-top-color: #0e766e; background: #eef7f6; box-shadow: 0 0 0 1px #bfe0db inset; }
+.erp-lifecycle__stage.is-current .erp-lifecycle__icon { color: #0e766e; }
+
+.erp-lifecycle__stage.is-blocked button { border-top-color: #c9772f; background: #fdf5ec; }
+.erp-lifecycle__stage.is-blocked .erp-lifecycle__icon { color: #c9772f; }
+
+/* --- Action centre ------------------------------------------------------- */
+
+.erp-action-center {
+  background: #fff;
+  border: 1px solid #dbe4e0;
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.erp-action-center__head strong { display: block; font-size: 14px; }
+.erp-action-center__head span { color: #64736f; font-size: 12px; }
+.erp-action-center__buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.erp-action-center__result { color: #0e766e; font-size: 12px; font-weight: 700; }
+
+.erp-button--primary { background: #0e766e; border-color: #0e766e; color: #fff; }
+.erp-button--primary:hover:not(:disabled) { background: #0b625b; border-color: #0b625b; color: #fff; }
+.erp-button--destructive { border-color: #d8a08a; color: #9a3d17; }
+.erp-button--destructive:hover:not(:disabled) { border-color: #b4451c; color: #8a3612; }
+.erp-button--primary.erp-button--destructive { background: #b4451c; border-color: #b4451c; color: #fff; }
+.erp-button--primary.erp-button--destructive:hover:not(:disabled) { background: #97380f; border-color: #97380f; }
+.erp-button:disabled, .erp-icon-button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* --- Action dialog ------------------------------------------------------- */
+
+.erp-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(16, 35, 32, 0.44);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.erp-dialog {
+  width: min(560px, 100%);
+  max-height: min(84vh, 760px);
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #cdd8d4;
+  border-radius: 10px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  color: #172522;
+  box-shadow: 0 18px 44px rgba(16, 35, 32, 0.24);
+}
+
+.erp-dialog * { box-sizing: border-box; }
+.erp-dialog button, .erp-dialog input, .erp-dialog textarea, .erp-dialog select { font: inherit; }
+.erp-dialog__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.erp-dialog__head h3 { margin: 0; font-size: 16px; }
+.erp-dialog__head p { margin: 4px 0 0; color: #5c6b67; font-size: 12.5px; line-height: 1.45; }
+.erp-dialog__note { margin: 0; color: #5c6b67; font-size: 12.5px; }
+
+.erp-dialog__fields { display: grid; gap: 10px; }
+
+.erp-field { display: grid; gap: 5px; }
+.erp-field > span { display: grid; gap: 2px; }
+.erp-field strong { font-size: 12.5px; }
+.erp-field small { color: #6d7c78; font-size: 11.5px; line-height: 1.35; }
+
+.erp-field input[type="text"],
+.erp-field input[type="number"],
+.erp-field textarea {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #cdd8d4;
+  border-radius: 8px;
+  background: #fff;
+  color: #172522;
+  outline: 0;
+}
+
+.erp-field textarea { resize: vertical; }
+.erp-field input:focus, .erp-field textarea:focus { border-color: #0e766e; box-shadow: 0 0 0 2px #d5eae7; }
+
+.erp-field--toggle {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid #e2eae7;
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.erp-field--toggle input { width: 18px; height: 18px; margin: 0; accent-color: #0e766e; }
+
+.erp-dialog__confirm {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #e2b9a5;
+  border-radius: 8px;
+  background: #fdf3ee;
+}
+
+.erp-dialog__confirm span { display: flex; align-items: center; gap: 6px; color: #8a3612; font-size: 12.5px; }
+.erp-dialog__confirm code { font-weight: 800; letter-spacing: 0.04em; }
+.erp-dialog__confirm input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #d8a08a;
+  border-radius: 8px;
+  background: #fff;
+  outline: 0;
+}
+
+.erp-dialog__error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #e0a49a;
+  border-radius: 8px;
+  background: #fdf1ef;
+  color: #8f2f1e;
+  font-size: 12.5px;
+}
+
+.erp-dialog__foot { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* --- Record tables ------------------------------------------------------- */
+
+.erp-record-table-wrap { display: grid; gap: 6px; overflow-x: auto; }
+
+.erp-record-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.erp-record-table th, .erp-record-table td { padding: 7px 9px; text-align: left; white-space: nowrap; }
+.erp-record-table th {
+  color: #64736f;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  border-bottom: 1px solid #dbe4e0;
+}
+.erp-record-table tbody tr { border-bottom: 1px solid #eef2f1; }
+.erp-record-table tbody tr:last-child { border-bottom: 0; }
+.erp-record-table .is-end { text-align: right; }
+.erp-record-empty { margin: 0; color: #6d7c78; font-size: 12.5px; }
+.erp-record-more { color: #64736f; font-size: 11.5px; }
+
+/* --- Reports task lists -------------------------------------------------- */
+
+.erp-task-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.erp-task-list li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border: 1px solid #e6ecea;
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+.erp-task-list__icon { display: inline-flex; color: #0e766e; }
+.erp-task-list strong { display: block; font-size: 12.5px; }
+.erp-task-list small { color: #6d7c78; font-size: 11.5px; }
+
+@media (max-width: 900px) {
+  .erp-event-picker select { max-width: 160px; }
+  .erp-lifecycle__stages { grid-auto-columns: minmax(150px, 1fr); }
+}

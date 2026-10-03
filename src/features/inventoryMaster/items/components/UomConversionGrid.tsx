@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ItemUomDto } from "../types";
+import { useI18n } from "../../../../i18n";
 
 interface UomOption {
   id: string;
@@ -38,7 +39,15 @@ function isValidFactorText(value: string): boolean {
 }
 
 function uomLabel(uom: UomOption): string {
-  return uom.code ? `${uom.code} - ${uom.name}` : uom.name;
+  return uom.code ? `${uom.code} - ${unitName(uom)}` : unitName(uom);
+}
+
+// Display terminology only; existing IDs, codes and factors remain unchanged.
+function unitName(uom: UomOption): string {
+  const tokens = [normalizeToken(uom.code), normalizeToken(uom.name)];
+  if (tokens.some(x => ["PACK", "PK", "PKT", "PKG", "PACKAGE", "PACKET"].includes(x))) return "Pack";
+  if (tokens.some(x => ["PCS", "PC", "PIECE", "PIECES"].includes(x))) return "Pcs";
+  return uom.name || uom.code;
 }
 
 type UomFamily = "weight" | "volume" | "count" | "package" | "unknown";
@@ -64,7 +73,7 @@ function uomFamily(uom?: Pick<UomOption, "code" | "name">): UomFamily {
     return "count";
   }
 
-  if (["CASE", "CS", "BOX", "PACK", "PK", "PKT", "DOZ", "DOZEN", "BTL", "BOTTLE", "SET", "ROLL"].some((x) => tokens.has(x))) {
+  if (["CASE", "CS", "BOX", "PACK", "PK", "PKT", "PKG", "PACKAGE", "PACKET", "CARTON", "CTN", "DOZ", "DOZEN", "BTL", "BOTTLE", "SET", "ROLL"].some((x) => tokens.has(x))) {
     return "package";
   }
 
@@ -79,9 +88,9 @@ function isCompatibleUom(baseUom?: UomOption, selectedUom?: UomOption): boolean 
   const selectedFamily = uomFamily(selectedUom);
 
   if (baseFamily === "unknown" || selectedFamily === "unknown") return true;
-  if (baseFamily === selectedFamily && baseFamily !== "package") return true;
+  if (baseFamily === selectedFamily) return true;
 
-  return baseFamily === "count" && selectedFamily === "package";
+  return baseFamily === "package" || selectedFamily === "package";
 }
 
 function compatibilityHint(baseUom?: UomOption): string {
@@ -89,10 +98,67 @@ function compatibilityHint(baseUom?: UomOption): string {
 
   if (family === "weight") return "Use weight units only, for example 1 GM = 0.001 KG or 1 KG = 1000 GM.";
   if (family === "volume") return "Use volume units only, for example 1 ML = 0.001 LTR.";
-  if (family === "count") return "Use count units or purchasing packs, for example 1 CASE = 24 EA.";
-  if (family === "package") return "Package units should normally be purchasing units, not base units.";
+  if (family === "count") return "Enter the total pieces in one pack, box or carton for this item. Example: 1 Pack contains 50 Pcs; 1 Carton of 20 packs contains 1000 Pcs.";
+  if (family === "package") return "Pack is the base stock unit. Enter the fraction of a pack in one selected unit: if 1 Pack contains 50 Pcs, enter 0.02 for Pcs. If 1 Carton contains 20 packs, enter 20 for Carton.";
 
   return "The factor means base quantity received from 1 selected unit.";
+}
+
+function formatConversionNumber(value: number): string {
+  if (!Number.isFinite(value)) return "?";
+
+  const nearestWhole = Math.round(value);
+  if (Math.abs(value - nearestWhole) < 0.01) return String(nearestWhole);
+
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: 6,
+    minimumFractionDigits: 0,
+  });
+}
+
+function resolveFactor(row: ItemUomDto, text: string): number | null {
+  if (row.isBase) return 1;
+  if (isValidFactorText(text)) return Number(text);
+  return isPositiveFactor(row.toBaseFactor) ? row.toBaseFactor : null;
+}
+
+function buildConversionExample(
+  row: ItemUomDto,
+  text: string,
+  selectedUom: UomOption,
+  baseUom: UomOption
+): { display: string; detail: string | null } {
+  const factor = resolveFactor(row, text);
+  const selectedLabel = unitName(selectedUom);
+  const baseLabel = unitName(baseUom);
+
+  if (!factor) {
+    return {
+      display: `1 ${selectedLabel} = ? ${baseLabel}`,
+      detail: null,
+    };
+  }
+
+  if (!row.isBase && uomFamily(baseUom) === "count") {
+    return {
+      display: `1 ${selectedLabel} contains ${formatConversionNumber(factor)} ${baseLabel}`,
+      detail: `2 ${selectedLabel} = ${formatConversionNumber(2 * factor)} ${baseLabel}`,
+    };
+  }
+
+  if (!row.isBase && factor < 1) {
+    const unitsPerBase = 1 / factor;
+
+    return {
+      display: `${formatConversionNumber(unitsPerBase)} ${selectedLabel} = 1 ${baseLabel}`,
+      detail: `Stored as 1 ${selectedLabel} = ${formatConversionNumber(factor)} ${baseLabel}`,
+    };
+  }
+
+  return {
+    display: `1 ${selectedLabel} = ${formatConversionNumber(factor)} ${baseLabel}`,
+    detail: null,
+  };
 }
 
 function buildBaseRow(baseUom: UomOption): ItemUomDto {
@@ -187,6 +253,7 @@ export default function UomConversionGrid({
   rows,
   onChange,
 }: Props) {
+  const { tx } = useI18n();
   const normalizedRows = useMemo(
     () => normalizeRows(baseUomId, uoms, rows),
     [baseUomId, uoms, rows]
@@ -383,6 +450,18 @@ export default function UomConversionGrid({
       const row = vmRows.find((x) => x._key === key);
       if (!row || row.isBase) return;
 
+      if (row.isActive !== false) {
+        updateRow(key, {
+          isActive: false,
+          isPurchase: false,
+          isIssue: false,
+          isRecipe: false,
+          isConsume: false,
+          isCount: false,
+        });
+        return;
+      }
+
       commit(vmRows.filter((x) => x._key !== key));
 
       setFactorText((prev) => {
@@ -391,7 +470,7 @@ export default function UomConversionGrid({
         return next;
       });
     },
-    [commit, vmRows]
+    [commit, updateRow, vmRows]
   );
 
   const onFactorChange = useCallback(
@@ -440,21 +519,21 @@ export default function UomConversionGrid({
     <div className="uom-grid">
       <div className="uom-grid__header">
         <div className="uom-grid__meta">
-          <div className="uom-grid__title">Allowed Units &amp; Conversions</div>
+          <div className="uom-grid__title">{tx("Allowed Units & Conversions")}</div>
           <div className="uom-grid__subtitle">
-            Define how each selected unit converts into the base stock unit.
+            {tx("Define the contents of one purchasing unit for this item. Pack sizes are item-specific.")}
           </div>
 
           {baseUom ? (
             <div className="uom-chip">
-              <span className="uom-chip__label">Base unit</span>
+              <span className="uom-chip__label">{tx("Base unit")}</span>
               <strong>{baseUom.code || baseUom.name}</strong>
               <span className="uom-chip__separator">-</span>
-              <span>{baseUom.name}</span>
+              <span>{unitName(baseUom)}</span>
             </div>
           ) : (
             <div className="uom-chip uom-chip--warn">
-              Select a base UOM first.
+              {tx("Select a base UOM first.")}
             </div>
           )}
         </div>
@@ -465,25 +544,30 @@ export default function UomConversionGrid({
           disabled={!canAdd}
           onClick={addRow}
         >
-          + Add Unit
+          + {tx("Add Unit")}
         </button>
       </div>
 
+      <div className="uom-factor-hint" role="note">
+        {tx("Pcs means individual pieces. Pack means a bundle of pieces. Box / Carton means an outer container. For items counted individually, use Pcs as the base stock unit.")}
+        {" "}{tx("Enter every conversion directly in the base unit: 50 Pcs per Pack and 1000 Pcs per Carton, not 20 packs per carton.")}
+        {" "}{tx("Catering Package refers to an event offering; its quantities come from its included items and guest count.")}
+      </div>
       <div className="uom-table-wrap">
         <div className="uom-table-scroll">
           <table className="uom-table">
             <thead>
               <tr>
-                <th>Unit</th>
-                <th>Base Qty / 1 Unit</th>
-                <th>Purchase</th>
-                <th>Issue</th>
-                <th>Recipe</th>
-                <th>Consume</th>
-                <th>Count</th>
-                <th>Active</th>
-                <th>Example</th>
-                <th className="right">Actions</th>
+                <th>{tx("Unit")}</th>
+                <th>{baseUom ? `${unitName(baseUom)} ${tx("in 1 selected unit")}` : tx("Base quantity in 1 selected unit")}</th>
+                <th>{tx("Purchase")}</th>
+                <th>{tx("Issue")}</th>
+                <th>{tx("Recipe")}</th>
+                <th>{tx("Consume")}</th>
+                <th>{tx("Count")}</th>
+                <th>{tx("Active")}</th>
+                <th>{tx("Example")}</th>
+                <th className="right">{tx("Actions")}</th>
               </tr>
             </thead>
 
@@ -491,13 +575,16 @@ export default function UomConversionGrid({
               {!baseUomId ? (
                 <tr>
                   <td colSpan={10} className="uom-table__empty">
-                    Select a base UOM to automatically create the required base conversion row.
+                    {tx("Select a base UOM to automatically create the required base conversion row.")}
                   </td>
                 </tr>
               ) : (
                 vmRows.map((row) => {
                   const selectedUom = uomById.get(row.uomId);
                   const text = factorText[row._key] ?? "";
+                  const example = baseUom && selectedUom
+                    ? buildConversionExample(row, text, selectedUom, baseUom)
+                    : null;
                   const invalid =
                     !row.isBase && text.trim() !== "" && !isValidFactorText(text);
 
@@ -519,7 +606,7 @@ export default function UomConversionGrid({
 
                         {row.isBase && (
                           <div className="uom-factor-hint">
-                            Base row required for conversion.
+                            {tx("Base row required for conversion.")}
                           </div>
                         )}
                       </td>
@@ -531,6 +618,7 @@ export default function UomConversionGrid({
                           min={0.0000001}
                           step="0.0001"
                           inputMode="decimal"
+                          aria-label={selectedUom && baseUom ? `1 ${unitName(selectedUom)} contains how many ${unitName(baseUom)}?` : tx("Base quantity in one unit")}
                           value={row.isBase ? "1" : text}
                           disabled={row.isBase}
                           onChange={(e) => onFactorChange(row._key, e.target.value)}
@@ -538,7 +626,7 @@ export default function UomConversionGrid({
                         />
 
                         <div className={`uom-factor-hint${invalid ? " uom-factor-hint--error" : ""}`}>
-                          {row.isBase ? "Locked to 1." : compatibilityHint(baseUom)}
+                          {row.isBase ? tx("Locked to 1.") : tx(compatibilityHint(baseUom))}
                         </div>
                       </td>
 
@@ -592,18 +680,14 @@ export default function UomConversionGrid({
                       </td>
 
                       <td>
-                        {baseUom && selectedUom ? (
+                        {example ? (
                           <span className="uom-example">
-                            1 <b>{selectedUom.code || selectedUom.name}</b>
-                            {" = "}
-                            <b>
-                              {row.isBase
-                                ? 1
-                                : isValidFactorText(text)
-                                  ? Number(text)
-                                  : row.toBaseFactor || "?"}
-                            </b>{" "}
-                            <b>{baseUom.code || baseUom.name}</b>
+                            <strong>{example.display}</strong>
+                            {example.detail && (
+                              <span className="uom-factor-hint">
+                                {example.detail}
+                              </span>
+                            )}
                           </span>
                         ) : (
                           "-"
@@ -617,7 +701,11 @@ export default function UomConversionGrid({
                           disabled={row.isBase}
                           onClick={() => removeRow(row._key)}
                         >
-                          {row.isBase ? "Locked" : "Remove"}
+                          {row.isBase
+                            ? tx("Locked")
+                            : row.isActive === false
+                              ? tx("Remove")
+                              : tx("Deactivate")}
                         </button>
                       </td>
                     </tr>
@@ -629,9 +717,9 @@ export default function UomConversionGrid({
         </div>
 
         <div className="uom-table-footer">
-          Purchase GRN requires <strong>Purchase</strong>. SIV/store issue requires{" "}
-          <strong>Issue</strong>. Recipe/COGS posting requires{" "}
-          <strong>Consume</strong>. Physical count requires <strong>Count</strong>. The factor is always 1 selected unit = N base units.
+          {tx("Purchase GRN requires")} <strong>{tx("Purchase")}</strong>. {tx("SIV/store issue requires")} {" "}
+          <strong>{tx("Issue")}</strong>. {tx("Recipe/COGS posting requires")} {" "}
+          <strong>{tx("Consume")}</strong>. {tx("Physical count requires")} <strong>{tx("Count")}</strong>. {tx("The factor is always 1 selected unit = N base units.")}
         </div>
       </div>
     </div>

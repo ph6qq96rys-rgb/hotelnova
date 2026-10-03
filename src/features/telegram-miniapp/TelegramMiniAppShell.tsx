@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
 import { memo, useMemo } from "react";
 
+import { LanguageSelector } from "../../components/LanguageSelector";
+import { useI18n } from "../../i18n";
 import { getTelegramTheme } from "./telegramWebApp";
 
 type TelegramMiniAppShellProps = {
@@ -18,6 +20,7 @@ function TelegramMiniAppShell({
   footer,
   noPadding = false,
 }: TelegramMiniAppShellProps) {
+  const { tx } = useI18n();
   const theme = getTelegramTheme();
 
   const styles = useMemo(
@@ -30,8 +33,16 @@ function TelegramMiniAppShell({
       <main style={styles.shell}>
         {(title || subtitle) && (
           <header style={styles.header}>
-            {title && <h1 style={styles.title}>{title}</h1>}
-            {subtitle && <p style={styles.subtitle}>{subtitle}</p>}
+            <div style={styles.headerTop}>
+              <div style={styles.headerText}>
+                {title && <h1 style={styles.title}>{tx(title)}</h1>}
+                {subtitle && <p style={styles.subtitle}>{tx(subtitle)}</p>}
+              </div>
+
+              <div className="tg-mini-language">
+                <LanguageSelector compact />
+              </div>
+            </div>
           </header>
         )}
 
@@ -79,6 +90,17 @@ function createStyles(
       background: cardBg,
       border: `1px solid ${border}`,
       boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
+    },
+
+    headerTop: {
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+
+    headerText: {
+      minWidth: 0,
     },
 
     title: {

@@ -78,12 +78,41 @@ type SessionAuth = {
   tenantSlug?: string | null;
   branchId?: string | null;
   branchName?: string | null;
+  isCompanyScoped?: boolean | null;
 };
+
+const LAST_ACTIVITY_KEY = "restaurantfnb.auth.lastActivityAt";
+const ACTIVITY_WRITE_THROTTLE_MS = 15_000;
+let lastActivityWriteAt = 0;
 
 function clean(value: unknown): string | null {
   return typeof value === "string" && value.trim()
     ? value.trim()
     : null;
+}
+
+function markSessionActivity(): void {
+  if (typeof window === "undefined") return;
+
+  const now = Date.now();
+  if (now - lastActivityWriteAt < ACTIVITY_WRITE_THROTTLE_MS) {
+    return;
+  }
+
+  lastActivityWriteAt = now;
+  const serialized = String(now);
+  localStorage.setItem(LAST_ACTIVITY_KEY, serialized);
+  sessionStorage.setItem(LAST_ACTIVITY_KEY, serialized);
+}
+
+function safeParseJson<T>(raw: string | null): T | null {
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
 }
 
 function hasSystemAdminRole(
@@ -302,7 +331,19 @@ export function resolveCompanyId(): string | null {
 }
 
 export function resolveBranchId(): string | null {
-  return clean(getWorkspaceAuth()?.branchId);
+  const workspaceAuth = getWorkspaceAuth();
+  const appScope = safeParseJson<{ branchId?: string | null }>(
+    sessionStorage.getItem("rfnb.scope.v3") ??
+    localStorage.getItem("rfnb.scope.v3")
+  );
+
+  if (appScope) {
+    return clean(appScope.branchId);
+  }
+
+  return workspaceAuth?.isCompanyScoped === true
+    ? null
+    : clean(workspaceAuth?.branchId);
 }
 
 // -----------------------------------------------------------------------------
@@ -535,6 +576,8 @@ function persistRefreshedAuth(
     // Platform auth is normally a remembered administrator session.
     // Existing login code remains responsible for the initial remember choice.
     savePlatformAuth(nextPlatformAuth, true);
+    const legacy=loadAuth();
+    if(legacy?.accessToken===currentAuth.accessToken)saveAuth({...legacy,accessToken,refreshToken,expiresAt});
     return;
   }
 
@@ -542,9 +585,9 @@ function persistRefreshedAuth(
   const companyName = clean(currentAuth.companyName);
   const tenantSlug = clean(currentAuth.tenantSlug);
 
-  if (!companyId || !companyName || !tenantSlug) {
+  if (!companyId) {
     throw new Error(
-      "Cannot persist a refreshed workspace token without company and tenant scope.",
+      "Cannot persist a refreshed workspace token without company scope.",
     );
   }
 
@@ -553,8 +596,8 @@ function persistRefreshedAuth(
     refreshToken,
     expiresAt,
     companyId,
-    companyName,
-    tenantSlug: tenantSlug.toLowerCase(),
+    companyName: companyName ?? "",
+    tenantSlug: tenantSlug?.toLowerCase() ?? "",
     branchId: clean(currentAuth.branchId),
     branchName: clean(currentAuth.branchName),
     roles: currentAuth.roles ?? [],
@@ -595,7 +638,7 @@ const refreshPromises: Record<
   workspace: null,
 };
 
-async function refreshAccessToken(
+export async function refreshAccessToken(
   scope: AuthScope,
 ): Promise<string | null> {
   const existingPromise = refreshPromises[scope];
@@ -629,6 +672,8 @@ async function refreshAccessToken(
         `${API_BASE}/auth/refresh`,
         {
           refreshToken: auth.refreshToken,
+          companyId: scope === "workspace" ? auth.companyId : null,
+          branchId: scope === "workspace" && !auth.isCompanyScoped ? auth.branchId : null,
         },
         {
           headers,
@@ -661,18 +706,26 @@ async function refreshAccessToken(
         return null;
       }
 
+      const current=scope==="platform"?getPlatformAuth():getWorkspaceAuth();
+      if(!current||current.refreshToken!==auth.refreshToken||current.companyId!==auth.companyId)return null;
       persistRefreshedAuth(
         scope,
-        auth,
+        current,
         accessToken,
         refreshToken,
         expiresAt,
       );
 
+      window.dispatchEvent(new CustomEvent("auth:refreshed",{detail:{scope}}));
       return accessToken;
-    } catch {
-      clearScopeAuth(scope);
-      dispatchUnauthenticated(scope);
+    } catch (error) {
+      const current=scope==="platform"?getPlatformAuth():getWorkspaceAuth();
+      if(!current||current.refreshToken!==auth.refreshToken||current.companyId!==auth.companyId)return null;
+      // Network failures and server outages do not prove that the session is invalid.
+      if(axios.isAxiosError(error)&&[400,401,403].includes(error.response?.status??0)){
+        clearScopeAuth(scope);
+        dispatchUnauthenticated(scope);
+      }
       return null;
     } finally {
       refreshPromises[scope] = null;
@@ -696,7 +749,15 @@ http.interceptors.request.use(
 
     if (isAuthEndpoint(config.url)) {
       removeTenantHeaders(headers);
-      removeHeader(headers, "Authorization");
+      const path = getUrlPath(config.url).toLowerCase();
+      if (path === "/auth/logout" || path === "/api/auth/logout") {
+        // Logout captures credentials before local session storage is cleared.
+        if (!headers.Authorization) {
+          setAuthorization(headers, getWorkspaceAuth()?.accessToken ?? getPlatformAuth()?.accessToken);
+        }
+      } else {
+        removeHeader(headers, "Authorization");
+      }
       return config;
     }
 
@@ -705,6 +766,7 @@ http.interceptors.request.use(
       removeTenantHeaders(headers);
 
       if (!isAuthEndpoint(config.url)) {
+        markSessionActivity();
         setAuthorization(
           headers,
           getPlatformAuth()?.accessToken,
@@ -717,6 +779,7 @@ http.interceptors.request.use(
     attachTenantHeaders(headers, true);
 
     if (!isAuthEndpoint(config.url)) {
+      markSessionActivity();
       setAuthorization(
         headers,
         getWorkspaceAuth()?.accessToken,

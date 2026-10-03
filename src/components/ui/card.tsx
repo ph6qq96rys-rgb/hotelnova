@@ -1,3 +1,4 @@
+import "../../styles/design-system.css";
 import * as React from "react";
 
 function cn(...classes: Array<string | false | null | undefined>) {
@@ -8,7 +9,7 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("rounded-2xl border bg-background text-foreground shadow-sm", className)}
+      className={cn("ui-card rounded-2xl border bg-background text-foreground shadow-sm", className)}
       {...props}
     />
   )
@@ -17,21 +18,21 @@ Card.displayName = "Card";
 
 export const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("flex flex-col space-y-1.5 p-6", className)} {...props} />
+    <div ref={ref} className={cn("ui-card-header flex flex-col space-y-1.5 p-6", className)} {...props} />
   )
 );
 CardHeader.displayName = "CardHeader";
 
 export const CardTitle = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLHeadingElement>>(
   ({ className, ...props }, ref) => (
-    <h3 ref={ref as any} className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />
+    <h3 ref={ref as any} className={cn("ui-card-title text-lg font-semibold leading-none tracking-tight", className)} {...props} />
   )
 );
 CardTitle.displayName = "CardTitle";
 
 export const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
+    <div ref={ref} className={cn("ui-card-content p-6 pt-0", className)} {...props} />
   )
 );
 CardContent.displayName = "CardContent";

@@ -46,15 +46,45 @@ export const recipesApi = {
 //  Production recipe endpoints 
 
 export const productionRecipesApi = {
-  getByMenuItem(companyId: string, menuItemId: string): Promise<RecipeDto> {
+  getByMenuItem(
+    companyId: string,
+    menuItemId: string,
+    params?: { mode?: "directSale" | "production" | "DirectSale" | "Production" }
+  ): Promise<RecipeDto> {
     return http
-      .get<RecipeDto>(`/companies/${companyId}/production/recipes/by-menu-item/${menuItemId}`)
+      .get<RecipeDto>(`/companies/${companyId}/production/recipes/by-menu-item/${menuItemId}`, { params })
       .then((r) => r.data);
   },
 
   upsertByMenuItem(companyId: string, menuItemId: string, body: UpsertRecipeRequest): Promise<RecipeDto> {
     return http
       .put<RecipeDto>(`/companies/${companyId}/production/recipes/by-menu-item/${menuItemId}`, body)
+      .then((r) => r.data);
+  },
+
+  getByOutputItem(
+    companyId: string,
+    branchId: string,
+    outputItemId: string,
+    params?: { mode?: "production" | "Production" }
+  ): Promise<RecipeDto> {
+    return http
+      .get<RecipeDto>(`/companies/${companyId}/production/recipes/by-output-item/${outputItemId}`, {
+        params: { ...params, branchId },
+      })
+      .then((r) => r.data);
+  },
+
+  upsertByOutputItem(
+    companyId: string,
+    branchId: string,
+    outputItemId: string,
+    body: UpsertRecipeRequest
+  ): Promise<RecipeDto> {
+    return http
+      .put<RecipeDto>(`/companies/${companyId}/production/recipes/by-output-item/${outputItemId}`, body, {
+        params: { branchId },
+      })
       .then((r) => r.data);
   },
 };
@@ -74,3 +104,5 @@ export const recipeEditorApi = {
       .then((r) => r.data);
   },
 };
+
+

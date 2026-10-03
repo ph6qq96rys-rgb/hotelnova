@@ -103,6 +103,7 @@ export type CompanySettingsDto = {
   fiscalYearStartMonth: number;
   baseCurrency: string;
 
+  defaultLanguage: string;
   attendanceEnabled: boolean;
   overtimeEnabled: boolean;
 

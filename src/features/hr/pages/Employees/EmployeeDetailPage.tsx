@@ -608,9 +608,20 @@ export default function EmployeeDetailPage() {
               </p>
             </div>
             {canManageEmployee ? (
-              <button type="button" className={styles.button} onClick={generateTelegramLink} disabled={telegramLinkLoading}>
-                <i className="ti ti-brand-telegram" aria-hidden="true" /> {telegramLinkLoading ? "Generating..." : "Generate link code"}
-              </button>
+              <div>
+                <button type="button" className={styles.button} onClick={generateTelegramLink} disabled={telegramLinkLoading || !!employee.telegramChatId}>
+                  <i className="ti ti-brand-telegram" aria-hidden="true" /> Generate link code
+                </button>
+                <button type="button" className={styles.button} onClick={() => void unlinkEmployeeTelegram(false)} disabled={telegramLinkLoading}>
+                  Unlink Telegram
+                </button>
+                {employee.telegramChatId ? (
+                  <button type="button" className={styles.button} onClick={() => void unlinkEmployeeTelegram(true)} disabled={telegramLinkLoading}>
+                    Relink Telegram
+                  </button>
+                ) : null}
+                {telegramLinkLoading ? <span role="status">Updating Telegram link...</span> : null}
+              </div>
             ) : null}
           </section>
           {telegramToken ? (
@@ -737,6 +748,27 @@ export default function EmployeeDetailPage() {
     }
   }
 
+  async function unlinkEmployeeTelegram(relink: boolean) {
+    if (!companyId || !employeeRouteId || telegramLinkLoading) return;
+    if (!window.confirm(relink
+      ? "Disconnect this employee's Telegram account and generate a new link code? The employee must use the new code to reconnect."
+      : "Disconnect this employee's Telegram account? Existing unused link codes will also be invalidated.")) return;
+
+    setTelegramLinkLoading(true);
+    setTelegramLinkError(null);
+    setTelegramToken(null);
+    setTelegramTokenExpiresAt(null);
+    try {
+      await employeeApi.unlinkTelegram(companyId, employeeRouteId);
+      await loadEmployee(true);
+      if (relink) await generateTelegramLink();
+    } catch (e) {
+      setTelegramLinkError(getApiError(e, "Failed to unlink Telegram. Please retry."));
+    } finally {
+      setTelegramLinkLoading(false);
+    }
+  }
+
   async function generateTelegramLink() {
     setActiveTab("telegram");
 
@@ -760,7 +792,7 @@ export default function EmployeeDetailPage() {
 
       setTelegramToken(String(token));
       setTelegramTokenExpiresAt(expiresAt ? String(expiresAt) : null);
-      setActiveTab("access");
+      setActiveTab("telegram");
     } catch (e) {
       setTelegramLinkError(getApiError(e, "Failed to generate Telegram link code."));
     } finally {
@@ -830,10 +862,10 @@ export default function EmployeeDetailPage() {
       </header>
 
       <nav className={styles.commandRibbon} aria-label="Employee actions">
-        <button type="button" className={`${styles.button} ${styles.buttonPrimary}`} onClick={goToEdit}>
+        {canManageEmployee && <button type="button" className={`${styles.button} ${styles.buttonPrimary}`} onClick={goToEdit}>
           <i className="ti ti-pencil" aria-hidden="true" /> Edit
-        </button>
-        {isProbation ? (
+        </button>}
+        {canManageEmployee && isProbation ? (
           <button type="button" className={styles.button} onClick={goToConfirm}>
             <i className="ti ti-user-check" aria-hidden="true" /> Confirm
           </button>
@@ -841,7 +873,7 @@ export default function EmployeeDetailPage() {
         <button type="button" className={styles.button} disabled={refreshing} onClick={() => void loadEmployee(true)}>
           <i className="ti ti-refresh" aria-hidden="true" /> {refreshing ? "Refreshing..." : "Refresh"}
         </button>
-        {!isTerminated ? (
+        {canManageEmployee && !isTerminated ? (
           <button type="button" className={`${styles.button} ${styles.buttonDanger}`} onClick={goToTerminate}>
             <i className="ti ti-user-x" aria-hidden="true" /> Terminate
           </button>

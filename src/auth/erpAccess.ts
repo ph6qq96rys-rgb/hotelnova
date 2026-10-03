@@ -9,6 +9,8 @@ const COMPANY_ADMIN_ROLES = new Set([
 const COMPANY_ADMIN_RESTRICTED_PERMISSIONS = new Set(
   [
     "companies.delete",
+    "hr.attendance.corrections.request",
+    "hr.attendance.corrections.approve",
     "grn.post",
     "siv.post",
     "inventory.adjustments.post",
@@ -21,6 +23,10 @@ const COMPANY_ADMIN_RESTRICTED_PERMISSIONS = new Set(
     "sales.import",
   ].map(normalizePermission)
 );
+
+// The API only grants CompanyAdmin its setup permissions (PermissionCatalog.CompanyAdminPermissions);
+// procurement and payables require explicitly assigned roles, so the UI must not assume them either.
+const COMPANY_ADMIN_RESTRICTED_PREFIXES = ["purchasing.", "suppliers.", "fixedassets.", "finance.payables."];
 
 export type AccessIdentity = {
   roles?: string[] | null;
@@ -63,7 +69,8 @@ export function hasErpPermission(
   if (hasAssignedPermission) return true;
 
   if (hasCompanyAdminRole(identity.roles)) {
-    return !COMPANY_ADMIN_RESTRICTED_PERMISSIONS.has(required);
+    return !COMPANY_ADMIN_RESTRICTED_PERMISSIONS.has(required)
+      && !COMPANY_ADMIN_RESTRICTED_PREFIXES.some((prefix) => required.startsWith(prefix));
   }
 
   return false;

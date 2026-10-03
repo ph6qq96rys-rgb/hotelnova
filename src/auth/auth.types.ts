@@ -37,6 +37,7 @@ export interface AuthUser {
   employeeId: string | null;
   companyId: string | null;
   branchId: string | null;
+  isCompanyScoped?: boolean;
   departmentId: string | null;
   stockLocationId: string | null;
   storeId: string | null;
@@ -44,6 +45,8 @@ export interface AuthUser {
   roles: string[];
   permissions: string[];
   isActive?: boolean;
+  preferredLanguage?: string | null;
+  defaultLanguage?: string | null;
 }
 
 export interface TokenObject {
@@ -71,7 +74,10 @@ export interface LoginResponse {
   companyName?: string | null;
   branchId?: string | null;
   branchName?: string | null;
+  isCompanyScoped?: boolean | null;
   tenantSlug?: string | null;
+  preferredLanguage?: string | null;
+  defaultLanguage?: string | null;
 }
 
 export interface AuthScope {
@@ -81,9 +87,12 @@ export interface AuthScope {
 
   branchId: string | null;
   branchName: string | null;
+  isCompanyScoped: boolean;
   departmentId: string | null;
   stockLocationId: string | null;
   storeId: string | null;
+  preferredLanguage?: string | null;
+  defaultLanguage?: string | null;
 }
 
 export interface AuthState extends AuthScope {

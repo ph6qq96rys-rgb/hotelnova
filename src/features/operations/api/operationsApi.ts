@@ -1,10 +1,14 @@
 import { http } from "../../../api/http";
-import type { BackOfficeEfficiencySnapshotDto, CashierShiftDto, DailyOperationPlanDto, EndOfDayReportDto, Guid, OperationsPosStoreDto, SafeDropDto, SalesSummaryDto, UpsertDailyOperationPlanDto, WorkflowReasonCodeDto } from "./operationsTypes";
+import type { BackOfficeEfficiencySnapshotDto, CashierShiftDto, DailyOperationPlanDto, DailyOperationPlanSummaryDto, EndOfDayReportDto, Guid, OperationsPosStoreDto, SafeDropDto, SalesSummaryDto, UpsertDailyOperationPlanDto, WorkflowReasonCodeDto } from "./operationsTypes";
 
 const base = (companyId: Guid, branchId: Guid) =>
   `/api/companies/${companyId}/branches/${branchId}/operations`;
 
 export const operationsApi = {
+  dailyPlanRegister(companyId: Guid, params: { branchId?: Guid | null; dateFrom?: string | null; dateTo?: string | null; status?: string | null }) {
+    return http.get<DailyOperationPlanSummaryDto[]>(`/api/companies/${companyId}/operations/daily-plans`, { params });
+  },
+
   stores(companyId: Guid, branchId: Guid) {
     return http.get<OperationsPosStoreDto[]>(`/api/companies/${companyId}/branches/${branchId}/stores`, {
       params: { page: 1, pageSize: 500, activeOnly: true },
@@ -35,6 +39,11 @@ export const operationsApi = {
     return http.get<SafeDropDto[]>(`${base(companyId, branchId)}/safe-drops?${q}`);
   },
 
+  safeDropsForBusinessDate(companyId: Guid, branchId: Guid, businessDate: string) {
+    const q = new URLSearchParams({ businessDate });
+    return http.get<SafeDropDto[]>(`${base(companyId, branchId)}/safe-drops/business-date?${q}`);
+  },
+
   createSafeDrop(companyId: Guid, branchId: Guid, payload: { cashierShiftId: Guid; amount: number; method: string; referenceNo?: string; notes?: string }) {
     return http.post<SafeDropDto>(`${base(companyId, branchId)}/safe-drops`, payload);
   },
@@ -42,6 +51,11 @@ export const operationsApi = {
   salesSummary(companyId: Guid, branchId: Guid, fromUtc: string, toUtc: string) {
     const q = new URLSearchParams({ fromUtc, toUtc });
     return http.get<SalesSummaryDto>(`${base(companyId, branchId)}/sales-summary?${q}`);
+  },
+
+  salesSummaryForBusinessDate(companyId: Guid, branchId: Guid, businessDate: string) {
+    const q = new URLSearchParams({ businessDate });
+    return http.get<SalesSummaryDto>(`${base(companyId, branchId)}/sales-summary/business-date?${q}`);
   },
 
   backOfficeEfficiency(companyId: Guid, branchId: Guid, businessDate: string) {

@@ -1,4 +1,5 @@
 import { formatAppDate, formatAppDateTime } from "../../../../shared/datetime/dateFormat";
+import { formatCurrency } from "../../../../shared/currency/currencyFormat";
 import type { GrnDetailDto, GrnLineDto, GrnListDto } from "../types/grn.types";
 
 function cleanText(value: unknown): string {
@@ -11,15 +12,17 @@ function safeNumber(value: unknown): number {
 }
 
 export function formatDate(value?: string | null): string {
-  return formatAppDate(value);
+  // Receipt and expiry dates are calendar dates, not instants in a time zone.
+  const dateOnly = value?.trim().match(/^\d{4}-\d{2}-\d{2}(?=T|$)/)?.[0];
+  return formatAppDate(dateOnly ?? value);
 }
 
 export function formatDateTime(value?: string | null): string {
   return formatAppDateTime(value);
 }
 
-export function formatMoney(value?: number | null, currency = "USD"): string {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(value ?? 0));
+export function formatMoney(value?: number | null, currency = "ETB"): string {
+  return formatCurrency(value, currency);
 }
 
 export function formatQty(value?: number | null): string {

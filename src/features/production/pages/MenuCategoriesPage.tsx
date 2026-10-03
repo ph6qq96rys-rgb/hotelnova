@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppScope } from "../../../app/useAppScope";
+import { useI18n } from "../../../i18n";
 import ProductionWorkflowBar from "../components/ProductionWorkflowBar";
 import {
   menuCategoriesApi,
@@ -22,12 +23,13 @@ function extractApiError(e: unknown, fallback = "Request failed."): string {
   if (!data) return err?.message ?? fallback;
   if (typeof data === "string") return data;
 
-  return data?.message ?? data?.title ?? err?.message ?? fallback;
+  return data?.message ?? data?.detail ?? data?.title ?? err?.message ?? fallback;
 }
 
 type FormState = {
   id: string;
   name: string;
+  localName: string;
   code: string;
   isActive: boolean;
   defaultConsumptionBranchStockLocationId: string;
@@ -37,14 +39,22 @@ function createEmptyForm(): FormState {
   return {
     id: "",
     name: "",
+    localName: "",
     code: "",
     isActive: true,
     defaultConsumptionBranchStockLocationId: "",
   };
 }
 
+function isProductionOutputCategory(value: Pick<MenuCategoryDto, "name" | "code"> | Pick<FormState, "name" | "code">): boolean {
+  const code = (value.code ?? "").trim().toUpperCase();
+  const name = (value.name ?? "").trim().toUpperCase();
+  return code === "CAT-PRODUCTION-OUTPUTS" || name === "PRODUCTION OUTPUTS";
+}
+
 export default function MenuCategoriesPage() {
   const { companyId, branchId } = useAppScope();
+  const { tx } = useI18n();
 
   const [categories, setCategories] = useState<MenuCategoryDto[]>([]);
   const [locations, setLocations] = useState<StockLocationDto[]>([]);
@@ -68,10 +78,19 @@ export default function MenuCategoriesPage() {
   const activeConsumptionLocations = useMemo(
     () =>
       [...locations]
-        .filter((x) => x.isActive !== false)
+        .filter(
+          (x) =>
+            x.isActive !== false &&
+            x.isConsumptionLocation === true &&
+            x.canReceiveGrn !== true &&
+            x.isMainWarehouse !== true &&
+            x.isProductionCenter !== true
+        )
         .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")),
     [locations]
   );
+
+  const isEditingProductionOutputCategory = isProductionOutputCategory(form);
 
   const canSave = Boolean(
     companyId && branchId && form.name.trim() && !saving && !loading
@@ -102,11 +121,11 @@ export default function MenuCategoriesPage() {
       setCategories(normalizeList<MenuCategoryDto>(categoryResult));
       setLocations(normalizeList<StockLocationDto>(locationResult));
     } catch (e) {
-      setError(extractApiError(e, "Failed to load menu categories."));
+      setError(extractApiError(e, tx("Failed to load menu categories.")));
     } finally {
       setLoading(false);
     }
-  }, [companyId, branchId]);
+  }, [companyId, branchId, tx]);
 
   useEffect(() => {
     void load();
@@ -119,6 +138,7 @@ export default function MenuCategoriesPage() {
     setForm({
       id: row.id,
       name: row.name ?? "",
+      localName: row.localName ?? "",
       code: row.code ?? "",
       isActive: row.isActive !== false,
       defaultConsumptionBranchStockLocationId:
@@ -127,16 +147,18 @@ export default function MenuCategoriesPage() {
   }
 
   async function save() {
-    if (!companyId) return setError("Select a company first.");
-    if (!branchId) return setError("Select a branch first.");
-    if (!form.name.trim()) return setError("Category name is required.");
+    if (!companyId) return setError(tx("Select a company first."));
+    if (!branchId) return setError(tx("Select a branch first."));
+    if (!form.name.trim()) return setError(tx("Category name is required."));
 
     const payload: UpsertMenuCategoryRequest = {
       name: form.name.trim(),
+      localName: form.localName.trim() || null,
       code: form.code.trim() || null,
       isActive: form.isActive,
-      defaultConsumptionBranchStockLocationId:
-        form.defaultConsumptionBranchStockLocationId || null,
+      defaultConsumptionBranchStockLocationId: isProductionOutputCategory(form)
+        ? null
+        : form.defaultConsumptionBranchStockLocationId || null,
     };
 
     setSaving(true);
@@ -146,16 +168,16 @@ export default function MenuCategoriesPage() {
     try {
       if (editing) {
         await menuCategoriesApi.update(companyId, branchId, form.id, payload);
-        setNotice("Menu category updated.");
+        setNotice(tx("Menu category updated."));
       } else {
         await menuCategoriesApi.create(companyId, branchId, payload);
-        setNotice("Menu category created.");
+        setNotice(tx("Menu category created."));
       }
 
       setForm(createEmptyForm());
       await load();
     } catch (e) {
-      setError(extractApiError(e, "Failed to save menu category."));
+      setError(extractApiError(e, tx("Failed to save menu category.")));
     } finally {
       setSaving(false);
     }
@@ -166,7 +188,7 @@ export default function MenuCategoriesPage() {
       <div className="p-page">
         <div className="p-guard">
           <div className="p-guard__icon"></div>
-          Select a company and branch to continue.
+          {tx("Select a company and branch to continue.")}
         </div>
       </div>
     );
@@ -178,12 +200,10 @@ export default function MenuCategoriesPage() {
 
       <div className="p-page-header">
         <div>
-          <p className="p-kicker">Menu Configuration</p>
-          <h1 className="p-title">Menu Categories</h1>
+          <p className="p-kicker">{tx("Menu Configuration")}</p>
+          <h1 className="p-title">{tx("Menu Categories")}</h1>
           <p className="p-subtitle">
-            Configure category defaults such as Kitchen, Bar, Coffee Bar, or
-            Bakery consumption locations. Menu items inherit these defaults
-            unless individually overridden.
+            {tx("Configure category defaults such as Kitchen, Bar, Coffee Bar, or Bakery consumption locations. Menu items inherit these defaults unless individually overridden.")}
           </p>
         </div>
 
@@ -192,7 +212,7 @@ export default function MenuCategoriesPage() {
           onClick={() => void load()}
           disabled={loading || saving}
         >
-          {loading ? "Refreshing..." : "Refresh"}
+          {loading ? tx("Refreshing...") : tx("Refresh")}
         </button>
       </div>
 
@@ -225,10 +245,10 @@ export default function MenuCategoriesPage() {
           <div className="p-card__head">
             <div>
               <p className="p-card__title">
-                {editing ? "Edit Category" : "Create Category"}
+                {editing ? tx("Edit Category") : tx("Create Category")}
               </p>
               <p className="p-card__subtitle">
-                Assign the branch consumption location used for POS COGS.
+                {tx("Assign the branch consumption location used for POS COGS.")}
               </p>
             </div>
 
@@ -237,13 +257,13 @@ export default function MenuCategoriesPage() {
                 form.isActive ? "p-badge--active" : "p-badge--inactive"
               }`}
             >
-              {form.isActive ? "Active" : "Inactive"}
+              {form.isActive ? tx("Active") : tx("Inactive")}
             </span>
           </div>
 
           <div className="p-card__body">
             <div className="p-field">
-              <label className="p-field__label">Category Name *</label>
+              <label className="p-field__label">{tx("Category Name")} *</label>
               <input
                 className="p-input"
                 value={form.name}
@@ -251,12 +271,25 @@ export default function MenuCategoriesPage() {
                   setForm((p) => ({ ...p, name: e.target.value }))
                 }
                 disabled={saving}
-                placeholder="e.g. Foods, Drinks, Coffee"
+                placeholder={tx("e.g. Foods, Drinks, Coffee")}
               />
             </div>
 
             <div className="p-field">
-              <label className="p-field__label">Code</label>
+              <label className="p-field__label">{tx("Amharic Name")}</label>
+              <input
+                className="p-input"
+                value={form.localName}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, localName: e.target.value }))
+                }
+                disabled={saving}
+                placeholder={tx("Optional - Amharic / local name")}
+              />
+            </div>
+
+            <div className="p-field">
+              <label className="p-field__label">{tx("Code")}</label>
               <input
                 className="p-input"
                 value={form.code}
@@ -264,13 +297,13 @@ export default function MenuCategoriesPage() {
                   setForm((p) => ({ ...p, code: e.target.value }))
                 }
                 disabled={saving}
-                placeholder="Optional"
+                placeholder={tx("Optional")}
               />
             </div>
 
             <div className="p-field">
               <label className="p-field__label">
-                Default Consumption Location
+                {tx("Default Consumption Location")}
               </label>
 
               <select
@@ -282,9 +315,9 @@ export default function MenuCategoriesPage() {
                     defaultConsumptionBranchStockLocationId: e.target.value,
                   }))
                 }
-                disabled={saving || loading}
+                disabled={saving || loading || isEditingProductionOutputCategory}
               >
-                <option value="">No default location</option>
+                <option value="">{tx("No default location")}</option>
 
                 {activeConsumptionLocations.map((loc) => (
                   <option key={loc.id} value={loc.id}>
@@ -294,8 +327,9 @@ export default function MenuCategoriesPage() {
               </select>
 
               <span className="p-field__hint">
-                This value must be the branch stock location assignment ID, not
-                the global stock location ID.
+                {isEditingProductionOutputCategory
+                  ? tx("Production output categories receive stock through production batches and do not use POS COGS consumption defaults.")
+                  : tx("Only branch locations configured for inventory consumption are available. Production, receiving, and main warehouse locations are excluded from POS COGS defaults.")}
               </span>
             </div>
 
@@ -308,7 +342,7 @@ export default function MenuCategoriesPage() {
                 }
                 disabled={saving}
               />
-              <span>Active</span>
+              <span>{tx("Active")}</span>
             </label>
           </div>
 
@@ -318,7 +352,7 @@ export default function MenuCategoriesPage() {
               onClick={reset}
               disabled={saving}
             >
-              Clear
+              {tx("Clear")}
             </button>
 
             <button
@@ -327,10 +361,10 @@ export default function MenuCategoriesPage() {
               disabled={!canSave}
             >
               {saving
-                ? "Saving..."
+                ? tx("Saving...")
                 : editing
-                ? "Update Category"
-                : "Create Category"}
+                ? tx("Update Category")
+                : tx("Create Category")}
             </button>
           </div>
         </div>
@@ -338,53 +372,58 @@ export default function MenuCategoriesPage() {
         <div className="p-card">
           <div className="p-card__head">
             <div>
-              <p className="p-card__title">Configured Categories</p>
+              <p className="p-card__title">{tx("Configured Categories")}</p>
               <p className="p-card__subtitle">
-                Category default locations are inherited by menu items and used
-                by POS COGS posting.
+                {tx("Category default locations are inherited by menu items and used by POS COGS posting.")}
               </p>
             </div>
 
             <span className="p-badge">
-              {sortedCategories.length} Categories
+              {sortedCategories.length} {tx("Categories")}
             </span>
           </div>
 
           <div className="p-card__body">
             {loading ? (
               <div style={{ color: "var(--p-text-muted)", padding: 24 }}>
-                Loading categories...
+                {tx("Loading categories...")}
               </div>
             ) : sortedCategories.length === 0 ? (
               <div style={{ color: "var(--p-text-muted)", padding: 24 }}>
-                No categories configured yet.
+                {tx("No categories configured yet.")}
               </div>
             ) : (
               <div className="p-table-wrap">
                 <table className="p-table">
                   <thead>
                     <tr>
-                      <th>Name</th>
-                      <th>Code</th>
-                      <th>Default Consumption Location</th>
-                      <th>Status</th>
+                      <th>{tx("Name")}</th>
+                      <th>{tx("Amharic Name")}</th>
+                      <th>{tx("Code")}</th>
+                      <th>{tx("Default Consumption Location")}</th>
+                      <th>{tx("Status")}</th>
                       <th style={{ width: 120 }} />
                     </tr>
                   </thead>
 
                   <tbody>
-                    {sortedCategories.map((row) => (
+                    {sortedCategories.map((row) => {
+                      const productionOutputCategory = isProductionOutputCategory(row);
+                      return (
                       <tr key={row.id}>
                         <td style={{ fontWeight: 700 }}>{row.name}</td>
+                        <td>{row.localName || "-"}</td>
                         <td>{row.code || "-"}</td>
                         <td>
-                          {row.defaultConsumptionLocationName ? (
+                          {productionOutputCategory ? (
+                            <span className="p-badge">{tx("Production output")}</span>
+                          ) : row.defaultConsumptionLocationName ? (
                             <span className="p-badge p-badge--active">
                               {row.defaultConsumptionLocationName}
                             </span>
                           ) : (
                             <span className="p-badge p-badge--inactive">
-                              Missing
+                              {tx("Missing")}
                             </span>
                           )}
                         </td>
@@ -396,7 +435,7 @@ export default function MenuCategoriesPage() {
                                 : "p-badge--active"
                             }`}
                           >
-                            {row.isActive === false ? "Inactive" : "Active"}
+                            {row.isActive === false ? tx("Inactive") : tx("Active")}
                           </span>
                         </td>
                         <td>
@@ -405,11 +444,12 @@ export default function MenuCategoriesPage() {
                             onClick={() => edit(row)}
                             disabled={saving}
                           >
-                            Edit
+                            {tx("Edit")}
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -417,10 +457,7 @@ export default function MenuCategoriesPage() {
 
             <div className="p-alert p-alert--warning" style={{ marginTop: 16 }}>
               <span className="p-alert__body">
-                ERP rule: configure branch-level consumption defaults at the
-                category level first. Use item-level override only when a
-                specific menu item consumes from a different branch stock
-                location.
+                {tx("ERP rule: configure branch-level consumption defaults at the category level first. Use item-level override only when a specific menu item consumes from a different branch stock location.")}
               </span>
             </div>
           </div>

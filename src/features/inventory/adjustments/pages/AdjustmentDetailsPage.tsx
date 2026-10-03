@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAppScope } from "../../../../app/useAppScope";
+import { formatCurrency } from "../../../../shared/currency/currencyFormat";
 import { adjustmentApi, getApiError } from "../api/adjustmentApi";
 import AdjustmentWorkflowActionBar from "../components/AdjustmentWorkflowActionBar";
 import {
@@ -15,8 +16,6 @@ import {
 } from "../utils/adjustmentWorkflow";
 
 type ConfirmAction = "reject" | "reverse" | null;
-
-const CURRENCY = "ETB";
 
 function fmtDate(value?: string | null): string {
   if (!value) return "-";
@@ -47,10 +46,7 @@ function fmtDateTime(value?: string | null): string {
 }
 
 function fmtMoney(value?: number | null): string {
-  return `${CURRENCY} ${Number(value ?? 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatCurrency(value);
 }
 
 function fmtQty(value?: number | null): string {

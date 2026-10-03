@@ -3,6 +3,7 @@
 // Now uses global.css - wrap in .page so the content area tokens apply
 
 import type { ReactNode } from "react";
+import { useI18n } from "../../../../i18n";
 
 type Props = {
   title:     string;
@@ -13,17 +14,18 @@ type Props = {
 };
 
 export default function SivWorkflowShell({ title, subtitle, badge, actions, children }: Props) {
+  const { tx } = useI18n();
   return (
     <div className="page">
       {/* Header */}
       <div className="page-header">
         <div>
-          <div className="page-kicker">Inventory - SIV</div>
-          <div className="page-title">{title}</div>
-          {subtitle && <div className="page-sub">{subtitle}</div>}
+          <div className="page-kicker">{tx("Inventory")} - {tx("SIV")}</div>
+          <div className="page-title">{tx(title)}</div>
+          {subtitle && <div className="page-sub">{tx(subtitle)}</div>}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {badge && <span className="badge badge-neutral">{badge}</span>}
+          {badge && <span className="badge badge-neutral">{tx(badge)}</span>}
           {actions}
         </div>
       </div>

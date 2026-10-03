@@ -33,9 +33,12 @@ export function useStockLocations(
 ) {
   const [items, setItems] = useState<StockLocationOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!companyId) {
+    setError(null);
+    setItems([]);
+    if (!companyId || !branchId) {
       setItems([]);
       setLoading(false);
       return;
@@ -69,7 +72,7 @@ export function useStockLocations(
       } catch (error: unknown) {
         if (controller.signal.aborted) return;
 
-        console.error("Failed to load stock locations", error);
+        setError(error instanceof Error ? error.message : "Failed to load stock locations.");
         setItems([]);
       } finally {
         if (!controller.signal.aborted) {
@@ -88,5 +91,6 @@ export function useStockLocations(
   return {
     items,
     loading,
+    error,
   };
 }

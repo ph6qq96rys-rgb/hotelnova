@@ -31,6 +31,7 @@ type Props = {
   companyId: string | null;
   branchId: string | null;
   branchName?: string;
+  hasSalesOperations?: boolean;
   saving: boolean;
   dispatch: React.Dispatch<OnboardingAction>;
   onChanged?: () => Promise<void> | void;
@@ -171,6 +172,14 @@ function codeOf(value: any): string {
 
 function activeOf(value: any): boolean {
   return value?.isActive !== false && value?.IsActive !== false && value?.active !== false;
+}
+
+function activeBranchAssignments(rows: StockLocation[]): StockLocation[] {
+  return Array.isArray(rows) ? rows.filter(activeOf) : [];
+}
+
+function branchEligibleLocations(rows: StockLocation[], hasSalesOperations: boolean): StockLocation[] {
+  return hasSalesOperations ? rows : rows.filter(x => !boolOf(x, ["canSell"]));
 }
 
 function boolOf(value: any, keys: string[], fallback = false): boolean {
@@ -1039,7 +1048,7 @@ export function StockLocationsStep(props: Props) {
       ]);
 
       const safeCompanyRows = Array.isArray(companyRows) ? companyRows : [];
-      const safeBranchRows = Array.isArray(branchRows) ? branchRows : [];
+      const safeBranchRows = branchEligibleLocations(activeBranchAssignments(branchRows), props.hasSalesOperations !== false);
 
       const branchAssignedStockLocationIds = new Set(
         safeBranchRows.map(stockLocationIdOf).filter(Boolean),
@@ -1060,7 +1069,7 @@ export function StockLocationsStep(props: Props) {
     } finally {
       setLoading(false);
     }
-  }, [props.companyId, props.branchId]);
+  }, [props.companyId, props.branchId, props.hasSalesOperations]);
 
   useEffect(() => {
     void fetchData();
@@ -1110,6 +1119,11 @@ export function StockLocationsStep(props: Props) {
   const createLocation = useCallback(async () => {
     if (!props.companyId || !props.branchId || !validateLocation(createForm, setCreateErrors)) return;
 
+    if (props.hasSalesOperations === false && createForm.canSell) {
+      setCreateErrors({ canSell: "Sales locations cannot be assigned to a branch with sales disabled." });
+      return;
+    }
+
     setCreateSaving(true);
     props.dispatch({ type: "SAVE_START" });
 
@@ -1146,6 +1160,11 @@ export function StockLocationsStep(props: Props) {
     async (id: string) => {
       if (!props.companyId || !validateLocation(editForm, setEditErrors)) return;
 
+      if (props.hasSalesOperations === false && assignedIds.has(id) && editForm.canSell) {
+        setEditErrors({ canSell: "Sales locations cannot be assigned to a branch with sales disabled." });
+        return;
+      }
+
       setEditSaving(true);
       props.dispatch({ type: "SAVE_START" });
 
@@ -1179,12 +1198,12 @@ export function StockLocationsStep(props: Props) {
 
   const sortedCompanyLocations = useMemo(
     () =>
-      [...companyLocations].sort(
+      [...branchEligibleLocations(companyLocations, props.hasSalesOperations !== false)].sort(
         (a, b) =>
           Number(!assignedIds.has(stockLocationIdOf(a))) - Number(!assignedIds.has(stockLocationIdOf(b))) ||
           nameOf(a).localeCompare(nameOf(b)),
       ),
-    [companyLocations, assignedIds],
+    [companyLocations, assignedIds, props.hasSalesOperations],
   );
 
   if (loading) {
@@ -1276,9 +1295,10 @@ export function StockLocationsStep(props: Props) {
             >
               <input
                 type="checkbox"
+                aria-label={`Assign ${form.name} to ${props.branchName ?? "this branch"}`}
                 checked={assigned}
                 onChange={(e) => setAssigned(id, e.target.checked)}
-                disabled={!canManage}
+                disabled={!canManage || assignmentSaving || props.saving || !form.isActive}
               />
 
               <div>

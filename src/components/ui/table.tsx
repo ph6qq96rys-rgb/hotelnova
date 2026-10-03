@@ -1,3 +1,4 @@
+import "../../styles/design-system.css";
 import * as React from "react";
 
 function cn(...classes: Array<string | false | null | undefined>) {
@@ -8,10 +9,10 @@ export const Table = React.forwardRef<
   HTMLTableElement,
   React.TableHTMLAttributes<HTMLTableElement>
 >(({ className, ...props }, ref) => (
-  <div className="w-full overflow-auto">
+  <div className="ui-table-scroll">
     <table
       ref={ref}
-      className={cn("w-full caption-bottom text-sm", className)}
+      className={cn("ui-table w-full caption-bottom text-sm", className)}
       {...props}
     />
   </div>

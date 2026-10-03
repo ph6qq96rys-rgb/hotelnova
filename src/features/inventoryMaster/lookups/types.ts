@@ -1,4 +1,4 @@
-export type UomDto = {
+﻿export type UomDto = {
   id: string;
   name: string;
   code?: string | null;
@@ -9,4 +9,7 @@ export type CategoryDto = {
   id: string;
   name: string;
   isActive: boolean;
+  parentId?: string | null;
 };
+
+

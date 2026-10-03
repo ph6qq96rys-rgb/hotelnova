@@ -4,6 +4,19 @@
 // =============================================================================
 
 export type Guid = string;
+export type MenuPriceBreakdown = {
+  vatRate: number;
+  serviceChargeRate: number;
+  contingencyRate: number;
+  pricesIncludeVat: boolean;
+  netPrice: number;
+  vatAmount: number;
+  serviceChargeAmount: number;
+  customerTotal: number;
+  recipeCost: number;
+  contingencyAmount: number;
+  costWithContingency: number;
+};
 
 //  Catalog lookups 
 //
@@ -202,6 +215,7 @@ export type UpsertRecipeRequest = {
   isActive: boolean;
   outputItemId?: string | null;
   outputUomId?: string | null;
+  outputQuantity?: number | null;
   lines: {
     id?: string | null;
     itemId: string;
@@ -219,6 +233,7 @@ export type RecipeDto = {
   mode: RecipeModeWire;
   outputItemId?: string | null;
   outputUomId?: string | null;
+  outputQuantity?: number | null;
   notes?: string | null;
   isActive: boolean;
   lines: any[];
@@ -230,6 +245,7 @@ export interface MenuCategoryDto {
   companyId: string;
   branchId: string;
   name: string;
+  localName?: string | null;
   code?: string | null;
   isActive?: boolean;
   defaultConsumptionBranchStockLocationId?: string | null;
@@ -242,14 +258,27 @@ export interface StockLocationDto {
   name: string;
   code?: string | null;
   isActive?: boolean;
+  canIssue?: boolean;
+  canReceive?: boolean;
+  canSell?: boolean;
+  canProduce?: boolean;
+  canReceiveGrn?: boolean;
+  isMainWarehouse?: boolean;
+  isProductionCenter?: boolean;
+  isConsumptionLocation?: boolean;
 }
 
 
 export interface MenuItemDto {
+  vatRateOverride?: number | null;
+  serviceChargeRateOverride?: number | null;
+  contingencyRateOverride?: number | null;
+  pricing?: MenuPriceBreakdown | null;
   id: string;
   companyId: string;
   branchId: string;
   name: string;
+  localName?: string | null;
   code: string;
   externalCode?: string | null;
   categoryId: string;
@@ -261,6 +290,7 @@ export interface MenuItemDto {
   sellingPrice: number;
   isActive: boolean;
   isAvailableForSale: boolean;
+  showOnQrMenu?: boolean;
   consumptionLocationId?: string | null;
   consumptionLocationName?: string | null;
   categoryConsumptionLocationId?: string | null;
@@ -277,7 +307,11 @@ export interface MenuItemDto {
 }
 
 export interface UpsertMenuItemRequest {
+  vatRateOverride?: number | null;
+  serviceChargeRateOverride?: number | null;
+  contingencyRateOverride?: number | null;
   name: string;
+  localName?: string | null;
   code?: string | null;
   externalCode?: string | null;
   categoryId: string;
@@ -286,6 +320,7 @@ export interface UpsertMenuItemRequest {
   sellingPrice: number;
   isActive: boolean;
   isAvailableForSale: boolean;
+  showOnQrMenu?: boolean;
   consumptionLocationId?: string | null;
   outputItemId?: string | null;
   outputUomId?: string | null;

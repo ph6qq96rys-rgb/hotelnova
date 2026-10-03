@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSivApprovalCopilot } from "../api/sivRecommendationApi";
+import { useI18n } from "../../../../i18n";
 import type {
   SivApprovalCopilotResponse,
   SivApprovalLineInput,
@@ -111,6 +112,7 @@ export function SivRecommendationCard({
   onApplyRecommendations,
   onRecommendationChange,
 }: SivRecommendationCardProps) {
+  const { tx } = useI18n();
   const [copilot, setCopilot] = useState<SivApprovalCopilotResponse | null>(
     null,
   );
@@ -131,7 +133,7 @@ export function SivRecommendationCard({
       if (!companyId || !branchId || !sivId) {
         setCopilot(null);
         onRecommendationChange?.(null);
-        setError("Company, branch, and SIV scope are required.");
+        setError(tx("Company, branch, and SIV scope are required."));
         setLoading(false);
         return;
       }
@@ -167,7 +169,7 @@ export function SivRecommendationCard({
         setError(
           err instanceof Error
             ? err.message
-            : "Unable to load approval recommendation.",
+            : tx("Unable to load approval recommendation."),
         );
       } finally {
         setLoading(false);
@@ -210,8 +212,8 @@ export function SivRecommendationCard({
     <div className="siv-copilot-card">
       <div className="siv-copilot-topbar">
         <div>
-          <div className="siv-copilot-eyebrow">Inventory Copilot</div>
-          <h2>Approval Recommendation</h2>
+          <div className="siv-copilot-eyebrow">{tx("Inventory Copilot")}</div>
+          <h2>{tx("Approval Recommendation")}</h2>
         </div>
 
         <button
@@ -220,7 +222,7 @@ export function SivRecommendationCard({
           disabled={loading}
           onClick={() => void load()}
         >
-          {loading ? "Refreshing..." : " Refresh"}
+          {loading ? tx("Refreshing...") : tx("Refresh")}
         </button>
       </div>
 
@@ -229,7 +231,7 @@ export function SivRecommendationCard({
           {error}
           <div style={{ marginTop: 12 }}>
             <button type="button" className="btn" onClick={() => void load()}>
-              Retry
+              {tx("Retry")}
             </button>
           </div>
         </div>
@@ -245,7 +247,7 @@ export function SivRecommendationCard({
 
       {!loading && !error && !recommendation && (
         <div className="alert alert-warn">
-          No recommendation was returned for this SIV.
+          {tx("No recommendation was returned for this SIV.")}
         </div>
       )}
 
@@ -256,19 +258,19 @@ export function SivRecommendationCard({
               className="siv-decision-pill"
               data-decision={recommendation.decision}
             >
-              {decisionLabel(recommendation.decision)}
+              {tx(decisionLabel(recommendation.decision))}
             </div>
 
             <div className="siv-risk-score">
-              <span>Risk</span>
+              <span>{tx("Risk")}</span>
               <strong>{recommendation.riskScore}/100</strong>
-              <small>{recommendation.riskLevel}</small>
+              <small>{tx(recommendation.riskLevel)}</small>
             </div>
 
             <p>{recommendation.summary}</p>
 
             <div className="siv-confidence-row">
-              <span>Evaluated</span>
+              <span>{tx("Evaluated")}</span>
               <strong>
                 {formatRecommendationDate(recommendation.evaluatedAtUtc)}
               </strong>
@@ -278,7 +280,7 @@ export function SivRecommendationCard({
           {explanation && (
             <section className="siv-ai-explanation">
               <div className="siv-section-heading">
-                <span>AI explanation</span>
+                <span>{tx("AI explanation")}</span>
                 <span
                   className={
                     explanation.isAiGenerated
@@ -286,7 +288,7 @@ export function SivRecommendationCard({
                       : "badge badge-neutral"
                   }
                 >
-                  {explanation.isAiGenerated ? "AI" : "Rules"}
+                  {explanation.isAiGenerated ? tx("AI") : tx("Rules")}
                 </span>
               </div>
 
@@ -305,7 +307,7 @@ export function SivRecommendationCard({
 
           {recommendation.warnings.length > 0 && (
             <div className="alert alert-warn">
-              <strong>Request warnings</strong>
+              <strong>{tx("Request warnings")}</strong>
               <ul>
                 {recommendation.warnings.map((warning) => (
                   <li key={warning}>{warning}</li>
@@ -320,13 +322,13 @@ export function SivRecommendationCard({
             onClick={() => onApplyRecommendations(recommendationLines)}
             disabled={recommendationLines.length === 0}
           >
-            Apply all recommended quantities
+            {tx("Apply all recommended quantities")}
           </button>
 
           <section className="siv-line-picker">
             <div className="siv-section-heading">
-              <span>Line analysis</span>
-              <span>{recommendation.lines.length} lines</span>
+              <span>{tx("Line analysis")}</span>
+              <span>{recommendation.lines.length} {tx("lines")}</span>
             </div>
 
             <div className="siv-line-tabs">
@@ -352,7 +354,7 @@ export function SivRecommendationCard({
                 <div>
                   <h3>{selectedLine.itemName}</h3>
                   <span>
-                    Line {selectedLine.lineNo} - {selectedLine.uomCode}
+                    {tx("Line")} {selectedLine.lineNo} - {selectedLine.uomCode}
                   </span>
                 </div>
 
@@ -366,14 +368,14 @@ export function SivRecommendationCard({
 
               <div className="siv-key-quantity">
                 <div>
-                  <span>Requested</span>
+                  <span>{tx("Requested")}</span>
                   <strong>
                     {formatRecommendationNumber(selectedLine.requestedQty)}
                   </strong>
                 </div>
 
                 <div className="recommended">
-                  <span>Recommended</span>
+                  <span>{tx("Recommended")}</span>
                   <strong>
                     {formatRecommendationNumber(selectedLine.recommendedQty)}
                   </strong>
@@ -382,25 +384,25 @@ export function SivRecommendationCard({
 
               <div className="siv-metric-grid">
                 <div>
-                  <span>On hand</span>
+                  <span>{tx("On hand")}</span>
                   <strong>
                     {formatRecommendationNumber(selectedLine.onHandQty)}
                   </strong>
                 </div>
                 <div>
-                  <span>Reserved</span>
+                  <span>{tx("Reserved")}</span>
                   <strong>
                     {formatRecommendationNumber(selectedLine.reservedQty)}
                   </strong>
                 </div>
                 <div>
-                  <span>Available</span>
+                  <span>{tx("Available")}</span>
                   <strong>
                     {formatRecommendationNumber(selectedLine.availableQty)}
                   </strong>
                 </div>
                 <div>
-                  <span>After approval</span>
+                  <span>{tx("After approval")}</span>
                   <strong>
                     {formatRecommendationNumber(
                       selectedLine.projectedQtyAfterApproval,
@@ -408,7 +410,7 @@ export function SivRecommendationCard({
                   </strong>
                 </div>
                 <div>
-                  <span>Weekly usage</span>
+                  <span>{tx("Weekly usage")}</span>
                   <strong>
                     {formatRecommendationNumber(
                       selectedLine.weeklyAverageUsage,
@@ -416,7 +418,7 @@ export function SivRecommendationCard({
                   </strong>
                 </div>
                 <div>
-                  <span>Weeks after</span>
+                  <span>{tx("Weeks after")}</span>
                   <strong>
                     {formatRecommendationNumber(
                       selectedLine.weeksOfSupplyAfterApproval,
@@ -426,17 +428,17 @@ export function SivRecommendationCard({
               </div>
 
               <div className="siv-recommendation-integrity">
-                <span>Inventory integrity</span>
+                <span>{tx("Inventory integrity")}</span>
                 <strong data-balanced={selectedLine.inventoryIsBalanced}>
                   {selectedLine.inventoryIsBalanced
-                    ? "Reconciled"
-                    : "Not reconciled"}
+                    ? tx("Reconciled")
+                    : tx("Not reconciled")}
                 </strong>
               </div>
 
               {selectedLine.reasons.length > 0 && (
                 <div className="siv-reason-block">
-                  <h4>Why</h4>
+                  <h4>{tx("Why")}</h4>
                   <ul>
                     {selectedLine.reasons.map((reason) => (
                       <li key={reason}>{reason}</li>
@@ -447,7 +449,7 @@ export function SivRecommendationCard({
 
               {selectedLine.warnings.length > 0 && (
                 <div className="siv-warning-block">
-                  <h4>Warnings</h4>
+                  <h4>{tx("Warnings")}</h4>
                   <ul>
                     {selectedLine.warnings.map((warning) => (
                       <li key={warning}>{warning}</li>
@@ -461,7 +463,7 @@ export function SivRecommendationCard({
                 className="btn siv-apply-line-button"
                 onClick={() => applyLine(selectedLine)}
               >
-                Apply {formatRecommendationNumber(selectedLine.recommendedQty)}{" "}
+                {tx("Apply")} {formatRecommendationNumber(selectedLine.recommendedQty)}{" "}
                 {selectedLine.uomCode}
               </button>
             </section>
@@ -470,7 +472,7 @@ export function SivRecommendationCard({
           {explanation?.suggestedActions &&
             explanation.suggestedActions.length > 0 && (
               <section className="siv-suggested-actions">
-                <div className="siv-section-heading">Suggested actions</div>
+                <div className="siv-section-heading">{tx("Suggested actions")}</div>
                 <ol>
                   {explanation.suggestedActions.map((action) => (
                     <li key={action}>{action}</li>
@@ -481,7 +483,7 @@ export function SivRecommendationCard({
 
           {error && (
             <div className="alert alert-warn">
-              The last refresh failed. Displayed evidence may be stale.
+              {tx("The last refresh failed. Displayed evidence may be stale.")}
             </div>
           )}
         </>

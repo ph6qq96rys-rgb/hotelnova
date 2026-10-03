@@ -5,6 +5,7 @@
 // then dispatches to openingStockApi.post on confirm.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "../../../../i18n";
 import { openingStockApi } from "../api/openingStockApi";
 import { http }            from "../../../../api/http";
 
@@ -35,8 +36,9 @@ function extractError(e: unknown, fallback: string): string {
 //  Component 
 
 export default function OpeningStockModal({
-  open, onClose, companyId, itemId, itemName, uoms, baseUomId,
+open, onClose, companyId, itemId, itemName, uoms, baseUomId,
 }: Props) {
+  const { tx } = useI18n();
   const [locations,  setLocations]  = useState<LocationLite[]>([]);
   const [locationId, setLocationId] = useState("");
   const [qty,        setQty]        = useState("");
@@ -142,11 +144,11 @@ export default function OpeningStockModal({
 
         {/*  Header  */}
         <div className="inv-modal__head">
-          <div className="inv-modal__title">Add Opening Stock</div>
+          <div className="inv-modal__title">{tx("Add Opening Stock")}</div>
           <div className="inv-modal__subtitle">
-            Item: <strong>{itemName}</strong>
+            {tx("Item:")} <strong>{itemName}</strong>
             {baseUom && (
-              <> &bull; Base UOM: <strong>{baseUom.code}</strong></>
+              <> &bull; {tx("Base UOM:")} <strong>{baseUom.code}</strong></>
             )}
           </div>
         </div>
@@ -156,37 +158,37 @@ export default function OpeningStockModal({
 
           {loadError && (
             <div className="inv-alert inv-alert--warn" style={{ marginBottom: 14 }}>
-              Warning: {loadError}
+              {tx("Warning:")} {tx(loadError)}
             </div>
           )}
 
           {saveError && (
             <div className="inv-alert inv-alert--error" style={{ marginBottom: 14 }}>
-              {saveError}
+              {tx(saveError)}
             </div>
           )}
 
           <div className="inv-modal__grid">
 
-            {/* Location */}
+            {/* {tx("Location")} */}
             <div>
-              <label className="inv-modal-label">Location *</label>
+              <label className="inv-modal-label">{tx("Location")} *</label>
               <select
                 className="inv-input"
                 value={locationId}
                 onChange={e => setLocationId(e.target.value)}
                 disabled={saving}
               >
-                <option value="">Select location...</option>
+                <option value="">{tx("Select location...")}</option>
                 {locations.map(l => (
                   <option key={l.id} value={l.id}>{l.name}</option>
                 ))}
               </select>
             </div>
 
-            {/* As of date */}
+            {/* {tx("As of date")} */}
             <div>
-              <label className="inv-modal-label">As of date *</label>
+              <label className="inv-modal-label">{tx("As of date")} *</label>
               <input
                 type="date"
                 className="inv-input"
@@ -196,9 +198,9 @@ export default function OpeningStockModal({
               />
             </div>
 
-            {/* Quantity */}
+            {/* {tx("Quantity")} */}
             <div>
-              <label className="inv-modal-label">Quantity *</label>
+              <label className="inv-modal-label">{tx("Quantity")} *</label>
               <input
                 type="number"
                 className="inv-input"
@@ -212,9 +214,9 @@ export default function OpeningStockModal({
               />
             </div>
 
-            {/* Unit */}
+            {/* {tx("Unit")} */}
             <div>
-              <label className="inv-modal-label">Unit *</label>
+              <label className="inv-modal-label">{tx("Unit")} *</label>
               <select
                 className="inv-input"
                 value={uomId}
@@ -231,7 +233,7 @@ export default function OpeningStockModal({
 
             {/* Unit cost */}
             <div className="full">
-              <label className="inv-modal-label">Unit cost (optional)</label>
+              <label className="inv-modal-label">{tx("Unit cost")} ({tx("optional")})</label>
               <input
                 type="number"
                 className="inv-input"
@@ -247,7 +249,7 @@ export default function OpeningStockModal({
 
             {/* Note */}
             <div className="full">
-              <label className="inv-modal-label">Note (optional)</label>
+              <label className="inv-modal-label">{tx("Note")} ({tx("optional")})</label>
               <textarea
                 className="inv-input"
                 value={note}
@@ -267,14 +269,14 @@ export default function OpeningStockModal({
             onClick={onClose}
             disabled={saving}
           >
-            Cancel
+            {tx("Cancel")}
           </button>
           <button
             className="inv-btn inv-btn--primary"
             onClick={submit}
             disabled={!canSave || saving}
           >
-            {saving ? "Saving..." : "Post opening stock"}
+            {saving ? tx("Saving...") : tx("Post opening stock")}
           </button>
         </div>
 

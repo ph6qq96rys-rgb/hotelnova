@@ -1,4 +1,4 @@
-// src/features/inventoryMaster/items/types.ts
+﻿// src/features/inventoryMaster/items/types.ts
 //
 // Single source of truth for all inventory item domain types.
 // Rules:
@@ -26,6 +26,7 @@ export interface CategoryDto {
   name:        string;
   description: string | null;
   isActive:    boolean;
+  parentId?:    string | null;
 }
 
 /**
@@ -101,6 +102,7 @@ export interface InventoryItemDto {
   sku:            string | null;
   barcode:        string | null;
   categoryId:     string | null;
+    subCategoryId?: string | null;
   baseUomId:      string;
   issueUomId:     string | null;
   type?:          ItemType;
@@ -128,6 +130,7 @@ export interface InventoryItemListDto {
   sku:            string | null;
   barcode:        string | null;
   categoryId:     string | null;
+    subCategoryId?: string | null;
   baseUomId:      string;
   issueUomId:     string | null;
   type?:          ItemType;
@@ -152,6 +155,7 @@ export interface CreateInventoryItemRequest {
   sku:            string | null;
   barcode:        string | null;
   categoryId:     string | null;
+    subCategoryId?: string | null;
   baseUomId:      string;
   type:           ItemType;
   allowedUoms?:   ItemUomDto[];
@@ -225,3 +229,4 @@ export function mapAllowedUomsToDto(
       isActive:     r.isActive !== false,
     }));
 }
+

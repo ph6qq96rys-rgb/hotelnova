@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAppScope } from "../../../app/useAppScope";
+import { useI18n } from "../../../i18n";
 import { CAT_META, menuEngineeringApi } from "../api/menuEngineeringApi";
 import type { AnalysisResponse, CategorySummary, MenuEngineeringCategory, MenuEngineeringItem } from "../api/menuEngineeringApi";
 import "../layout/production.css";
@@ -151,6 +152,7 @@ function Th({
 //  Component 
 
 export default function MenuEngineeringPage() {
+  const { tx } = useI18n();
   const { companyId, branchId } = useAppScope();
 
   const [loading,       setLoading]       = useState(false);
@@ -340,7 +342,7 @@ export default function MenuEngineeringPage() {
                       <strong>{catItems.length}</strong>
                     </div>
                     <div className="p-matrix-quadrant__items">
-                      {topItems.length ? topItems.map((item) => item.itemName).join(", ") : "No items classified"}
+                      {topItems.length ? topItems.map((item) => item.itemName).join(", ") : tx("No items classified")}
                     </div>
                   </button>
                 );
@@ -352,8 +354,8 @@ export default function MenuEngineeringPage() {
           <div className="p-card">
             <div className="p-toolbar">
               <div>
-                <p className="p-card__title">Menu Item Performance</p>
-                <p className="p-card__subtitle">Full ERP metric set per menu item.</p>
+                <p className="p-card__title">{tx("Menu Item Performance")}</p>
+                <p className="p-card__subtitle">{tx("Full ERP metric set per menu item.")}</p>
               </div>
               <div className="p-toolbar__controls">
                 <select
@@ -362,7 +364,7 @@ export default function MenuEngineeringPage() {
                   onChange={(e) => setCategoryFilter(e.target.value)}
                   style={{ width: 180 }}
                 >
-                  <option value="ALL">All Boston Categories</option>
+                  <option value="ALL">{tx("All Boston Categories")}</option>
                   {CATEGORY_ORDER.map((cat) => (
                     <option key={cat} value={cat}>{categoryLabel(cat)}</option>
                   ))}
@@ -371,7 +373,7 @@ export default function MenuEngineeringPage() {
                   className="p-input"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search item or code..."
+                  placeholder={tx("Search item or code...")}
                   style={{ width: 220 }}
                 />
               </div>
@@ -381,23 +383,23 @@ export default function MenuEngineeringPage() {
               <table className="p-table p-menu-table">
                 <thead>
                   <tr>
-                    <Th label="Menu Item" col="itemName" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} align="left" />
-                    <Th label="Qty Sold" col="quantitySold" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-                    <Th label="Revenue" col="totalRevenue" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-                    <Th label="Food Cost" col="totalCost" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-                    <Th label="Food Cost %" col="foodCostPct" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-                    <Th label="Contribution" col="contributionMargin" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-                    <Th label="Gross Profit" col="grossProfit" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-                    <Th label="Gross Profit %" col="grossProfitPct" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-                    <Th label="Popularity" col="popularityIndex" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-                    <Th label="Profitability" col="profitabilityIndex" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-                    <Th label="Boston Category" col="category" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} align="left" />
-                    <Th label="AI Recommendation" col="recommendation" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} align="left" />
+                    <Th label={tx("Menu Item")} col="itemName" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} align="left" />
+                    <Th label={tx("Qty Sold")} col="quantitySold" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    <Th label={tx("Revenue")} col="totalRevenue" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    <Th label={tx("Food Cost")} col="totalCost" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    <Th label={tx("Food Cost %")} col="foodCostPct" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    <Th label={tx("Contribution")} col="contributionMargin" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    <Th label={tx("Gross Profit")} col="grossProfit" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    <Th label={tx("Gross Profit %")} col="grossProfitPct" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    <Th label={tx("Popularity")} col="popularityIndex" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    <Th label={tx("Profitability")} col="profitabilityIndex" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    <Th label={tx("Boston Category")} col="category" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} align="left" />
+                    <Th label={tx("AI Recommendation")} col="recommendation" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} align="left" />
                   </tr>
                 </thead>
                 <tbody>
                   {items.length === 0 ? (
-                    <tr><td colSpan={12} className="p-table__empty">No items match the current filter.</td></tr>
+                    <tr><td colSpan={12} className="p-table__empty">{tx("No items match the current filter.")}</td></tr>
                   ) : items.map((item) => {
                     const meta = CAT_META[item.bostonCategory];
                     return (

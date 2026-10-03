@@ -1,3 +1,6 @@
+import { useId } from "react";
+import { Button } from "./ui/button";
+import { useDialogFocus } from "./ui/useDialogFocus";
 type Props = {
   open: boolean;
   title: string;
@@ -21,30 +24,32 @@ export default function ConfirmModal({
   onConfirm,
   onClose,
 }: Props) {
+  const titleId=useId(),messageId=useId();
+  useDialogFocus(open,!!busy,onClose);
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal">
-        <div className="modal-header">
-          <h3>{title}</h3>
+    <div className="ui-dialog-backdrop"><div className="ui-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={messageId}>
+      
+        <div className="ui-dialog-header">
+          <h3 id={titleId}>{title}</h3>
         </div>
 
-        <div className="modal-body">
-          <p>{message}</p>
+        <div className="ui-dialog-body">
+          <p id={messageId}>{message}</p>
         </div>
 
-        <div className="modal-footer row gap" style={{ justifyContent: "flex-end" }}>
-          <button className="btn" onClick={onClose} disabled={busy}>
+        <div className="ui-dialog-actions">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             {cancelText}
-          </button>
-          <button
-            className={`btn ${danger ? "danger" : "primary"}`}
+          </Button>
+          <Button type="button"
+            variant={danger?"destructive":"default"}
             onClick={onConfirm}
             disabled={busy}
           >
             {busy ? "Working..." : confirmText}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

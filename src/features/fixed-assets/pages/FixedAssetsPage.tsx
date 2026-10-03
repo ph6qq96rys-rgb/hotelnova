@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Save } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+import {http} from "../../../api/http";
 import { resolveBranchId } from "../../../api/http";
+import { formatCurrency } from "../../../shared/currency/currencyFormat";
 import { formatAppDate } from "../../../shared/datetime/dateFormat";
 import {
   createFixedAsset,
@@ -13,7 +15,9 @@ import {
 } from "../api/fixedAssetsApi";
 import "./fixed-assets.css";
 
-const money = new Intl.NumberFormat("en-ET", { style: "currency", currency: "ETB", maximumFractionDigits: 2 });
+const money = {
+  format: (value: number | string | null | undefined) => formatCurrency(value),
+};
 
 function formatDate(value?: string | null) {
   return formatAppDate(value);
@@ -61,6 +65,9 @@ const assetDefaults = {
 
 export default function FixedAssetsPage() {
   const { companyId } = useParams<{ companyId: string }>();
+  const [searchParams]=useSearchParams();
+  const sourceOrder=searchParams.get("purchaseOrderId"),sourceAcceptance=searchParams.get("acceptanceId");
+  const [source,setSource]=useState<{purchaseOrderId:string;acceptanceId:string;quantity:number}|null>(null);
   const [rows, setRows] = useState<FixedAssetListItem[]>([]);
   const [categories, setCategories] = useState<FixedAssetCategory[]>([]);
   const [status, setStatus] = useState("");
@@ -106,6 +113,15 @@ export default function FixedAssetsPage() {
   }
 
   useEffect(() => { void load(); }, [companyId]);
+  useEffect(()=>{
+    setSource(null);
+    if(!companyId||!sourceOrder||!sourceAcceptance)return;
+    let active=true;
+    void http.get<{purchaseOrderId:string;acceptanceId:string;quantity:number;name:string;description:string;unitCost:number;reference:string}>(`/companies/${companyId}/procurement/purchase-orders/${sourceOrder}/acceptances/${sourceAcceptance}/asset-handoff`).then(({data})=>{
+      if(!active)return;setSource(data);setAssetForm(current=>({...current,name:data.name,description:data.description,acquisitionCost:data.unitCost,notes:data.reference}));
+    }).catch(()=>{if(active)setError("Unable to load the accepted equipment. Open its acceptance record and retry.");});
+    return()=>{active=false;};
+  },[companyId,sourceOrder,sourceAcceptance]);
 
   async function saveCategory() {
     if (!companyId) return;
@@ -133,6 +149,7 @@ export default function FixedAssetsPage() {
     try {
       await createFixedAsset(companyId, {
         ...assetForm,
+        purchaseOrderId:source?.purchaseOrderId,
         currentBranchId: branchId,
         acquisitionCost: Number(assetForm.acquisitionCost || 0),
         residualValue: Number(assetForm.residualValue || 0),

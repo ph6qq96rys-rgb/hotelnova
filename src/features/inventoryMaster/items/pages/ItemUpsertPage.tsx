@@ -8,6 +8,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { useI18n } from "../../../../i18n";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
@@ -27,6 +28,45 @@ import { extractApiError } from "./InventoryItemsPage";
 
 function isPhysical(type: ItemType): boolean {
   return type !== "Service";
+}
+
+const ITEM_TYPE_BY_ENUM_VALUE: Record<string, ItemType> = {
+  "1": "Ingredient",
+  "2": "StockItem",
+  "3": "Packaging",
+  "4": "SemiFinished",
+  "5": "FinishedGood",
+  "6": "RawMaterial",
+  "7": "MenuItem",
+};
+
+const ITEM_TYPE_BY_NORMALIZED_NAME: Record<string, ItemType> = {
+  select: "Ingredient",
+  ingredient: "Ingredient",
+  stockitem: "StockItem",
+  packaging: "Packaging",
+  semifinished: "SemiFinished",
+  finishedgood: "FinishedGood",
+  rawmaterial: "RawMaterial",
+  menuitem: "MenuItem",
+  service: "Service",
+  nonstock: "NonStock",
+};
+
+function normalizeItemType(value: unknown): ItemType {
+  if (typeof value === "number") {
+    return ITEM_TYPE_BY_ENUM_VALUE[String(value)] ?? "Ingredient";
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "Ingredient";
+
+    const normalizedName = trimmed.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    return ITEM_TYPE_BY_ENUM_VALUE[trimmed] ?? ITEM_TYPE_BY_NORMALIZED_NAME[normalizedName] ?? "Ingredient";
+  }
+
+  return "Ingredient";
 }
 
 function validateUomRows(rows: ItemUomDto[]): string | null {
@@ -96,6 +136,7 @@ interface ItemModel {
   barcode: string;
   type: ItemType;
   categoryId: string;
+    subCategoryId: string;
   baseUomId: string;
   allowedUoms: ItemUomDto[];
   trackInventory: boolean;
@@ -113,6 +154,7 @@ const EMPTY_MODEL: ItemModel = {
   barcode: "",
   type: "Ingredient",
   categoryId: "",
+    subCategoryId: "",
   baseUomId: "",
   allowedUoms: [],
   trackInventory: true,
@@ -136,8 +178,9 @@ function dtoToModel(dto: InventoryItemDto): ItemModel {
     localName: dto.localName ?? "",
     sku: dto.sku ?? "",
     barcode: dto.barcode ?? "",
-    type: dto.type ?? dto.itemType ?? "Ingredient",
+    type: normalizeItemType(dto.type ?? dto.itemType),
     categoryId: dto.categoryId ?? "",
+        subCategoryId: dto.subCategoryId ?? "",
     baseUomId: dto.baseUomId ?? "",
     allowedUoms: readConfiguredUoms(dto),
     trackInventory: dto.trackInventory ?? true,
@@ -173,6 +216,7 @@ function validate(model: ItemModel, physical: boolean) {
 }
 
 export default function ItemUpsertPage() {
+  const { tx } = useI18n();
   const navigate = useNavigate();
   const { companyId } = useAppScope();
 
@@ -243,6 +287,23 @@ export default function ItemUpsertPage() {
     () => catalogs?.categories ?? [],
     [catalogs]
   );
+  const parentCategories = useMemo(
+    () => categories.filter((c) => !c.parentId),
+    [categories]
+  );
+
+  const subCategoryOptions = useMemo(
+    () => categories.filter((c) => c.parentId === model.categoryId),
+    [categories, model.categoryId]
+  );
+
+  useEffect(() => {
+    if (!model.subCategoryId) return;
+    if (!subCategoryOptions.some((c) => c.id === model.subCategoryId)) {
+      setModel((current) => ({ ...current, subCategoryId: "" }));
+    }
+  }, [model.subCategoryId, subCategoryOptions]);
+
   const itemTypes: ItemTypeCatalogDto[] = useMemo(
     () => catalogs?.itemTypes ?? [],
     [catalogs]
@@ -317,8 +378,9 @@ export default function ItemUpsertPage() {
           sku: model.sku.trim() || null,
           barcode: model.barcode.trim() || null,
           categoryId: model.categoryId || null,
+                    subCategoryId: model.subCategoryId || null,
           baseUomId: physical ? model.baseUomId : "",
-          type: model.type,
+          type: normalizeItemType(model.type),
           allowedUoms: normalizedUoms,
           trackInventory: physical ? model.trackInventory : false,
           defaultCost: cost,
@@ -336,8 +398,9 @@ export default function ItemUpsertPage() {
           sku: model.sku.trim() || null,
           barcode: model.barcode.trim() || null,
           categoryId: model.categoryId || null,
+                    subCategoryId: model.subCategoryId || null,
           baseUomId: physical ? model.baseUomId : "",
-          type: model.type,
+          type: normalizeItemType(model.type),
           allowedUoms: normalizedUoms,
           trackInventory: physical ? model.trackInventory : false,
           defaultCost: cost,
@@ -374,9 +437,9 @@ export default function ItemUpsertPage() {
     return (
       <div style={S.page}>
         <div style={S.card}>
-          <div style={{ fontSize: 13, fontWeight: 800 }}>Missing company scope</div>
+          <div style={{ fontSize: 13, fontWeight: 800 }}>{tx("Missing company scope")}</div>
           <div style={{ ...S.note, marginTop: 6 }}>
-            Open this page from the company workspace.
+            {tx("Open this page from the company workspace.")}
           </div>
         </div>
       </div>
@@ -388,13 +451,13 @@ export default function ItemUpsertPage() {
       <div style={S.page}>
         <div style={S.errorCard}>
           <div style={{ fontWeight: 800, fontSize: 13, color: "rgb(220,38,38)" }}>
-            Failed to load
+            {tx("Failed to load")}
           </div>
           <div style={{ marginTop: 6, fontSize: 13, color: "rgb(220,38,38)" }}>
-            {loadError}
+            {tx(loadError)}
           </div>
           <button style={{ ...S.secondaryBtn, marginTop: 14 }} onClick={() => window.location.reload()}>
-            Retry
+            {tx("Retry")}
           </button>
         </div>
       </div>
@@ -406,7 +469,7 @@ export default function ItemUpsertPage() {
       <div style={S.page}>
         <div style={S.card}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#64748b" }}>
-            Loading...
+            {tx("Loading...")}
           </div>
         </div>
       </div>
@@ -423,11 +486,11 @@ export default function ItemUpsertPage() {
     <div style={S.page}>
       <div style={S.headerRow}>
         <div>
-          <div style={S.title}>{isEdit ? "Edit item" : "New item"}</div>
+          <div style={S.title}>{isEdit ? tx("Edit item") : tx("New item")}</div>
           <div style={S.subtitle}>
             {isEdit
-              ? "Update item details, units, and conversion rules."
-              : "Register a new item with base unit and conversion rules."}
+              ? tx("Update item details, units, and conversion rules.")
+              : tx("Register a new item with base unit and conversion rules.")}
           </div>
         </div>
 
@@ -438,11 +501,11 @@ export default function ItemUpsertPage() {
             onClick={() => navigate(itemsListPath)}
             disabled={saving}
           >
-            Cancel
+            {tx("Cancel")}
           </button>
 
           <button type="button" style={primaryBtn} onClick={save} disabled={!canSave || saving}>
-            {saving ? "Saving..." : isEdit ? "Save changes" : "Create item"}
+            {saving ? tx("Saving...") : isEdit ? tx("Save changes") : tx("Create item")}
           </button>
         </div>
       </div>
@@ -450,10 +513,10 @@ export default function ItemUpsertPage() {
       {submitError ? (
         <div style={S.submitErrorCard}>
           <div style={{ fontWeight: 800, fontSize: 12, color: "rgb(220,38,38)" }}>
-            Action needed
+            {tx("Action needed")}
           </div>
           <div style={{ marginTop: 5, fontSize: 12, color: "rgb(220,38,38)" }}>
-            {submitError}
+            {tx(submitError)}
           </div>
         </div>
       ) : null}
@@ -461,46 +524,45 @@ export default function ItemUpsertPage() {
       {baseUomChanged ? (
         <div style={S.warningCard}>
           <div style={{ fontWeight: 800, fontSize: 12, color: "rgba(120,53,15,1)" }}>
-            Base UOM change detected
+            {tx("Base UOM change detected")}
           </div>
           <div style={{ marginTop: 5, fontSize: 12, color: "rgba(120,53,15,1)" }}>
-            Changing the base unit on an item with stock transactions may corrupt historical
-            quantities and valuations. Confirm this is intentional.
+            {tx("Changing the base unit on an item with stock transactions may corrupt historical quantities and valuations. Confirm this is intentional.")}
           </div>
         </div>
       ) : null}
 
       <div style={S.card}>
-        <SectionHead title="Basics" hint="Item identity and classification." />
+        <SectionHead title={tx("Basics")} hint={tx("Item identity and classification.")} />
 
         <div style={S.grid}>
           <div style={{ gridColumn: "span 6" }}>
-            <Label required>Item name</Label>
+            <Label required>{tx("Item name")}</Label>
             <input
               style={inputStyle(touched.name && !validation.nameOk)}
               value={model.name}
-              placeholder="e.g., Flour 1kg, Mineral Water 500ml"
+              placeholder={tx("e.g., Flour 1kg, Mineral Water 500ml")}
               onChange={(e) => set("name", e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, name: true }))}
             />
             {touched.name && !validation.nameOk ? (
-              <div style={S.err}>Item name must be at least 2 characters.</div>
+              <div style={S.err}>{tx("Item name must be at least 2 characters.")}</div>
             ) : null}
           </div>
 
           <div style={{ gridColumn: "span 6" }}>
-            <Label>Local name</Label>
+            <Label>{tx("Local name")}</Label>
             <input
               style={inputStyle(false)}
               value={model.localName}
-              placeholder="Local name optional"
+              placeholder={tx("Local name optional")}
               dir="auto"
               onChange={(e) => set("localName", e.target.value)}
             />
           </div>
 
           <div style={{ gridColumn: "span 4" }}>
-            <Label>SKU</Label>
+            <Label>{tx("SKU")}</Label>
             <input
               style={inputStyle(false)}
               value={model.sku}
@@ -510,22 +572,22 @@ export default function ItemUpsertPage() {
           </div>
 
           <div style={{ gridColumn: "span 4" }}>
-            <Label>Barcode</Label>
+            <Label>{tx("Barcode")}</Label>
             <input
               style={inputStyle(false)}
               value={model.barcode}
-              placeholder="EAN-13, QR, etc."
+              placeholder={tx("EAN-13, QR, etc.")}
               onChange={(e) => set("barcode", e.target.value)}
             />
           </div>
 
           <div style={{ gridColumn: "span 4" }}>
-            <Label required>Item type</Label>
+            <Label required>{tx("Item type")}</Label>
             <select
               style={inputStyle(false)}
               value={model.type}
               onChange={(e) => {
-                const type = e.target.value as ItemType;
+                const type = normalizeItemType(e.target.value);
                 setModel((m) => ({
                   ...m,
                   type,
@@ -544,15 +606,17 @@ export default function ItemUpsertPage() {
           </div>
 
           <div style={{ gridColumn: "span 6" }}>
-            <Label required>Category</Label>
+            <Label required>{tx("Category")}</Label>
             <select
               style={inputStyle(touched.categoryId && !validation.catOk)}
               value={model.categoryId}
-              onChange={(e) => set("categoryId", e.target.value)}
+              onChange={(e) => {
+                setModel((current) => ({ ...current, categoryId: e.target.value, subCategoryId: "" }));
+              }}
               onBlur={() => setTouched((t) => ({ ...t, categoryId: true }))}
             >
-              <option value="">Select category...</option>
-              {categories.map((c) => (
+              <option value="">{tx("Select category...")}</option>
+              {parentCategories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
@@ -560,20 +624,37 @@ export default function ItemUpsertPage() {
             </select>
 
             {touched.categoryId && !validation.catOk ? (
-              <div style={S.err}>Category is required.</div>
+              <div style={S.err}>{tx("Category is required.")}</div>
             ) : null}
+          </div>
+
+          <div style={{ gridColumn: "span 6" }}>
+            <Label>{tx("Subcategory")}</Label>
+            <select
+              style={inputStyle(false)}
+              value={model.subCategoryId}
+              onChange={(e) => set("subCategoryId", e.target.value)}
+              disabled={!model.categoryId || subCategoryOptions.length === 0}
+            >
+              <option value="">{tx("Select subcategory...")}</option>
+              {subCategoryOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {isEdit ? (
             <div style={{ gridColumn: "span 3" }}>
-              <Label>Status</Label>
+              <Label>{tx("Status")}</Label>
               <select
                 style={inputStyle(false)}
                 value={model.isActive ? "active" : "inactive"}
                 onChange={(e) => set("isActive", e.target.value === "active")}
               >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+                <option value="active">{tx("Active")}</option>
+                <option value="inactive">{tx("Inactive")}</option>
               </select>
             </div>
           ) : null}
@@ -582,26 +663,26 @@ export default function ItemUpsertPage() {
 
       <div style={S.card}>
         <SectionHead
-          title="Inventory behaviour"
-          hint="Controls how stock is tracked and when alerts are triggered."
+          title={tx("Inventory behaviour")}
+          hint={tx("Controls how stock is tracked and when alerts are triggered.")}
         />
 
         <div style={S.grid}>
           <div style={{ gridColumn: "span 4" }}>
-            <Label>Track inventory</Label>
+            <Label>{tx("Track inventory")}</Label>
             <select
               style={inputStyle(false)}
               value={model.trackInventory ? "yes" : "no"}
               disabled={!physical}
               onChange={(e) => set("trackInventory", e.target.value === "yes")}
             >
-              <option value="yes">Yes - track stock levels</option>
-              <option value="no">No - non-stock item</option>
+              <option value="yes">{tx("Yes - track stock levels")}</option>
+              <option value="no">{tx("No - non-stock item")}</option>
             </select>
           </div>
 
           <div style={{ gridColumn: "span 4" }}>
-            <Label>Reorder level</Label>
+            <Label>{tx("Reorder level")}</Label>
             <input
               style={inputStyle(false)}
               type="number"
@@ -614,17 +695,17 @@ export default function ItemUpsertPage() {
           </div>
 
           <div style={{ gridColumn: "span 4" }}>
-            <Label>Costing method</Label>
+            <Label>{tx("Costing method")}</Label>
             <select
               style={inputStyle(false)}
               value={model.costingMethod}
               disabled={!physical}
               onChange={(e) => set("costingMethod", e.target.value)}
             >
-              <option value="">Inherit from company default</option>
-              <option value="AVCO">AVCO - weighted average cost</option>
-              <option value="FIFO">FIFO - first in, first out</option>
-              <option value="Standard">Standard cost</option>
+              <option value="">{tx("Inherit from company default")}</option>
+              <option value="AVCO">{tx("AVCO - weighted average cost")}</option>
+              <option value="FIFO">{tx("FIFO - first in, first out")}</option>
+              <option value="Standard">{tx("Standard cost")}</option>
             </select>
           </div>
         </div>
@@ -632,13 +713,13 @@ export default function ItemUpsertPage() {
 
       <div style={S.card}>
         <SectionHead
-          title="Costing defaults"
-          hint="Fallback defaults used when creating purchase or sales documents."
+          title={tx("Costing defaults")}
+          hint={tx("Fallback defaults used when creating purchase or sales documents.")}
         />
 
         <div style={S.grid}>
           <div style={{ gridColumn: "span 4" }}>
-            <Label>Default cost per base UOM</Label>
+            <Label>{tx("Default cost per base UOM")}</Label>
             <input
               style={inputStyle(false)}
               type="number"
@@ -651,7 +732,7 @@ export default function ItemUpsertPage() {
           </div>
 
           <div style={{ gridColumn: "span 4" }}>
-            <Label>Default price per base UOM</Label>
+            <Label>{tx("Default price per base UOM")}</Label>
             <input
               style={inputStyle(false)}
               type="number"
@@ -667,19 +748,19 @@ export default function ItemUpsertPage() {
 
       <div style={S.card}>
         <SectionHead
-          title="Units of measure & conversions"
-          hint="Define base unit and every unit used in purchasing, issuing, recipes, and counts."
+          title={tx("Units of measure & conversions")}
+          hint={tx("Define base unit and every unit used in purchasing, issuing, recipes, and counts.")}
         />
 
         {!physical ? (
           <div style={{ fontSize: 12.5, color: "#64748b" }}>
-            Service items do not require unit-of-measure configuration.
+            {tx("Service items do not require unit-of-measure configuration.")}
           </div>
         ) : (
           <>
             <div style={S.grid}>
               <div style={{ gridColumn: "span 5" }}>
-                <Label required>Base UOM</Label>
+                <Label required>{tx("Base UOM")}</Label>
                 <select
                   style={inputStyle(touched.baseUomId && !validation.baseOk)}
                   value={model.baseUomId}
@@ -689,7 +770,7 @@ export default function ItemUpsertPage() {
                   }}
                   onBlur={() => setTouched((t) => ({ ...t, baseUomId: true }))}
                 >
-                  <option value="">Select base unit...</option>
+                  <option value="">{tx("Select base unit...")}</option>
                   {uoms.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.code ? `${u.code} - ${u.name}` : u.name}
@@ -698,7 +779,7 @@ export default function ItemUpsertPage() {
                 </select>
 
                 {touched.baseUomId && !validation.baseOk ? (
-                  <div style={S.err}>Base UOM is required for physical items.</div>
+                  <div style={S.err}>{tx("Base UOM is required for physical items.")}</div>
                 ) : null}
               </div>
             </div>
@@ -706,7 +787,7 @@ export default function ItemUpsertPage() {
             {model.baseUomId ? (
               <>
                 <div style={{ fontSize: 12, fontWeight: 800, marginTop: 18, marginBottom: 10 }}>
-                  Allowed UOMs & conversion factors
+                  {tx("Allowed UOMs & conversion factors")}
                 </div>
 
                 <UomConversionGrid
@@ -722,10 +803,10 @@ export default function ItemUpsertPage() {
                 {touched.uoms && validation.uomError ? (
                   <div style={S.uomWarning}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(120,53,15,1)" }}>
-                      Fix UOM configuration
+                      {tx("Fix UOM configuration")}
                     </div>
                     <div style={{ marginTop: 4, fontSize: 12, color: "rgba(120,53,15,1)" }}>
-                      {validation.uomError}
+                      {tx(validation.uomError)}
                     </div>
                   </div>
                 ) : null}
@@ -742,11 +823,11 @@ export default function ItemUpsertPage() {
           onClick={() => navigate(itemsListPath)}
           disabled={saving}
         >
-          Cancel
+          {tx("Cancel")}
         </button>
 
         <button type="button" style={primaryBtn} onClick={save} disabled={!canSave || saving}>
-          {saving ? "Saving..." : isEdit ? "Save changes" : "Create item"}
+          {saving ? tx("Saving...") : isEdit ? tx("Save changes") : tx("Create item")}
         </button>
       </div>
     </div>
@@ -930,3 +1011,5 @@ const S: Record<string, CSSProperties> = {
     gap: 8,
   },
 };
+
+

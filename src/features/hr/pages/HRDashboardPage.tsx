@@ -1,6 +1,7 @@
 // src/features/hr/pages/HRDashboardPage.tsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useI18n } from "../../../i18n";
 
 import { useAppScope } from "../../../app/useAppScope";
 import { useErpNavigate } from "../../../routes/useErpNavigation";
@@ -16,6 +17,7 @@ type QuickAccessItem = {
 };
 
 export default function HRDashboardPage() {
+  const { tx } = useI18n();
   const erpNav = useErpNavigate();
   const { companyId, branchId } = useAppScope();
 
@@ -26,7 +28,7 @@ export default function HRDashboardPage() {
   const load = useCallback(async () => {
     if (!companyId) {
       setData(null);
-      setError("Missing company context. Please select a company first.");
+      setError(tx("Missing company context. Please select a company first."));
       return;
     }
 
@@ -36,11 +38,11 @@ export default function HRDashboardPage() {
     try {
       setData(await hrDashboardApi.get(companyId, branchId));
     } catch (e) {
-      setError(getApiError(e, "Failed to load HR dashboard."));
+      setError(getApiError(e, tx("Failed to load HR dashboard.")));
     } finally {
       setLoading(false);
     }
-  }, [companyId, branchId]);
+  }, [companyId, branchId, tx]);
 
   useEffect(() => {
     load();
@@ -51,61 +53,61 @@ export default function HRDashboardPage() {
 
     return [
       {
-        label: "Employees",
-        sub: `${data.activeEmployees} active`,
+        label: tx("Employees"),
+        sub: `${data.activeEmployees} ${tx("active")}`,
         path: "hr/employees",
         icon: "ti-users",
       },
       {
-        label: "Leave",
-        sub: `${data.pendingLeaveRequests} pending`,
+        label: tx("Leave"),
+        sub: `${data.pendingLeaveRequests} ${tx("pending")}`,
         path: "hr/leave",
         icon: "ti-calendar-off",
       },
       {
-        label: "Attendance",
-        sub: `${fmtPercent(data.averageAttendancePercent)} today`,
+        label: tx("Attendance"),
+        sub: `${fmtPercent(data.averageAttendancePercent)} ${tx("today")}`,
         path: "hr/attendance",
         icon: "ti-clock",
       },
       {
-        label: "Payroll",
-        sub: "Process & approve",
+        label: tx("Payroll"),
+        sub: tx("Process & approve"),
         path: "hr/payroll",
         icon: "ti-credit-card",
       },
       {
-        label: "Recruitment",
-        sub: `${data.openPositions} open positions`,
+        label: tx("Recruitment"),
+        sub: `${data.openPositions} ${tx("open positions")}`,
         path: "hr/recruitment",
         icon: "ti-briefcase",
       },
       {
-        label: "Performance",
-        sub: `${data.upcomingReviews} reviews due`,
+        label: tx("Performance"),
+        sub: `${data.upcomingReviews} ${tx("reviews due")}`,
         path: "hr/performance",
         icon: "ti-star",
       },
       {
-        label: "Training",
-        sub: `${data.trainingsDue} due soon`,
+        label: tx("Training"),
+        sub: `${data.trainingsDue} ${tx("due soon")}`,
         path: "hr/training",
         icon: "ti-school",
       },
     ];
-  }, [data]);
+  }, [data, tx]);
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources</div>
-          <div className="page-title">HR Dashboard</div>
-          <div className="page-sub">Workforce overview and key metrics</div>
+          <div className="page-kicker">{tx("Human Resources")}</div>
+          <div className="page-title">{tx("HR Dashboard")}</div>
+          <div className="page-sub">{tx("Workforce overview and key metrics")}</div>
         </div>
 
         <button className="btn" onClick={load} disabled={loading || !companyId}>
-          <i className="ti ti-refresh" /> {loading ? "Loading..." : "Refresh"}
+          <i className="ti ti-refresh" /> {loading ? tx("Loading...") : tx("Refresh")}
         </button>
       </div>
 
@@ -121,26 +123,26 @@ export default function HRDashboardPage() {
             }}
           >
             <div className="kpi">
-              <div className="kpi-label">Total Employees</div>
+              <div className="kpi-label">{tx("Total Employees")}</div>
               <div className="kpi-val">{data.totalEmployees}</div>
-              <div className="kpi-sub">{data.activeEmployees} active</div>
+              <div className="kpi-sub">{data.activeEmployees} {tx("active")}</div>
             </div>
 
             <div className="kpi">
-              <div className="kpi-label">New Hires</div>
+              <div className="kpi-label">{tx("New Hires")}</div>
               <div className="kpi-val" style={{ color: "var(--success)" }}>
                 +{data.newHiresThisMonth}
               </div>
-              <div className="kpi-sub">this month</div>
+              <div className="kpi-sub">{tx("this month")}</div>
               {data.terminationsThisMonth > 0 && (
                 <div className="kpi-badge badge-danger">
-                  {data.terminationsThisMonth} terminations
+                  {data.terminationsThisMonth} {tx("terminations")}
                 </div>
               )}
             </div>
 
             <div className="kpi">
-              <div className="kpi-label">Attendance</div>
+              <div className="kpi-label">{tx("Attendance")}</div>
               <div
                 className="kpi-val"
                 style={{
@@ -154,29 +156,29 @@ export default function HRDashboardPage() {
               >
                 {fmtPercent(data.averageAttendancePercent)}
               </div>
-              <div className="kpi-sub">today's rate</div>
+              <div className="kpi-sub">{tx("today's rate")}</div>
             </div>
 
             <div className="kpi">
-              <div className="kpi-label">Pending Actions</div>
+              <div className="kpi-label">{tx("Pending Actions")}</div>
               <div className="kpi-val">
                 {data.pendingLeaveRequests + data.pendingOvertimeRequests}
               </div>
-              <div className="kpi-sub">leave & overtime</div>
+              <div className="kpi-sub">{tx("leave & overtime")}</div>
               {data.pendingLeaveRequests > 0 && (
                 <div className="kpi-badge badge-warn">
-                  {data.pendingLeaveRequests} leave requests
+                  {data.pendingLeaveRequests} {tx("leave requests")}
                 </div>
               )}
             </div>
 
             <div className="kpi">
-              <div className="kpi-label">Open Positions</div>
+              <div className="kpi-label">{tx("Open Positions")}</div>
               <div className="kpi-val">{data.openPositions}</div>
-              <div className="kpi-sub">active vacancies</div>
+              <div className="kpi-sub">{tx("active vacancies")}</div>
               {data.upcomingReviews > 0 && (
                 <div className="kpi-badge badge-warn">
-                  {data.upcomingReviews} reviews due
+                  {data.upcomingReviews} {tx("reviews due")}
                 </div>
               )}
             </div>
@@ -201,11 +203,11 @@ export default function HRDashboardPage() {
                   marginBottom: 12,
                 }}
               >
-                Headcount by Department
+                {tx("Headcount by Department")}
               </div>
 
               {data.headcountByDept.length === 0 ? (
-                <div className="page-sub">No department headcount data yet.</div>
+                <div className="page-sub">{tx("No department headcount data yet.")}</div>
               ) : (
                 data.headcountByDept.map((d) => {
                   const pct = data.totalEmployees > 0
@@ -254,7 +256,7 @@ export default function HRDashboardPage() {
                   marginBottom: 12,
                 }}
               >
-                Quick Access
+                {tx("Quick Access")}
               </div>
 
               {quickAccessItems.map((item) => (
@@ -293,7 +295,7 @@ export default function HRDashboardPage() {
                       {item.sub}
                     </span>
                   </span>
-                  <span style={{ marginLeft: "auto", color: "var(--text-soft)" }}>to</span>
+                  <span style={{ marginLeft: "auto", color: "var(--text-soft)" }}>{tx("Open")}</span>
                 </button>
               ))}
             </div>
@@ -311,7 +313,7 @@ export default function HRDashboardPage() {
                   marginBottom: 12,
                 }}
               >
-                On Leave Today
+                {tx("On Leave Today")}
               </div>
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                 {data.leaveStatusSummary.map((l) => (

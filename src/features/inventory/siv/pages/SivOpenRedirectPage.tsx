@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
+import { useI18n } from "../../../../i18n";
 import { sivApi } from "../api/sivApi";
 import { normalizeStatus } from "../types/sivTypes";
 import {
@@ -63,6 +64,7 @@ function getResponseBody<T>(response: unknown): T {
 
 export default function SivOpenRedirectPage() {
   const navigate = useErpNavigate();
+  const { tx } = useI18n();
 
   const {
     companyId: routeCompanyId,
@@ -98,7 +100,7 @@ export default function SivOpenRedirectPage() {
     async function redirectToWorkspace() {
       if (!isUuid(companyId) || !isUuid(resolvedSivId)) {
         setError(
-          "Invalid or missing SIV reference. Open the voucher from the SIV list.",
+          tx("Invalid or missing SIV reference. Open the voucher from the SIV list."),
         );
         setLoading(false);
         return;
@@ -146,7 +148,7 @@ export default function SivOpenRedirectPage() {
         setError(
           err instanceof Error
             ? err.message
-            : "Failed to open SIV.",
+            : tx("Failed to open SIV."),
         );
         setLoading(false);
       }
@@ -177,12 +179,11 @@ export default function SivOpenRedirectPage() {
           />
 
           <div className="siv-route-state__title">
-            Opening SIV...
+            {tx("Opening SIV...")}
           </div>
 
           <div className="siv-route-state__desc">
-            Checking workflow status and routing you to the
-            correct workspace.
+            {tx("Checking workflow status and routing you to the correct workspace.")}
           </div>
         </div>
       </div>
@@ -197,7 +198,7 @@ export default function SivOpenRedirectPage() {
           role="alert"
         >
           <div className="siv-route-state__title">
-            Unable to open SIV
+            {tx("Unable to open SIV")}
           </div>
 
           <div className="siv-route-state__desc">
@@ -214,7 +215,7 @@ export default function SivOpenRedirectPage() {
                 })
               }
             >
-              Open detail page instead to
+              {tx("Open detail page instead")}
             </button>
           )}
         </div>

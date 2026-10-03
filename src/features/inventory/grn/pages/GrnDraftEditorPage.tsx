@@ -9,6 +9,7 @@ import {
   useParams,
 } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
+import { useI18n } from "../../../../i18n";
 import {
   grnApi,
   type GrnScope,
@@ -27,6 +28,25 @@ import { useGrnLookups } from "../hooks/useGrnLookups";
 import "../styles/GrnPages.erp.css";
 import "../styles/GrnEditor.css";
 
+const grnDraftAmharicPhrases: Record<string, string> = {
+  "Goods receipt draft saved.": "የእቃ መቀበያ ድራፍት ተቀምጧል።",
+  "Failed to save goods receipt draft.": "የእቃ መቀበያ ድራፍትን ማስቀመጥ አልተቻለም።",
+  "Failed to post goods receipt.": "የእቃ መቀበያውን መፖሰት አልተቻለም።",
+  "Failed to load item UOM details.": "የእቃ መለኪያ ዝርዝሮችን መጫን አልተቻለም።",
+  "Select a company": "ኩባንያ ይምረጡ",
+  "Select a company workspace before creating goods receipts.": "የእቃ መቀበያ ከመፍጠርዎ በፊት የኩባንያ የስራ ቦታ ይምረጡ።",
+  "Goods Receipts": "የእቃ መቀበያዎች",
+  "Inventory - Receiving": "ኢንቬንቶሪ - መቀበያ",
+  "Edit Goods Receipt": "የእቃ መቀበያ አስተካክል",
+  "New Goods Receipt": "አዲስ የእቃ መቀበያ",
+  "Receive goods into an approved stock location. Save as draft or post after review.": "እቃዎችን ወደ የተፈቀደ የስቶክ ቦታ ይቀበሉ። እንደ ድራፍት ያስቀምጡ ወይም ከግምገማ በኋላ ይፖስቱ።",
+  "Document Total": "የሰነድ ድምር",
+  "Loading goods receipt draft...": "የእቃ መቀበያ ድራፍት በመጫን ላይ...",
+};
+
+function grnDraftText(language: string, text: string): string {
+  return language === "am" ? grnDraftAmharicPhrases[text] ?? text : text;
+}
 function money(value: unknown): string {
   const parsed = Number(value);
   const safe = Number.isFinite(parsed) ? parsed : 0;
@@ -61,6 +81,8 @@ function getResultId(
 
 export default function GrnDraftEditorPage() {
   const navigate = useNavigate();
+  const { language } = useI18n();
+  const tx = (text: string) => grnDraftText(language, text);
 
   const {
     grnId,
@@ -74,7 +96,6 @@ export default function GrnDraftEditorPage() {
 
   const {
     companyId,
-    branchId,
   } = useAppScope();
 
   const resolvedId = grnId ?? draftId ?? id;
@@ -84,10 +105,9 @@ export default function GrnDraftEditorPage() {
       companyId
         ? {
             companyId,
-            branchId: branchId ?? undefined,
           }
         : null,
-    [branchId, companyId],
+    [companyId],
   );
 
   const lookups = useGrnLookups(companyId);
@@ -145,7 +165,7 @@ export default function GrnDraftEditorPage() {
     }
 
     const existingId = clean(draft.form.id);
-    const payload = draft.buildPayload(branchId);
+    const payload = draft.buildPayload();
 
     const result = existingId
       ? await grnApi.updateDraft(
@@ -180,7 +200,6 @@ export default function GrnDraftEditorPage() {
       created: !existingId,
     };
   }, [
-    branchId,
     draft,
     scope,
   ]);
@@ -207,7 +226,7 @@ export default function GrnDraftEditorPage() {
     try {
       const persisted = await persistDraft();
 
-      setSuccessMsg("Goods receipt draft saved.");
+      setSuccessMsg(tx("Goods receipt draft saved."));
 
       if (persisted.created) {
         navigate(
@@ -224,7 +243,7 @@ export default function GrnDraftEditorPage() {
       setSubmitError(
         getApiErrorMessage(
           err,
-          "Failed to save goods receipt draft.",
+          tx("Failed to save goods receipt draft."),
         ),
       );
     } finally {
@@ -295,7 +314,7 @@ export default function GrnDraftEditorPage() {
       setSubmitError(
         getApiErrorMessage(
           err,
-          "Failed to post goods receipt.",
+          tx("Failed to post goods receipt."),
         ),
       );
     } finally {
@@ -383,7 +402,7 @@ export default function GrnDraftEditorPage() {
         setSubmitError(
           getApiErrorMessage(
             err,
-            "Failed to load item UOM details.",
+            tx("Failed to load item UOM details."),
           ),
         );
       }
@@ -412,10 +431,8 @@ export default function GrnDraftEditorPage() {
     return (
       <main className="page grn-editor-page">
         <section className="erp-empty-state">
-          <h2>Select a company</h2>
-          <p>
-            Select a company workspace before creating goods receipts.
-          </p>
+          <h2>{tx("Select a company")}</h2>
+          <p>{tx("Select a company workspace before creating goods receipts.")}</p>
         </section>
       </main>
     );
@@ -435,27 +452,22 @@ export default function GrnDraftEditorPage() {
               )
             }
           >
-            - Goods Receipts
+            - {tx("Goods Receipts")}
           </button>
 
-          <div className="erp-kicker">
-            Inventory - Receiving
-          </div>
+          <div className="erp-kicker">{tx("Inventory - Receiving")}</div>
+
 
           <h1>
-            {resolvedId
-              ? "Edit Goods Receipt"
-              : "New Goods Receipt"}
+            {resolvedId ? tx("Edit Goods Receipt") : tx("New Goods Receipt")}
           </h1>
 
-          <p>
-            Receive goods into an approved stock location. Save as
-            draft or post after review.
-          </p>
+          <p>{tx("Receive goods into an approved stock location. Save as draft or post after review.")}</p>
+
         </div>
 
         <div className="grn-editor-total">
-          <span>Document Total</span>
+          <span>{tx("Document Total")}</span>
           <strong>
             ${money(draft.subtotal)}
           </strong>
@@ -488,7 +500,7 @@ export default function GrnDraftEditorPage() {
 
       {draft.loadingDraft ? (
         <div className="erp-inline-state">
-          Loading goods receipt draft...
+          {tx("Loading goods receipt draft...")}
         </div>
       ) : null}
 

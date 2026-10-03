@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useI18n } from "../../i18n";
 
 type Props = {
   icon: string;
@@ -7,11 +8,12 @@ type Props = {
 };
 
 function TelegramComingSoon({ icon, title, description }: Props) {
+  const { tx } = useI18n();
   return (
     <section className="tg-mini-empty">
       <div className="tg-mini-empty__icon">{icon}</div>
-      <h2>{title}</h2>
-      <p>{description}</p>
+      <h2>{tx(title)}</h2>
+      <p>{tx(description)}</p>
     </section>
   );
 }

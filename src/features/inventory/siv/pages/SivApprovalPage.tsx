@@ -7,6 +7,7 @@ import {
 import { useParams } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
+import { useI18n } from "../../../../i18n";
 import { sivApi } from "../api/sivApi";
 import type { ApproveSivLineRequest } from "../api/sivApi";
 import { SivRecommendationCard } from "../components/SivRecommendationCard";
@@ -77,8 +78,31 @@ function parseApprovedQty(
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
+function formatCoverWeeks(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "No usage history";
+  if (value <= 0) return "No cover";
+
+  return `${fmtQty(value)} wk cover`;
+}
+
+function guidanceLabel(line: SivLineRecommendation): string {
+  switch (line.decision) {
+    case "Approve":
+      return "Approve as requested";
+    case "PartiallyApprove":
+      return "Reduce quantity";
+    case "Review":
+      return "Needs review";
+    case "Reject":
+      return "Do not approve";
+    default:
+      return line.riskLevel;
+  }
+}
+
 export default function SivApprovalPage() {
   const navigate = useErpNavigate();
+  const { tx } = useI18n();
 
   const {
     companyId: routeCompanyId,
@@ -532,7 +556,7 @@ export default function SivApprovalPage() {
           className="siv-approval-loading"
           aria-busy="true"
         >
-          Loading SIV approval workspace...
+          {tx("Loading SIV approval workspace...")}
         </div>
       </div>
     );
@@ -545,7 +569,7 @@ export default function SivApprovalPage() {
           className="alert alert-danger"
           role="alert"
         >
-          {pageError || "SIV could not be loaded."}
+          {pageError || tx("SIV could not be loaded.")}
         </div>
       </div>
     );
@@ -573,22 +597,21 @@ export default function SivApprovalPage() {
       <header className="siv-approval-page-header">
         <div>
           <div className="page-kicker">
-            Inventory - SIV - F&amp;B Controller Approval
+            {tx("Inventory - SIV - F&B Controller Approval")}
           </div>
 
           <div className="page-title siv-approval-document-number">
-            {document.number || "Pending SIV number"}
+            {document.number || tx("Pending SIV number")}
           </div>
 
           <div className="page-sub">
-            Review the request, inspect inventory evidence,
-            and record a controlled approval decision.
+            {tx("Review the request, inspect inventory evidence, and record a controlled approval decision.")}
           </div>
         </div>
 
         <div className="siv-approval-header-actions">
           <span className={STATUS_BADGE[status]}>
-            {status}
+            {tx(status)}
           </span>
 
           <button
@@ -600,7 +623,7 @@ export default function SivApprovalPage() {
             }
             onClick={handleApprove}
           >
-            {actionBusy ? "Working..." : " Approve"}
+            {actionBusy ? tx("Working...") : tx("Approve")}
           </button>
 
           <button
@@ -611,7 +634,7 @@ export default function SivApprovalPage() {
               setDialogMode("requestChanges")
             }
           >
-             Request Changes
+             {tx("Request Changes")}
           </button>
 
           <button
@@ -620,7 +643,7 @@ export default function SivApprovalPage() {
             disabled={actionBusy}
             onClick={() => setDialogMode("reject")}
           >
-             Reject
+             {tx("Reject")}
           </button>
 
           <button
@@ -629,7 +652,7 @@ export default function SivApprovalPage() {
             disabled={actionBusy}
             onClick={() => navigate(-1)}
           >
-            Back
+            {tx("Back")}
           </button>
         </div>
       </header>
@@ -655,14 +678,11 @@ export default function SivApprovalPage() {
       {totals.partialCount > 0 && (
         <div className="alert alert-warn siv-approval-summary-alert">
           <strong>
-            {totals.partialCount} line
-            {totals.partialCount === 1 ? "" : "s"} will be
-            partially approved.
+            {totals.partialCount} {tx(totals.partialCount === 1 ? "line" : "lines")} {tx("will be partially approved.")}
           </strong>
 
           <span>
-            Total approved: {fmtQty(totals.approved)} of{" "}
-            {fmtQty(totals.requested)} requested.
+            {tx("Total approved")}: {fmtQty(totals.approved)} {tx("of")} {fmtQty(totals.requested)} {tx("requested")}.
           </span>
         </div>
       )}
@@ -673,11 +693,11 @@ export default function SivApprovalPage() {
             <div className="card-header">
               <div>
                 <div className="card-title">
-                  Document Summary
+                  {tx("Document Summary")}
                 </div>
 
                 <div className="card-subtitle">
-                  Request context and destination details
+                  {tx("Request context and destination details")}
                 </div>
               </div>
             </div>
@@ -685,26 +705,26 @@ export default function SivApprovalPage() {
             <div className="card-body siv-document-summary-grid">
               {[
                 {
-                  label: "Issue Date",
+                  label: tx("Issue Date"),
                   value: fmtDate(document.issueDate),
                 },
                 {
-                  label: "From Location",
+                  label: tx("From Location"),
                   value:
                     document.fromLocationName || "-",
                 },
                 {
-                  label: "To Location",
+                  label: tx("To Location"),
                   value:
                     document.toLocationName || "-",
                 },
                 {
-                  label: "Department",
+                  label: tx("Department"),
                   value:
                     document.departmentName || "-",
                 },
                 {
-                  label: "Remarks",
+                  label: tx("Remarks"),
                   value: document.remarks || "-",
                 },
               ].map(({ label, value }) => (
@@ -728,7 +748,7 @@ export default function SivApprovalPage() {
             <div className="card-header siv-lines-card-header">
               <div>
                 <div className="card-title">
-                  Line Items - Set Approved Quantities
+                  {tx("Line Items - Set Approved Quantities")}
                 </div>
 
                 <div className="card-subtitle">
@@ -739,11 +759,11 @@ export default function SivApprovalPage() {
 
               <div className="siv-line-summary-badges">
                 <span className="badge badge-neutral">
-                  {document.lines.length} lines
+                  {document.lines.length} {tx("lines")}
                 </span>
 
                 <span className="badge badge-neutral">
-                  Requested: {fmtQty(totals.requested)}
+                  {tx("Requested")}: {fmtQty(totals.requested)}
                 </span>
 
                 <span
@@ -753,14 +773,14 @@ export default function SivApprovalPage() {
                       : "badge badge-neutral"
                   }
                 >
-                  Approved: {fmtQty(totals.approved)}
+                  {tx("Approved")}: {fmtQty(totals.approved)}
                 </span>
               </div>
             </div>
 
             {document.lines.length === 0 ? (
               <div className="siv-empty-lines">
-                No lines are available on this voucher.
+                {tx("No lines are available on this voucher.")}
               </div>
             ) : (
               <div className="siv-table-scroll">
@@ -768,8 +788,8 @@ export default function SivApprovalPage() {
                   <thead>
                     <tr>
                       <th style={{ width: 42 }}>#</th>
-                      <th>Item</th>
-                      <th>UOM</th>
+                      <th>{tx("Item")}</th>
+                      <th>{tx("UOM")}</th>
                       <th className="siv-number-cell">
                         Requested
                       </th>
@@ -780,11 +800,11 @@ export default function SivApprovalPage() {
                         className="siv-number-cell"
                         style={{ width: 155 }}
                       >
-                        Approved Qty
+                        {tx("Approved Qty")}
                       </th>
-                      <th>Inventory Status</th>
-                      <th>Batch</th>
-                      <th>Expiry</th>
+                      <th>{tx("Stock Guidance")}</th>
+                      <th>{tx("Batch")}</th>
+                      <th>{tx("Expiry")}</th>
                     </tr>
                   </thead>
 
@@ -861,7 +881,7 @@ export default function SivApprovalPage() {
                                 <button
                                   type="button"
                                   className="siv-recommended-qty-button"
-                                  title="Apply this recommended quantity"
+                                  title={tx("Apply this recommended quantity")}
                                   onClick={() =>
                                     applyLineRecommendation(
                                       lineRecommendation,
@@ -922,7 +942,7 @@ export default function SivApprovalPage() {
 
                               {aboveRecommendation && (
                                 <div className="siv-field-warning">
-                                  Above recommendation
+                                  {tx("Above recommendation")}
                                 </div>
                               )}
                             </td>
@@ -934,21 +954,47 @@ export default function SivApprovalPage() {
                                   data-risk={
                                     lineRecommendation.riskLevel
                                   }
+                                  title={[
+                                    `Decision: ${guidanceLabel(
+                                      lineRecommendation,
+                                    )}`,
+                                    `Risk score: ${lineRecommendation.riskScore}/100`,
+                                    `Destination now: ${fmtQty(
+                                      lineRecommendation.availableBaseQty,
+                                    )} base`,
+                                    `After recommendation: ${fmtQty(
+                                      lineRecommendation.projectedAvailableBaseQty,
+                                    )} base`,
+                                    `Cover: ${formatCoverWeeks(
+                                      lineRecommendation.weeksOfSupplyAfter,
+                                    )}`,
+                                  ].join("\n")}
                                 >
-                                  {
-                                    lineRecommendation.riskLevel
-                                  }
+                                  <strong>
+                                    {guidanceLabel(
+                                      lineRecommendation,
+                                    )}
+                                  </strong>
 
                                   <span>
+                                    {formatCoverWeeks(
+                                      lineRecommendation.weeksOfSupplyAfter,
+                                    )}
+                                  </span>
+
+                                  <small>
+                                    {
+                                      lineRecommendation.riskLevel
+                                    }{" "}
                                     {
                                       lineRecommendation.riskScore
                                     }
                                     /100
-                                  </span>
+                                  </small>
                                 </span>
                               ) : (
                                 <span className="siv-muted">
-                                  Unavailable
+                                  {tx("Unavailable")}
                                 </span>
                               )}
                             </td>
@@ -978,7 +1024,7 @@ export default function SivApprovalPage() {
 
                   <tfoot>
                     <tr>
-                      <td colSpan={3}>Totals</td>
+                      <td colSpan={3}>{tx("Totals")}</td>
 
                       <td className="siv-number-cell">
                         {fmtQty(totals.requested)}
@@ -1003,16 +1049,11 @@ export default function SivApprovalPage() {
               <div className="card-header">
                 <div>
                   <div className="card-title">
-                    Recommendation Override
+                    {tx("Recommendation Override")}
                   </div>
 
                   <div className="card-subtitle">
-                    Required because{" "}
-                    {linesAboveRecommendation.length} approval
-                    {linesAboveRecommendation.length === 1
-                      ? ""
-                      : "s"}{" "}
-                    exceed the latest recommendation.
+                    {tx("Required because")} {linesAboveRecommendation.length} {tx(linesAboveRecommendation.length === 1 ? "approval" : "approvals")} {tx("exceed the latest recommendation.")}
                   </div>
                 </div>
               </div>
@@ -1020,7 +1061,7 @@ export default function SivApprovalPage() {
               <div className="card-body">
                 <label className="field">
                   <span className="field-label">
-                    Override reason
+                    {tx("Override reason")}
                     <span className="siv-required">
                       *
                     </span>
@@ -1035,7 +1076,7 @@ export default function SivApprovalPage() {
                         event.target.value,
                       )
                     }
-                    placeholder="Explain why the business should approve more than the recommendation."
+                    placeholder={tx("Explain why the business should approve more than the recommendation.")}
                     rows={4}
                   />
                 </label>
@@ -1081,7 +1122,7 @@ export default function SivApprovalPage() {
               id="reject-siv-title"
               className="siv-modal-title"
             >
-              Reject SIV
+              {tx("Reject SIV")}
             </div>
 
             <div className="siv-modal-copy">
@@ -1091,7 +1132,7 @@ export default function SivApprovalPage() {
 
             <label className="field siv-modal-field">
               <span className="field-label">
-                Rejection reason
+                {tx("Rejection reason")}
                 <span className="siv-required">*</span>
               </span>
 
@@ -1102,7 +1143,7 @@ export default function SivApprovalPage() {
                 onChange={(event) =>
                   setRejectReason(event.target.value)
                 }
-                placeholder="Required"
+                placeholder={tx("Required")}
                 rows={4}
                 autoFocus
               />
@@ -1115,7 +1156,7 @@ export default function SivApprovalPage() {
                 disabled={actionBusy}
                 onClick={closeDialog}
               >
-                Cancel
+                {tx("Cancel")}
               </button>
 
               <button
@@ -1128,8 +1169,8 @@ export default function SivApprovalPage() {
                 onClick={handleReject}
               >
                 {actionBusy
-                  ? "Rejecting..."
-                  : "Confirm Reject"}
+                  ? tx("Rejecting...")
+                  : tx("Confirm Reject")}
               </button>
             </div>
           </div>
@@ -1148,17 +1189,16 @@ export default function SivApprovalPage() {
               id="request-changes-title"
               className="siv-modal-title"
             >
-              Request Changes
+              {tx("Request Changes")}
             </div>
 
             <div className="siv-modal-copy">
-              The SIV will return to the requester for
-              amendment.
+              {tx("The SIV will return to the requester for amendment.")}
             </div>
 
             <label className="field siv-modal-field">
               <span className="field-label">
-                Feedback for requester
+                {tx("Feedback for requester")}
                 <span className="siv-required">*</span>
               </span>
 
@@ -1171,7 +1211,7 @@ export default function SivApprovalPage() {
                     event.target.value,
                   )
                 }
-                placeholder="Describe what needs to change"
+                placeholder={tx("Describe what needs to change")}
                 rows={4}
                 autoFocus
               />
@@ -1184,7 +1224,7 @@ export default function SivApprovalPage() {
                 disabled={actionBusy}
                 onClick={closeDialog}
               >
-                Cancel
+                {tx("Cancel")}
               </button>
 
               <button
@@ -1197,8 +1237,8 @@ export default function SivApprovalPage() {
                 onClick={handleRequestChanges}
               >
                 {actionBusy
-                  ? "Sending..."
-                  : "Send Request"}
+                  ? tx("Sending...")
+                  : tx("Send Request")}
               </button>
             </div>
           </div>

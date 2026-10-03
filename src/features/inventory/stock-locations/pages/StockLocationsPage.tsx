@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAppContext } from "../../../../app/AppContext";
+import { useMemo, useState } from "react";
+import { useAppScope } from "../../../../app/useAppScope";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useStockLocations } from "../hooks/useStockLocations";
 import { stockLocationsApi } from "../api/stockLocationsApi";
-import { branchesApi } from "../../../company/api/branchesApi";
 import StockLocationForm from "../components/StockLocationForm";
 import StockLocationsTable from "../components/StockLocationsTable";
 
 import type {
-  BranchDto,
   CreateStockLocationDto,
   StockLocationDto,
   UpdateStockLocationDto,
@@ -20,15 +18,8 @@ type Modal =
   | { kind: "edit"; item: StockLocationDto };
 
 export default function StockLocationsPage() {
-  const { companyId, branchId: scopeBranchId } = useAppContext();
-
-  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(
-    scopeBranchId ?? null
-  );
-
-  const [branches,        setBranches]        = useState<BranchDto[]>([]);
-  const [branchesLoading, setBranchesLoading] = useState(false);
-  const [branchesError,   setBranchesError]   = useState<string | null>(null);
+  const { companyId, branchId: scopeBranchId, branchName } = useAppScope();
+  const selectedBranchId = scopeBranchId ?? null;
 
   // Separate error state for create / update / toggle actions.
   // Prevents API failures from being silently swallowed.
@@ -39,26 +30,6 @@ export default function StockLocationsPage() {
   const [modal,      setModal]      = useState<Modal>({ kind: "none" });
 
   const debouncedQ = useDebouncedValue(q, 250);
-
-  //  Branches 
-
-  const loadBranches = useCallback(async () => {
-    if (!companyId) return;
-    setBranchesLoading(true);
-    setBranchesError(null);
-    try {
-      const data = await branchesApi.list(companyId);
-      setBranches(data ?? []);
-    } catch (e: unknown) {
-      setBranchesError(
-        e instanceof Error ? e.message : "Failed to load branches."
-      );
-    } finally {
-      setBranchesLoading(false);
-    }
-  }, [companyId]);
-
-  useEffect(() => { loadBranches(); }, [loadBranches]);
 
   //  Stock locations 
 
@@ -132,11 +103,6 @@ export default function StockLocationsPage() {
     }
   };
 
-  const onChangeBranch = (id: string) => {
-    setSelectedBranchId(id || null);
-    setActionError(null);
-  };
-
   // Branches rarely change - only refresh locations on manual refresh.
   const onRefresh = async () => { await refresh(); };
 
@@ -181,7 +147,7 @@ export default function StockLocationsPage() {
             className="btn primary"
             onClick={() => { setActionError(null); setModal({ kind: "create" }); }}
             disabled={!selectedBranchId}
-            title={!selectedBranchId ? "Select a branch first" : undefined}
+            title={!selectedBranchId ? "Select a branch in the sidebar first" : undefined}
           >
             + New Location
           </button>
@@ -189,11 +155,6 @@ export default function StockLocationsPage() {
       </div>
 
       {/* Errors */}
-      {branchesError && (
-        <div className="alert danger">
-          <strong>Branches:</strong> {branchesError}
-        </div>
-      )}
       {error && (
         <div className="alert danger">
           <strong>Locations:</strong> {error?.message ?? "Request failed"}
@@ -208,25 +169,6 @@ export default function StockLocationsPage() {
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="card-body">
           <div className="row gap" style={{ alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ minWidth: 260 }}>
-              <div className="muted" style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-                Branch
-              </div>
-              <select
-                className="input"
-                value={selectedBranchId ?? ""}
-                onChange={e => onChangeBranch(e.target.value)}
-                disabled={branchesLoading}
-              >
-                <option value="">
-                  {branchesLoading ? "Loading branches..." : "Select branch..."}
-                </option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-
             <div style={{ minWidth: 260 }}>
               <div className="muted" style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
                 Search
@@ -251,8 +193,8 @@ export default function StockLocationsPage() {
 
             <div className="muted" style={{ marginTop: 18 }}>
               {selectedBranchId
-                ? "Showing locations for the selected branch."
-                : "Select a branch to load locations."}
+                ? `Showing locations for ${branchName || "the active sidebar branch"}.`
+                : "Select a branch in the sidebar to load locations."}
             </div>
           </div>
         </div>

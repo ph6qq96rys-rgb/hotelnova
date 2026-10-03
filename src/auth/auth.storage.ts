@@ -44,9 +44,12 @@ function normalizeState(raw: Partial<AuthState> | null): AuthState | null {
     companyName: safeStr(raw.companyName),
     branchId: safeStr(raw.branchId),
     branchName: safeStr(raw.branchName),
+    isCompanyScoped: raw.isCompanyScoped === true,
     departmentId: safeStr(raw.departmentId),
     stockLocationId: safeStr(raw.stockLocationId),
     storeId: safeStr(raw.storeId),
+    preferredLanguage: safeStr(raw.preferredLanguage),
+    defaultLanguage: safeStr(raw.defaultLanguage),
     sessionOnly: raw.sessionOnly === true,
   };
 }

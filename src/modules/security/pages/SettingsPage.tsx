@@ -247,7 +247,7 @@ export default function SettingsPage() {
   const [form, setForm] = useState<SettingsForm>({
     companyName: companyName ?? "",
     tradeName: "",
-    defaultCurrency: "USD",
+    defaultCurrency: "ETB",
     timezone: "America/Los_Angeles",
     country: "United States",
     city: "",

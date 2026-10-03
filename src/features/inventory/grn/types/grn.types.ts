@@ -91,8 +91,8 @@ export interface CreateGrnLineRequest {
 
 export interface CreateGrnDraftRequest {
   companyId?: Guid;
-  branchId?: Guid;
-  receivingBranchId?: Guid;
+  branchId?: Guid | null;
+  receivingBranchId?: Guid | null;
   receivingLocationId: Guid;
   receivedDate: DateOnlyString;
   supplierName?: string | null;

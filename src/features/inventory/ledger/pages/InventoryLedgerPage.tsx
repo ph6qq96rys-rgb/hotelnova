@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAppScope } from "../../../../app/useAppScope";
 import { type InventoryLedgerMovementType, type InventoryLedgerQuery } from "../api/inventoryLedgerApi";
 import LedgerTable from "../components/LedgerTable";
@@ -44,6 +44,7 @@ const EMPTY_FILTERS: Filters = {
 export default function InventoryLedgerPage() {
   const { companyId, branchId } = useAppScope();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
 
   const dateError = filters.fromDate && filters.toDate && filters.fromDate > filters.toDate
@@ -53,15 +54,15 @@ export default function InventoryLedgerPage() {
   const hasFilters = Object.values(filters).some((value) => value.trim().length > 0);
 
   const query = useMemo<InventoryLedgerQuery>(() => ({
-    item: cleanOrNull(filters.item),
-    location: cleanOrNull(filters.location),
-    referenceNo: cleanOrNull(filters.referenceNo),
-    movementType: cleanOrNull(filters.movementType),
-    fromUtc: toUtcStart(filters.fromDate),
-    toUtc: toUtcExclusiveEnd(filters.toDate),
+    item: cleanOrNull(appliedFilters.item),
+    location: cleanOrNull(appliedFilters.location),
+    referenceNo: cleanOrNull(appliedFilters.referenceNo),
+    movementType: cleanOrNull(appliedFilters.movementType),
+    fromUtc: toUtcStart(appliedFilters.fromDate),
+    toUtc: toUtcExclusiveEnd(appliedFilters.toDate),
     page,
     pageSize: PAGE_SIZE,
-  }), [filters, page]);
+  }), [appliedFilters, page]);
 
   const { data, paging, loading, error } = useInventoryLedger(
     companyId && !dateError ? companyId : null,
@@ -78,11 +79,20 @@ export default function InventoryLedgerPage() {
 
   const updateFilter = useCallback(<K extends keyof Filters>(key: K, value: Filters[K]) => {
     setFilters((previous) => ({ ...previous, [key]: value }));
-    setPage(1);
   }, []);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setAppliedFilters(filters);
+      setPage(1);
+    }, 350);
+
+    return () => window.clearTimeout(handle);
+  }, [filters]);
 
   const reset = useCallback(() => {
     setFilters(EMPTY_FILTERS);
+    setAppliedFilters(EMPTY_FILTERS);
     setPage(1);
   }, []);
 
@@ -95,7 +105,6 @@ export default function InventoryLedgerPage() {
       fromDate: localDate(from),
       toDate: localDate(today),
     }));
-    setPage(1);
   }, []);
 
   if (!companyId || !branchId) {
@@ -125,16 +134,16 @@ export default function InventoryLedgerPage() {
       <div className="inventory-ledger-content">
         <section className="card inventory-ledger-search-card" aria-labelledby="ledger-filters-title">
           <CardHeader id="ledger-filters-title" title="Find stock activity" subtitle="Search by item, location, document, activity, or posting date." action={
-            <button type="button" className="btn btn-sm" onClick={reset} disabled={!hasFilters || loading}>Reset</button>
+            <button type="button" className="btn btn-sm" onClick={reset} disabled={!hasFilters}>Reset</button>
           } />
 
           <div className="inventory-ledger-filter-panel">
-            <Field id="ledger-item" label="Item" value={filters.item} onChange={(value) => updateFilter("item", value)} placeholder="Item name" disabled={loading} />
-            <Field id="ledger-location" label="Location" value={filters.location} onChange={(value) => updateFilter("location", value)} placeholder="Warehouse, kitchen, bar..." disabled={loading} />
-            <Field id="ledger-reference" label="Document" value={filters.referenceNo} onChange={(value) => updateFilter("referenceNo", value)} placeholder="GRN, SIV, sale..." disabled={loading} />
-            <Select id="ledger-movement" label="Activity" value={filters.movementType} onChange={(value) => updateFilter("movementType", value)} options={MOVEMENTS} disabled={loading} />
-            <Field id="ledger-from" label="From" type="date" value={filters.fromDate} onChange={(value) => updateFilter("fromDate", value)} disabled={loading} />
-            <Field id="ledger-to" label="To" type="date" value={filters.toDate} onChange={(value) => updateFilter("toDate", value)} disabled={loading} />
+            <Field id="ledger-item" label="Item" value={filters.item} onChange={(value) => updateFilter("item", value)} placeholder="Item name" />
+            <Field id="ledger-location" label="Location" value={filters.location} onChange={(value) => updateFilter("location", value)} placeholder="Warehouse, kitchen, bar..." />
+            <Field id="ledger-reference" label="Document" value={filters.referenceNo} onChange={(value) => updateFilter("referenceNo", value)} placeholder="GRN, SIV, sale..." />
+            <Select id="ledger-movement" label="Activity" value={filters.movementType} onChange={(value) => updateFilter("movementType", value)} options={MOVEMENTS} />
+            <Field id="ledger-from" label="From" type="date" value={filters.fromDate} onChange={(value) => updateFilter("fromDate", value)} />
+            <Field id="ledger-to" label="To" type="date" value={filters.toDate} onChange={(value) => updateFilter("toDate", value)} />
           </div>
 
           <div className="inventory-ledger-quick-actions" aria-label="Common periods">

@@ -7,40 +7,44 @@ import type {
   UpsertMenuItemRequest,
 } from "../types";
 
+type MenuItemWire = MenuItemDto & { consumptionBranchStockLocationId?: string|null; categoryConsumptionBranchStockLocationId?: string|null };
+const fromWire=(item:MenuItemWire):MenuItemDto=>({...item,consumptionLocationId:item.consumptionBranchStockLocationId??null,categoryConsumptionLocationId:item.categoryConsumptionBranchStockLocationId??null});
+const toWire=({consumptionLocationId,...item}:UpsertMenuItemRequest)=>({...item,consumptionBranchStockLocationId:consumptionLocationId||null});
+
 export const menuItemsApi = {
   list(companyId: string, branchId: string, q?: string, activeOnly = true) {
     return http
-      .get<MenuItemDto[]>(
+      .get<MenuItemWire[]>(
         `/companies/${companyId}/branches/${branchId}/menu/items`,
         { params: { q, activeOnly } }
       )
-      .then((r) => r.data);
+      .then((r) => r.data.map(fromWire));
   },
 
   get(companyId: string, branchId: string, menuItemId: string) {
     return http
-      .get<MenuItemDto>(
+      .get<MenuItemWire>(
         `/companies/${companyId}/branches/${branchId}/menu/items/${menuItemId}`
       )
-      .then((r) => r.data);
+      .then((r) => fromWire(r.data));
   },
 
   create(companyId: string, branchId: string, payload: UpsertMenuItemRequest) {
     return http
-      .post<MenuItemDto>(
+      .post<MenuItemWire>(
         `/companies/${companyId}/branches/${branchId}/menu/items`,
-        payload
+        toWire(payload)
       )
-      .then((r) => r.data);
+      .then((r) => fromWire(r.data));
   },
 
   update(companyId: string, branchId: string, menuItemId: string, payload: UpsertMenuItemRequest) {
     return http
-      .put<MenuItemDto>(
+      .put<MenuItemWire>(
         `/companies/${companyId}/branches/${branchId}/menu/items/${menuItemId}`,
-        payload
+        toWire(payload)
       )
-      .then((r) => r.data);
+      .then((r) => fromWire(r.data));
   },
 
   listCategories(companyId: string, branchId: string) {
@@ -54,7 +58,7 @@ export const menuItemsApi = {
   listStockLocations(companyId: string, branchId: string) {
     return http
       .get<StockLocationDto[]>(
-        `/companies/${companyId}/branches/${branchId}/stock-locations`,
+        `/companies/${companyId}/branches/${branchId}/menu/items/consumption-locations`,
         { params: { activeOnly: true, pageSize: 100 } }
       )
       .then((r) => r.data);

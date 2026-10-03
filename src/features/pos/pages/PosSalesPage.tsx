@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { buildTotals, validateCheckout } from "../utils/checkoutPolicy";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   CreditCard,
   MapPin,
@@ -28,7 +29,12 @@ import {
 } from "../api/posApi";
 import { useAppScope } from "../../../app/useAppScope";
 import { extractApiError } from "../utils/posUtils";
+import { useI18n } from "../../../i18n";
 
+import { useNavigate } from "react-router-dom";
+import ConfirmModal from "../../../components/ConfirmModal";
+import { useUnsavedChanges } from "../../eventmanagment/components/useUnsavedChanges";
+import "../pos-workspace.css";
 ensurePosStyles();
 
 type OrderType = "DINE_IN" | "TAKE_AWAY" | "DELIVERY" | "ROOM_SERVICE";
@@ -64,12 +70,120 @@ type CartAction =
   | { type: "REPLACE"; items: CartItem[] }
   | { type: "CLEAR" };
 
-const TAX_RATE = 0.08;
 const DEFAULT_ORDER_TYPE: OrderType = "DINE_IN";
+
+const posAmharicPhrases: Record<string, string> = {
+"Hold or clear the current order before restoring another.":"ሌላ ትዕዛዝ ከመመለስዎ በፊት የአሁኑን ትዕዛዝ ያቆዩ ወይም ያጽዱ።",
+"Sale outcome is uncertain. Check the sales register before starting another payment.":"የሽያጩ ውጤት አልተረጋገጠም። ሌላ ክፍያ ከመጀመርዎ በፊት የሽያጭ መዝገቡን ያረጋግጡ።",
+"This removes the items in the current order. Held orders are kept.":"ይህ በአሁኑ ትዕዛዝ ያሉ እቃዎችን ያስወግዳል። የተያዙ ትዕዛዞች ይቀመጣሉ።",
+"Held orders are kept only while this page stays open.":"የተያዙ ትዕዛዞች ይህ ገጽ ክፍት ሲሆን ብቻ ይቀመጣሉ።",
+"Local order note — not sent to the kitchen":"የአካባቢ ትዕዛዝ ማስታወሻ — ወደ ኩሽና አይላክም",
+"Inventory posted.":"የእቃ እንቅስቃሴ ተመዝግቧል።",
+"Inventory posting pending. Review the sales register.":"የእቃ እንቅስቃሴ ምዝገባ በመጠባበቅ ላይ ነው። የሽያጭ መዝገቡን ይመልከቱ።",
+  "Point of sale": "የሽያጭ ነጥብ",
+  "Online": "በመስመር ላይ",
+  "Offline · checkout unavailable": "ከመስመር ውጭ · ክፍያ አይቻልም",
+  "Sales register": "የሽያጭ መዝገብ",
+  "Order details": "የትዕዛዝ ዝርዝር",
+  "Exact amount": "ትክክለኛው መጠን",
+  "Remaining to pay": "የሚቀረው ክፍያ",
+  "Clear order": "ትዕዛዝ አጽዳ",
+  "Keep order": "ትዕዛዝ አቆይ",
+  "Clear current order?": "የአሁኑን ትዕዛዝ ማጽዳት?",
+  "Remove": "አስወግድ",
+  "Decrease quantity": "ብዛት ቀንስ",
+  "Increase quantity": "ብዛት ጨምር",
+  "All": "ሁሉም",
+  "Hotel Nova POS Workstation": "የሆቴል ኖቫ POS የስራ ጣቢያ",
+  "Order": "ትዕዛዝ",
+  "Loading locations...": "ቦታዎች በመጫን ላይ...",
+  "Select POS location": "የPOS ቦታ ይምረጡ",
+  "SESSION ACTIVE": "ሴሽን ንቁ ነው",
+  "Terminal": "ተርሚናል",
+  "Cashier": "ካሸር",
+  "Menu": "ምናሌ",
+  "Held orders": "የተያዙ ትዕዛዞች",
+  "Held Orders": "የተያዙ ትዕዛዞች",
+  "Hold order": "ትዕዛዝ አቆይ",
+  "Hold": "አቆይ",
+  "Payment": "ክፍያ",
+  "Cancel order": "ትዕዛዝ ሰርዝ",
+  "Cancel": "ሰርዝ",
+  "Current POS order summary": "የአሁኑ የPOS ትዕዛዝ ማጠቃለያ",
+  "Lines": "መስመሮች",
+  "Items": "እቃዎች",
+  "Subtotal": "ንዑስ ድምር",
+  "Total": "ጠቅላላ",
+  "Service Context": "የአገልግሎት አውድ",
+  "Operating Location": "የስራ ቦታ",
+  "Service Type": "የአገልግሎት አይነት",
+  "Dine In": "በቦታው መመገብ",
+  "Take Away": "ይዞ መሄድ",
+  "Delivery": "ዴሊቨሪ",
+  "Room Service": "የክፍል አገልግሎት",
+  "Table / Room No.": "የጠረጴዛ / ክፍል ቁጥር",
+  "Guest Count": "የእንግዳ ብዛት",
+  "Customer / Guest": "ደንበኛ / እንግዳ",
+  "Walk-in customer": "በቀጥታ የመጣ ደንበኛ",
+  "Service Note": "የአገልግሎት ማስታወሻ",
+  "Kitchen, service, allergy, or delivery note": "የኩሽና፣ አገልግሎት፣ አለርጂ ወይም ዴሊቨሪ ማስታወሻ",
+  "Order Snapshot": "የትዕዛዝ ማጠቃለያ",
+  "Service": "አገልግሎት",
+  "Table / Room": "ጠረጴዛ / ክፍል",
+  "Guest": "እንግዳ",
+  "Unassigned": "አልተመደበም",
+  "Walk-in": "በቀጥታ የመጣ",
+  "Search item, category, code, or barcode": "እቃ፣ ምድብ፣ ኮድ ወይም ባርኮድ ይፈልጉ",
+  "F5 Hold - F8 Payment - Esc Return to Menu": "F5 አቆይ - F8 ክፍያ - Esc ወደ ምናሌ ተመለስ",
+  "Menu categories": "የምናሌ ምድቦች",
+  "Loading menu catalogue...": "የምናሌ ካታሎግ በመጫን ላይ...",
+  "No matching menu items were found.": "ተዛማጅ የምናሌ እቃዎች አልተገኙም።",
+  "Ready for Sale": "ለሽያጭ ዝግጁ",
+  "Sale Blocked": "ሽያጭ ታግዷል",
+  "Uncategorized": "ያልተመደበ",
+  "There are currently no held orders.": "በአሁኑ ጊዜ የተያዙ ትዕዛዞች የሉም።",
+  "No table assigned": "ጠረጴዛ አልተመደበም",
+  "line": "መስመር",
+  "lines": "መስመሮች",
+  "Payment Processing": "ክፍያ ሂደት",
+  "Cash Received": "የተቀበለ ጥሬ ገንዘብ",
+  "Payment Reference": "የክፍያ ማጣቀሻ",
+  "Card, mobile, transfer, or bank reference": "የካርድ፣ ሞባይል፣ ዝውውር ወይም ባንክ ማጣቀሻ",
+  "Amount Payable": "መከፈል ያለበት መጠን",
+  "Change to Return": "የሚመለስ ተረፈ ገንዘብ",
+  "Complete Sale": "ሽያጩን አጠናቅቅ",
+  "Active Order": "ንቁ ትዕዛዝ",
+  "Select menu items to start a new order.": "አዲስ ትዕዛዝ ለመጀመር የምናሌ እቃዎችን ይምረጡ።",
+  "Discount": "ቅናሽ",
+  "Service Charge": "የአገልግሎት ክፍያ",
+  "Tax": "ታክስ",
+  "Net Total": "የተጣራ ድምር",
+  "Complete Payment": "ክፍያ አጠናቅቅ",
+  "CASH": "ጥሬ ገንዘብ",
+  "CARD": "ካርድ",
+  "MOBILE": "ሞባይል",
+  "TRANSFER": "ዝውውር",
+  "Select a POS location before processing the sale.": "ሽያጩን ከማስኬድ በፊት የPOS ቦታ ይምረጡ።",
+  "At least one item must be added before checkout.": "ክፍያ ከመፈጸም በፊት ቢያንስ አንድ እቃ መጨመር አለበት።",
+  "The transaction total must be greater than zero.": "የግብይቱ ጠቅላላ ድምር ከዜሮ መብለጥ አለበት።",
+  "Table number is required for dine-in service.": "በቦታው መመገብ አገልግሎት የጠረጴዛ ቁጥር ያስፈልጋል።",
+  "Guest count must be one or greater.": "የእንግዳ ብዛት አንድ ወይም ከዚያ በላይ መሆን አለበት።",
+  "Enter a valid cash amount received from the customer.": "ከደንበኛው የተቀበለውን ትክክለኛ የጥሬ ገንዘብ መጠን ያስገቡ።",
+  "Cash received is insufficient to complete the transaction.": "የተቀበለው ጥሬ ገንዘብ ግብይቱን ለማጠናቀቅ በቂ አይደለም።",
+  "Payment reference is required for card, mobile, and transfer payments.": "ለካርድ፣ ሞባይል እና ዝውውር ክፍያዎች የክፍያ ማጣቀሻ ያስፈልጋል።",
+  "Select a POS location before starting a cashier session.": "የካሸር ሴሽን ከመጀመር በፊት የPOS ቦታ ይምረጡ።",
+  "Opening cash float is required before a cashier session can begin.": "የካሸር ሴሽን ከመጀመሩ በፊት የመክፈቻ ጥሬ ገንዘብ ያስፈልጋል።",
+  "Company and branch context are required before processing a sale.": "ሽያጭ ከማስኬድ በፊት የኩባንያ እና ቅርንጫፍ አውድ ያስፈልጋል።",
+  "The operation could not be completed. Please try again.": "ኦፕሬሽኑ አልተጠናቀቀም። እባክዎ እንደገና ይሞክሩ።"
+};
+
+function posText(language: string, text: string): string {
+  return language === "am" ? posAmharicPhrases[text] ?? text : text;
+}
 const MIN_OPENING_FLOAT_ETB = 1;
 
 function round2(value: number): number {
-  return Number(value.toFixed(2));
+  return Math.round((value + Number.EPSILON * Math.max(1, Math.abs(value))) * 100) / 100;
 }
 
 function nowTime(): string {
@@ -103,16 +217,16 @@ function newOrderContext(): OrderContext {
   };
 }
 
-function orderTypeLabel(value: OrderType): string {
+function orderTypeLabel(value: OrderType, language = "en"): string {
   switch (value) {
     case "DINE_IN":
-      return "Dine In";
+      return posText(language, "Dine In");
     case "TAKE_AWAY":
-      return "Take Away";
+      return posText(language, "Take Away");
     case "DELIVERY":
-      return "Delivery";
+      return posText(language, "Delivery");
     case "ROOM_SERVICE":
-      return "Room Service";
+      return posText(language, "Room Service");
     default:
       return value;
   }
@@ -139,6 +253,7 @@ function toCartItem(item: MenuItemDto): CartItem {
 
   return {
     id: item.id,
+    pricing: item.pricing,
     name: item.name,
     categoryName: item.categoryName,
     price,
@@ -190,74 +305,16 @@ function cartReducer(state: CartItem[], action: CartAction): CartItem[] {
   }
 }
 
-function buildTotals(cart: CartItem[]) {
-  const subtotal = round2(cart.reduce((sum, item) => sum + item.lineTotal, 0));
-  const discount = 0;
-  const serviceCharge = 0;
-  const tax = round2(subtotal * TAX_RATE);
-  const total = round2(subtotal + tax + serviceCharge - discount);
-
-  return { subtotal, discount, serviceCharge, tax, total };
-}
-
-function validateCheckout(args: {
-  storeId: string;
-  cart: CartItem[];
-  total: number;
-  paymentMethod: PaymentMethod;
-  amountTendered: string;
-  referenceCode: string;
-  orderContext: OrderContext;
-}): string | null {
-  if (!args.storeId) return "Select a POS location before processing the sale.";
-  if (args.cart.length === 0)
-    return "At least one item must be added before checkout.";
-  if (args.total <= 0)
-    return "The transaction total must be greater than zero.";
-
-  if (
-    args.orderContext.orderType === "DINE_IN" &&
-    !args.orderContext.tableNo.trim()
-  ) {
-    return "Table number is required for dine-in service.";
-  }
-
-  if (args.orderContext.guestCount <= 0) {
-    return "Guest count must be one or greater.";
-  }
-
-  const blocked = args.cart.find(
-    (x) =>
-      x.isAvailableForSale === false ||
-      x.hasRecipe === false ||
-      x.hasConsumptionLocation === false,
-  );
-
-  if (blocked) {
-    return `${blocked.name} is not ready for sale. Refresh the menu catalogue or contact the supervisor.`;
-  }
-
-  if (args.paymentMethod === "CASH") {
-    const tendered = Number(args.amountTendered || 0);
-
-    if (!Number.isFinite(tendered) || tendered < 0) {
-      return "Enter a valid cash amount received from the customer.";
-    }
-
-    if (tendered < args.total) {
-      return "Cash received is insufficient to complete the transaction.";
-    }
-  }
-
-  if (args.paymentMethod !== "CASH" && !args.referenceCode.trim()) {
-    return "Payment reference is required for card, mobile, and transfer payments.";
-  }
-
-  return null;
-}
-
 export function PosSalesPage() {
+  const { language } = useI18n();
+  const tx = (text: string) => posText(language, text);
   const { companyId, branchId } = useAppScope();
+  const navigate = useNavigate();
+  const submitLock = useRef(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [online, setOnline] = useState(navigator.onLine);
+  const [uncertain, setUncertain] = useState(false);
+  const [lastSale, setLastSale] = useState<string | null>(null);
   const sessionState = usePosSession({ companyId, branchId });
 
   const [clock, setClock] = useState(nowTime());
@@ -283,6 +340,20 @@ export function PosSalesPage() {
 
   const catalog = usePosCatalog({ companyId, branchId }, Boolean(sessionState.session), search);
   const paying = paymentState !== "IDLE";
+  useUnsavedChanges(cart.length > 0 || heldOrders.length > 0 || paying);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update); window.addEventListener("offline", update);
+    return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
+  }, []);
+  useEffect(() => {
+    dispatchCart({ type: "CLEAR" }); setHeldOrders([]); setOrderContext(newOrderContext());
+    setView("MENU"); setCategory("All"); setSearch(""); setAmountTendered(""); setReferenceCode("");
+    setUncertain(false); setLastSale(null);
+  }, [companyId, branchId]);
+  useEffect(() => {
+    if (sessionState.session?.storeId) setStoreId(sessionState.session.storeId);
+  }, [sessionState.session?.id, sessionState.session?.storeId]);
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(nowTime()), 30_000);
@@ -331,7 +402,7 @@ export function PosSalesPage() {
           setActiveStore(onlyStore.id, onlyStore.name);
         }
       } catch (err) {
-        if (!cancelled) setMessage(extractApiError(err, "The operation could not be completed. Please try again."));
+        if (!cancelled) setMessage(extractApiError(err, tx("The operation could not be completed. Please try again.")));
       } finally {
         if (!cancelled) setLoadingStores(false);
       }
@@ -418,11 +489,12 @@ export function PosSalesPage() {
 
     setHeldOrders((prev) => [held, ...prev]);
     resetOrder();
-    setMessage(`Order ${held.orderNo} placed on hold successfully.`);
+    setMessage(language === "am" ? `ትዕዛዝ ${held.orderNo} በተሳካ ሁኔታ ተይዟል።` : `Order ${held.orderNo} placed on hold successfully.`);
   }, [cart, orderContext, paying, resetOrder]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (submitLock.current || uncertain) return;
       if (e.key === "F2") {
         e.preventDefault();
         document.getElementById("pos-search")?.focus();
@@ -446,9 +518,10 @@ export function PosSalesPage() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [holdOrder]);
+  }, [holdOrder, uncertain]);
 
   function addItem(item: MenuItemDto) {
+    if (paying || uncertain) return;
     const blocked = itemBlockReason(item);
     if (blocked) {
       setMessage(blocked);
@@ -460,6 +533,8 @@ export function PosSalesPage() {
   }
 
   function resumeOrder(held: HeldOrder) {
+    if (paying || uncertain) return;
+    if (cart.length > 0) { setMessage(tx("Hold or clear the current order before restoring another.")); return; }
     setOrderContext({
       orderNo: held.orderNo,
       orderType: held.orderType,
@@ -471,7 +546,7 @@ export function PosSalesPage() {
     dispatchCart({ type: "REPLACE", items: held.cart });
     setHeldOrders((prev) => prev.filter((x) => x.id !== held.id));
     setView("MENU");
-    setMessage(`Held order ${held.orderNo} restored successfully.`);
+    setMessage(language === "am" ? `የተያዘው ትዕዛዝ ${held.orderNo} በተሳካ ሁኔታ ተመልሷል።` : `Held order ${held.orderNo} restored successfully.`);
   }
 
   async function openSession(
@@ -483,13 +558,13 @@ export function PosSalesPage() {
     const amount = Number.parseFloat(String(openingFloat ?? ""));
 
     if (!gateStoreId) {
-      setMessage("Select a POS location before starting a cashier session.");
+      setMessage(tx("Select a POS location before starting a cashier session."));
       return;
     }
 
     if (!Number.isFinite(amount)) {
       setMessage(
-        "Opening cash float is required before a cashier session can begin.",
+        tx("Opening cash float is required before a cashier session can begin."),
       );
       return;
     }
@@ -512,11 +587,11 @@ export function PosSalesPage() {
   }
 
   async function confirmPayment() {
-    if (paying) return;
+    if (submitLock.current || paying || uncertain || !online) return;
 
     if (!companyId || !branchId) {
       setMessage(
-        "Company and branch context are required before processing a sale.",
+        tx("Company and branch context are required before processing a sale."),
       );
       return;
     }
@@ -532,10 +607,12 @@ export function PosSalesPage() {
     });
 
     if (validationError) {
-      setMessage(validationError);
+      setMessage(tx(validationError));
+      if (validationError.includes("Table number")) document.querySelector<HTMLDetailsElement>(".erp-pos-left")?.setAttribute("open", "");
       return;
     }
 
+    submitLock.current = true;
     setPaymentState("POSTING");
     setMessage(null);
 
@@ -546,6 +623,7 @@ export function PosSalesPage() {
         companyId,
         branchId,
         storeId,
+        customerName: orderContext.customerName.trim() || null,
         discountAmount: totals.discount,
         taxAmount: totals.tax,
         serviceChargeAmount: totals.serviceCharge,
@@ -564,18 +642,26 @@ export function PosSalesPage() {
       },
       );
 
+      setLastSale(sale.saleNo ?? sale.id);
       resetOrder();
-      setMessage(`Sale ${sale.saleNo ?? "document"} completed successfully.`);
+      setMessage(`${language === "am" ? "ሽያጩ ተቀምጧል" : "Sale saved"}: ${sale.saleNo ?? sale.id}. ${tx(sale.isInventoryPosted ? "Inventory posted." : "Inventory posting pending. Review the sales register.")}`);
     } catch (err) {
-      setMessage(extractApiError(err, "The operation could not be completed. Please try again."));
+      const status = (err as { response?: { status?: number } }).response?.status;
+      const unknown = !status || status >= 500;
+      setUncertain(unknown);
+      setMessage(unknown ? tx("Sale outcome is uncertain. Check the sales register before starting another payment.")
+        : extractApiError(err, tx("The operation could not be completed. Please try again.")));
     } finally {
+      submitLock.current = false;
       setPaymentState("IDLE");
     }
   }
 
   return (
     <div className="erp-pos-page">
-      <style>{css}</style>
+      <ConfirmModal open={discardOpen} title={tx("Clear current order?")} message={tx("This removes the items in the current order. Held orders are kept.")}
+        confirmText={tx("Clear order")} cancelText={tx("Keep order")} danger busy={paying}
+        onClose={() => setDiscardOpen(false)} onConfirm={() => { resetOrder(); setDiscardOpen(false); }} />
 
       <SessionGate
         loading={sessionState.loading || loadingStores}
@@ -591,20 +677,20 @@ export function PosSalesPage() {
         onClose={sessionState.close}
       >
         {sessionState.session && (
-          <div className="erp-pos-shell">
+          <fieldset className="erp-pos-shell" disabled={paying} aria-busy={paying}>
             <SessionBanner
               session={sessionState.session}
-              onClose={() => sessionState.close(0)}
+              onClose={() => navigate(`/companies/${companyId}/sales/pos/session`)}
             />
 
             <header className="erp-pos-header">
               <div>
                 <div className="erp-pos-title">
-                  Hotel Nova POS Workstation
+                  {tx("Point of sale")}
                 </div>
                 <div className="erp-pos-subtitle">
-                  Order {orderContext.orderNo} -{" "}
-                  {orderTypeLabel(orderContext.orderType)} - {clock}
+                  {tx("Order")} {orderContext.orderNo} -{" "}
+                  {orderTypeLabel(orderContext.orderType, language)} - {clock}
                 </div>
               </div>
 
@@ -617,8 +703,8 @@ export function PosSalesPage() {
                 >
                   <option value="">
                     {loadingStores
-                      ? "Loading locations..."
-                      : "Select POS location"}
+                      ? tx("Loading locations...")
+                      : tx("Select POS location")}
                   </option>
 
                   {stores.map((store) => (
@@ -628,19 +714,19 @@ export function PosSalesPage() {
                   ))}
                 </select>
 
-                <Pill tone="green">SESSION ACTIVE</Pill>
+                <Pill tone={online ? "green" : "danger"}>{tx(online ? "Online" : "Offline · checkout unavailable")}</Pill>
                 <Pill tone="gold">
-                  Terminal {sessionState.session.terminal || "POS-1"}
+                  {tx("Terminal")} {sessionState.session.terminal || "POS-1"}
                 </Pill>
-                <Pill>{sessionState.session.cashierName || "Cashier"}</Pill>
+                <Pill>{sessionState.session.cashierName || tx("Cashier")}</Pill>
               </div>
             </header>
 
             {(message || catalog.error) && (
-              <Card className="erp-pos-message">
+              <Card className="erp-pos-message"><div role="status" aria-live="polite">
                 <span
                   className={
-                    message?.includes("successfully") ||
+                    lastSale || message?.includes("successfully") ||
                     message?.includes("restored")
                       ? "ok"
                       : "bad"
@@ -648,64 +734,68 @@ export function PosSalesPage() {
                 >
                   {message || catalog.error}
                 </span>
+                {lastSale && <Button onClick={() => navigate(`/companies/${companyId}/sales/list`)}>{tx("Sales register")}</Button>}
+                </div>
               </Card>
             )}
 
+            {uncertain && <Card><p role="alert">{tx("Sale outcome is uncertain. Check the sales register before starting another payment.")}</p>
+              <Button onClick={() => navigate("/companies/" + companyId + "/sales/list")}>{tx("Sales register")}</Button></Card>}
             <section className="erp-pos-toolbar">
               <Button
                 onClick={() => setView("MENU")}
                 variant={view === "MENU" ? "gold" : "ghost"}
-                title="Menu"
+                title={tx("Menu")}
               >
-                <Utensils size={16} /> Menu
+                <Utensils size={16} /> {tx("Menu")}
               </Button>
               <Button
                 onClick={() => setView("HELD_ORDERS")}
                 variant={view === "HELD_ORDERS" ? "gold" : "ghost"}
-                title="Held orders"
+                title={tx("Held orders")}
               >
-                <PauseCircle size={16} /> Held Orders ({heldOrders.length})
+                <PauseCircle size={16} /> {tx("Held Orders")} ({heldOrders.length})
               </Button>
-              <Button onClick={holdOrder} title="Hold order">
-                <PauseCircle size={16} /> Hold
+              <Button disabled={!cart.length || paying || uncertain} onClick={holdOrder} title={tx("Hold order")}>
+                <PauseCircle size={16} /> {tx("Hold")}
               </Button>
               <Button
                 onClick={() => setView("PAYMENT")}
                 variant={view === "PAYMENT" ? "gold" : "ghost"}
-                title="Payment"
+                title={tx("Payment")}
               >
-                <CreditCard size={16} /> Payment
+                <CreditCard size={16} /> {tx("Payment")}
               </Button>
-              <Button onClick={resetOrder} variant="danger" title="Cancel order">
-                <Trash2 size={16} /> Cancel
+              <Button onClick={() => setDiscardOpen(true)} disabled={!cart.length || paying || uncertain} variant="danger" title={tx("Clear order")}>
+                <Trash2 size={16} /> {tx("Clear order")}
               </Button>
             </section>
 
-            <section className="erp-pos-metrics" aria-label="Current POS order summary">
+            <section className="erp-pos-metrics" aria-label={tx("Current POS order summary")}>
               <div>
-                <span>Lines</span>
+                <span>{tx("Lines")}</span>
                 <strong>{cart.length}</strong>
               </div>
               <div>
-                <span>Items</span>
+                <span>{tx("Items")}</span>
                 <strong>{cart.reduce((sum, item) => sum + item.qty, 0)}</strong>
               </div>
               <div>
-                <span>Subtotal</span>
+                <span>{tx("Subtotal")}</span>
                 <strong>{money(totals.subtotal)}</strong>
               </div>
               <div className="accent">
-                <span>Total</span>
+                <span>{tx("Total")}</span>
                 <strong>{money(totals.total)}</strong>
               </div>
             </section>
 
             <main className="erp-pos-workspace">
-              <aside className="erp-pos-left">
+              <details className="erp-pos-left"><summary>{tx("Order details")} · {orderTypeLabel(orderContext.orderType, language)} · {orderContext.customerName || tx("Walk-in")}</summary>
                 <Card className="erp-service-card">
-                  <div className="erp-section-title">Service Context</div>
+                  <div className="erp-section-title">{tx("Service Context")}</div>
 
-                  <label className="erp-pos-label">Operating Location</label>
+                  <label className="erp-pos-label">{tx("Operating Location")}</label>
                   <select
                     className="erp-pos-input"
                     value={storeId}
@@ -714,8 +804,8 @@ export function PosSalesPage() {
                   >
                     <option value="">
                       {loadingStores
-                        ? "Loading locations..."
-                        : "Select POS location"}
+                        ? tx("Loading locations...")
+                        : tx("Select POS location")}
                     </option>
                     {stores.map((store) => (
                       <option key={store.id} value={store.id}>
@@ -731,26 +821,26 @@ export function PosSalesPage() {
                     </div>
                   )}
 
-                  <label className="erp-pos-label">Service Type</label>
+                  <label className="erp-pos-label">{tx("Service Type")}</label>
                   <select
                     className="erp-pos-input"
-                    value={orderContext.orderType}
+                    aria-label={tx("Service Type")} value={orderContext.orderType}
                     onChange={(e) =>
                       setOrderField("orderType", e.target.value as OrderType)
                     }
                   >
-                    <option value="DINE_IN">Dine In</option>
-                    <option value="TAKE_AWAY">Take Away</option>
-                    <option value="DELIVERY">Delivery</option>
-                    <option value="ROOM_SERVICE">Room Service</option>
+                    <option value="DINE_IN">{tx("Dine In")}</option>
+                    <option value="TAKE_AWAY">{tx("Take Away")}</option>
+                    <option value="DELIVERY">{tx("Delivery")}</option>
+                    <option value="ROOM_SERVICE">{tx("Room Service")}</option>
                   </select>
 
                   <div className="erp-pos-mini-grid">
                     <div>
-                      <label className="erp-pos-label">Table / Room No.</label>
+                      <label className="erp-pos-label">{tx("Table / Room No.")}</label>
                       <input
                         className="erp-pos-input"
-                        value={orderContext.tableNo}
+                        aria-label={tx("Table / Room No.")} value={orderContext.tableNo}
                         onChange={(e) =>
                           setOrderField("tableNo", e.target.value)
                         }
@@ -759,12 +849,12 @@ export function PosSalesPage() {
                     </div>
 
                     <div>
-                      <label className="erp-pos-label">Guest Count</label>
+                      <label className="erp-pos-label">{tx("Guest Count")}</label>
                       <input
                         className="erp-pos-input"
                         type="number"
                         min={1}
-                        value={orderContext.guestCount}
+                        aria-label={tx("Guest Count")} value={orderContext.guestCount}
                         onChange={(e) =>
                           setOrderField(
                             "guestCount",
@@ -775,42 +865,42 @@ export function PosSalesPage() {
                     </div>
                   </div>
 
-                  <label className="erp-pos-label">Customer / Guest</label>
+                  <label className="erp-pos-label">{tx("Customer / Guest")}</label>
                   <input
                     className="erp-pos-input"
-                    value={orderContext.customerName}
+                    aria-label={tx("Customer / Guest")} value={orderContext.customerName}
                     onChange={(e) =>
                       setOrderField("customerName", e.target.value)
                     }
-                    placeholder="Walk-in customer"
+                    placeholder={tx("Walk-in customer")}
                   />
 
-                  <label className="erp-pos-label">Service Note</label>
+                  <label className="erp-pos-label">{tx("Service Note")}</label>
                   <textarea
                     className="erp-pos-input"
                     rows={3}
-                    value={orderContext.orderNote}
+                    aria-label={tx("Service Note")} value={orderContext.orderNote}
                     onChange={(e) => setOrderField("orderNote", e.target.value)}
-                    placeholder="Kitchen, service, allergy, or delivery note"
+                    placeholder={tx("Local order note — not sent to the kitchen")}
                   />
                 </Card>
 
                 <Card className="erp-order-snapshot">
-                  <div className="erp-section-title">Order Snapshot</div>
+                  <div className="erp-section-title">{tx("Order Snapshot")}</div>
                   <div className="erp-snapshot-row">
-                    <span>Service</span>
-                    <strong>{orderTypeLabel(orderContext.orderType)}</strong>
+                    <span>{tx("Service")}</span>
+                    <strong>{orderTypeLabel(orderContext.orderType, language)}</strong>
                   </div>
                   <div className="erp-snapshot-row">
-                    <span>Table / Room</span>
-                    <strong>{orderContext.tableNo || "Unassigned"}</strong>
+                    <span>{tx("Table / Room")}</span>
+                    <strong>{orderContext.tableNo || tx("Unassigned")}</strong>
                   </div>
                   <div className="erp-snapshot-row">
-                    <span>Guest</span>
-                    <strong>{orderContext.customerName || "Walk-in"}</strong>
+                    <span>{tx("Guest")}</span>
+                    <strong>{orderContext.customerName || tx("Walk-in")}</strong>
                   </div>
                 </Card>
-              </aside>
+              </details>
 
               <section className="erp-pos-center">
                 {view === "MENU" && (
@@ -820,29 +910,31 @@ export function PosSalesPage() {
                         <Search size={18} />
                       <input
                         id="pos-search"
+                        aria-label={tx("Search item, category, code, or barcode")}
                         className="erp-pos-search"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search item, category, code, or barcode"
+                        placeholder={tx("Search item, category, code, or barcode")}
                       />
                       <div className="erp-pos-help">
-                        F5 Hold - F8 Payment - Esc Return to Menu
+                        {tx("F5 Hold - F8 Payment - Esc Return to Menu")}
                       </div>
                       </div>
 
-                      <div className="erp-category-strip" aria-label="Menu categories">
+                      <div className="erp-category-strip" aria-label={tx("Menu categories")}>
                         {categories.map((c) => (
                           <button
-                            key={c}
+                            key={c === "All" ? tx("All") : c}
                             type="button"
                             className={
                               c === category
                                 ? "erp-category active"
                                 : "erp-category"
                             }
+                            aria-pressed={c === category}
                             onClick={() => setCategory(c)}
                           >
-                            {c}
+                            {c === "All" ? tx("All") : c}
                           </button>
                         ))}
                       </div>
@@ -850,10 +942,10 @@ export function PosSalesPage() {
 
                     <div className="erp-menu-grid">
                       {catalog.loadingMenu && (
-                        <Card>Loading menu catalogue...</Card>
+                        <Card>{tx("Loading menu catalogue...")}</Card>
                       )}
                       {!catalog.loadingMenu && filteredItems.length === 0 && (
-                        <Card>No matching menu items were found.</Card>
+                        <Card>{tx("No matching menu items were found.")}</Card>
                       )}
 
                       {filteredItems.map((item) => {
@@ -868,13 +960,14 @@ export function PosSalesPage() {
                                 ? "erp-menu-card unavailable"
                                 : "erp-menu-card"
                             }
+                            disabled={paying || uncertain || Boolean(blockedReason)}
                             onClick={() => addItem(item)}
-                            title={blockedReason ?? "Ready for Sale"}
+                            title={blockedReason ?? tx("Ready for Sale")}
                           >
                             <div>
                               <div className="erp-menu-name">{item.name}</div>
                               <div className="erp-menu-category">
-                                {item.categoryName || "Uncategorized"}
+                                {item.categoryName || tx("Uncategorized")}
                               </div>
                             </div>
 
@@ -883,9 +976,9 @@ export function PosSalesPage() {
                                 {money(Number(item.sellingPrice || 0))}
                               </strong>
                               {blockedReason ? (
-                                <span>Sale Blocked</span>
+                                <span>{blockedReason}</span>
                               ) : (
-                                <span>Ready for Sale</span>
+                                <span>{tx("Ready for Sale")}</span>
                               )}
                             </div>
                           </button>
@@ -897,10 +990,10 @@ export function PosSalesPage() {
 
                 {view === "HELD_ORDERS" && (
                   <Card>
-                    <div className="erp-section-title">Held Orders</div>
+                    <div className="erp-section-title">{tx("Held Orders")}</div><p className="erp-muted">{tx("Held orders are kept only while this page stays open.")}</p>
                     {heldOrders.length === 0 ? (
                       <div className="erp-muted">
-                        There are currently no held orders.
+                        {tx("There are currently no held orders.")}
                       </div>
                     ) : (
                       <div className="erp-held-list">
@@ -913,9 +1006,9 @@ export function PosSalesPage() {
                           >
                             <strong>{h.orderNo}</strong>
                             <span>
-                              {orderTypeLabel(h.orderType)} -{" "}
-                              {h.tableNo || "No table assigned"} -{" "}
-                              {h.cart.length} lines
+                              {orderTypeLabel(h.orderType, language)} -{" "}
+                              {h.tableNo || tx("No table assigned")} -{" "}
+                              {h.cart.length} {tx(h.cart.length === 1 ? "line" : "lines")}
                             </span>
                             <span>
                               {new Date(h.createdAt).toLocaleTimeString()}
@@ -929,7 +1022,7 @@ export function PosSalesPage() {
 
                 {view === "PAYMENT" && (
                   <Card>
-                    <div className="erp-section-title">Payment Processing</div>
+                    <div className="erp-section-title">{tx("Payment Processing")}</div>
 
                     <div className="erp-payment-methods">
                       {(
@@ -948,21 +1041,25 @@ export function PosSalesPage() {
                               ? "erp-payment active"
                               : "erp-payment"
                           }
+                          aria-pressed={paymentMethod === m}
                           onClick={() => setPaymentMethod(m)}
                         >
-                          {m.replace("_", " ")}
+                          {tx(m.replace("_", " "))}
                         </button>
                       ))}
                     </div>
 
                     <div className="erp-pos-mini-grid">
                       <div>
-                        <label className="erp-pos-label">Cash Received</label>
+                        <label className="erp-pos-label">{tx("Cash Received")}</label>
                         <input
                           className="erp-pos-input"
                           type="number"
                           min="0"
                           step="0.01"
+                          aria-label={tx("Cash Received")}
+                          disabled={paymentMethod !== "CASH" || paying}
+                          inputMode="decimal"
                           value={amountTendered}
                           onChange={(e) => setAmountTendered(e.target.value)}
                         />
@@ -974,23 +1071,27 @@ export function PosSalesPage() {
                         </label>
                         <input
                           className="erp-pos-input"
+                          aria-label={tx("Payment Reference")}
+                          disabled={paymentMethod === "CASH" || paying}
                           value={referenceCode}
                           onChange={(e) => setReferenceCode(e.target.value)}
-                          placeholder="Card, mobile, transfer, or bank reference"
+                          placeholder={tx("Card, mobile, transfer, or bank reference")}
                         />
                       </div>
                     </div>
 
+                    {paymentMethod === "CASH" && <div className="erp-cash-shortcuts"><Button onClick={() => setAmountTendered(totals.total.toFixed(2))}>{tx("Exact amount")}</Button>
+                      {[100, 500, 1000].filter(value => value >= totals.total).map(value => <Button key={value} onClick={() => setAmountTendered(String(value))}>{money(value)}</Button>)}</div>}
                     <div className="erp-payment-total">
-                      <span>Amount Payable</span>
+                      <span>{tx("Amount Payable")}</span>
                       <strong>{money(totals.total)}</strong>
                     </div>
 
                     <div className="erp-payment-total small">
-                      <span>Change to Return</span>
+                      <span>{tx(paymentMethod === "CASH" && changeDue < 0 ? "Remaining to pay" : "Change to Return")}</span>
                       <strong>
                         {paymentMethod === "CASH"
-                          ? money(Math.max(changeDue, 0))
+                          ? money(Math.abs(changeDue))
                           : money(0)}
                       </strong>
                     </div>
@@ -998,10 +1099,11 @@ export function PosSalesPage() {
                     <Button
                       variant="gold"
                       loading={paying}
+                      disabled={!cart.length || !online || uncertain}
                       onClick={confirmPayment}
                       style={{ width: "100%", marginTop: 16 }}
                     >
-                      Complete Sale
+                      {tx("Complete Sale")}
                     </Button>
                   </Card>
                 )}
@@ -1011,20 +1113,20 @@ export function PosSalesPage() {
                 <Card className="erp-order-card">
                   <div className="erp-order-header">
                     <div>
-                      <div className="erp-section-title">Active Order</div>
+                      <div className="erp-section-title">{tx("Active Order")}</div>
                       <div className="erp-muted">
-                        <ShoppingBag size={13} /> {cart.length} line{cart.length === 1 ? "" : "s"}
+                        <ShoppingBag size={13} /> {cart.length} {tx(cart.length === 1 ? "line" : "lines")}
                       </div>
                     </div>
                     <Pill tone="gold">
-                      {orderTypeLabel(orderContext.orderType)}
+                      {orderTypeLabel(orderContext.orderType, language)}
                     </Pill>
                   </div>
 
                   <div className="erp-cart-lines">
                     {cart.length === 0 ? (
                       <div className="erp-empty-cart">
-                        Select menu items to start a new order.
+                        {tx("Select menu items to start a new order.")}
                       </div>
                     ) : (
                       cart.map((item) => (
@@ -1033,7 +1135,7 @@ export function PosSalesPage() {
                             <strong>{item.name}</strong>
                             <span>
                               {money(item.price)} -{" "}
-                              {item.categoryName || "Menu"}
+                              {item.categoryName || tx("Menu")}
                             </span>
                           </div>
 
@@ -1041,28 +1143,29 @@ export function PosSalesPage() {
                             <button
                               type="button"
                               onClick={() =>
-                                dispatchCart({ type: "DECREMENT", id: item.id })
+                                !uncertain && dispatchCart({ type: "DECREMENT", id: item.id })
                               }
                             >
-                              -
+                              <span aria-label={`${tx("Decrease quantity")} ${item.name}`}>−</span>
                             </button>
                             <span>{item.qty}</span>
                             <button
                               type="button"
                               onClick={() =>
-                                dispatchCart({ type: "INCREMENT", id: item.id })
+                                !uncertain && dispatchCart({ type: "INCREMENT", id: item.id })
                               }
                             >
-                              +
+                              <span aria-label={`${tx("Increase quantity")} ${item.name}`}>+</span>
                             </button>
                             <button
                               type="button"
                               className="danger"
+                              aria-label={`${tx("Remove")} ${item.name}`}
                               onClick={() =>
-                                dispatchCart({ type: "REMOVE", id: item.id })
+                                !uncertain && dispatchCart({ type: "REMOVE", id: item.id })
                               }
                             >
-                              
+                              <Trash2 size={16} aria-hidden="true" />
                             </button>
                           </div>
 
@@ -1076,691 +1179,41 @@ export function PosSalesPage() {
 
                   <div className="erp-totals">
                     <div>
-                      <span>Subtotal</span>
+                      <span>{tx("Subtotal")}</span>
                       <strong>{money(totals.subtotal)}</strong>
                     </div>
                     <div>
-                      <span>Discount</span>
+                      <span>{tx("Discount")}</span>
                       <strong>{money(totals.discount)}</strong>
                     </div>
                     <div>
-                      <span>Service Charge</span>
+                      <span>{tx("Service Charge")}</span>
                       <strong>{money(totals.serviceCharge)}</strong>
                     </div>
                     <div>
-                      <span>Tax</span>
+                      <span>{tx("Tax")}</span>
                       <strong>{money(totals.tax)}</strong>
                     </div>
                     <div className="grand">
-                      <span>Net Total</span>
+                      <span>{tx("Net Total")}</span>
                       <strong>{money(totals.total)}</strong>
                     </div>
                   </div>
 
                   <div className="erp-order-actions">
-                    <Button onClick={holdOrder}>
-                      <PauseCircle size={16} /> Hold
+                    <Button disabled={!cart.length || paying || uncertain} onClick={holdOrder}>
+                      <PauseCircle size={16} /> {tx("Hold")}
                     </Button>
-                    <Button onClick={() => setView("PAYMENT")} variant="gold">
-                      <ReceiptText size={16} /> Complete Payment
+                    <Button disabled={!cart.length || paying || uncertain || !online} onClick={() => setView("PAYMENT")} variant="gold">
+                      <ReceiptText size={16} /> {tx("Complete Payment")}
                     </Button>
                   </div>
                 </Card>
               </aside>
             </main>
-          </div>
+          </fieldset>
         )}
       </SessionGate>
     </div>
   );
 }
-
-const css = `
-.erp-pos-page {
-  background: #09090b;
-  color: #fafaf9;
-  min-height: 100%;
-  padding: 16px;
-  overflow-x: hidden;
-}
-
-.erp-pos-store-select {
-  border: 1px solid #3f3f46;
-  background: #111113;
-  color: #fafaf9;
-  border-radius: 999px;
-  padding: 8px 12px;
-  min-width: 190px;
-}
-
-.erp-pos-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: calc(100vh - 32px);
-}
-
-.erp-pos-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  min-width: 0;
-}
-
-.erp-pos-title {
-  font-size: 24px;
-  font-weight: 900;
-  line-height: 1.1;
-  letter-spacing: 0;
-}
-
-.erp-pos-subtitle,
-.erp-muted {
-  color: #a1a1aa;
-  font-size: 12px;
-}
-
-.erp-pos-header-actions,
-.erp-pos-toolbar,
-.erp-order-actions,
-.erp-payment-methods {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.erp-pos-workspace {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 360px;
-  gap: 12px;
-  align-items: start;
-  min-width: 0;
-}
-
-.erp-pos-left,
-.erp-pos-center,
-.erp-pos-right {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
-
-.erp-section-title {
-  font-size: 13px;
-  font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  margin-bottom: 10px;
-}
-
-.erp-pos-label {
-  display: block;
-  margin-top: 12px;
-  margin-bottom: 5px;
-  font-size: 11px;
-  font-weight: 800;
-  color: #d4d4d8;
-}
-
-.erp-pos-input,
-.erp-pos-search {
-  width: 100%;
-  border: 1px solid #3f3f46;
-  background: #111113;
-  color: #fafaf9;
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-
-.erp-pos-mini-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.erp-category-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.erp-category,
-.erp-payment,
-.erp-held-order {
-  border: 1px solid #3f3f46;
-  background: #111113;
-  color: #fafaf9;
-  border-radius: 8px;
-  padding: 10px 12px;
-  text-align: left;
-  cursor: pointer;
-  min-height: 42px;
-}
-
-.erp-category.active,
-.erp-payment.active {
-  border-color: #f59e0b;
-  background: #29210f;
-}
-
-.erp-search-card {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  min-width: 0;
-}
-
-.erp-pos-help {
-  white-space: nowrap;
-  color: #a1a1aa;
-  font-size: 12px;
-}
-
-.erp-menu-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 10px;
-}
-
-.erp-menu-card {
-  min-height: 126px;
-  border: 1px solid #3f3f46;
-  background: #18181b;
-  color: #fafaf9;
-  border-radius: 8px;
-  padding: 14px;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  cursor: pointer;
-}
-
-.erp-menu-card.unavailable {
-  opacity: .55;
-  cursor: not-allowed;
-}
-
-.erp-menu-name {
-  font-weight: 900;
-}
-
-.erp-menu-category,
-.erp-menu-bottom span {
-  color: #a1a1aa;
-  font-size: 12px;
-}
-
-.erp-menu-bottom,
-.erp-order-header,
-.erp-payment-total,
-.erp-totals div {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.erp-cart-lines,
-.erp-held-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.erp-empty-cart {
-  color: #a1a1aa;
-  padding: 18px 0;
-  text-align: center;
-}
-
-.erp-cart-line {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 8px;
-  align-items: center;
-  border-bottom: 1px solid #27272a;
-  padding: 8px 0;
-  min-width: 0;
-}
-
-.erp-cart-line-main span {
-  display: block;
-  color: #a1a1aa;
-  font-size: 12px;
-}
-
-.erp-cart-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.erp-cart-controls button {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: 1px solid #3f3f46;
-  background: #111113;
-  color: #fafaf9;
-  cursor: pointer;
-}
-
-.erp-cart-controls .danger {
-  color: #fca5a5;
-}
-
-.erp-cart-line-total {
-  font-weight: 900;
-  text-align: right;
-}
-
-.erp-totals {
-  border-top: 1px solid #27272a;
-  margin-top: 12px;
-  padding-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.erp-totals .grand,
-.erp-payment-total {
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.erp-payment-total.small {
-  font-size: 14px;
-  color: #a1a1aa;
-  margin-top: 8px;
-}
-
-.erp-pos-message .ok { color: #86efac; }
-.erp-pos-message .bad { color: #fca5a5; }
-
-@media (max-width: 1180px) {
-  .erp-pos-workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .erp-pos-left {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .erp-pos-left > * {
-    min-width: 0;
-  }
-
-  .erp-pos-right {
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
-  }
-}
-
-@media (max-width: 760px) {
-  .erp-pos-page {
-    padding: 10px;
-  }
-
-  .erp-pos-shell {
-    min-height: auto;
-  }
-
-  .erp-pos-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .erp-pos-title {
-    font-size: 20px;
-  }
-
-  .erp-pos-header-actions,
-  .erp-pos-toolbar,
-  .erp-order-actions,
-  .erp-payment-methods {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .erp-pos-header-actions > *,
-  .erp-pos-toolbar > *,
-  .erp-order-actions > *,
-  .erp-payment-methods > * {
-    width: 100%;
-  }
-
-  .erp-pos-store-select {
-    min-width: 0;
-    width: 100%;
-    border-radius: 8px;
-  }
-
-  .erp-pos-left {
-    grid-template-columns: 1fr;
-  }
-
-  .erp-pos-mini-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .erp-search-card {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .erp-pos-help {
-    white-space: normal;
-  }
-
-  .erp-menu-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .erp-menu-card {
-    min-height: 112px;
-    padding: 12px;
-  }
-
-  .erp-cart-line {
-    grid-template-columns: 1fr auto;
-  }
-
-  .erp-cart-line-total {
-    grid-column: 1 / -1;
-    text-align: left;
-  }
-}
-
-@media (max-width: 430px) {
-  .erp-pos-header-actions,
-  .erp-pos-toolbar,
-  .erp-order-actions,
-  .erp-payment-methods {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .erp-menu-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.erp-pos-page {
-  background:
-    linear-gradient(180deg, #101014 0%, #09090b 42%, #0d0d10 100%);
-}
-
-.erp-pos-shell {
-  gap: 10px;
-}
-
-.erp-pos-header {
-  align-items: center;
-  padding: 10px 0 2px;
-}
-
-.erp-pos-title {
-  font-size: 22px;
-  font-weight: 850;
-}
-
-.erp-pos-subtitle {
-  margin-top: 4px;
-  color: #b8b1a5;
-}
-
-.erp-pos-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  padding: 8px;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 8px;
-  background: rgba(15,15,18,.92);
-  backdrop-filter: blur(16px);
-}
-
-.erp-pos-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.erp-pos-metrics > div {
-  min-width: 0;
-  padding: 11px 12px;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 8px;
-  background: #18181b;
-}
-
-.erp-pos-metrics span {
-  display: block;
-  color: #a1a1aa;
-  font-size: 11px;
-  font-weight: 750;
-  text-transform: uppercase;
-}
-
-.erp-pos-metrics strong {
-  display: block;
-  margin-top: 4px;
-  overflow-wrap: anywhere;
-  color: #fafaf9;
-  font-size: 18px;
-}
-
-.erp-pos-metrics .accent {
-  border-color: rgba(212,168,83,.45);
-  background: rgba(212,168,83,.12);
-}
-
-.erp-pos-metrics .accent strong {
-  color: #f6c86b;
-}
-
-.erp-pos-workspace {
-  grid-template-columns: 270px minmax(360px, 1fr) 386px;
-}
-
-.erp-service-card,
-.erp-order-card,
-.erp-menu-control-card {
-  box-shadow: 0 16px 40px rgba(0,0,0,.18);
-}
-
-.erp-location-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  color: #d4a853;
-  font-size: 12px;
-}
-
-.erp-order-snapshot {
-  display: grid;
-  gap: 8px;
-}
-
-.erp-snapshot-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255,255,255,.07);
-  color: #a1a1aa;
-  font-size: 12px;
-}
-
-.erp-snapshot-row strong {
-  max-width: 55%;
-  overflow: hidden;
-  color: #fafaf9;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.erp-menu-control-card {
-  display: grid;
-  gap: 12px;
-  padding: 12px !important;
-}
-
-.erp-search-card {
-  gap: 10px;
-  padding: 0;
-  color: #d4a853;
-}
-
-.erp-pos-search {
-  min-height: 44px;
-  border-color: rgba(255,255,255,.1);
-  background: #111113;
-  font-size: 14px;
-}
-
-.erp-search-card .erp-pos-help {
-  display: none;
-}
-
-.erp-category-strip {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: thin;
-}
-
-.erp-category-strip .erp-category {
-  flex: 0 0 auto;
-  min-height: 36px;
-  border-radius: 999px;
-  padding: 8px 13px;
-  white-space: nowrap;
-}
-
-.erp-menu-grid {
-  grid-template-columns: repeat(auto-fill, minmax(162px, 1fr));
-}
-
-.erp-menu-card {
-  min-height: 132px;
-  border-color: rgba(255,255,255,.08);
-  background: linear-gradient(180deg, #1b1b1f, #151518);
-}
-
-.erp-menu-card:hover {
-  border-color: rgba(212,168,83,.55);
-  background: #202024;
-}
-
-.erp-menu-bottom strong {
-  color: #f6c86b;
-}
-
-.erp-order-card {
-  position: sticky;
-  top: 78px;
-  display: grid;
-  gap: 12px;
-}
-
-.erp-order-header {
-  align-items: flex-start;
-}
-
-.erp-order-header .erp-muted {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.erp-cart-lines {
-  max-height: min(44vh, 460px);
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.erp-cart-line {
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding: 10px;
-  border: 1px solid rgba(255,255,255,.07);
-  border-radius: 8px;
-  background: #111113;
-}
-
-.erp-cart-line-total {
-  grid-column: 1 / -1;
-  color: #f6c86b;
-}
-
-.erp-cart-controls button {
-  width: 32px;
-  height: 32px;
-}
-
-.erp-totals {
-  margin-top: 0;
-}
-
-.erp-totals .grand {
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(212,168,83,.28);
-  color: #f6c86b;
-}
-
-@media (max-width: 1180px) {
-  .erp-pos-workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .erp-order-card {
-    top: auto;
-  }
-}
-
-@media (max-width: 760px) {
-  .erp-pos-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .erp-pos-toolbar {
-    position: static;
-  }
-
-  .erp-search-card {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-  }
-
-  .erp-cart-lines {
-    max-height: none;
-  }
-}
-
-@media (max-width: 430px) {
-  .erp-pos-metrics {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .erp-menu-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .erp-menu-card {
-    min-height: 118px;
-    padding: 10px;
-  }
-}
-`;

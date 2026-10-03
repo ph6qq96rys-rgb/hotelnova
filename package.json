@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run check:mojibake && tsc -b && vite build",
+    "build": "npm run check:mojibake && npm run check:i18n && npm run check:design-system && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "check:mojibake": "node scripts/check-mojibake.cjs"
+    "check:mojibake": "node scripts/check-mojibake.cjs",
+    "check:i18n": "node scripts/check-i18n.cjs",
+    "check:design-system": "node scripts/check-design-system.cjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",

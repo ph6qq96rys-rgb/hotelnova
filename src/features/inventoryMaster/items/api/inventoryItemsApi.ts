@@ -1,4 +1,4 @@
-// src/features/inventory/items/api/inventoryItemsApi.ts
+﻿// src/features/inventory/items/api/inventoryItemsApi.ts
 //
 // Single canonical API client for inventory item master data.
 // Replaces the parallel itemsApi.ts - that file is removed.
@@ -22,6 +22,7 @@ export interface CreateItemBody {
   sku:            string | null;
   barcode:        string | null;
   categoryId:     string | null;
+    subCategoryId:  string | null;
   baseUomId:      string;
   type:           string;
   allowedUoms:    ItemUomDto[];
@@ -68,9 +69,14 @@ export const inventoryItemsApi = {
 
   //  Items 
 
-  list(companyId: string, q?: string): Promise<InventoryItemDto[]> {
+  list(companyId: string, q?: string, activeOnly = false): Promise<InventoryItemDto[]> {
     return http
-      .get<InventoryItemDto[]>(masterUrl(companyId, "/items"), { params: q ? { q } : undefined })
+      .get<InventoryItemDto[]>(masterUrl(companyId, "/items"), {
+        params: {
+          activeOnly,
+          ...(q ? { q } : {}),
+        },
+      })
       .then((r) => r.data);
   },
 
@@ -138,3 +144,4 @@ export const inventoryItemsApi = {
       .then((r) => r.data);
   },
 };
+

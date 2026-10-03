@@ -9,13 +9,14 @@ import ItemUpsertPage from "../features/inventoryMaster/items/pages/ItemUpsertPa
 import ImportInventoryItemsPage from "../features/inventoryMaster/items/pages/Importinventoryitemspage";
 
 import InventoryLedgerPage from "../features/inventory/ledger/pages/InventoryLedgerPage";
+import InventoryReportsPage from "../features/inventory/reports/pages/InventoryReportsPage";
 
 export const inventoryMasterRoutes: AppRoute[] = [
   {
     path: "inventory-master",
     element: <InventoryMasterHomePage />,
     label: "Inventory",
-    nav: true,
+    nav: false,
     section: "Inventory",
     order: 10,
     permissions: ["inventory.view"],
@@ -50,12 +51,22 @@ export const inventoryMasterRoutes: AppRoute[] = [
   },
 
   {
+    path: "inventory-master/reports",
+    element: <InventoryReportsPage />,
+    label: "Inventory Reports",
+    nav: true,
+    section: "Inventory",
+    order: 30,
+    permissions: ["inventory.reports.view"],
+  },
+
+  {
     path: "inventory-master/ledger",
     element: <InventoryLedgerPage />,
     label: "Inventory Ledger",
     nav: true,
     section: "Inventory",
-    order: 30,
+    order: 40,
     permissions: ["inventory.ledger.view"],
   },
 ];

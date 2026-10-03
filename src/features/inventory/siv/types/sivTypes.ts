@@ -1,6 +1,7 @@
 // src/features/inventory/siv/types/sivTypes.ts
 
 import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
+import { formatCurrency } from "../../../../shared/currency/currencyFormat";
 import type {
   SivDetailsDto,
   SivListItemDto as SivListItemRaw,
@@ -121,6 +122,8 @@ export interface SivLineVm {
   requestedQty: number;
   approvedQty: number | null;
   issuedQty: number;
+  postedUnitCost: number | null;
+  postedLineCost: number | null;
   batchNo: string;
   expiryDate: string | null;
   remarks: string;
@@ -215,6 +218,8 @@ export function mapToVm(raw: SivDetailsDto): SivVm {
     requestedQty: num(line.requestedQty, num(line.qty)),
     approvedQty: line.approvedQty != null ? num(line.approvedQty) : null,
     issuedQty: num(line.issuedQty ?? line.issuedBaseQty),
+    postedUnitCost: line.postedUnitCost != null ? num(line.postedUnitCost) : null,
+    postedLineCost: line.postedLineCost != null ? num(line.postedLineCost) : null,
     batchNo: line.batchNo ?? "",
     expiryDate: line.expiryDate ?? null,
     remarks: line.remarks ?? "",
@@ -372,8 +377,7 @@ export function fmtQty(n: number | null | undefined): string {
 }
 
 export function fmt$(n: number | null | undefined): string {
-  const value = Number(n ?? 0);
-  return `$${value.toFixed(2)}`;
+  return formatCurrency(n);
 }
 
 export function getApiError(

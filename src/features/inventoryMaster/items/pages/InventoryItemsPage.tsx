@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useI18n } from "../../../../i18n";
 
 import { useAppScope } from "../../../../app/useAppScope";
 import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
@@ -14,6 +15,79 @@ import "./inventory-items.css";
 export type InventoryItemRow = InventoryItemDto;
 
 type ActiveFilter = "all" | "active" | "inactive";
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
+const ITEM_INDEX_KEYS = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")] as const;
+
+const inventoryItemsAmharicPhrases: Record<string, string> = {
+  "Inventory items could not be loaded. Please try again.": "የኢንቬንቶሪ እቃዎችን መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
+  "Active": "ንቁ",
+  "Inactive": "ንቁ ያልሆነ",
+  "Total items": "ጠቅላላ እቃዎች",
+  "Tracked": "የሚከታተሉ",
+  "With reorder": "ዳግም ማዘዣ ያላቸው",
+  "Item master": "የእቃ ማስተር",
+  "Inventory items": "የኢንቬንቶሪ እቃዎች",
+  "Manage names, base UOM, issue UOM, conversions, costing defaults, reorder levels, and status.": "ስሞችን፣ መሰረታዊ መለኪያን፣ የመውጫ መለኪያን፣ ልወጣዎችን፣ የወጪ ነባሪዎችን፣ የዳግም ማዘዣ ደረጃን እና ሁኔታን ያስተዳድሩ።",
+  "Showing": "በማሳየት ላይ",
+  "New item": "አዲስ እቃ",
+  "Import from Excel": "ከExcel አስመጣ",
+  "Retry": "እንደገና ሞክር",
+  "Warning": "ማስጠንቀቂያ",
+  "UOM columns may show IDs.": "የመለኪያ አምዶች ID ሊያሳዩ ይችላሉ።",
+  "UOMs could not be loaded": "መለኪያዎችን መጫን አልተቻለም",
+  "Item register": "የእቃዎች መዝገብ",
+  "Search by English name, local name, or SKU.": "በእንግሊዝኛ ስም፣ በአካባቢ ስም ወይም SKU ይፈልጉ።",
+  "All": "ሁሉም",
+  "Search items...": "እቃዎችን ፈልግ...",
+  "Search inventory items": "የኢንቬንቶሪ እቃዎችን ፈልግ",
+  "Clear search": "ፍለጋን አጽዳ",
+  "Inventory item pagination": "የኢንቬንቶሪ እቃዎች ገጽ አቀራረብ",
+  "No items to show": "ለማሳየት እቃዎች የሉም",
+  "of": "ከ",
+  "Rows": "ረድፎች",
+  "Rows per page": "በገጽ የሚታዩ ረድፎች",
+  "Jump to item name initial": "ወደ እቃ ስም መጀመሪያ ፊደል ዝለል",
+  "Show items starting with": "በዚህ የሚጀምሩ እቃዎችን አሳይ",
+  "No items starting with": "በዚህ የሚጀምሩ እቃዎች የሉም",
+  "Item": "እቃ",
+  "Type": "አይነት",
+  "SKU": "SKU",
+  "Base UOM": "መሰረታዊ መለኪያ",
+  "Issue UOM": "የመውጫ መለኪያ",
+  "Reorder": "ዳግም ማዘዣ",
+  "Track": "ክትትል",
+  "Status": "ሁኔታ",
+  "Actions": "እርምጃዎች",
+  "No matching items": "የሚዛመዱ እቃዎች የሉም",
+  "No items in this filter": "በዚህ ማጣሪያ ውስጥ እቃዎች የሉም",
+  "No items yet": "እስካሁን እቃዎች የሉም",
+  "Try a different keyword or clear the search.": "ሌላ ቁልፍ ቃል ይሞክሩ ወይም ፍለጋውን ያጽዱ።",
+  "Switch to All or create a new item.": "ወደ ሁሉም ይቀይሩ ወይም አዲስ እቃ ይፍጠሩ።",
+  "Register your first inventory item to start tracking stock.": "ስቶክ መከታተል ለመጀመር የመጀመሪያ የኢንቬንቶሪ እቃዎን ይመዝግቡ።",
+  "Click to edit": "ለማስተካከል ጠቅ ያድርጉ",
+  "Yes": "አዎ",
+  "No": "አይ",
+  "Edit": "አስተካክል",
+  "Activate": "አንቃ",
+  "Deactivate": "አቦዝን",
+  "Activate item": "እቃ አንቃ",
+  "Deactivate item": "እቃ አቦዝን",
+  "will appear in all item pick-lists.": "በሁሉም የእቃ ምርጫ ዝርዝሮች ይታያል።",
+  "will be hidden from all item pick-lists.": "ከሁሉም የእቃ ምርጫ ዝርዝሮች ይደበቃል።",
+  "Cancel": "ሰርዝ",
+  "Working...": "በመስራት ላይ...",
+  "Clear filter": "ማጣሪያ አጽዳ",
+  "Reset filter": "ማጣሪያ ዳግም አስጀምር",
+  "filtered item(s), from": "የተጣሩ እቃዎች፣ ከ",
+  "total": "ጠቅላላ",
+  "matching": "የሚዛመድ",
+  "Select a company to manage inventory items.": "የኢንቬንቶሪ እቃዎችን ለማስተዳደር ኩባንያ ይምረጡ።"
+};
+
+function inventoryItemsText(language: string, text: string): string {
+  return language === "am" ? inventoryItemsAmharicPhrases[text] ?? text : text;
+}
 
 type ConfirmState =
   | { kind: "none" }
@@ -55,14 +129,20 @@ function getIssueUomId(item: InventoryItemRow): string | null {
   return item.allowedUoms?.find((u) => u.isIssue)?.uomId ?? null;
 }
 
+function getItemLetter(item: InventoryItemRow): string {
+  const first = (item.name ?? "").trim().charAt(0).toUpperCase();
+  return /^[A-Z]$/.test(first) ? first : "#";
+}
 function isItemActive(item: InventoryItemDto): boolean {
   return item.isActive == null ? true : Boolean(item.isActive);
 }
 
 function StatusBadge({ active }: { active: boolean }) {
+  const { language } = useI18n();
+  const tx = (text: string) => inventoryItemsText(language, text);
   return (
     <span className={`inv-badge ${active ? "inv-badge--active" : "inv-badge--inactive"}`}>
-      {active ? "Active" : "Inactive"}
+      {active ? tx("Active") : tx("Inactive")}
     </span>
   );
 }
@@ -114,6 +194,9 @@ function EmptyState({
   onNew: () => void;
   onReset?: () => void;
 }) {
+  const { language } = useI18n();
+  const tx = (text: string) => inventoryItemsText(language, text);
+
   return (
     <div className="inv-empty">
       <div className="inv-empty__icon"></div>
@@ -122,12 +205,12 @@ function EmptyState({
 
       <div className="inv-empty__actions">
         <button type="button" className="inv-btn inv-btn--primary" onClick={onNew}>
-          + New item
+          + {tx("New item")}
         </button>
 
         {onReset ? (
           <button type="button" className="inv-btn inv-btn--outline" onClick={onReset}>
-            Clear filter
+            {tx("Clear filter")}
           </button>
         ) : null}
       </div>
@@ -146,6 +229,9 @@ function ConfirmModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const { language } = useI18n();
+  const tx = (text: string) => inventoryItemsText(language, text);
+
   if (state.kind === "none") return null;
 
   const activating = state.next;
@@ -173,17 +259,17 @@ function ConfirmModal({
         }}
       >
         <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
-          {activating ? "Activate item" : "Deactivate item"}
+          {activating ? tx("Activate item") : tx("Deactivate item")}
         </div>
 
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>
           {activating ? (
             <>
-              <b>{state.item.name}</b> will appear in all item pick-lists.
+              <b>{state.item.name}</b> {tx("will appear in all item pick-lists.")}
             </>
           ) : (
             <>
-              <b>{state.item.name}</b> will be hidden from all item pick-lists.
+              <b>{state.item.name}</b> {tx("will be hidden from all item pick-lists.")}
             </>
           )}
         </div>
@@ -204,7 +290,7 @@ function ConfirmModal({
               cursor: busy ? "not-allowed" : "pointer",
             }}
           >
-            Cancel
+            {tx("Cancel")}
           </button>
 
           <button
@@ -223,7 +309,7 @@ function ConfirmModal({
               opacity: busy ? 0.6 : 1,
             }}
           >
-            {busy ? "Working..." : activating ? "Activate" : "Deactivate"}
+            {busy ? tx("Working...") : activating ? tx("Activate") : tx("Deactivate")}
           </button>
         </div>
       </div>
@@ -232,6 +318,8 @@ function ConfirmModal({
 }
 
 export default function InventoryItemsPage() {
+  const { language } = useI18n();
+  const tx = (text: string) => inventoryItemsText(language, text);
   const { companyId } = useAppScope();
   const navigate = useNavigate();
 
@@ -251,6 +339,8 @@ export default function InventoryItemsPage() {
   const [rawQuery, setRawQuery] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all");
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [pageStartIndex, setPageStartIndex] = useState(0);
 
   const [confirm, setConfirm] = useState<ConfirmState>({ kind: "none" });
 
@@ -275,7 +365,7 @@ export default function InventoryItemsPage() {
       const [fetchedItems, fetchedUoms] = await Promise.all([
         inventoryItemsApi.list(companyId),
         inventoryItemsApi.getUoms(companyId).catch((e: unknown) => {
-          setLookupError(`UOMs could not be loaded - ${extractApiError(e)}`);
+          setLookupError(`${tx("UOMs could not be loaded")} - ${extractApiError(e)}`);
           return [] as UomDto[];
         }),
       ]);
@@ -297,26 +387,55 @@ export default function InventoryItemsPage() {
     return new Map(uomsRaw.map((u) => [u.id, formatUom(u)]));
   }, [uomsRaw]);
 
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+  // Sort and normalize once when data changes, rather than on every search.
+  const indexedItems = useMemo(() => {
+    const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+    return [...items]
+      .sort((a, b) => collator.compare(a.name ?? "", b.name ?? "") || collator.compare(a.sku ?? "", b.sku ?? ""))
+      .map(item => ({ item, searchFields: [item.name, item.localName, item.sku].map(value => (value ?? "").toLowerCase()) }));
+  }, [items]);
+
+  const filteredItems = useMemo(() => indexedItems
+    .filter(({ item, searchFields }) => {
       const active = isItemActive(item);
-
-      const passesActive =
-        activeFilter === "all" ? true : activeFilter === "active" ? active : !active;
-
-      const passesSearch =
-        !searchQuery ||
-        (item.name ?? "").toLowerCase().includes(searchQuery) ||
-        (item.localName ?? "").toLowerCase().includes(searchQuery) ||
-        (item.sku ?? "").toLowerCase().includes(searchQuery);
-
-      return passesActive && passesSearch;
-    });
-  }, [items, activeFilter, searchQuery]);
+      return (activeFilter === "all" || (activeFilter === "active" ? active : !active)) &&
+        (!searchQuery || searchFields.some(value => value.includes(searchQuery)));
+    })
+    .map(({ item }) => item), [indexedItems, activeFilter, searchQuery]);
 
   const totalCount = items.length;
+  const filteredCount = filteredItems.length;
+  const clampedPageStartIndex = filteredCount === 0 ? 0 : Math.min(pageStartIndex, Math.max(0, filteredCount - 1));
+  const pageStart = filteredCount === 0 ? 0 : clampedPageStartIndex + 1;
+  const pageEnd = Math.min(clampedPageStartIndex + pageSize, filteredCount);
+  const availableLetters = useMemo(() => {
+    return new Set(filteredItems.map(getItemLetter));
+  }, [filteredItems]);
+  const activeLetter = filteredCount === 0 ? "" : getItemLetter(filteredItems[clampedPageStartIndex]);
+  const pagedItems = useMemo(() => {
+    return filteredItems.slice(clampedPageStartIndex, clampedPageStartIndex + pageSize);
+  }, [filteredItems, clampedPageStartIndex, pageSize]);
+
   const activeCount = useMemo(() => items.filter(isItemActive).length, [items]);
   const inactiveCount = totalCount - activeCount;
+
+  useEffect(() => {
+    setPageStartIndex(0);
+  }, [activeFilter, searchQuery, pageSize]);
+
+  useEffect(() => {
+    setPageStartIndex((start) => Math.min(start, Math.max(0, filteredCount - 1)));
+  }, [filteredCount]);
+
+  const handleLetterJump = useCallback(
+    (letter: string) => {
+      const index = filteredItems.findIndex((item) => getItemLetter(item) === letter);
+      if (index >= 0) {
+        setPageStartIndex(index);
+      }
+    },
+    [filteredItems]
+  );
 
   const trackedCount = useMemo(() => {
     return items.filter((i) => i.trackInventory).length;
@@ -383,7 +502,7 @@ export default function InventoryItemsPage() {
       <div className="inv-page">
         <div className="inv-page-guard">
           <div style={{ fontSize: 32 }}></div>
-          <div>Select a company to manage inventory items.</div>
+          <div>{tx("Select a company to manage inventory items.")}</div>
         </div>
       </div>
     );
@@ -393,45 +512,44 @@ export default function InventoryItemsPage() {
     <div className="inv-page">
       <div className="inv-banner">
         <div>
-          <p className="inv-banner__kicker">Item master</p>
-          <h1 className="inv-banner__title">Inventory items</h1>
+          <p className="inv-banner__kicker">{tx("Item master")}</p>
+          <h1 className="inv-banner__title">{tx("Inventory items")}</h1>
           <p className="inv-banner__subtitle">
-            Manage names, base UOM, issue UOM, conversions, costing defaults, reorder
-            levels, and status.
+            {tx("Manage names, base UOM, issue UOM, conversions, costing defaults, reorder levels, and status.")}
           </p>
         </div>
 
         <div className="inv-banner__right">
           <div className="inv-banner__count">
-            <span className="inv-banner__count-label">Showing</span>
-            <span className="inv-banner__count-value">{filteredItems.length}</span>
+            <span className="inv-banner__count-label">{tx("Showing")}</span>
+            <span className="inv-banner__count-value">{filteredCount}</span>
           </div>
 
           <button type="button" className="inv-btn inv-btn--outline" onClick={handleCreateNew}>
-            + New item
+            + {tx("New item")}
           </button>
 
           <button type="button" className="inv-btn inv-btn--outline" onClick={handleImport}>
-            Import from Excel
+            {tx("Import from Excel")}
           </button>
         </div>
       </div>
 
       <div className="inv-kpi-grid">
-        <Kpi label="Total items" value={totalCount} />
-        <Kpi label="Active" value={activeCount} tone="success" />
+        <Kpi label={tx("Total items")} value={totalCount} />
+        <Kpi label={tx("Active")} value={activeCount} tone="success" />
         <Kpi
-          label="Inactive"
+          label={tx("Inactive")}
           value={inactiveCount}
           tone={inactiveCount > 0 ? "warn" : "neutral"}
         />
-        <Kpi label="Tracked" value={trackedCount} />
-        <Kpi label="With reorder" value={reorderCount} />
+        <Kpi label={tx("Tracked")} value={trackedCount} />
+        <Kpi label={tx("With reorder")} value={reorderCount} />
       </div>
 
       {submitError ? (
         <div className="inv-alert inv-alert--error" role="alert">
-          {submitError}
+          {tx(submitError)}
         </div>
       ) : null}
 
@@ -444,22 +562,22 @@ export default function InventoryItemsPage() {
             style={{ marginLeft: 12 }}
             onClick={() => void loadAll()}
           >
-            Retry
+            {tx("Retry")}
           </button>
         </div>
       ) : null}
 
       {lookupError ? (
         <div className="inv-alert inv-alert--warn" role="alert">
-          Warning: {lookupError} - UOM columns may show IDs.
+          {tx("Warning")}: {lookupError} - {tx("UOM columns may show IDs.")}
         </div>
       ) : null}
 
       <div className="inv-card">
         <div className="inv-card__head">
           <div>
-            <h2 className="inv-card__title">Item register</h2>
-            <p className="inv-card__subtitle">Search by English name, local name, or SKU.</p>
+            <h2 className="inv-card__title">{tx("Item register")}</h2>
+            <p className="inv-card__subtitle">{tx("Search by English name, local name, or SKU.")}</p>
           </div>
 
           <div className="inv-filter-bar">
@@ -473,7 +591,7 @@ export default function InventoryItemsPage() {
                   }`}
                   onClick={() => setActiveFilter(filter)}
                 >
-                  {filter === "active" ? "Active" : filter === "inactive" ? "Inactive" : "All"}
+                  {filter === "active" ? tx("Active") : filter === "inactive" ? tx("Inactive") : tx("All")}
                 </button>
               ))}
             </div>
@@ -483,8 +601,8 @@ export default function InventoryItemsPage() {
                 className="inv-search"
                 value={rawQuery}
                 onChange={(e) => setRawQuery(e.target.value)}
-                placeholder="Search items..."
-                aria-label="Search inventory items"
+                placeholder={tx("Search items...")}
+                aria-label={tx("Search inventory items")}
               />
 
               {rawQuery ? (
@@ -492,7 +610,7 @@ export default function InventoryItemsPage() {
                   type="button"
                   className="inv-search-clear"
                   onClick={() => setRawQuery("")}
-                  aria-label="Clear search"
+                  aria-label={tx("Clear search")}
                 >
                   
                 </button>
@@ -501,19 +619,67 @@ export default function InventoryItemsPage() {
           </div>
         </div>
 
+      <div className="inv-pagination" aria-label={tx("Inventory item pagination")}>
+        <div className="inv-pagination__summary">
+          {filteredCount === 0 ? (
+            tx("No items to show")
+          ) : (
+            <>
+              {tx("Showing")} <b>{pageStart}</b>-<b>{pageEnd}</b> {tx("of")} <b>{filteredCount}</b>
+            </>
+          )}
+        </div>
+
+        <div className="inv-pagination__controls">
+          <label className="inv-page-size">
+            <span>{tx("Rows")}</span>
+            <select
+              value={pageSize}
+              onChange={(event) => setPageSize(Number(event.target.value))}
+              aria-label={tx("Rows per page")}
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="inv-letter-index" aria-label={tx("Jump to item name initial")}>
+            {ITEM_INDEX_KEYS.map((letter) => {
+              const available = availableLetters.has(letter);
+              return (
+                <button
+                  key={letter}
+                  type="button"
+                  className={`inv-letter-index__btn ${activeLetter === letter ? "is-active" : ""}`}
+                  onClick={() => handleLetterJump(letter)}
+                  disabled={loading || !available}
+                  aria-pressed={activeLetter === letter}
+                  title={available ? `${tx("Show items starting with")} ${letter}` : `${tx("No items starting with")} ${letter}`}
+                >
+                  {letter}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
         <div className="inv-table-wrap">
           <table className="inv-table">
             <thead>
               <tr>
-                <th>Item</th>
-                <th>Type</th>
-                <th>SKU</th>
-                <th>Base UOM</th>
-                <th>Issue UOM</th>
-                <th className="num">Reorder</th>
-                <th>Track</th>
-                <th>Status</th>
-                <th className="inv-table__actions-col" aria-label="Actions" />
+                <th>{tx("Item")}</th>
+                <th>{tx("Type")}</th>
+                <th>{tx("SKU")}</th>
+                <th>{tx("Base UOM")}</th>
+                <th>{tx("Issue UOM")}</th>
+                <th className="num">{tx("Reorder")}</th>
+                <th>{tx("Track")}</th>
+                <th>{tx("Status")}</th>
+                <th className="inv-table__actions-col" aria-label={tx("Actions")} />
               </tr>
             </thead>
 
@@ -526,17 +692,17 @@ export default function InventoryItemsPage() {
                     <EmptyState
                       title={
                         searchQuery
-                          ? "No matching items"
+                          ? tx("No matching items")
                           : activeFilter !== "all"
-                            ? "No items in this filter"
-                            : "No items yet"
+                            ? tx("No items in this filter")
+                            : tx("No items yet")
                       }
                       subtitle={
                         searchQuery
-                          ? "Try a different keyword or clear the search."
+                          ? tx("Try a different keyword or clear the search.")
                           : activeFilter !== "all"
-                            ? "Switch to All or create a new item."
-                            : "Register your first inventory item to start tracking stock."
+                            ? tx("Switch to All or create a new item.")
+                            : tx("Register your first inventory item to start tracking stock.")
                       }
                       onNew={handleCreateNew}
                       onReset={
@@ -546,7 +712,7 @@ export default function InventoryItemsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => {
+                pagedItems.map((item) => {
                   const issueUomId = getIssueUomId(item);
                   const active = isItemActive(item);
                   const initials = (item.name ?? "?").slice(0, 1).toUpperCase();
@@ -556,7 +722,7 @@ export default function InventoryItemsPage() {
                       key={item.id}
                       className="is-clickable"
                       onClick={() => handleEdit(item)}
-                      title="Click to edit"
+                      title={tx("Click to edit")}
                     >
                       <td>
                         <div className="inv-item-cell">
@@ -579,7 +745,7 @@ export default function InventoryItemsPage() {
                       <td className="num">
                         {item.reorderLevel == null ? "-" : String(item.reorderLevel)}
                       </td>
-                      <td>{item.trackInventory ? "Yes" : "No"}</td>
+                      <td>{item.trackInventory ? tx("Yes") : tx("No")}</td>
                       <td>
                         <StatusBadge active={active} />
                       </td>
@@ -594,7 +760,7 @@ export default function InventoryItemsPage() {
                               handleEdit(item);
                             }}
                           >
-                            Edit
+                            {tx("Edit")}
                           </button>
 
                           <button
@@ -608,7 +774,7 @@ export default function InventoryItemsPage() {
                             }}
                             disabled={saving}
                           >
-                            {active ? "Deactivate" : "Activate"}
+                            {active ? tx("Deactivate") : tx("Activate")}
                           </button>
                         </div>
                       </td>
@@ -623,11 +789,11 @@ export default function InventoryItemsPage() {
 
       <div className="inv-sticky-bar">
         <div className="inv-sticky-bar__count">
-          Showing <b>{filteredItems.length}</b> of <b>{totalCount}</b> item(s)
+          {tx("Showing")} <b>{pageStart}</b>-<b>{pageEnd}</b> {tx("of")} <b>{filteredCount}</b>{" "}{tx("filtered item(s), from")} <b>{totalCount}</b> {tx("total")}
           {searchQuery ? (
             <>
               {" "}
-              matching &ldquo;<b>{searchQuery}</b>&rdquo;
+              {tx("matching")} &ldquo;<b>{searchQuery}</b>&rdquo;
             </>
           ) : null}
         </div>
@@ -639,7 +805,7 @@ export default function InventoryItemsPage() {
               className="inv-btn inv-btn--outline inv-btn--sm"
               onClick={handleResetFilter}
             >
-              Reset filter
+              {tx("Reset filter")}
             </button>
           ) : null}
 
@@ -648,7 +814,7 @@ export default function InventoryItemsPage() {
             className="inv-btn inv-btn--primary inv-btn--sm"
             onClick={handleCreateNew}
           >
-            + New item
+            + {tx("New item")}
           </button>
         </div>
       </div>

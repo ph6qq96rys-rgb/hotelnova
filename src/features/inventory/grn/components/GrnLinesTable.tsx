@@ -1,7 +1,31 @@
+import { useI18n } from "../../../../i18n";
 import type { SelectOption } from "../types/grn.types";
 import type { FormErrors, GrnLineForm } from "../hooks/useGrnDraftForm";
 import type { GrnItemVm } from "../hooks/useGrnLookups";
 
+const grnLinesAmharicPhrases: Record<string, string> = {
+  "Base / Purchasing UOM unavailable": "Base / Purchasing UOM አልተገኘም",
+  "Select item first": "መጀመሪያ እቃ ይምረጡ",
+  "Line Items": "የመስመር እቃዎች",
+  "GRN receiving is locked to the item Base/Purchasing UOM.": "GRN መቀበያ በእቃው Base/Purchasing UOM ላይ ተቆልፏል።",
+  "Add Line": "መስመር ጨምር",
+  "Item *": "እቃ *",
+  "Qty *": "ብዛት *",
+  "UOM *": "መለኪያ *",
+  "Unit Cost": "የአንዱ ዋጋ",
+  "Batch": "ባች",
+  "Expiry": "የሚያበቃበት",
+  "Notes": "ማስታወሻዎች",
+  "Total": "ድምር",
+  "Loading items...": "እቃዎች በመጫን ላይ...",
+  "Select item": "እቃ ይምረጡ",
+  "Optional": "አማራጭ",
+  "Remove": "አስወግድ",
+};
+
+function grnLinesText(language: string, text: string): string {
+  return language === "am" ? grnLinesAmharicPhrases[text] ?? text : text;
+}
 type Props = {
   lines: GrnLineForm[];
   errors: FormErrors;
@@ -26,9 +50,9 @@ function parseDecimal(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function lineUomDisplay(line: GrnLineForm, itemMap: Map<string, GrnItemVm>): string {
+function lineUomDisplay(line: GrnLineForm, itemMap: Map<string, GrnItemVm>, tx: (text: string) => string): string {
   const item = itemMap.get(line.itemId);
-  return item?.uoms[0]?.label || (line.itemId ? "Base / Purchasing UOM unavailable" : "Select item first");
+  return item?.uoms[0]?.label || (line.itemId ? tx("Base / Purchasing UOM unavailable") : tx("Select item first"));
 }
 
 export default function GrnLinesTable({
@@ -43,14 +67,17 @@ export default function GrnLinesTable({
   onPatchLine,
   onItemSelected,
 }: Props) {
+  const { language } = useI18n();
+  const tx = (text: string) => grnLinesText(language, text);
+
   return (
     <section className="grn-editor-card">
       <div className="grn-section-head">
         <div>
-          <h2>Line Items</h2>
-          <p>GRN receiving is locked to the item Base/Purchasing UOM.</p>
+          <h2>{tx("Line Items")}</h2>
+          <p>{tx("GRN receiving is locked to the item Base/Purchasing UOM.")}</p>
         </div>
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={onAddLine}>+ Add Line</button>
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={onAddLine}>+ {tx("Add Line")}</button>
       </div>
 
       {errors.lines ? <div className="grn-field-error">{errors.lines}</div> : null}
@@ -59,14 +86,14 @@ export default function GrnLinesTable({
         <table className="table erp-grn-table grn-editor-lines">
           <thead>
             <tr>
-              <th>Item *</th>
-              <th className="num">Qty *</th>
-              <th>UOM *</th>
-              <th className="num">Unit Cost</th>
-              <th>Batch</th>
-              <th>Expiry</th>
-              <th>Notes</th>
-              <th className="num">Total</th>
+              <th>{tx("Item *")}</th>
+              <th className="num">{tx("Qty *")}</th>
+              <th>{tx("UOM *")}</th>
+              <th className="num">{tx("Unit Cost")}</th>
+              <th>{tx("Batch")}</th>
+              <th>{tx("Expiry")}</th>
+              <th>{tx("Notes")}</th>
+              <th className="num">{tx("Total")}</th>
               <th />
             </tr>
           </thead>
@@ -86,7 +113,7 @@ export default function GrnLinesTable({
                       className={lineError.itemId ? "is-invalid" : ""}
                       onChange={(event) => onItemSelected(event.target.value, index)}
                     >
-                      <option value="">{loadingItems ? "Loading items..." : "Select item"}</option>
+                      <option value="">{loadingItems ? tx("Loading items...") : tx("Select item")}</option>
                       {itemOptions.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
@@ -106,7 +133,7 @@ export default function GrnLinesTable({
                     {lineError.quantity ? <small>{lineError.quantity}</small> : null}
                   </td>
                   <td>
-                    <input readOnly disabled={!line.itemId} value={lineUomDisplay(line, itemMap)} />
+                    <input readOnly disabled={!line.itemId} value={lineUomDisplay(line, itemMap, tx)} />
                     {lineError.uomId ? <small>{lineError.uomId}</small> : null}
                   </td>
                   <td>
@@ -121,11 +148,11 @@ export default function GrnLinesTable({
                     />
                     {lineError.unitCost ? <small>{lineError.unitCost}</small> : null}
                   </td>
-                  <td><input value={line.batchNo} disabled={busy} placeholder="Optional" onChange={(event) => onPatchLine(index, { batchNo: event.target.value })} /></td>
+                  <td><input value={line.batchNo} disabled={busy} placeholder={tx("Optional")} onChange={(event) => onPatchLine(index, { batchNo: event.target.value })} /></td>
                   <td><input type="date" value={line.expiryDate} disabled={busy} onChange={(event) => onPatchLine(index, { expiryDate: event.target.value })} /></td>
-                  <td><input value={line.notes} disabled={busy} placeholder="Optional" onChange={(event) => onPatchLine(index, { notes: event.target.value })} /></td>
+                  <td><input value={line.notes} disabled={busy} placeholder={tx("Optional")} onChange={(event) => onPatchLine(index, { notes: event.target.value })} /></td>
                   <td className="num"><strong>${money(total)}</strong></td>
-                  <td><button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => onRemoveLine(index)}>Remove</button></td>
+                  <td><button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => onRemoveLine(index)}>{tx("Remove")}</button></td>
                 </tr>
               );
             })}

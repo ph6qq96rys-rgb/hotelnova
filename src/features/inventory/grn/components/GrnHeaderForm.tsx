@@ -1,6 +1,22 @@
+import { useI18n } from "../../../../i18n";
 import type { SelectOption } from "../types/grn.types";
 import type { FormErrors, GrnForm } from "../hooks/useGrnDraftForm";
 
+const grnHeaderAmharicPhrases: Record<string, string> = {
+  "Loading locations...": "ቦታዎች በመጫን ላይ...",
+  "Select receiving location": "የመቀበያ ቦታ ይምረጡ",
+  "No active receiving locations found": "ንቁ የመቀበያ ቦታዎች አልተገኙም",
+  "Receiving Location *": "የመቀበያ ቦታ *",
+  "Received Date *": "የተቀበለበት ቀን *",
+  "Supplier": "አቅራቢ",
+  "Supplier name": "የአቅራቢ ስም",
+  "Notes": "ማስታወሻዎች",
+  "Receiving notes": "የመቀበያ ማስታወሻዎች",
+};
+
+function grnHeaderText(language: string, text: string): string {
+  return language === "am" ? grnHeaderAmharicPhrases[text] ?? text : text;
+}
 type Props = {
   form: GrnForm;
   errors: FormErrors;
@@ -11,17 +27,19 @@ type Props = {
 };
 
 export default function GrnHeaderForm({ form, errors, locations, loadingLocations, busy, onPatch }: Props) {
+  const { language } = useI18n();
+  const tx = (text: string) => grnHeaderText(language, text);
   const locationPlaceholder = loadingLocations
-    ? "Loading locations..."
+    ? tx("Loading locations...")
     : locations.length
-      ? "Select receiving location"
-      : "No active receiving locations found";
+      ? tx("Select receiving location")
+      : tx("No active receiving locations found");
 
   return (
     <section className="grn-editor-card">
       <div className="grn-editor-grid">
         <label className="grn-field grn-col-4">
-          <span>Receiving Location *</span>
+          <span>{tx("Receiving Location *")}</span>
           <select
             value={form.receivingLocationId}
             disabled={busy || loadingLocations || locations.length === 0}
@@ -37,7 +55,7 @@ export default function GrnHeaderForm({ form, errors, locations, loadingLocation
         </label>
 
         <label className="grn-field grn-col-3">
-          <span>Received Date *</span>
+          <span>{tx("Received Date *")}</span>
           <input
             type="date"
             value={form.receivedDate}
@@ -49,21 +67,21 @@ export default function GrnHeaderForm({ form, errors, locations, loadingLocation
         </label>
 
         <label className="grn-field grn-col-5">
-          <span>Supplier</span>
+          <span>{tx("Supplier")}</span>
           <input
             value={form.supplierName}
             disabled={busy}
-            placeholder="Supplier name"
+            placeholder={tx("Supplier name")}
             onChange={(event) => onPatch({ supplierName: event.target.value })}
           />
         </label>
 
         <label className="grn-field grn-col-12">
-          <span>Notes</span>
+          <span>{tx("Notes")}</span>
           <textarea
             value={form.notes}
             disabled={busy}
-            placeholder="Receiving notes"
+            placeholder={tx("Receiving notes")}
             onChange={(event) => onPatch({ notes: event.target.value })}
           />
         </label>

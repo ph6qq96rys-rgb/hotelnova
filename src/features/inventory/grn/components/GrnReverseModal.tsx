@@ -1,6 +1,7 @@
 // GrnReversalModal.tsx
 
 import { useMemo, useState } from "react";
+import { useI18n } from "../../../../i18n";
 import { grnApi } from "../api/grnApi";
 import "../styles/GrnPages.erp.css";
 
@@ -80,6 +81,7 @@ export default function GrnReversalModal({
   onClose,
   onCompleted,
 }: Props) {
+  const { tx } = useI18n();
   const existingReason = clean(grn?.reversalReason ?? grn?.reverseReason);
   const [reason, setReason] = useState(existingReason);
   const [rejectReason, setRejectReason] = useState("");
@@ -121,9 +123,9 @@ export default function GrnReversalModal({
   const title = useMemo(
     () =>
       mode === "approval"
-        ? "Approve Goods Receipt Reversal"
-        : "Request Goods Receipt Reversal",
-    [mode],
+        ? tx("Approve Goods Receipt Reversal")
+        : tx("Request Goods Receipt Reversal"),
+    [mode, tx],
   );
 
   if (!open || !grn) return null;
@@ -160,7 +162,7 @@ export default function GrnReversalModal({
       await onCompleted();
       onClose();
     } catch (err) {
-      setError(apiError(err, "Unable to approve reversal."));
+      setError(apiError(err, tx("Unable to approve reversal.")));
     } finally {
       setSubmitting(null);
     }
@@ -180,7 +182,7 @@ export default function GrnReversalModal({
       await onCompleted();
       onClose();
     } catch (err) {
-      setError(apiError(err, "Unable to reject reversal."));
+      setError(apiError(err, tx("Unable to reject reversal.")));
     } finally {
       setSubmitting(null);
     }
@@ -196,12 +198,12 @@ export default function GrnReversalModal({
       >
         <header className="grn-reversal-modal__header">
           <div>
-            <div className="grn-reversal-modal__kicker">Inventory Control</div>
+            <div className="grn-reversal-modal__kicker">{tx("Inventory Control")}</div>
             <h2 id="grn-reversal-title">{title}</h2>
             <p>
               {mode === "approval"
-                ? "Review the request before approving the real inventory reversal."
-                : "Submit a reversal request for manager approval."}
+                ? tx("Review the request before approving the real inventory reversal.")
+                : tx("Submit a reversal request for manager approval.")}
             </p>
           </div>
 
@@ -210,7 +212,7 @@ export default function GrnReversalModal({
             className="grn-reversal-modal__close"
             onClick={onClose}
             disabled={Boolean(submitting) || busy}
-            aria-label="Close dialog"
+            aria-label={tx("Close dialog")}
           >
             
           </button>
@@ -218,19 +220,19 @@ export default function GrnReversalModal({
 
         <div className="grn-reversal-modal__summary">
           <div>
-            <span>GRN Number</span>
-            <strong>{grn.grnNumber || "Pending GRN number"}</strong>
+            <span>{tx("GRN Number")}</span>
+            <strong>{grn.grnNumber || tx("Pending GRN number")}</strong>
           </div>
           <div>
-            <span>Supplier</span>
+            <span>{tx("Supplier")}</span>
             <strong>{grn.supplierName || "-"}</strong>
           </div>
           <div>
-            <span>Receiving Warehouse</span>
+            <span>{tx("Receiving Warehouse")}</span>
             <strong>{grn.receivingLocationName || "-"}</strong>
           </div>
           <div>
-            <span>Received Date</span>
+            <span>{tx("Received Date")}</span>
             <strong>{formatDate(grn.receivedDate)}</strong>
           </div>
         </div>
@@ -238,16 +240,16 @@ export default function GrnReversalModal({
         {mode === "request" ? (
           <>
             <div className="grn-reversal-modal__alert grn-reversal-modal__alert--warning">
-              <strong>This request requires approval.</strong>
+              <strong>{tx("This request requires approval.")}</strong>
               <ul>
-                <li>The receipt will not be reversed immediately.</li>
-                <li>A manager must approve the request.</li>
-                <li>FIFO, ledger, and stock balances change only after approval.</li>
+                <li>{tx("The receipt will not be reversed immediately.")}</li>
+                <li>{tx("A manager must approve the request.")}</li>
+                <li>{tx("FIFO, ledger, and stock balances change only after approval.")}</li>
               </ul>
             </div>
 
             <label className="grn-reversal-modal__field">
-              <span>Reason for Reversal *</span>
+              <span>{tx("Reason for Reversal *")}</span>
               <textarea
                 value={reason}
                 maxLength={MAX_REASON_LENGTH}
@@ -255,37 +257,36 @@ export default function GrnReversalModal({
                   setReason(event.target.value);
                   setError(null);
                 }}
-                placeholder="Enter the business reason for requesting this reversal."
+                placeholder={tx("Enter the business reason for requesting this reversal.")}
                 disabled={Boolean(submitting) || busy}
                 autoFocus
               />
               <small>
-                {cleanReason.length}/{MAX_REASON_LENGTH} characters - Minimum{" "}
-                {MIN_REASON_LENGTH}.
+                {cleanReason.length}/{MAX_REASON_LENGTH} {tx("characters")} - {tx("Minimum")} {MIN_REASON_LENGTH}.
               </small>
             </label>
           </>
         ) : (
           <>
             <div className="grn-reversal-modal__alert grn-reversal-modal__alert--warning">
-              <strong>Approval will perform the real reversal.</strong>
+              <strong>{tx("Approval will perform the real reversal.")}</strong>
               <ul>
-                <li>FIFO lots will be reversed.</li>
-                <li>Inventory ledger reversal entries will be posted.</li>
-                <li>Stock balances will be reduced.</li>
-                <li>The action will fail if stock from this receipt was consumed.</li>
+                <li>{tx("FIFO lots will be reversed.")}</li>
+                <li>{tx("Inventory ledger reversal entries will be posted.")}</li>
+                <li>{tx("Stock balances will be reduced.")}</li>
+                <li>{tx("The action will fail if stock from this receipt was consumed.")}</li>
               </ul>
             </div>
 
             <div className="grn-reversal-modal__field">
-              <span>Requested Reason</span>
+              <span>{tx("Requested Reason")}</span>
               <div className="grn-reversal-modal__readonly">
-                {existingReason || "No reason recorded."}
+                {existingReason || tx("No reason recorded.")}
               </div>
             </div>
 
             <label className="grn-reversal-modal__field">
-              <span>Reject Reason</span>
+              <span>{tx("Reject Reason")}</span>
               <textarea
                 value={rejectReason}
                 maxLength={MAX_REASON_LENGTH}
@@ -293,7 +294,7 @@ export default function GrnReversalModal({
                   setRejectReason(event.target.value);
                   setError(null);
                 }}
-                placeholder="Required only if rejecting the reversal request."
+                placeholder={tx("Required only if rejecting the reversal request.")}
                 disabled={Boolean(submitting) || busy}
               />
             </label>
@@ -306,9 +307,9 @@ export default function GrnReversalModal({
           </div>
         ) : null}
 
-        <footer className="grn-reversal-modal__actions">grnApi.rejectReversal
+        <footer className="grn-reversal-modal__actions">
           <button type="button" className="btn" onClick={onClose} disabled={Boolean(submitting) || busy}>
-            Cancel
+            {tx("Cancel")}
           </button>
 
           {mode === "request" ? (
@@ -318,7 +319,7 @@ export default function GrnReversalModal({
               disabled={!canRequest}
               onClick={() => void submitRequest()}
             >
-              {submitting === "request" ? "Submitting..." : "Request Reversal"}
+              {submitting === "request" ? tx("Submitting...") : tx("Request Reversal")}
             </button>
           ) : (
             <>
@@ -328,7 +329,7 @@ export default function GrnReversalModal({
                 disabled={!canReject}
                 onClick={() => void rejectReversal()}
               >
-                {submitting === "reject" ? "Rejecting..." : "Reject Request"}
+                {submitting === "reject" ? tx("Rejecting...") : tx("Reject Request")}
               </button>
 
               <button
@@ -337,7 +338,7 @@ export default function GrnReversalModal({
                 disabled={!canApprove}
                 onClick={() => void approveReversal()}
               >
-                {submitting === "approve" ? "Reversing..." : "Approve & Reverse"}
+                {submitting === "approve" ? tx("Reversing...") : tx("Approve & Reverse")}
               </button>
             </>
           )}

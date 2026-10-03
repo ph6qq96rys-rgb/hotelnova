@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthProvider";
+import { LanguageSelector } from "../components/LanguageSelector";
+import { useI18n } from "../i18n";
 import { ApiError } from "../auth/auth.api";
 import type { AuthState } from "../auth/auth.types";
 import { canAccessRoute, hasSystemAdminRole } from "../auth/erpAccess";
@@ -161,6 +163,7 @@ function IconAlert() {
 
 export default function LoginPage() {
   const { auth, login, isAuthenticated, isReady } = useAuth();
+  const { t } = useI18n();
   const grnRoutes = useGrnRoutes();
   const salesRoutes = useSalesRoutes();
   const hrRoutes = getHrRoutes();
@@ -218,7 +221,7 @@ export default function LoginPage() {
     const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail || !password) {
-      setError("Email and password are required.");
+      setError(t("login.required"));
       return;
     }
 
@@ -241,7 +244,7 @@ export default function LoginPage() {
         replace: true,
       });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Sign in failed.");
+      setError(err instanceof ApiError ? err.message : t("login.failed"));
       setBusy(false);
     }
   }
@@ -251,7 +254,7 @@ export default function LoginPage() {
   if (isAuthenticated) {
     return (
       <div className="auth-page">
-        <p className="auth-redirecting">Redirecting...</p>
+        <p className="auth-redirecting">{t("login.redirecting")}</p>
       </div>
     );
   }
@@ -261,25 +264,28 @@ export default function LoginPage() {
   return (
     <div className="auth-page">
       <div className="auth-box">
-        <div className="auth-logo">
-          <div className="auth-logo__icon" aria-hidden="true">
-            <IconGrid />
+        <div className="auth-logo-row">
+          <div className="auth-logo">
+            <div className="auth-logo__icon" aria-hidden="true">
+              <IconGrid />
+            </div>
+            <span className="auth-logo__name">{t("app.name")}</span>
           </div>
-          <span className="auth-logo__name">Hotel Nova</span>
+          <LanguageSelector />
         </div>
 
         <div className="auth-card">
           <div className="auth-card__head">
-            <h1 className="auth-card__title">Sign in</h1>
+            <h1 className="auth-card__title">{t("login.title")}</h1>
             <p className="auth-card__sub">
-              Enter your account credentials. Your company workspace is selected automatically.
+              {t("login.subtitle")}
             </p>
           </div>
 
           <form className="auth-form" onSubmit={onSubmit} noValidate>
             <div className="auth-field">
               <label className="auth-label" htmlFor="email">
-                Email address
+                {t("login.email")}
               </label>
 
               <div className="auth-input-wrap">
@@ -302,11 +308,11 @@ export default function LoginPage() {
             <div className="auth-field">
               <div className="auth-field__row">
                 <label className="auth-label" htmlFor="password">
-                  Password
+                  {t("login.password")}
                 </label>
 
                 <Link to="/forgot-password" className="auth-link" tabIndex={busy ? -1 : 0}>
-                  Forgot password?
+                  {t("login.forgotPassword")}
                 </Link>
               </div>
 
@@ -318,7 +324,7 @@ export default function LoginPage() {
                   className="auth-input"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password"
+                  placeholder={t("login.passwordPlaceholder")}
                   autoComplete="current-password"
                   required
                   disabled={busy}
@@ -328,7 +334,7 @@ export default function LoginPage() {
                   type="button"
                   className="auth-input__toggle"
                   onClick={() => setShowPwd((v) => !v)}
-                  aria-label={showPwd ? "Hide password" : "Show password"}
+                  aria-label={showPwd ? t("login.hidePassword") : t("login.showPassword")}
                   tabIndex={-1}
                   disabled={busy}
                 >
@@ -348,7 +354,7 @@ export default function LoginPage() {
               />
 
               <label htmlFor="remember" className="auth-remember__label">
-                Remember me for 30 days
+                {t("login.remember")}
               </label>
             </div>
 
@@ -363,10 +369,10 @@ export default function LoginPage() {
               {busy ? (
                 <>
                   <span className="auth-spinner" aria-hidden="true" />
-                  Signing in...
+                  {t("login.signingIn")}
                 </>
               ) : (
-                "Sign in"
+                t("login.submit")
               )}
             </button>
           </form>
@@ -374,20 +380,20 @@ export default function LoginPage() {
           <div className="auth-divider" style={{ margin: "20px 0 16px" }} />
 
           <p className="auth-security-note">
-            Protected by tenant-platform authentication.
+            {t("login.protected")}
             <br />
-            The backend determines your company workspace after sign in.
+            {t("login.workspaceAfterSignIn")}
           </p>
         </div>
 
-        <p className="auth-footer">Need access? Contact your company administrator.</p>
+        <p className="auth-footer">{t("login.needAccess")}</p>
 
         <div className="auth-trust">
-          <span className="auth-trust__item">Encrypted</span>
+          <span className="auth-trust__item">{t("login.encrypted")}</span>
           <span className="auth-trust__sep" />
-          <span className="auth-trust__item">Secure session</span>
+          <span className="auth-trust__item">{t("login.secureSession")}</span>
           <span className="auth-trust__sep" />
-          <span className="auth-trust__item">Isolated data</span>
+          <span className="auth-trust__item">{t("login.isolatedData")}</span>
         </div>
       </div>
     </div>

@@ -1,3 +1,6 @@
+import StaffMenuRecipePreview from "./StaffMenuRecipePreview";
+import { Button } from "../../../components/ui/button";
+import { useI18n } from "../../../i18n";
 import type { MenuItemDto } from "../types";
 
 function money(value?: number | null): string {
@@ -21,15 +24,17 @@ type Props = {
   items: MenuItemDto[];
   loading?: boolean;
   onOpen: (id: string) => void;
+  onOpenCustomerDetails: (id: string) => void;
   onOpenRecipe: (id: string) => void;
 };
 
-export default function MenuItemsTable({ items, loading, onOpen, onOpenRecipe }: Props) {
+export default function MenuItemsTable({ items, loading, onOpen, onOpenRecipe, onOpenCustomerDetails }: Props) {
+  const { tx } = useI18n();
   if (loading) {
     return (
       <div className="p-card">
         <div className="p-card__body" style={{ color: "var(--p-text-muted)" }}>
-          Loading menu items...
+          {tx("Loading menu items...")}
         </div>
       </div>
     );
@@ -41,8 +46,8 @@ export default function MenuItemsTable({ items, loading, onOpen, onOpenRecipe }:
         <div className="p-card__body mi-empty-state">
           <div className="mi-empty-state__icon"></div>
           <div>
-            <strong>No menu items found.</strong>
-            <p>Adjust your filters or create/import menu items for this branch.</p>
+            <strong>{tx("No menu items found.")}</strong>
+            <p>{tx("Adjust your filters or create/import menu items for this branch.")}</p>
           </div>
         </div>
       </div>
@@ -55,14 +60,14 @@ export default function MenuItemsTable({ items, loading, onOpen, onOpenRecipe }:
         <table className="mi-table">
           <thead>
             <tr>
-              <th>Menu Item</th>
-              <th>Category</th>
-              <th>Codes</th>
-              <th className="mi-number">Price</th>
-              <th className="mi-number">Cost</th>
-              <th className="mi-number">Margin</th>
-              <th>Status</th>
-              <th className="mi-actions-col">Actions</th>
+              <th>{tx("Menu Item")}</th>
+              <th>{tx("Category")}</th>
+              <th>{tx("Codes")}</th>
+              <th className="mi-number">{tx("Price")}</th>
+              <th className="mi-number">{tx("Cost")}</th>
+              <th className="mi-number">{tx("Margin")}</th>
+              <th>{tx("Status")}</th>
+              <th className="mi-actions-col">{tx("Actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -75,10 +80,8 @@ export default function MenuItemsTable({ items, loading, onOpen, onOpenRecipe }:
               return (
                 <tr key={item.id}>
                   <td>
-                    <button className="mi-link-button" onClick={() => onOpen(item.id)}>
-                      {item.name || "Unnamed item"}
-                    </button>
-                    <div className="mi-muted">Units sold: {(item as any).unitsSold ?? 0}</div>
+                    <StaffMenuRecipePreview id={item.id} name={item.name || tx("Unnamed item")} />
+                    <div className="mi-muted">{tx("Units sold")}: {(item as any).unitsSold ?? 0}</div>
                   </td>
                   <td>
                     <div>{categoryName}</div>
@@ -86,29 +89,30 @@ export default function MenuItemsTable({ items, loading, onOpen, onOpenRecipe }:
                   </td>
                   <td>
                     <div>{item.code || "-"}</div>
-                    {item.externalCode && <div className="mi-muted">POS: {item.externalCode}</div>}
+                    {item.externalCode && <div className="mi-muted">{tx("POS")}: {item.externalCode}</div>}
                   </td>
                   <td className="mi-number">{money(item.sellingPrice)}</td>
                   <td className="mi-number">{money(item.cost)}</td>
                   <td className="mi-number">{money(margin)}</td>
                   <td>
                     <span className={`p-badge ${ready ? "p-badge--active" : "p-badge--inactive"}`}>
-                      {ready ? "POS Ready" : "Blocked"}
+                      {ready ? tx("POS Ready") : tx("Blocked")}
                     </span>
                     <div className="mi-readiness-flags">
-                      {item.hasRecipe !== true && <span>Recipe missing</span>}
-                      {item.hasConsumptionLocation !== true && <span>Location missing</span>}
-                      {item.isActive !== true && <span>Inactive</span>}
-                      {item.isAvailableForSale !== true && <span>Not for sale</span>}
+                      {item.hasRecipe !== true && <span>{tx("Recipe missing")}</span>}
+                      {item.hasConsumptionLocation !== true && <span>{tx("Location missing")}</span>}
+                      {item.isActive !== true && <span>{tx("Inactive")}</span>}
+                      {item.isAvailableForSale !== true && <span>{tx("Not for sale")}</span>}
                     </div>
                   </td>
                   <td className="mi-actions-col">
                     <div className="mi-row-actions">
+                      <Button variant="outline" onClick={() => onOpenCustomerDetails(item.id)}>Customer details</Button>
                       <button className="p-btn p-btn--outline" onClick={() => onOpen(item.id)}>
-                        Configure
+                        {tx("Configure")}
                       </button>
                       <button className="p-btn p-btn--accent" onClick={() => onOpenRecipe(item.id)}>
-                        Recipe
+                        {tx("Recipe")}
                       </button>
                     </div>
                   </td>

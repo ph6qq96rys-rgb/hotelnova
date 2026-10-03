@@ -20,10 +20,19 @@ export type BranchStockLocationDto = {
   code?: string | null;
   isActive?: boolean;
   isDefaultIssue?: boolean;
+  canIssue?: boolean;
+  canReceive?: boolean;
+  canSell?: boolean;
+  canProduce?: boolean;
+  canReceiveGrn?: boolean;
+  isMainWarehouse?: boolean;
+  isProductionCenter?: boolean;
+  isConsumptionLocation?: boolean;
 };
 
 export interface UpsertMenuCategoryRequest {
   name: string;
+  localName?: string | null;
   code?: string | null;
   isActive: boolean;
   defaultConsumptionBranchStockLocationId?: string | null;

@@ -229,6 +229,11 @@ export const employeeApi = {
         params: cleanParams(params),
       })
       .then((r) => normalizeLookups(r.data)),
+    unlinkTelegram(companyId: string, employeeId: string) {
+      return http.delete(
+        `${base(companyId)}/employees/${employeeId}/telegram-link`,
+      ).then((r) => r.data);
+    },
     generateTelegramLinkToken(
       companyId: string,
       employeeId: string,
@@ -393,6 +398,7 @@ export const attendanceApi = {
   getReport: (
     companyId: string,
     params: {
+      branchId?: string;
       from: string;
       to: string;
       departmentId?: string;

@@ -201,7 +201,14 @@ function itemId(item: Partial<InventoryItemSearchResult> & Record<string, unknow
 }
 
 function itemName(item: Partial<InventoryItemSearchResult> & Record<string, unknown>): string {
-  return text(item.itemName ?? item.name ?? item.inventoryItemName ?? item.description);
+  const englishName = text(item.itemName ?? item.name ?? item.inventoryItemName ?? item.description).trim();
+  const amharicName = text(item.localName ?? item.amharicName ?? item.inventoryItemLocalName).trim();
+
+  if (amharicName && amharicName !== englishName && !englishName.includes(amharicName)) {
+    return `${englishName || "Unnamed item"} - ${amharicName}`;
+  }
+
+  return englishName;
 }
 
 function itemUomId(item: Partial<InventoryItemSearchResult> & Record<string, unknown>): string {
@@ -228,6 +235,7 @@ function normalizeInventoryItem(
     uomCode,
     baseUomId: text(item.baseUomId ?? uomId),
     baseUomCode: text(item.baseUomCode ?? uomCode),
+    localName: nullableText(item.localName),
     sku: nullableText(item.sku),
     barcode: nullableText(item.barcode),
     isActive: Boolean(item.isActive ?? true),
@@ -305,7 +313,7 @@ function validateDraft(args: {
 
   if (!companyId) return { ok: false, message: "Missing company scope." };
   if (!branchId) return { ok: false, message: "Missing branch scope. Please select a branch before creating an SIV." };
-  if (!fromLocationId) return { ok: false, message: "SIV source warehouse is required." };
+  if (!fromLocationId) return { ok: false, message: "SIV source location is required." };
   if (!toLocationId) return { ok: false, message: DESTINATION_REQUIRED_MESSAGE };
   if (fromLocationId === toLocationId) return { ok: false, message: "SIV source and destination locations cannot be the same." };
   if (!selectedLines.length) return { ok: false, message: "At least one line is required." };
@@ -317,7 +325,7 @@ function validateDraft(args: {
     return available != null && num(line.qty) > available;
   });
 
-  if (overStock) return { ok: false, message: "Requested quantity cannot exceed available warehouse stock." };
+  if (overStock) return { ok: false, message: "Requested quantity cannot exceed available source stock." };
 
   const lineWithError = selectedLines.find((line) => Boolean(line.lineError));
   if (lineWithError) return { ok: false, message: lineWithError.lineError || "Resolve line errors before saving." };
@@ -594,7 +602,7 @@ export function useSivScreenController({
 
       if (!selectedFromLocationId) {
         replaceLine(key, {
-          lineError: "Please select a warehouse before selecting an item.",
+          lineError: "Please select a source location before selecting an item.",
         });
         return;
       }
@@ -623,7 +631,7 @@ export function useSivScreenController({
           availableBaseQty: first ? num(first.availableBaseQty ?? first.availableQty) : undefined,
           loadingFifo: false,
           loadingAvailability: false,
-          lineError: lots.length ? "" : "No FIFO stock available at this warehouse.",
+          lineError: lots.length ? "" : "No FIFO stock available at this source location.",
         });
       } catch (e) {
         if (fifoRequestIds.current[key] !== requestId) return;
@@ -724,7 +732,7 @@ export function useSivScreenController({
       companyId,
       branchId,
       departmentId: departmentId ?? null,
-      requestedByUserId: requestedByUserId ?? null,
+      requestedByUserId: requestedByUserId ?? undefined,
       fromLocationId: selectedFromLocationId,
       toLocationId: selectedToLocationId,
       issueDate,

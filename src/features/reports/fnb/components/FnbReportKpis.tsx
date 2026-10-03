@@ -14,7 +14,8 @@ export function FnbReportKpis({
 }: Props) {
   return (
     <div className="fnb-kpi-grid">
-      {kpis.map((kpi) => (
+      {kpis.filter((kpi) => kpi.key !== "averageUnitCost" &&
+        (kpi.key !== "totalQty" || kpi.label.startsWith("Quantity ("))).map((kpi) => (
         <div key={kpi.key} className="fnb-kpi">
           <span>{kpi.label}</span>
           <strong>{formatReportValue(kpi.value, kpi.format, currencyCode)}</strong>

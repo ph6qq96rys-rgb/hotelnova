@@ -112,12 +112,40 @@ export function useStockTransferCatalogs(
     () => async (signal: AbortSignal): Promise<NormalizedStockLocation[]> => {
       if (!companyId || !branchId) return [];
 
-      return locationsApi.list({
-        companyId,
-        branchId,
-        activeOnly: true,
-        capability: "TransferTo",
-        signal,
+      const branchRows = unwrapArray<BranchOptionDto>(
+        await http.get(`/onboarding/companies/${companyId}/branches`, { signal })
+      ).map(normalizeBranch);
+
+      const branches = branchRows.length > 0
+        ? branchRows
+        : [{ id: branchId, name: "Current branch", code: null, label: "Current branch" }];
+
+      const rows = await Promise.all(
+        branches
+          .filter((branch) => isId(branch.id))
+          .map(async (branch) => {
+            const locations = await locationsApi.list({
+              companyId,
+              branchId: branch.id,
+              activeOnly: true,
+              capability: "TransferTo",
+              signal,
+            });
+
+            return locations.map((location) => ({
+              ...location,
+              branchId: branch.id,
+              label: `${branch.label || branch.name} / ${location.label}`,
+            }));
+          })
+      );
+
+      const seen = new Set<string>();
+      return rows.flat().filter((location) => {
+        const key = `${location.branchId || "company"}:${location.stockLocationId}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
     },
     [companyId, branchId]
@@ -145,14 +173,6 @@ export function useStockTransferCatalogs(
   const itemsState = useAsyncLookup(isId(companyId), itemsLoad);
   const uomsState = useAsyncLookup(isId(companyId), uomsLoad);
 
-  const warehouseBranch = useMemo(() => {
-    return (
-      branchesState.data.find((branch: any) => branch.isMain) ??
-      branchesState.data.find((branch) => branch.code === "HQ") ??
-      branchesState.data[0] ??
-      null
-    );
-  }, [branchesState.data]);
 
   const loading =
     branchesState.loading ||
@@ -171,7 +191,6 @@ export function useStockTransferCatalogs(
 
   return {
     branches: branchesState.data,
-    warehouseBranch,
     fromLocations: fromLocationsState.data,
     toLocations: toLocationsState.data,
     items: itemsState.data,

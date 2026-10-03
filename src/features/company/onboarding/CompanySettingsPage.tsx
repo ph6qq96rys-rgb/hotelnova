@@ -17,8 +17,10 @@ const MONTHS = [
 ];
 
 const DEFAULT_SETTINGS: CompanySettingsDto = {
-  vatEnabled: false,
-  vatRate: 0,
+  vatEnabled: true,
+  vatRate: 15,
+  serviceChargeRate: 10,
+  contingencyRate: 10,
   pricesIncludeVat: false,
   invoicePrefix: "INV",
   receiptPrefix: "RCPT",
@@ -35,6 +37,7 @@ const DEFAULT_SETTINGS: CompanySettingsDto = {
   costingMethod: "FIFO",
   fiscalYearStartMonth: 1,
   baseCurrency: "ETB",
+  defaultLanguage: "en",
   attendanceEnabled: true,
   overtimeEnabled: false,
   telegramEnabled: false,
@@ -73,6 +76,11 @@ export default function CompanySettingsPage() {
       return;
     }
 
+    if ([value.vatRate, value.serviceChargeRate ?? 0, value.contingencyRate ?? 0]
+      .some(rate => !Number.isFinite(rate) || rate < 0 || rate > 100 || Math.abs(rate * 10000 - Math.round(rate * 10000)) > 0.000001)) {
+      setError("Rates must be between 0 and 100 with at most four decimal places.");
+      return;
+    }
     const normalized = normalize(value);
     if (requiresOperationalConfirmation(normalized) && !window.confirm("These settings can affect stock posting, audit controls, or financial behavior across the company. Continue saving?")) return;
 
@@ -114,11 +122,28 @@ export default function CompanySettingsPage() {
             <Input value={String(value.vatRate ?? 0)} onChange={(v) => set("vatRate", Number(v) || 0)} type="number" />
           </Field>
           <ToggleRow title="Prices include VAT" subtitle="Treat displayed sale prices as VAT-inclusive." checked={value.pricesIncludeVat} onChange={(v) => set("pricesIncludeVat", v)} />
+          <Field label="Service charge (%)">
+            <Input type="number" value={String(value.serviceChargeRate ?? 0)} onChange={v => set("serviceChargeRate", Number(v))} />
+          </Field>
+          <Field label="Recipe contingency (%)">
+            <Input type="number" value={String(value.contingencyRate ?? 0)} onChange={v => set("contingencyRate", Number(v))} />
+          </Field>
+          <InfoRow label="Service charge VAT" value="Not taxable" />
+          <InfoRow label="Contingency" value="Recipe-cost allowance only" />
+          <Btn disabled={!canUpdateSettings || saving} onClick={() => setValue(previous => previous ? ({ ...previous,
+            vatEnabled: true, vatRate: 15, pricesIncludeVat: false, serviceChargeRate: 10, contingencyRate: 10,
+          }) : previous)}>Set 15% VAT / 10% service / 10% contingency</Btn>
         </Card>
 
         <Card title="Fiscal defaults" subtitle="Financial year and base reporting currency.">
           <Field label="Base currency">
             <Input value={value.baseCurrency ?? "ETB"} onChange={(v) => set("baseCurrency", v.toUpperCase())} placeholder="ETB" />
+          </Field>
+          <Field label="Default language">
+            <select className="ob-select" value={value.defaultLanguage ?? "en"} onChange={(e) => set("defaultLanguage", normalizeLanguage(e.target.value))}>
+              <option value="en">English</option>
+              <option value="am">አማርኛ</option>
+            </select>
           </Field>
           <Field label="Fiscal year start month">
             <select className="ob-select" value={String(value.fiscalYearStartMonth ?? 1)} onChange={(e) => set("fiscalYearStartMonth", Number(e.target.value))}>
@@ -228,6 +253,7 @@ function normalize(value: CompanySettingsDto): CompanySettingsDto {
     vatRate: Math.min(100, Math.max(0, Number(value.vatRate) || 0)),
     fiscalYearStartMonth: value.fiscalYearStartMonth >= 1 && value.fiscalYearStartMonth <= 12 ? value.fiscalYearStartMonth : 1,
     baseCurrency: (value.baseCurrency || "ETB").trim().toUpperCase().slice(0, 10) || "ETB",
+    defaultLanguage: normalizeLanguage(value.defaultLanguage),
     costingMethod: value.costingMethod === "WeightedAverage" ? "WeightedAverage" : "FIFO",
     invoicePrefix: prefix(value.invoicePrefix, "INV"),
     receiptPrefix: prefix(value.receiptPrefix, "RCPT"),
@@ -237,4 +263,8 @@ function normalize(value: CompanySettingsDto): CompanySettingsDto {
     adjustmentPrefix: prefix(value.adjustmentPrefix, "ADJ"),
     productionPrefix: prefix(value.productionPrefix, "PRD"),
   };
+}
+function normalizeLanguage(language: string | undefined): "en" | "am" {
+  const normalized = (language || "en").trim().toLowerCase();
+  return normalized === "am" || normalized === "am-et" ? "am" : "en";
 }

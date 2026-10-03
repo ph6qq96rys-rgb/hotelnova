@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { http } from "../api/http";
+import { http, refreshAccessToken } from "../api/http";
 import {
   hasAllErpPermissions,
   hasAnyErpPermission,
@@ -93,12 +93,18 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const ACTIVITY_WRITE_THROTTLE_MS = 15 * 1000;
 const LAST_ACTIVITY_KEY = "restaurantfnb.auth.lastActivityAt";
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
+  "click",
+  "focus",
+  "input",
+  "change",
   "keydown",
   "mousedown",
   "mousemove",
   "pointerdown",
+  "pointermove",
   "scroll",
   "touchstart",
+  "wheel",
 ];
 
 function readLastActivityAt(): number | null {
@@ -128,6 +134,19 @@ function firstString(...values: unknown[]): string | null {
   }
 
   return null;
+}
+
+function firstBoolean(...values: unknown[]): boolean {
+  for (const value of values) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes"].includes(normalized)) return true;
+      if (["false", "0", "no"].includes(normalized)) return false;
+    }
+  }
+
+  return false;
 }
 
 function getNestedString(obj: unknown, path: string): string | null {
@@ -267,6 +286,15 @@ function buildAuthUser(
       claims?.branch_id
     ),
 
+    isCompanyScoped: firstBoolean(
+      (response as any).isCompanyScoped,
+      (response as any).IsCompanyScoped,
+      (responseUser as any)?.isCompanyScoped,
+      (responseUser as any)?.IsCompanyScoped,
+      claims?.is_company_scoped,
+      claims?.company_scoped
+    ),
+
     departmentId: firstString(
       responseUser?.departmentId,
       (response as any).departmentId,
@@ -289,6 +317,16 @@ function buildAuthUser(
     permissions,
 
     isActive: responseUser?.isActive,
+    preferredLanguage: firstString(
+      responseUser?.preferredLanguage,
+      (response as any).preferredLanguage,
+      claims?.preferred_language
+    ),
+    defaultLanguage: firstString(
+      responseUser?.defaultLanguage,
+      (response as any).defaultLanguage,
+      claims?.default_language
+    ),
   };
 }
 
@@ -340,6 +378,16 @@ function buildAuthState(
     claims?.branch_id
   );
 
+  const isCompanyScoped = firstBoolean(
+    (response as any).isCompanyScoped,
+    (response as any).IsCompanyScoped,
+    (response.user as any)?.isCompanyScoped,
+    (response.user as any)?.IsCompanyScoped,
+    user?.isCompanyScoped,
+    claims?.is_company_scoped,
+    claims?.company_scoped
+  );
+
   return {
     user,
     accessToken,
@@ -363,6 +411,7 @@ function buildAuthState(
     ),
 
     branchId,
+    isCompanyScoped,
 
     branchName: firstString(
       response.branchName,
@@ -388,6 +437,18 @@ function buildAuthState(
       claims?.store_id
     ),
 
+    preferredLanguage: firstString(
+      user?.preferredLanguage,
+      (response as any).preferredLanguage,
+      claims?.preferred_language
+    ),
+
+    defaultLanguage: firstString(
+      user?.defaultLanguage,
+      (response as any).defaultLanguage,
+      claims?.default_language
+    ),
+
     sessionOnly,
   };
 }
@@ -395,6 +456,29 @@ function buildAuthState(
 function getDefaultReturnUrl(current: string): string {
   return safeReturnUrl(current, "/");
 }
+
+function readCurrentAppScope(): {
+  companyId?: string | null;
+  branchId?: string | null;
+  branchName?: string | null;
+} | null {
+  const raw =
+    sessionStorage.getItem("rfnb.scope.v3") ??
+    localStorage.getItem("rfnb.scope.v3");
+
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as {
+      companyId?: string | null;
+      branchId?: string | null;
+      branchName?: string | null;
+    };
+  } catch {
+    return null;
+  }
+}
+
 function syncAppScopeFromAuth(auth: AuthState | null): void {
   if (!auth?.accessToken) return;
 
@@ -402,8 +486,26 @@ function syncAppScopeFromAuth(auth: AuthState | null): void {
     localStorage.setItem("companyId", auth.companyId);
   }
 
-  if (auth.branchId) {
-    localStorage.setItem("branchId", auth.branchId);
+  const currentScope = readCurrentAppScope();
+  const currentBranchId =
+    currentScope?.companyId === auth.companyId
+      ? firstString(currentScope.branchId)
+      : null;
+  const currentBranchName = currentBranchId
+    ? firstString(currentScope?.branchName)
+    : null;
+  const branchId = auth.isCompanyScoped
+    ? currentBranchId
+    : auth.branchId;
+  const branchName = auth.isCompanyScoped
+    ? currentBranchName
+    : auth.branchName;
+
+  if (branchId) {
+    localStorage.setItem("branchId", branchId);
+  } else {
+    localStorage.removeItem("branchId");
+    sessionStorage.removeItem("branchId");
   }
 
   if (auth.tenantSlug) {
@@ -420,8 +522,8 @@ function syncAppScopeFromAuth(auth: AuthState | null): void {
       companyId: auth.companyId,
       companyName: auth.companyName,
       tenantSlug: auth.tenantSlug,
-      branchId: auth.branchId,
-      branchName: auth.branchName,
+      branchId,
+      branchName,
       storeId: auth.storeId,
       storeName: null,
       stockLocationId: auth.stockLocationId,
@@ -436,6 +538,15 @@ function syncWorkspaceAuthFromAuth(auth: AuthState | null): void {
     return;
   }
 
+  const currentScope = readCurrentAppScope();
+  const currentBranchId =
+    currentScope?.companyId === auth.companyId
+      ? firstString(currentScope.branchId)
+      : null;
+  const currentBranchName = currentBranchId
+    ? firstString(currentScope?.branchName)
+    : null;
+
   saveWorkspaceAuth({
     accessToken: auth.accessToken,
     refreshToken: auth.refreshToken ?? null,
@@ -443,8 +554,8 @@ function syncWorkspaceAuthFromAuth(auth: AuthState | null): void {
     companyId: auth.companyId,
     companyName: auth.companyName ?? "",
     tenantSlug: auth.tenantSlug ?? "",
-    branchId: auth.branchId ?? null,
-    branchName: auth.branchName ?? null,
+    branchId: auth.isCompanyScoped ? currentBranchId : auth.branchId ?? null,
+    branchName: auth.isCompanyScoped ? currentBranchName : auth.branchName ?? null,
     roles: auth.roles ?? [],
     permissions: auth.permissions ?? [],
   });
@@ -576,7 +687,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      timeoutId = window.setTimeout(logoutAndRedirect, remainingMs);
+      timeoutId = window.setTimeout(scheduleIdleCheck, remainingMs);
     };
 
     const markActivity = () => {
@@ -620,57 +731,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [isReady, auth?.accessToken, logoutAndRedirect]);
 
+  useEffect(()=>{
+    const updated=()=>{const next=loadAuth();if(next)setAuth(next);};
+    window.addEventListener("auth:refreshed",updated);
+    return()=>window.removeEventListener("auth:refreshed",updated);
+  },[]);
+
   useEffect(() => {
-    if (!isReady || !auth?.accessToken || !auth.expiresAt) return;
-
-    const refreshOrLogout = async () => {
-      if (!auth.refreshToken) {
-        logoutAndRedirect();
-        return;
-      }
-
-      try {
-        const response = await authApi.refresh({
-          refreshToken: auth.refreshToken,
-          companyId: auth.companyId,
-          branchId: auth.branchId,
-        });
-
-        const next = buildAuthState(response, auth.sessionOnly);
-        saveAuth(next);
-        syncAppScopeFromAuth(next);
-        syncWorkspaceAuthFromAuth(next);
-        setAuth(next);
-      } catch {
-        logoutAndRedirect();
-      }
+    if(!isReady||!auth?.accessToken||!auth.expiresAt)return;
+    let cancelled=false;
+    let timer:number|undefined;
+    const scope=auth.companyId?"workspace":"platform";
+    const refresh=async()=>{
+      if(cancelled)return;
+      if(!auth.refreshToken){logoutAndRedirect();return;}
+      const token=await refreshAccessToken(scope);
+      if(cancelled)return;
+      if(token){const next=loadAuth();if(next)setAuth(next);}
+      else if(loadAuth()?.accessToken){timer=window.setTimeout(()=>void refresh(),15000);}
     };
-
-    if (isTokenExpired(auth.accessToken)) {
-      void refreshOrLogout();
-      return;
-    }
-
-    const expiresAtMs = Date.parse(auth.expiresAt);
-
-    if (!Number.isFinite(expiresAtMs)) {
-      logoutAndRedirect();
-      return;
-    }
-
-    const refreshInMs = Math.max(expiresAtMs - Date.now() - 60_000, 0);
-    const timeout = window.setTimeout(() => {
-      void refreshOrLogout();
-    }, refreshInMs);
-
-    return () => window.clearTimeout(timeout);
-  }, [
-    isReady,
-    auth,
-    auth?.accessToken,
-    auth?.expiresAt,
-    logoutAndRedirect,
-  ]);
+    const expiry=Date.parse(auth.expiresAt);
+    if(!Number.isFinite(expiry))return;
+    timer=window.setTimeout(()=>void refresh(),Math.max(0,expiry-Date.now()-60000));
+    return()=>{cancelled=true;if(timer!==undefined)window.clearTimeout(timer);};
+  },[isReady,auth?.accessToken,auth?.expiresAt,auth?.refreshToken,auth?.companyId,logoutAndRedirect]);
 
   const login = useCallback(
     async (input: LoginRequest, remember = true) => {
@@ -746,6 +830,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         auth.branchId
       ),
 
+      isCompanyScoped: firstBoolean(
+        (user as any).isCompanyScoped,
+        (user as any).IsCompanyScoped,
+        auth.isCompanyScoped
+      ),
+
       departmentId: firstString(
         user.departmentId,
         auth.departmentId
@@ -789,7 +879,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated =
     Boolean(auth?.accessToken) &&
-    !isTokenExpired(auth?.accessToken);
+    (!isTokenExpired(auth?.accessToken) || Boolean(auth?.refreshToken));
 
   const isSystemAdmin = useMemo(
     () => roles.some(isSystemAdminRole),

@@ -1,6 +1,6 @@
 // src/routes/AppRoutes.tsx
 
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 
 import RequireCompany from "../auth/RequireCompany";
@@ -16,6 +16,7 @@ import { loadWorkspaceAuth } from "../auth/workspace-auth.storage";
 
 import AppShell from "../layouts/AppShell";
 
+import AttendanceKioskPage from "../features/hr/pages/attendance/AttendanceKioskPage";
 import LoginPage from "../pages/LoginPage";
 import SystemAdminLoginPage from "../pages/system-admin/SystemAdminLoginPage";
 import RegisterPage from "../pages/RegisterPage";
@@ -46,6 +47,7 @@ const SYSTEM_ADMIN_LOGIN_PATH = "/system-admin-login";
 const PLATFORM_HOME_PATH = "/platform/tenants";
 const LEGACY_COMPANY_ROUTE_ROOTS = [
   "dashboard",
+  "eventmanagment",
   "hr",
   "inventory",
   "inventory-master",
@@ -70,6 +72,7 @@ type AuthLike = {
 };
 
 export default function AppRoutes() {
+  const kioskLocation = useLocation();
   const grnRoutes = useGrnRoutes();
   const salesRoutes = useSalesRoutes();
   const hrRoutes = getHrRoutes();
@@ -94,8 +97,10 @@ export default function AppRoutes() {
     ...(procurementRoutes as AppRouteLike[]),
   ]);
 
+  if (localStorage.getItem("attendance.kioskMode") === "true" && kioskLocation.pathname !== "/attendance-kiosk") return <Navigate to="/attendance-kiosk" replace />;
   return (
     <Routes>
+      <Route path="/attendance-kiosk" element={<AttendanceKioskPage />} />
       <Route path={USER_LOGIN_PATH} element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -471,7 +476,9 @@ function renderRoutes(
           index
           element={
             <RouteGuard route={route}>
-              {route.element as ReactNode}
+              <Suspense fallback={<div className="erp-page" role="status">Loading page...</div>}>
+                {route.element as ReactNode}
+              </Suspense>
             </RouteGuard>
           }
         />
@@ -490,7 +497,9 @@ function renderRoutes(
         path={path}
         element={
           <RouteGuard route={route}>
-            {route.element as ReactNode}
+            <Suspense fallback={<div className="erp-page" role="status">Loading page...</div>}>
+              {route.element as ReactNode}
+            </Suspense>
           </RouteGuard>
         }
       >
@@ -568,4 +577,3 @@ function buildRouteKey(
     `i${index}`,
   ].join("__");
 }
-

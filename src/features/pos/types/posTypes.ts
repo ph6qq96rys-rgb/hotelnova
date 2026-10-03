@@ -64,6 +64,7 @@ export interface SessionReportDto {
 }
 
 export interface MenuItemDto {
+  pricing?: import("../../production/types").MenuPriceBreakdown | null;
   id: Guid;
   name: string;
   code?: string | null;
@@ -167,6 +168,7 @@ export interface BulkPostCogsResultDto {
 }
 
 export interface CartItem {
+  pricing?: import("../../production/types").MenuPriceBreakdown | null;
   id: Guid;
   name: string;
   categoryName?: string | null;

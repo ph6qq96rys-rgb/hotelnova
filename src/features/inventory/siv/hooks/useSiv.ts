@@ -98,6 +98,7 @@ export interface SivDetailsDto {
 export interface InventoryItemSearchResult {
   id: string;
   name: string;
+  localName?: string | null;
   sku: string | null;
   barcode?: string | null;
   uomId: string;
@@ -193,7 +194,7 @@ export interface CreateSivDraftRequest {
   companyId: string;
   branchId: string;
   departmentId?: string | null;
-  requestedByUserId?: string | null;
+  requestedByUserId?: string;
   fromLocationId: string;
   toLocationId: string;
   issueDate: string;

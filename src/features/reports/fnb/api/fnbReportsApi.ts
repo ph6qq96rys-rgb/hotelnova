@@ -20,11 +20,14 @@ export type FnbReportCatalogItemDto = {
   supportsItem: boolean;
   supportsCategory: boolean;
   supportsDays: boolean;
+  supportsCostCenter?: boolean;
   description: string;
 };
 
 export type FnbReportCatalogDto = {
   reports: FnbReportCatalogItemDto[];
+  timeZone: string;
+  defaultDate: string;
 };
 
 export type FnbReportQuery = {
@@ -40,6 +43,7 @@ export type FnbReportQuery = {
   costCenterId?: string | null;
   supplierId?: string | null;
   days?: number | null;
+  consumptionType?: string | null;
 };
 
 export type FnbReportKpiDto = {
@@ -63,6 +67,7 @@ export type FnbReportRow = Record<string, unknown> & {
   itemCode?: string;
   itemName?: string;
   locationId?: string | null;
+  consumptionType?: string;
 };
 
 export type FnbReportSummaryDto = {
@@ -86,6 +91,13 @@ export type FnbReportDto = {
   currencyCode: string;
   costingMethod: string;
   periodStatus: string;
+  methodology?: string | null;
+  reconciliation?: {
+    inventoryValue: number;
+    ledgerValue: number;
+    difference: number;
+    isReconciled: boolean;
+  } | null;
   kpis: FnbReportKpiDto[];
   columns: FnbReportColumnDto[];
   warnings: Array<{
@@ -99,19 +111,22 @@ export type FnbReportDto = {
 
 export type FnbReportDrilldownDto = {
   reportKey: string;
+  generatedAtUtc?: string;
   itemId?: string | null;
   itemCode?: string | null;
   itemName?: string | null;
   locationId?: string | null;
   locationName?: string | null;
+  uomName?: string | null;
   ledger: Array<Record<string, unknown>>;
   summary: FnbReportSummaryDto;
+  pagination: { page: number; pageSize: number; totalRows: number };
 };
 
 function reportParams(query: FnbReportQuery) {
   return {
-    from: query.from,
-    to: query.to,
+    from: query.from || undefined,
+    to: query.to || undefined,
     asOfDate: query.asOfDate || undefined,
     locationId: query.locationId || undefined,
     itemId: query.itemId || undefined,
@@ -119,6 +134,7 @@ function reportParams(query: FnbReportQuery) {
     costCenterId: query.costCenterId || undefined,
     supplierId: query.supplierId || undefined,
     days: query.days ?? undefined,
+    consumptionType: query.consumptionType || undefined,
   };
 }
 
@@ -155,6 +171,9 @@ export async function getFnbReportDrilldown(
     sourceId?: string | null;
     sourceType?: string | null;
     bucket?: string | null;
+    page?: number;
+    pageSize?: number;
+    uomName?: string | null;
   },
   signal?: AbortSignal,
 ): Promise<FnbReportDrilldownDto> {
@@ -166,6 +185,9 @@ export async function getFnbReportDrilldown(
         sourceId: query.sourceId || undefined,
         sourceType: query.sourceType || undefined,
         bucket: query.bucket || undefined,
+        page: query.page ?? 1,
+        pageSize: query.pageSize ?? 100,
+        uomName: query.uomName || undefined,
       },
       signal,
     },

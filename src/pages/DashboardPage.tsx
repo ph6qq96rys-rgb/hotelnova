@@ -212,7 +212,7 @@ function useSafeErpNavigation() {
 
 export default function DashboardPage() {
   const { go } = useSafeErpNavigation();
-  const { companyId } = useAppScope();
+  const { companyId, branchId } = useAppScope();
   const auth = useAuth();
 
   const accessIdentity = useMemo(
@@ -348,7 +348,7 @@ export default function DashboardPage() {
       });
 
     return () => controller.abort();
-  }, [companyId, reloadKey]);
+  }, [companyId, branchId, reloadKey]);
 
   if (state.status === "idle" || state.status === "loading") {
     return (

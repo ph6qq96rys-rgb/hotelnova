@@ -6,6 +6,7 @@ import { useSivScreenController } from "../hooks/useSivScreenController";
 import { sivApi } from "../api/sivApi";
 import { sivDetailsPath } from "../utils/sivWorkflowRoutes";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
+import { useI18n } from "../../../../i18n";
 import type {
   FifoIssueCandidateDto,
   InventoryItemSearchResult,
@@ -134,12 +135,20 @@ function getItemUomCode(item: InventoryItemSearchResult): string {
   return item.uomCode || item.baseUomCode || "";
 }
 
+function formatItemName(item: InventoryItemSearchResult): string {
+  const englishName = String(item.name ?? "").trim() || "Unnamed item";
+  const amharicName = String(item.localName ?? "").trim();
+  return amharicName && amharicName !== englishName && !englishName.includes(amharicName)
+    ? `${englishName} - ${amharicName}`
+    : englishName;
+}
+
 function toPickedItem(item?: InventoryItemSearchResult): PickedItem {
   if (!item) return EMPTY_ITEM;
 
   return {
     itemId: item.id,
-    itemName: item.name,
+    itemName: formatItemName(item),
     uomId: getItemUomId(item),
     uomCode: getItemUomCode(item),
   };
@@ -217,6 +226,7 @@ export default function SivDraftEditorScreen({
   initialDraft = null,
 }: Props) {
   const navigate = useErpNavigate();
+  const { tx } = useI18n();
 
   // Keep this as a variable instead of an inline object so the controller can
   // accept `requestedByUserId` without causing excess-property issues if older
@@ -237,11 +247,11 @@ export default function SivDraftEditorScreen({
     error,
     success,
 
-    fromLocations: warehouseLocations,
+    fromLocations: sourceLocations,
     toLocations: destinationLocations,
-    selectedFromLocationId: selectedWarehouseId,
+    selectedFromLocationId: selectedSourceLocationId,
     selectedToLocationId,
-    setSelectedFromLocationId: setSelectedWarehouseId,
+    setSelectedFromLocationId,
     setSelectedToLocationId,
 
     issueDate,
@@ -285,7 +295,7 @@ export default function SivDraftEditorScreen({
 
   const requestingLocationName =
     selectedDestination?.name ??
-    (currentLocationId ? "Current location" : "Your branch location");
+    (currentLocationId ? tx("Current location") : tx("Your branch location"));
 
   const duplicateLineKeys = useMemo(() => {
     const counts = new Map<string, number>();
@@ -340,10 +350,10 @@ export default function SivDraftEditorScreen({
     isGuidLike(draftId);
 
   const saveButtonText = saving
-    ? "Saving..."
+    ? tx("Saving...")
     : isEdit
-      ? "Save changes"
-      : "Save draft";
+      ? tx("Save changes")
+      : tx("Save draft");
 
   const clearClientError = useCallback(() => setClientError(""), []);
 
@@ -356,7 +366,7 @@ export default function SivDraftEditorScreen({
 
   useEffect(() => {
     setItemOptions([]);
-  }, [selectedWarehouseId]);
+  }, [selectedSourceLocationId]);
 
   useEffect(() => {
     clearClientError();
@@ -364,7 +374,7 @@ export default function SivDraftEditorScreen({
     clearClientError,
     issueDate,
     notes,
-    selectedWarehouseId,
+    selectedSourceLocationId,
     selectedToLocationId,
     lines.length,
   ]);
@@ -391,7 +401,7 @@ export default function SivDraftEditorScreen({
         if (!isMounted) return;
 
         if (!draft) {
-          setClientError("Draft not found.");
+          setClientError(tx("Draft not found."));
           return;
         }
 
@@ -399,7 +409,7 @@ export default function SivDraftEditorScreen({
         setEditHydrated(true);
       } catch (err) {
         if (isMounted) {
-          setClientError(getApiError(err, "Failed to load SIV draft."));
+          setClientError(getApiError(err, tx("Failed to load SIV draft.")));
         }
       } finally {
         if (isMounted) setLoadingDraft(false);
@@ -414,7 +424,7 @@ export default function SivDraftEditorScreen({
   }, [companyId, draftId, editHydrated, hydrateDraft, initialDraft, isEdit]);
 
   const loadItemOptions = useCallback(async () => {
-    if (!selectedWarehouseId || itemOptions.length > 0 || itemsLoading) return;
+    if (!selectedSourceLocationId || itemOptions.length > 0 || itemsLoading) return;
 
     setItemsLoading(true);
 
@@ -423,22 +433,22 @@ export default function SivDraftEditorScreen({
       setItemOptions(Array.isArray(items) ? items.filter((item) => item.isActive !== false) : []);
     } catch (err) {
       setItemOptions([]);
-      setClientError(getApiError(err, "Failed to load inventory items."));
+      setClientError(getApiError(err, tx("Failed to load inventory items.")));
     } finally {
       setItemsLoading(false);
     }
-  }, [itemOptions.length, itemsLoading, searchInventoryItems, selectedWarehouseId]);
+  }, [itemOptions.length, itemsLoading, searchInventoryItems, selectedSourceLocationId]);
 
   const handleSave = useCallback(async () => {
     clearClientError();
 
     if (hasDuplicateLines) {
-      setClientError("Duplicate item + batch + UOM combinations are not allowed.");
+      setClientError(tx("Duplicate item + batch + UOM combinations are not allowed."));
       return;
     }
 
     if (hasOverStock) {
-      setClientError("One or more requested quantities exceed available stock.");
+      setClientError(tx("One or more requested quantities exceed available source stock."));
       return;
     }
 
@@ -458,7 +468,7 @@ export default function SivDraftEditorScreen({
 
       if (!savedId) {
         throw new Error(
-          "The draft was saved, but the API did not return a valid SIV ID.",
+          tx("The draft was saved, but the API did not return a valid SIV ID."),
         );
       }
 
@@ -466,7 +476,7 @@ export default function SivDraftEditorScreen({
         replace: true,
       });
     } catch (err) {
-      setClientError(getApiError(err, "Failed to save SIV draft."));
+      setClientError(getApiError(err, tx("Failed to save SIV draft.")));
     }
   }, [
     branchId,
@@ -488,12 +498,12 @@ export default function SivDraftEditorScreen({
     clearClientError();
 
     if (hasDuplicateLines) {
-      setClientError("Duplicate item + batch + UOM combinations are not allowed.");
+      setClientError(tx("Duplicate item + batch + UOM combinations are not allowed."));
       return;
     }
 
     if (hasOverStock) {
-      setClientError("One or more requested quantities exceed available stock.");
+      setClientError(tx("One or more requested quantities exceed available source stock."));
       return;
     }
 
@@ -502,7 +512,7 @@ export default function SivDraftEditorScreen({
     // Submission is a workflow transition for an already persisted draft.
     // It must never create or update the draft implicitly.
     if (!isEdit || !draftId || !isGuidLike(draftId)) {
-      setClientError("Save the draft before submitting it for approval.");
+      setClientError(tx("Save the draft before submitting it for approval."));
       return;
     }
 
@@ -519,7 +529,7 @@ export default function SivDraftEditorScreen({
         replace: true,
       });
     } catch (err) {
-      setClientError(getApiError(err, "Failed to submit SIV for approval."));
+      setClientError(getApiError(err, tx("Failed to submit SIV for approval.")));
     } finally {
       submitLockRef.current = false;
       setSubmitting(false);
@@ -544,12 +554,13 @@ export default function SivDraftEditorScreen({
     void loadItemOptions();
   }, [addLine, clearClientError, loadItemOptions]);
 
-  const handleWarehouseChange = useCallback(
+  const handleSourceChange = useCallback(
     (value: string) => {
       clearClientError();
-      setSelectedWarehouseId(value);
+      setSelectedFromLocationId(value);
+      setItemOptions([]);
     },
-    [clearClientError, setSelectedWarehouseId],
+    [clearClientError, setSelectedFromLocationId],
   );
 
   const handleDestinationChange = useCallback(
@@ -571,7 +582,7 @@ export default function SivDraftEditorScreen({
             fontSize: 13,
           }}
         >
-          Loading...
+          {tx("Loading...")}
         </div>
       </div>
     );
@@ -583,26 +594,26 @@ export default function SivDraftEditorScreen({
     <div className="page siv-page">
       <div className="page-header">
         <div>
-          <div className="page-kicker">Inventory - SIV - {isEdit ? "Edit" : "New"}</div>
+          <div className="page-kicker">{tx("Inventory")} - {tx("SIV")} - {isEdit ? tx("Edit") : tx("New")}</div>
           <div className="page-title">
-            {isEdit ? "Edit Stock Issue Request" : "New Stock Issue Request"}
+            {isEdit ? tx("Edit Stock Issue Request") : tx("New Stock Issue Request")}
           </div>
           <div className="page-sub">
             {isEdit
-              ? "Update lines or header details, then save."
+              ? tx("Update lines or header details, then save.")
               : mustPickDestination
-                ? "Select the warehouse, destination location, and requested items."
-                : "Select the warehouse and items you need. Your destination location is auto-assigned."}
+                ? tx("Select the source, destination, and requested items.")
+                : tx("Add the items you need. Choose Warehouse, Production, or Pastry as the source.")}
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {hasOverStock && (
-            <div className="badge badge-danger" style={{ fontSize: 11 }}>Warning: Qty exceeds available stock</div>
+            <div className="badge badge-danger" style={{ fontSize: 11 }}>{tx("Warning: Qty exceeds source stock")}</div>
           )}
 
           {hasDuplicateLines && (
-            <div className="badge badge-danger" style={{ fontSize: 11 }}>Warning: Duplicate lines</div>
+            <div className="badge badge-danger" style={{ fontSize: 11 }}>{tx("Warning: Duplicate lines")}</div>
           )}
 
           <button className="btn" onClick={handleSave} disabled={!canSave}>
@@ -613,13 +624,13 @@ export default function SivDraftEditorScreen({
             className="btn btn-primary"
             onClick={handleSubmit}
             disabled={!canSubmit}
-            title={isCreate ? "Save the draft before submitting it for approval." : undefined}
+            title={isCreate ? tx("Save the draft before submitting it for approval.") : undefined}
           >
-            {submitting ? "Submitting..." : "Submit for Approval"}
+            {submitting ? tx("Submitting...") : tx("Submit for Approval")}
           </button>
 
           <button className="btn" onClick={() => navigate(-1)} disabled={saving}>
-            Cancel
+            {tx("Cancel")}
           </button>
         </div>
       </div>
@@ -638,9 +649,9 @@ export default function SivDraftEditorScreen({
 
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="card-header">
-          <div className="card-title">Requisition Details</div>
+          <div className="card-title">{tx("Requisition Details")}</div>
           <div className="card-subtitle">
-            You are requesting stock as: <strong>{requestingLocationName}</strong>
+            {tx("You are requesting stock as:")} <strong>{requestingLocationName}</strong>
           </div>
         </div>
 
@@ -654,19 +665,18 @@ export default function SivDraftEditorScreen({
         >
           <div className="field" style={{ marginBottom: 0 }}>
             <label className="field-label">
-              Request from Warehouse
+              {tx("Issue from")}
               <span style={{ color: "var(--danger)", marginLeft: 3 }}>*</span>
             </label>
 
             <select
               className="select"
-              value={selectedWarehouseId}
+              value={selectedSourceLocationId}
               disabled={isDisabledUntilHydrated || loading}
-              onChange={(event) => handleWarehouseChange(event.target.value)}
+              onChange={(event) => handleSourceChange(event.target.value)}
             >
-              <option value="">{loading ? "Loading warehouses..." : "-- Select warehouse --"}</option>
-
-              {warehouseLocations.map((location: LocationOption) => (
+              <option value="">{loading ? tx("Loading source locations...") : tx("-- Select source location --")}</option>
+              {sourceLocations.map((location: LocationOption) => (
                 <option key={location.id} value={location.id}>
                   {location.name}
                   {location.code ? ` (${location.code})` : ""}
@@ -675,13 +685,13 @@ export default function SivDraftEditorScreen({
             </select>
 
             <div style={{ marginTop: 5, fontSize: 11, color: "var(--text-muted)" }}>
-              Stock will be pulled from this warehouse.
+              {tx("Choose the stock source: Warehouse, Production, or Pastry.")}
             </div>
           </div>
 
           <div className="field" style={{ marginBottom: 0 }}>
             <label className="field-label">
-              Deliver to Location
+              {tx("Deliver to Location")}
               <span style={{ color: "var(--danger)", marginLeft: 3 }}>*</span>
             </label>
 
@@ -692,7 +702,7 @@ export default function SivDraftEditorScreen({
                 disabled={isDisabledUntilHydrated || loading}
                 onChange={(event) => handleDestinationChange(event.target.value)}
               >
-                <option value="">{loading ? "Loading warehouses..." : "-- Select warehouse --"}</option>
+                <option value="">{loading ? tx("Loading destinations...") : tx("-- Select destination --")}</option>
 
                 {destinationLocations.map((location: LocationOption) => (
                   <option key={location.id} value={location.id}>
@@ -731,15 +741,15 @@ export default function SivDraftEditorScreen({
 
             <div style={{ marginTop: 5, fontSize: 11, color: "var(--text-muted)" }}>
               {mustPickDestination
-                ? "Choose the consuming location receiving this issue."
+                ? tx("Choose the consuming location receiving this issue.")
                 : selectedToLocationId
-                  ? "Auto-assigned because only one destination location is available."
-                  : "No destination location is assigned to your user. Ask an admin to assign a consumption location."}
+                  ? tx("Auto-assigned because only one destination location is available.")
+                  : tx("No destination location is assigned to your user. Ask an admin to assign a consumption location.")}
             </div>
           </div>
 
           <div className="field" style={{ marginBottom: 0 }}>
-            <label className="field-label">Required by Date</label>
+            <label className="field-label">{tx("Required by Date")}</label>
             <input
               className="input"
               type="date"
@@ -753,7 +763,7 @@ export default function SivDraftEditorScreen({
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1", marginBottom: 0 }}>
-            <label className="field-label">Purpose / Remarks</label>
+            <label className="field-label">{tx("Purpose / Remarks")}</label>
             <textarea
               className="input siv-textarea"
               value={notes}
@@ -762,7 +772,7 @@ export default function SivDraftEditorScreen({
                 clearClientError();
                 setNotes(event.target.value);
               }}
-              placeholder="Describe the purpose of this requisition."
+              placeholder={tx("Describe the purpose of this requisition.")}
               rows={2}
             />
           </div>
@@ -772,31 +782,31 @@ export default function SivDraftEditorScreen({
       <div className="card" style={{ padding: 0 }}>
         <div className="card-header">
           <div>
-            <div className="card-title">Requested Items</div>
+            <div className="card-title">{tx("Requested Items")}</div>
             <div className="card-subtitle">
               {selectedLines.length > 0
-                ? `${selectedLines.length} item${selectedLines.length === 1 ? "" : "s"} - Total qty: ${formatQty(totalQty)}`
-                : "Add the items you need from the selected warehouse."}
+                ? `${selectedLines.length} ${tx(selectedLines.length === 1 ? "item" : "items")} - ${tx("Total qty")}: ${formatQty(totalQty)}`
+                : tx("Add the items you need from the selected source location.")}
             </div>
           </div>
 
           <button
             className="btn btn-sm"
             onClick={handleAddLine}
-            disabled={isDisabledUntilHydrated || !selectedWarehouseId || !selectedToLocationId}
+            disabled={isDisabledUntilHydrated || !selectedSourceLocationId || !selectedToLocationId}
             title={
-              !selectedWarehouseId
-                ? "Select a warehouse first"
+              !selectedSourceLocationId
+                ? tx("Select a source location first")
                 : !selectedToLocationId
-                  ? "Select a destination first"
-                  : "Add a line"
+                  ? tx("Select a destination first")
+                  : tx("Add a line")
             }
           >
-            + Add item
+            {tx("+ Add item")}
           </button>
         </div>
 
-        {(!selectedWarehouseId || !selectedToLocationId) && (
+        {(!selectedSourceLocationId || !selectedToLocationId) && (
           <div
             style={{
               padding: "14px 16px",
@@ -805,7 +815,7 @@ export default function SivDraftEditorScreen({
               fontSize: 13,
               color: "var(--text-muted)",
             }}
-          >Info: Select a warehouse and destination location above before adding items.</div>
+          >{tx("Info: Source and destination locations are required before adding items.")}</div>
         )}
 
         <div style={{ overflowX: "auto" }}>
@@ -813,20 +823,20 @@ export default function SivDraftEditorScreen({
             <thead>
               <tr>
                 <th style={{ width: 40 }}>#</th>
-                <th style={{ width: 300 }}>Item</th>
-                <th style={{ width: 240 }}>FIFO Lot</th>
-                <th style={{ width: 80 }}>UOM</th>
-                <th style={{ width: 110, textAlign: "right" }}>Available</th>
-                <th style={{ width: 110, textAlign: "right" }}>Request Qty</th>
-                <th style={{ width: 120 }}>Batch</th>
-                <th style={{ width: 110 }}>Expiry</th>
-                <th>Notes</th>
+                <th style={{ width: 300 }}>{tx("Item")}</th>
+                <th style={{ width: 240 }}>{tx("FIFO Lot")}</th>
+                <th style={{ width: 80 }}>{tx("UOM")}</th>
+                <th style={{ width: 110, textAlign: "right" }}>{tx("Available")}</th>
+                <th style={{ width: 110, textAlign: "right" }}>{tx("Request Qty")}</th>
+                <th style={{ width: 120 }}>{tx("Batch")}</th>
+                <th style={{ width: 110 }}>{tx("Expiry")}</th>
+                <th>{tx("Notes")}</th>
                 <th style={{ width: 52 }} />
               </tr>
             </thead>
 
             <tbody>
-              {!selectedWarehouseId || !selectedToLocationId ? (
+              {!selectedSourceLocationId || !selectedToLocationId ? (
                 <tr>
                   <td
                     colSpan={10}
@@ -837,7 +847,7 @@ export default function SivDraftEditorScreen({
                       fontSize: 13,
                     }}
                   >
-                    Select a warehouse and destination location above to start adding items.
+                    {tx("Source and destination locations are required before adding items.")}
                   </td>
                 </tr>
               ) : (
@@ -851,8 +861,8 @@ export default function SivDraftEditorScreen({
 
                   const lineError =
                     line.lineError ||
-                    (isDuplicate ? "Duplicate item + batch + UOM on this request." : "") ||
-                    (isOverStock ? `Exceeds available stock (${formatQty(availableQty)}).` : "");
+                    (isDuplicate ? tx("Duplicate item + batch + UOM on this request.") : "") ||
+                    (isOverStock ? `${tx("Exceeds available stock")} (${formatQty(availableQty)}).` : "");
 
                   return (
                     <tr
@@ -883,7 +893,7 @@ export default function SivDraftEditorScreen({
                           className="select"
                           style={{ fontSize: 12 }}
                           value={line.itemId}
-                          disabled={!selectedWarehouseId || isDisabledUntilHydrated || itemsLoading}
+                          disabled={!selectedSourceLocationId || isDisabledUntilHydrated || itemsLoading}
                           onFocus={() => void loadItemOptions()}
                           onChange={(event) => {
                             clearClientError();
@@ -891,22 +901,23 @@ export default function SivDraftEditorScreen({
                             void onPickItem(line.key, toPickedItem(item));
                           }}
                         >
-                          <option value="">{itemsLoading ? "Loading items..." : "-- Select item --"}</option>
+                          <option value="">{itemsLoading ? tx("Loading items...") : tx("-- Select item --")}</option>
 
                           {line.itemId &&
                             !itemOptions.some((item) => item.id === line.itemId) && (
                               <option key={`saved-item-${line.key}-${line.itemId}`} value={line.itemId}>
-                                {line.itemName || "Saved item"}
+                                {line.itemName || tx("Saved item")}
                                 {line.uomCode ? ` - ${line.uomCode}` : ""}
                               </option>
                             )}
 
                           {itemOptions.map((item) => {
                             const uomCode = getItemUomCode(item);
+                            const itemName = formatItemName(item);
 
                             return (
                               <option key={item.id} value={item.id}>
-                                {item.name}
+                                {itemName}
                                 {item.sku ? ` - ${item.sku}` : ""}
                                 {uomCode ? ` - ${uomCode}` : ""}
                               </option>
@@ -931,7 +942,7 @@ export default function SivDraftEditorScreen({
                       <td style={{ padding: "8px 10px" }}>
                         {line.loadingFifo ? (
                           <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 0" }}>
-                            Loading...
+                            {tx("Loading...")}
                           </div>
                         ) : line.fifoOptions.length > 0 ? (
                           <select
@@ -944,7 +955,7 @@ export default function SivDraftEditorScreen({
                               onChangeFifo(line.key, event.target.value);
                             }}
                           >
-                            <option value="">-- Select lot --</option>
+                            <option value="">{tx("-- Select lot --")}</option>
 
                             {line.fifoOptions.map((option) => {
                               const fifoOptionKey = getFifoOptionKey(option);
@@ -958,7 +969,7 @@ export default function SivDraftEditorScreen({
                           </select>
                         ) : line.itemId ? (
                           <div style={{ fontSize: 12, color: "var(--danger)", padding: "8px 0" }}>
-                            No stock available at this warehouse.
+                            {tx("No stock available at this source location.")}
                           </div>
                         ) : (
                           <div style={{ fontSize: 12, color: "var(--text-soft)", padding: "8px 0" }}>-</div>
@@ -1033,10 +1044,10 @@ export default function SivDraftEditorScreen({
                             color: expired ? "var(--danger)" : "var(--text-muted)",
                             borderColor: expired ? "var(--danger)" : undefined,
                           }}
-                          value={toDateInputValue(line.expiryDate) || "No expiry"}
+                          value={toDateInputValue(line.expiryDate) || tx("No expiry")}
                           readOnly
                           disabled
-                          title={expired ? "This lot has expired" : undefined}
+                          title={expired ? tx("This lot has expired") : undefined}
                         />
                       </td>
 
@@ -1045,7 +1056,7 @@ export default function SivDraftEditorScreen({
                           className="input"
                           style={{ minHeight: 60, fontSize: 12, resize: "vertical" }}
                           value={line.remarks}
-                          placeholder="Optional"
+                          placeholder={tx("Optional")}
                           disabled={isDisabledUntilHydrated}
                           onChange={(event) => {
                             clearClientError();
@@ -1054,11 +1065,11 @@ export default function SivDraftEditorScreen({
                         />
 
                         {lineError && (
-                          <div style={{ marginTop: 5, color: "var(--danger)", fontSize: 11 }}>Warning: {lineError}</div>
+                          <div style={{ marginTop: 5, color: "var(--danger)", fontSize: 11 }}>{tx("Warning:")} {lineError}</div>
                         )}
 
                         {expired && !lineError && (
-                          <div style={{ fontSize: 11, color: "var(--warn)", marginTop: 3 }}>Warning: Selected lot has expired.</div>
+                          <div style={{ fontSize: 11, color: "var(--warn)", marginTop: 3 }}>{tx("Warning: Selected lot has expired.")}</div>
                         )}
                       </td>
 
@@ -1075,9 +1086,9 @@ export default function SivDraftEditorScreen({
                             removeLine(line.key);
                           }}
                           disabled={lines.length === 1 || isDisabledUntilHydrated}
-                          title="Remove this line"
+                          title={tx("Remove this line")}
                         >
-                          '-''-'...'-''-''
+                          {tx("Remove")}
                         </button>
                       </td>
                     </tr>
@@ -1099,7 +1110,7 @@ export default function SivDraftEditorScreen({
                       color: "var(--text-muted)",
                     }}
                   >
-                    Total requested
+                    {tx("Total requested")}
                   </td>
 
                   <td
@@ -1133,15 +1144,15 @@ export default function SivDraftEditorScreen({
             flexWrap: "wrap",
           }}
         >
-          <span>Info: Requested qty cannot exceed available warehouse stock.</span>
-          <span>Duplicate item + batch + UOM combinations are blocked.</span>
-          <span>Batch and expiry are assigned from the selected FIFO lot.</span>
+          <span>{tx("Info: Requested qty cannot exceed available source stock.")}</span>
+          <span>{tx("Duplicate item + batch + UOM combinations are blocked.")}</span>
+          <span>{tx("Batch and expiry are assigned from the selected FIFO lot.")}</span>
         </div>
       </div>
 
       <div className="siv-bottom-actions">
         <button className="btn" onClick={() => navigate(-1)} disabled={saving}>
-          Cancel
+          {tx("Cancel")}
         </button>
 
         <button className="btn" onClick={handleSave} disabled={!canSave}>
@@ -1152,11 +1163,12 @@ export default function SivDraftEditorScreen({
           className="btn btn-primary"
           onClick={handleSubmit}
           disabled={!canSubmit}
-          title={isCreate ? "Save the draft before submitting it for approval." : undefined}
+          title={isCreate ? tx("Save the draft before submitting it for approval.") : undefined}
         >
-          {submitting ? "Submitting..." : "Submit for Approval"}
+          {submitting ? tx("Submitting...") : tx("Submit for Approval")}
         </button>
       </div>
     </div>
   );
 }
+

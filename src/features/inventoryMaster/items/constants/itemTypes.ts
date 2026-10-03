@@ -8,7 +8,8 @@ export type ItemType =
   | "Service"
   | "NonStock"
   | "Ingredient"
-  | "StockItem";
+  | "StockItem"
+  | "MenuItem";
 
 export interface ItemTypeOption {
   value: ItemType;
@@ -23,6 +24,7 @@ export const ITEM_TYPES: ItemTypeOption[] = [
   { value: "SemiFinished", label: "Semi-Finished", help: "Intermediate output used in further production" },
   { value: "FinishedGood", label: "Finished Good", help: "Sellable item / final product" },
   { value: "StockItem",    label: "Stock Item",    help: "Generic stocked item, not used in production" },
+  { value: "MenuItem",     label: "Menu Item",     help: "Menu-facing item sold or consumed through POS" },
   { value: "NonStock",     label: "Non-Stock",     help: "Master record only, no FIFO tracking" },
   { value: "Service",      label: "Service",       help: "No physical stock, no FIFO" },
 ];

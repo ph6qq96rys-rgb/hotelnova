@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAppScope } from "../app/useAppScope";
+import { formatCurrency } from "./currency/currencyFormat";
+import { useCompanyCurrency } from "./currency/useCompanyCurrency";
 import {
   posApi,
   type PosScope,
@@ -30,10 +32,7 @@ type ApiMenuItem = MenuItemDto & {
 const SEARCH_DEBOUNCE_MS = 250;
 
 function formatMoney(value: number, currency: string): string {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency,
-  }).format(value);
+  return formatCurrency(value, currency);
 }
 
 function extractError(error: unknown, fallback: string): string {
@@ -150,10 +149,12 @@ function itemBlockReason(item: MenuItemDto): string {
 export default function RestaurantMenuPage({
   restaurantName = "HOTELNOVA",
   menuQrSrc = "/assets/menu-qr.png",
-  currency = "USD",
+  currency,
   onAddItem,
 }: RestaurantMenuPageProps) {
   const { companyId, branchId } = useAppScope();
+  const companyCurrency = useCompanyCurrency();
+  const activeCurrency = currency || companyCurrency;
 
   const scope = useMemo<PosScope>(
     () => ({
@@ -431,7 +432,7 @@ export default function RestaurantMenuPage({
                       <strong>
                         {formatMoney(
                           Number(item.sellingPrice ?? 0),
-                          currency,
+                          activeCurrency,
                         )}
                       </strong>
                     </div>

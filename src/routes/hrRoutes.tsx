@@ -22,6 +22,7 @@ import EmployeeFormPage from "../features/hr/pages/Employees/Employeeformpage";
 import EmployeeConfirmPage from "../features/hr/pages/Employees/EmployeeConfirmPage";
 import EmployeeTerminatePage from "../features/hr/pages/Employees/Employeeterminatepage";
 
+import AttendanceKioskAdminPage from "../features/hr/pages/attendance/AttendanceKioskAdminPage";
 import AttendancePage from "../features/hr/pages/attendance/AttendancePage";
 import AttendanceConfigurationPage from "../features/hr/pages/attendance/AttendanceConfigurationPage";
 import BranchAttendanceQrGeneratorPage from "../features/hr/pages/attendance/BranchAttendanceQrGeneratorPage";
@@ -63,6 +64,11 @@ const HR_SECTION = "Human Resources";
 export function getHrRoutes(): AppRoute[] {
   return [
     {
+      path: "hr/attendance/kiosks", label: "Attendance Kiosks", element: <AttendanceKioskAdminPage />,
+      icon: <Clock size={18} />, nav: true, section: HR_SECTION, order: 35,
+      permissions: ["hr.attendance.view"],
+    },
+    {
       path: "hr",
       label: "HR",
       element: <HRDashboardPage />,
@@ -86,30 +92,35 @@ export function getHrRoutes(): AppRoute[] {
 
     {
       path: "hr/employees/new",
+      permissions: ["hr.employees.create"],
       element: <EmployeeFormPage />,
       nav: false,
     },
 
     {
       path: "hr/employees/:employeeId",
+      permissions: ["hr.employees.view"],
       element: <EmployeeDetailPage />,
       nav: false,
     },
 
     {
       path: "hr/employees/:employeeId/edit",
+      permissions: ["hr.employees.update"],
       element: <EmployeeFormPage />,
       nav: false,
     },
 
     {
       path: "hr/employees/:employeeId/confirm",
+      permissions: ["hr.employees.update"],
       element: <EmployeeConfirmPage />,
       nav: false,
     },
 
     {
       path: "hr/employees/:employeeId/terminate",
+      permissions: ["hr.employees.update"],
       element: <EmployeeTerminatePage />,
       nav: false,
     },

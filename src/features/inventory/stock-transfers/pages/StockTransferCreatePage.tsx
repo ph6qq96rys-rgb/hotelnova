@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
 import { stockTransfersApi } from "../api/stockTransfersApi";
@@ -75,11 +75,11 @@ function validateTransferDraft(draft: TransferDraft): FieldErrors {
   const fromLocationId = clean(draft.fromLocationId);
   const toLocationId = clean(draft.toLocationId);
 
-  if (!fromLocationId) next.fromLocationId = "From location is required.";
-  if (!toLocationId) next.toLocationId = "To location is required.";
+  if (!fromLocationId) next.fromLocationId = "Source location is required.";
+  if (!toLocationId) next.toLocationId = "Destination location is required.";
 
   if (fromLocationId && toLocationId && fromLocationId === toLocationId) {
-    next.toLocationId = "To location must be different from From location.";
+    next.toLocationId = "Destination location must be different from the source location.";
   }
 
   if (!clean(draft.transferDate)) next.transferDate = "Transfer date is required.";
@@ -114,9 +114,20 @@ function hasErrors(errors: FieldErrors): boolean {
 
 export default function StockTransferCreatePage() {
   const navigate = useNavigate();
-  const { companyId, branchId } = useAppScope();
+  const [search] = useSearchParams();
+  const { companyId, branchId: selectedBranchId } = useAppScope();
+  const branchId = search.get("branchId") || selectedBranchId;
 
-  const [form, setForm] = useState<TransferDraft>(() => emptyDraft());
+  const [form, setForm] = useState<TransferDraft>(() => {
+    const draft=emptyDraft();
+    if(search.get("itemId")&&search.get("fromLocationId")&&search.get("toLocationId")) {
+      draft.fromLocationId=search.get("fromLocationId")!;draft.toLocationId=search.get("toLocationId")!;
+      draft.notes="Prepared from procurement stock availability review.";
+      const quantity=Number(search.get("quantity"));
+      draft.lines=[{itemId:search.get("itemId")!,unitId:search.get("unitId")??"",quantity:Number.isFinite(quantity)&&quantity>0?quantity:0,notes:""}];
+    }
+    return draft;
+  });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [pageState, setPageState] = useState<PageState>({ status: "idle" });
 
@@ -311,7 +322,7 @@ function PageHeader({ submitError }: { submitError: string | null }) {
       <div>
         <div style={{ fontSize: 22, fontWeight: 800 }}>Create Stock Transfer</div>
         <div style={{ opacity: 0.75, marginTop: 6 }}>
-          Transfer stock between branch locations with controlled line items.
+          Move stock between department, branch, or operational stock locations. Use SIV when a department requests stock from a warehouse.
         </div>
 
         {submitError ? <div style={{ marginTop: 10, ...errorStyle }}>{submitError}</div> : null}
@@ -364,7 +375,7 @@ function HeaderCard({
     <div style={cardStyle}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 12 }}>
         <div style={{ gridColumn: "span 4" }}>
-          <label style={labelStyle}>From Location *</label>
+          <label style={labelStyle}>Source Location *</label>
           <select
             style={inputStyle(Boolean(errors.fromLocationId))}
             value={fromId}
@@ -378,7 +389,7 @@ function HeaderCard({
             }}
           >
             <option value="">
-              {catalogsLoading ? "Loading locations..." : "Select from location..."}
+              {catalogsLoading ? "Loading locations..." : "Select source location..."}
             </option>
 
             {fromLocationOptions
@@ -393,7 +404,7 @@ function HeaderCard({
         </div>
 
         <div style={{ gridColumn: "span 4" }}>
-          <label style={labelStyle}>To Location *</label>
+          <label style={labelStyle}>Destination Location *</label>
           <select
             style={inputStyle(Boolean(errors.toLocationId))}
             value={toId}
@@ -407,7 +418,7 @@ function HeaderCard({
             }}
           >
             <option value="">
-              {catalogsLoading ? "Loading locations..." : "Select to location..."}
+              {catalogsLoading ? "Loading locations..." : "Select destination location..."}
             </option>
 
             {toLocationOptions
@@ -440,7 +451,7 @@ function HeaderCard({
             value={form.notes}
             disabled={busy}
             onChange={(event) => onChange({ notes: event.target.value })}
-            placeholder="Optional transfer notes..."
+            placeholder="Movement reason, department handoff, or branch transfer note..."
           />
         </div>
       </div>

@@ -52,8 +52,8 @@ function toForm(branch: BranchDto): CreateBranchDto {
     city: String(x.city ?? ""),
     addressLine: String(x.addressLine ?? ""),
     isMain: Boolean(x.isMain),
-    hasSalesOperations: x.hasSalesOperations ?? true,
-  } as any;
+    hasSalesOperations: branch.hasSalesOperations ?? true,
+  };
 }
 
 function validate(form: CreateBranchDto, setErrors: (e: FieldErrors) => void) {
@@ -73,8 +73,8 @@ function normalize(form: CreateBranchDto): CreateBranchDto {
     city: trimOrNull((form as any).city),
     addressLine: trimOrNull((form as any).addressLine),
     isMain: Boolean((form as any).isMain),
-    hasSalesOperations: (form as any).hasSalesOperations ?? true,
-  } as any;
+    hasSalesOperations: form.hasSalesOperations ?? true,
+  };
 }
 
 function ReadonlyRow(props: { label: string; value?: React.ReactNode }) {
@@ -98,7 +98,7 @@ function BranchForm(props2: { value: CreateBranchDto; errors: FieldErrors; onCha
       <Field label="Address"><TextArea value={String(f.addressLine ?? "")} onChange={(v) => set({ addressLine: v })} /></Field>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 24 }}>
         <Checkbox label="Main branch" checked={Boolean(f.isMain)} onChange={(v) => set({ isMain: v })} />
-        <Checkbox label="Sales-enabled branch" checked={f.hasSalesOperations !== false} onChange={(v) => set({ hasSalesOperations: v })} hint="When enabled, at least one POS/store is required. One or more POS are supported." />
+        <Checkbox label="Sales-enabled branch" checked={f.hasSalesOperations !== false} onChange={(v) => set({ hasSalesOperations: v })} />
       </div>
     </div>
   );
@@ -317,7 +317,7 @@ export function BranchStep(props: Props) {
                   {x.hasSalesOperations !== false && <span className="ob-badge ob-badge--info">Sales-enabled</span>}
                   {active && <span className="ob-badge ob-badge--success">Current branch</span>}
                 </div>
-                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>{x.city ?? "-"} - supports one or more POS/stores</div>
+                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>{x.city ?? "-"} - {branch.hasSalesOperations === false ? "Non-sales branch" : "Sales-enabled branch"}</div>
               </div>
 
               <Btn variant="ghost" onClick={() => selectBranch(branchId)} disabled={!branchId || active}>Use branch</Btn>

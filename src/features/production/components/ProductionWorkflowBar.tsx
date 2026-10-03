@@ -1,6 +1,7 @@
 // src/features/production/components/ProductionWorkflowBar.tsx
 
 import { useNavigate } from "react-router-dom";
+import { useI18n } from "../../../i18n";
 import "../layout/production.css";
 
 type Step = "menu" | "recipe" | "batch";
@@ -37,6 +38,7 @@ function isRealId(value?: string | null): value is string {
 }
 
 export default function ProductionWorkflowBar({ active, menuItemId, batchId }: Props) {
+  const { tx } = useI18n();
   const nav = useNavigate();
   const hasMenuItem = isRealId(menuItemId);
   const hasBatch = isRealId(batchId);
@@ -58,7 +60,7 @@ export default function ProductionWorkflowBar({ active, menuItemId, batchId }: P
   }
 
   return (
-    <nav className="p-workflow-bar" aria-label="Production workflow">
+    <nav className="p-workflow-bar" aria-label={tx("Production workflow")}>
       {STEPS.map((step) => (
         <button
           key={step.key}
@@ -68,7 +70,7 @@ export default function ProductionWorkflowBar({ active, menuItemId, batchId }: P
           aria-current={active === step.key ? "step" : undefined}
         >
           <span className="p-workflow-step__no">{step.no}</span>
-          {step.label}
+          {tx(step.label)}
         </button>
       ))}
     </nav>

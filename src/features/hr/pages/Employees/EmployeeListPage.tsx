@@ -1,6 +1,7 @@
 // src/features/hr/pages/Employees/EmployeeListPage.tsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "../../../../auth/AuthProvider";
 import { useParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
@@ -23,6 +24,8 @@ const STATUS_OPTIONS: EmploymentStatus[] = [
 
 export default function EmployeeListPage() {
   const nav = useErpNavigate();
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission("hr.employees.create");
 
   const { companyId: routeCompanyId } = useParams<{
     companyId: string;
@@ -97,14 +100,14 @@ export default function EmployeeListPage() {
           <div className="page-sub">Manage workforce records and profiles</div>
         </div>
 
-        <button
+        {canCreate && <button
           type="button"
           className="btn btn-primary"
           disabled={!canNavigate}
           onClick={() => nav(paths.employeeNew)}
         >
           + New Employee
-        </button>
+        </button>}
       </div>
 
       {!canNavigate && (
@@ -221,14 +224,14 @@ export default function EmployeeListPage() {
                   }}
                 >
                   No employees found.{" "}
-                  <button
+                  {canCreate && <button
                     type="button"
                     className="btn btn-sm"
                     disabled={!canNavigate}
                     onClick={() => nav(paths.employeeNew)}
                   >
                     Add one
-                  </button>
+                  </button>}
                 </td>
               </tr>
             ) : (
@@ -292,7 +295,7 @@ export default function EmployeeListPage() {
                         nav(paths.employeeDetail(emp.id));
                       }}
                     >
-                      Open to
+                      View profile
                     </button>
                   </td>
                 </tr>

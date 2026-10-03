@@ -10,6 +10,7 @@ import {
 } from "../api/procurementApi";
 import { inventoryItemsApi } from "../../inventoryMaster/items/api/inventoryItemsApi";
 import type { InventoryItemDto, ItemUomDto } from "../../inventoryMaster/items/types";
+import { useI18n } from "../../../i18n";
 import "./procurement.css";
 
 const priorities = ["Low", "Normal", "High", "Urgent", "Emergency"];
@@ -64,6 +65,7 @@ function errorMessage(err: unknown, fallback: string) {
 }
 
 export default function PurchaseRequisitionCreatePage() {
+  const { tx } = useI18n();
   const { companyId } = useParams<{ companyId: string }>();
   const navigate = useNavigate();
   const [priority, setPriority] = useState("Normal");
@@ -96,7 +98,7 @@ export default function PurchaseRequisitionCreatePage() {
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(errorMessage(err, "Unable to load inventory item catalog."));
+        if (!cancelled) setError(tx(errorMessage(err, "Unable to load inventory item catalog.")));
       })
       .finally(() => {
         if (!cancelled) setLoadingItems(false);
@@ -149,7 +151,7 @@ export default function PurchaseRequisitionCreatePage() {
       setSuggestions(rows);
 
       if (rows.length === 0) {
-        setError("No active inventory items are below reorder level.");
+        setError(tx("No active inventory items are below reorder level."));
         return;
       }
 
@@ -162,11 +164,11 @@ export default function PurchaseRequisitionCreatePage() {
         quantity: item.suggestedPurchaseQty,
         estimatedUnitPrice: item.estimatedUnitPrice,
         specification: item.recommendation,
-        availableStockNote: `Available ${item.availableBaseQty}; reorder ${item.reorderLevelBaseQty}; shortage ${item.shortageBaseQty}.`,
+        availableStockNote: `${tx("Available")} ${item.availableBaseQty}; ${tx("reorder")} ${item.reorderLevelBaseQty}; ${tx("shortage")} ${item.shortageBaseQty}.`,
       })));
-      setStockAvailabilityNote(`Prepared from ${rows.length} item(s) below reorder level.`);
+      setStockAvailabilityNote(`${tx("Prepared from")} ${rows.length} ${tx("item(s) below reorder level.")}`);
     } catch (err) {
-      setError(errorMessage(err, "Unable to load reorder suggestions."));
+      setError(tx(errorMessage(err, "Unable to load reorder suggestions.")));
     } finally {
       setLoadingReorder(false);
     }
@@ -186,13 +188,13 @@ export default function PurchaseRequisitionCreatePage() {
       });
 
       if (!result.success) {
-        setError(result.error ?? "Unable to create reorder requisition.");
+        setError(tx(result.error ?? "Unable to create reorder requisition."));
         return;
       }
 
       navigate(`/companies/${companyId}/procurement/requisitions/${result.id}`);
     } catch (err) {
-      setError(errorMessage(err, "Unable to create reorder requisition."));
+      setError(tx(errorMessage(err, "Unable to create reorder requisition.")));
     } finally {
       setSaving(false);
     }
@@ -223,13 +225,13 @@ export default function PurchaseRequisitionCreatePage() {
       });
 
       if (!result.success) {
-        setError(result.error ?? "Unable to save purchase requisition.");
+        setError(tx(result.error ?? "Unable to save purchase requisition."));
         return;
       }
 
       navigate(`/companies/${companyId}/procurement/requisitions/${result.id}`);
     } catch (err: unknown) {
-      setError(errorMessage(err, "Unable to save purchase requisition."));
+      setError(tx(errorMessage(err, "Unable to save purchase requisition.")));
     } finally {
       setSaving(false);
     }
@@ -241,56 +243,56 @@ export default function PurchaseRequisitionCreatePage() {
     <main className="prq-page">
       <header className="prq-page-header">
         <div>
-          <div className="prq-kicker">Procurement / Purchase Requisitions / New</div>
-          <h1>New Purchase Requisition</h1>
-          <p>Prepare a company-scoped purchase request from Main Store reorder levels, or enter exceptional manual demand.</p>
+          <div className="prq-kicker">{tx("Procurement / Purchase Requisitions / New")}</div>
+          <h1>{tx("New Purchase Requisition")}</h1>
+          <p>{tx("Prepare a company-scoped purchase request from Main Store reorder levels, or enter exceptional manual demand.")}</p>
         </div>
         <div className="prq-actions">
-          <button className="prq-btn" type="button" onClick={() => navigate(-1)}>Cancel</button>
-          <button className="prq-btn" type="button" disabled={saving} onClick={() => save(false)}>Save draft</button>
-          <button className="prq-btn prq-btn--primary" type="button" disabled={saving} onClick={() => save(true)}>Submit for approval</button>
+          <button className="prq-btn" type="button" onClick={() => navigate(-1)}>{tx("Cancel")}</button>
+          <button className="prq-btn" type="button" disabled={saving} onClick={() => save(false)}>{tx("Save draft")}</button>
+          <button className="prq-btn prq-btn--primary" type="button" disabled={saving} onClick={() => save(true)}>{tx("Submit for approval")}</button>
         </div>
       </header>
 
-      {error && <div className="prq-alert">{error}</div>}
+      {error && <div className="prq-alert">{tx(error)}</div>}
 
       <section className="prq-panel prq-reorder-panel">
         <div>
-          <h2>Inventory Reorder Preparation</h2>
-          <p>Generate company-scoped requisition lines from active inventory items below reorder level at the Main Warehouse/Main Store.</p>
+          <h2>{tx("Inventory Reorder Preparation")}</h2>
+          <p>{tx("Generate company-scoped requisition lines from active inventory items below reorder level at the Main Warehouse/Main Store.")}</p>
         </div>
         <div className="prq-actions">
           <button className="prq-btn" type="button" disabled={loadingReorder || saving} onClick={loadReorderLines}>
-            <RefreshCw size={16} /> Load below reorder
+            <RefreshCw size={16} /> {tx("Load below reorder")}
           </button>
           <button className="prq-btn" type="button" disabled={saving} onClick={() => createSystemDraft(false)}>
-            Create reorder draft
+            {tx("Create reorder draft")}
           </button>
           <button className="prq-btn prq-btn--primary" type="button" disabled={saving} onClick={() => createSystemDraft(true)}>
-            Create & submit reorder PR
+            {tx("Create & submit reorder PR")}
           </button>
         </div>
         {suggestions.length > 0 && (
           <div className="prq-reorder-summary">
-            <strong>{suggestions.length}</strong> item(s) below reorder level loaded into the requisition lines.
+            <strong>{suggestions.length}</strong> {tx("item(s) below reorder level loaded into the requisition lines.")}
           </div>
         )}
       </section>
 
       <section className="prq-panel prq-form-grid">
-        <label>Priority<select value={priority} onChange={(e) => setPriority(e.target.value)}>{priorities.map((x) => <option key={x}>{x}</option>)}</select></label>
-        <label>Required by<input type="date" value={requiredByDateUtc} onChange={(e) => setRequiredByDateUtc(e.target.value)} /></label>
-        <label>Purchase category<input value={purchaseCategory} onChange={(e) => setPurchaseCategory(e.target.value)} placeholder="Food, beverage, maintenance, service" /></label>
-        <label>Cost center<input value={costCenterCode} onChange={(e) => setCostCenterCode(e.target.value)} placeholder="Optional" /></label>
-        <label>Reference<input value={relatedReference} onChange={(e) => setRelatedReference(e.target.value)} placeholder="Optional project, event, work order" /></label>
-        <label className="prq-span-2">Business justification<textarea value={businessJustification} onChange={(e) => setBusinessJustification(e.target.value)} placeholder="Why this purchase is required" /></label>
-        <label className="prq-span-2">Stock availability note<textarea value={stockAvailabilityNote} onChange={(e) => setStockAvailabilityNote(e.target.value)} placeholder="Current stock, urgency, substitution notes" /></label>
+        <label>{tx("Priority")}<select value={priority} onChange={(e) => setPriority(e.target.value)}>{priorities.map((x) => <option key={x} value={x}>{tx(x)}</option>)}</select></label>
+        <label>{tx("Required by")}<input type="date" value={requiredByDateUtc} onChange={(e) => setRequiredByDateUtc(e.target.value)} /></label>
+        <label>{tx("Purchase category")}<input value={purchaseCategory} onChange={(e) => setPurchaseCategory(e.target.value)} placeholder={tx("Food, beverage, maintenance, service")} /></label>
+        <label>{tx("Cost center")}<input value={costCenterCode} onChange={(e) => setCostCenterCode(e.target.value)} placeholder={tx("Optional")} /></label>
+        <label>{tx("Reference")}<input value={relatedReference} onChange={(e) => setRelatedReference(e.target.value)} placeholder={tx("Optional project, event, work order")} /></label>
+        <label className="prq-span-2">{tx("Business justification")}<textarea value={businessJustification} onChange={(e) => setBusinessJustification(e.target.value)} placeholder={tx("Why this purchase is required")} /></label>
+        <label className="prq-span-2">{tx("Stock availability note")}<textarea value={stockAvailabilityNote} onChange={(e) => setStockAvailabilityNote(e.target.value)} placeholder={tx("Current stock, urgency, substitution notes")} /></label>
       </section>
 
       <section className="prq-panel">
         <div className="prq-section-title">
-          <div><h2>Requested Lines</h2><p>Reorder-generated quantities remain editable before saving or submission.</p></div>
-          <button className="prq-btn" type="button" onClick={() => setLines((current) => [...current, newLine()])}><Plus size={16} /> Add line</button>
+          <div><h2>{tx("Requested Lines")}</h2><p>{tx("Reorder-generated quantities remain editable before saving or submission.")}</p></div>
+          <button className="prq-btn" type="button" onClick={() => setLines((current) => [...current, newLine()])}><Plus size={16} /> {tx("Add line")}</button>
         </div>
         <div className="prq-lines">
           {lines.map((line, index) => {
@@ -308,7 +310,7 @@ export default function PurchaseRequisitionCreatePage() {
                     uomId: e.target.value === "InventoryItem" ? line.uomId : null,
                   })}
                 >
-                  {lineTypes.map((x) => <option key={x}>{x}</option>)}
+                  {lineTypes.map((x) => <option key={x} value={x}>{tx(x)}</option>)}
                 </select>
                 {isInventoryLine ? (
                   <select
@@ -316,13 +318,13 @@ export default function PurchaseRequisitionCreatePage() {
                     onChange={(e) => selectInventoryItem(index, e.target.value)}
                     disabled={loadingItems}
                   >
-                    <option value="">{loadingItems ? "Loading inventory..." : "Select inventory item..."}</option>
+                    <option value="">{loadingItems ? tx("Loading inventory...") : tx("Select inventory item...")}</option>
                     {inventoryItems.map((item) => (
                       <option key={item.id} value={item.id}>{inventoryItemLabel(item)}</option>
                     ))}
                   </select>
                 ) : (
-                  <input value={line.itemName} onChange={(e) => updateLine(index, { itemName: e.target.value })} placeholder="Item or service name" />
+                  <input value={line.itemName} onChange={(e) => updateLine(index, { itemName: e.target.value })} placeholder={tx("Item or service name")} />
                 )}
                 {isInventoryLine ? (
                   <select
@@ -330,27 +332,27 @@ export default function PurchaseRequisitionCreatePage() {
                     onChange={(e) => selectPurchaseUom(index, line.inventoryItemId, e.target.value)}
                     disabled={!line.inventoryItemId || purchaseUoms.length === 0}
                   >
-                    <option value="">{line.inventoryItemId ? "Select purchase UOM..." : "Select item first"}</option>
+                    <option value="">{line.inventoryItemId ? tx("Select purchase UOM...") : tx("Select item first")}</option>
                     {purchaseUoms.map((uom) => (
                       <option key={uom.uomId} value={uom.uomId}>{uomLabel(uom)}</option>
                     ))}
                   </select>
                 ) : (
-                  <input value={line.uomName} onChange={(e) => updateLine(index, { uomName: e.target.value })} placeholder="UOM" />
+                  <input value={line.uomName} onChange={(e) => updateLine(index, { uomName: e.target.value })} placeholder={tx("UOM")} />
                 )}
                 <input type="number" min="0" step="0.0001" value={line.quantity} onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })} />
                 <input type="number" min="0" step="0.01" value={line.estimatedUnitPrice} onChange={(e) => updateLine(index, { estimatedUnitPrice: Number(e.target.value) })} />
                 <strong>ETB {((Number(line.quantity) || 0) * (Number(line.estimatedUnitPrice) || 0)).toFixed(2)}</strong>
-                <button className="prq-icon-btn" type="button" onClick={() => removeLine(index)} aria-label="Remove line"><Trash2 size={16} /></button>
-                <textarea value={line.specification ?? ""} onChange={(e) => updateLine(index, { specification: e.target.value })} placeholder="Specification, brand, grade, pack size" />
+                <button className="prq-icon-btn" type="button" onClick={() => removeLine(index)} aria-label={tx("Remove line")}><Trash2 size={16} /></button>
+                <textarea value={line.specification ?? ""} onChange={(e) => updateLine(index, { specification: e.target.value })} placeholder={tx("Specification, brand, grade, pack size")} />
                 {isInventoryLine && line.inventoryItemId && purchaseUoms.length === 0 && (
-                  <div className="prq-line-note">This inventory item has no active purchase UOM configured.</div>
+                  <div className="prq-line-note">{tx("This inventory item has no active purchase UOM configured.")}</div>
                 )}
               </div>
             );
           })}
         </div>
-        <div className="prq-total"><span>Estimated requisition total</span><strong>ETB {total.toFixed(2)}</strong></div>
+        <div className="prq-total"><span>{tx("Estimated requisition total")}</span><strong>ETB {total.toFixed(2)}</strong></div>
       </section>
     </main>
   );

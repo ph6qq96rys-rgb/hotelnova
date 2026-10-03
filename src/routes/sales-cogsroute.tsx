@@ -1,3 +1,4 @@
+import BranchQrMenuPage from "../features/public-menu/BranchQrMenuPage";
 import {
   BarChart3,
   ClipboardList,
@@ -35,6 +36,7 @@ export type AppRoute = Omit<RouteObject, "children" | "element"> & {
 };
 
 export const salesRoutes: AppRoute[] = [
+  { path: "sales/qr-menu", label: "QR Menu", element: <BranchQrMenuPage />, icon: <ClipboardList size={18} />, nav: true, section: "Sales", order: 15, permissions: ["menu.manage"] },
   {
     path: "sales",
     label: "Sales Dashboard",
@@ -94,6 +96,7 @@ export const salesRoutes: AppRoute[] = [
     nav: false,
     section: "Operations",
     order: 50,
+    permissions: ["operations.view", "operations.manage", "sales.view", "pos.view", "pos.sell", "pos.close"],
   },
 ];
 

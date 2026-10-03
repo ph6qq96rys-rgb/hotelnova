@@ -1,0 +1,18 @@
+import { useEffect,useState } from "react";
+import { http } from "../../../api/http";
+import { Button } from "../../../components/ui/button";
+import { useI18n } from "../../../i18n";
+import type { PurchaseOrder } from "../api/purchasingApi";
+import { apiError,dateTime,money,qty } from "./p2pShared";
+
+const escape=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
+export function downloadPurchaseOrder(po:PurchaseOrder){
+  const e=escape;
+  const html=`<!doctype html><html lang="en"><meta charset="utf-8"><title>${e(po.poNo)} revision ${po.revision}</title><style>body{font-size:14px;margin:40px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid}h1{font-size:24px}p{white-space:pre-wrap}@media print{body{margin:16px}}</style><h1>Purchase order ${e(po.poNo)}</h1><p>Revision ${po.revision} · ${e(po.status)}<br>Supplier: ${e(po.supplierName)}<br>Deliver to: ${e(po.deliveryLocationName)}<br>Order date: ${e(po.orderDate)}<br>Expected delivery: ${e(po.expectedDeliveryDate)}<br>Payment terms: ${po.paymentTermDays} days · Currency: ${e(po.currencyCode)}</p><table><thead><tr><th>Item</th><th>Quantity</th><th>Unit</th><th>Unit price</th><th>Discount %</th><th>Tax %</th><th>Total</th></tr></thead><tbody>${po.lines.map(l=>`<tr><td>${e(l.itemName)}</td><td>${e(qty(l.orderedQty))}</td><td>${e(l.uomName)}</td><td>${e(money(l.unitPrice,po.currencyCode))}</td><td>${l.discountPercent}</td><td>${l.taxRatePercent}</td><td>${e(money(l.lineTotal,po.currencyCode))}</td></tr>`).join("")}</tbody></table><p>Subtotal: ${e(money(po.subtotal,po.currencyCode))}<br>Discount: ${e(money(po.discountTotal,po.currencyCode))}<br>Tax: ${e(money(po.taxTotal,po.currencyCode))}<br><strong>Total: ${e(money(po.grandTotal,po.currencyCode))}</strong></p><h2>Terms</h2><p>${e(po.terms)}</p><p>${e(po.notes)}</p><p>Prepared by: ${e(po.preparedByName)}<br>Approved: ${e(po.approvedAtUtc)}<br>Issued: ${e(po.sentAtUtc)}</p></html>`;
+  const url=URL.createObjectURL(new Blob([html],{type:"text/html;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download=`${po.poNo}-rev-${po.revision}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+export default function PurchaseOrderRevisions({companyId,po}:{companyId:string;po:PurchaseOrder}){
+  const {tx}=useI18n();const [rows,setRows]=useState<{id:string;revision:number;recordedAtUtc:string;document:PurchaseOrder}[]>([]),[error,setError]=useState("");
+  useEffect(()=>{let active=true;void http.get<typeof rows>(`/companies/${companyId}/procurement/purchase-orders/${po.id}/revisions`).then(r=>{if(active)setRows(r.data);}).catch(e=>active&&setError(apiError(e,"Unable to load saved order revisions.")));return()=>{active=false;};},[companyId,po.id,po.version]);
+  return <section className="prq-panel"><h2>{tx("Saved order revisions")}</h2>{error&&<p role="alert">{tx(error)}</p>}<Button variant="outline" onClick={()=>downloadPurchaseOrder(po)}>{tx("Download printable purchase order")}</Button>{rows.length===0?<p>{tx("A revision snapshot is saved when the order is issued or amended.")}</p>:rows.map(r=><details key={r.id}><summary>{tx("Revision")} {r.revision} · {dateTime(r.recordedAtUtc)} · {money(r.document.grandTotal,r.document.currencyCode)}</summary><p>{r.document.supplierName} · {r.document.deliveryLocationName}</p><ul>{r.document.lines.map(l=><li key={l.id}>{l.itemName} · {qty(l.orderedQty)} {l.uomName} · {money(l.unitPrice,r.document.currencyCode)}</li>)}</ul><Button variant="outline" onClick={()=>downloadPurchaseOrder(r.document)}>{tx("Download this revision")}</Button></details>)}</section>;
+}

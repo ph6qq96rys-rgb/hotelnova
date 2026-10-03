@@ -1,0 +1,5 @@
+.customer-menu-details { max-width: 900px; margin-inline: auto; overflow-wrap: anywhere; }
+.customer-menu-details__image { width: 100%; max-width: 360px; max-height: 280px; object-fit: contain; }
+.customer-menu-details section { margin-block: var(--space-6, 24px); }
+.customer-menu-details__form { display: grid; gap: var(--space-4, 16px); }
+.customer-menu-details__form label { display: grid; gap: var(--space-2, 8px); }

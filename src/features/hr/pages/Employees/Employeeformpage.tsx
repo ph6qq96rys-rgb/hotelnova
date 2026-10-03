@@ -1,13 +1,13 @@
 // src/features/hr/pages/employees/EmployeeFormPage.tsx
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useI18n } from "../../../../i18n";
 import type React from "react";
 import { useParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
 import {
-  branchApi,
   employeeApi,
   orgStructureApi,
   type EmployeeManagerLookupDto,
@@ -81,6 +81,8 @@ type FieldErrors = Partial<Record<keyof EmployeeFormValues, string>>;
 type SectionKey = "identity" | "statutory" | "organization" | "payroll" | "review";
 
 type WorkflowState = "done" | "active" | "blocked" | "pending";
+
+let translateHrText = (text: string) => text;
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -335,7 +337,7 @@ function Field({
       {error ? (
         <div className={styles.error} role="alert">
           <i className="ti ti-alert-circle" aria-hidden="true" />
-          {error}
+          {translateHrText(error)}
         </div>
       ) : null}
     </div>
@@ -345,13 +347,15 @@ function Field({
 function DetailRow({ label, value, warn }: { label: string; value: React.ReactNode; warn?: boolean }) {
   return (
     <div className={styles.detailRow}>
-      <span>{label}</span>
-      <strong className={warn ? styles.warnText : ""}>{value || "-"}</strong>
+      <span>{translateHrText(label)}</span>
+      <strong className={warn ? styles.warnText : ""}>{typeof value === "string" ? translateHrText(value) : value || "-"}</strong>
     </div>
   );
 }
 
 export default function EmployeeFormPage() {
+  const { tx } = useI18n();
+  translateHrText = tx;
   const erpNav = useErpNavigate();
   const { companyId: routeCompanyId, employeeId } = useParams<{ companyId?: string; employeeId?: string }>();
   const { companyId: scopedCompanyId } = useAppScope();
@@ -420,8 +424,18 @@ export default function EmployeeFormPage() {
 
   const loadDepartments = useCallback(async (branchId: string) => {
     if (!companyId) return;
-    const response = await orgStructureApi.listDepartments(companyId, { branchId: branchId || undefined, activeOnly: true });
-    setDepartments(ensureArray<DepartmentDto>(response));
+
+    const scopedDepartments = branchId
+      ? await orgStructureApi.listDepartments(companyId, { branchId, activeOnly: true })
+      : [];
+
+    if (!branchId || ensureArray<DepartmentDto>(scopedDepartments).length > 0) {
+      setDepartments(ensureArray<DepartmentDto>(scopedDepartments));
+      return;
+    }
+
+    const companyDepartments = await orgStructureApi.listDepartments(companyId, { activeOnly: true });
+    setDepartments(ensureArray<DepartmentDto>(companyDepartments));
   }, [companyId]);
 
   const loadPositions = useCallback(async (departmentId: string) => {
@@ -441,19 +455,22 @@ export default function EmployeeFormPage() {
       setApiError(null);
       setFieldErrs({});
       try {
-        const [branchList, departmentList, dto] = await Promise.all([
-          branchApi.list(companyId, { activeOnly: true }),
+        const [lookupResponse, departmentList, dto] = await Promise.all([
+          employeeApi.registrationLookups(companyId, {
+            includeManagers: true,
+            pageSize: 200,
+          }),
           orgStructureApi.listDepartments(companyId, { activeOnly: true }),
           isEdit && employeeId ? employeeApi.get(companyId, employeeId) : Promise.resolve(null),
         ]);
         if (cancelled) return;
-        setBranches(ensureArray<BranchDto>(branchList));
+        setBranches(ensureArray<BranchDto>(lookupResponse.branches).map((branch) => ({
+          id: branch.id,
+          name: branch.name,
+          code: branch.code,
+          isActive: true,
+        })));
         setDepartments(ensureArray<DepartmentDto>(departmentList));
-        const lookupResponse = await employeeApi.registrationLookups(companyId, {
-          includeManagers: true,
-          pageSize: 200,
-        });
-        if (cancelled) return;
         setManagers(lookupResponse.managers ?? []);
         if (dto) {
           const formValues = fromDto(dto);
@@ -464,7 +481,7 @@ export default function EmployeeFormPage() {
           setPositions([]);
         }
       } catch (error) {
-        if (!cancelled) setApiError(getApiError(error, "Failed to load employee enrollment data."));
+        if (!cancelled) setApiError(getApiError(error, tx("Failed to load employee enrollment data.")));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -490,14 +507,14 @@ export default function EmployeeFormPage() {
     set("positionId", "");
     setPositions([]);
     try { await loadDepartments(branchId); }
-    catch (error) { setApiError(getApiError(error, "Failed to load departments for selected branch.")); }
+    catch (error) { setApiError(getApiError(error, tx("Failed to load departments for selected branch."))); }
   }
 
   async function handleDepartmentChange(departmentId: string) {
     set("departmentId", departmentId);
     set("positionId", "");
     try { await loadPositions(departmentId); }
-    catch (error) { setApiError(getApiError(error, "Failed to load positions for selected department.")); }
+    catch (error) { setApiError(getApiError(error, tx("Failed to load positions for selected department."))); }
   }
 
   function inputClass(key: keyof EmployeeFormValues): string {
@@ -534,13 +551,13 @@ export default function EmployeeFormPage() {
   async function handleSubmit(event?: React.FormEvent) {
     event?.preventDefault();
     if (!companyId) {
-      setApiError("Company context is missing.");
+      setApiError(tx("Company context is missing."));
       return;
     }
     const errors = validate(values);
     if (Object.keys(errors).length > 0) {
       setFieldErrs(errors);
-      setApiError("Please correct the highlighted fields before saving.");
+      setApiError(tx("Please correct the highlighted fields before saving."));
       scrollToField(Object.keys(errors)[0] as keyof EmployeeFormValues);
       return;
     }
@@ -595,7 +612,7 @@ export default function EmployeeFormPage() {
       const createdId = extractCreatedId(response);
       erpNav(createdId ? `hr/employees/${createdId}` : "hr/employees", { replace: true });
     } catch (error) {
-      setApiError(getApiError(error, "Failed to save employee enrollment."));
+      setApiError(getApiError(error, tx("Failed to save employee enrollment.")));
     } finally {
       setSaving(false);
     }
@@ -624,32 +641,32 @@ export default function EmployeeFormPage() {
           <div>
             <div className={styles.breadcrumb}>
               <i className="ti ti-building-bank" aria-hidden="true" />
-              Human Resources
+              {tx("Human Resources")}
               <i className="ti ti-chevron-right" aria-hidden="true" />
-              Employee Master
+              {tx("Employee Master")}
               <i className="ti ti-chevron-right" aria-hidden="true" />
-              {isEdit ? "Edit" : "Create"}
+              {isEdit ? tx("Edit") : tx("Create")}
             </div>
             <div className={styles.titleRow}>
-              <h1>{isEdit ? "Edit Employee Master" : "Create Employee Master"}</h1>
+              <h1>{isEdit ? `${tx("Edit")} ${tx("Employee Master")}` : `${tx("Create")} ${tx("Employee Master")}`}</h1>
               <span className={styles.statusBadge}>{labelize(values.status)}</span>
-              {errCount > 0 ? <span className={styles.errorBadge}>{errCount} issues</span> : <span className={styles.readyBadge}>Ready</span>}
+              {errCount > 0 ? <span className={styles.errorBadge}>{errCount} {tx("issues")}</span> : <span className={styles.readyBadge}>{tx("Ready")}</span>}
             </div>
             <div className={styles.entityLine}>
-              <strong>{fullName || "New employee"}</strong>
-              <span>{selectedBranch?.name || "No branch"}</span>
-              <span>{selectedDepartment?.name || "No department"}</span>
-              <span>{selectedPosition?.title || "No position"}</span>
+              <strong>{fullName || tx("New employee")}</strong>
+              <span>{selectedBranch?.name || tx("No branch")}</span>
+              <span>{selectedDepartment?.name || tx("No department")}</span>
+              <span>{selectedPosition?.title || tx("No position")}</span>
             </div>
           </div>
           <div className={styles.commandActions}>
-            <button type="button" className={styles.btn} disabled={saving} onClick={goBack}>Cancel</button>
+            <button type="button" className={styles.btn} disabled={saving} onClick={goBack}>{tx("Cancel")}</button>
             <button type="button" className={styles.btn} disabled={saving} onClick={() => setFieldErrs(validate(values))}>
-              Validate
+              {tx("Validate")}
             </button>
             <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={saving} onClick={goToReview}>
               <i className="ti ti-route" aria-hidden="true" />
-              Review & Submit
+              {tx("Review & Submit")}
             </button>
           </div>
         </div>
@@ -664,7 +681,7 @@ export default function EmployeeFormPage() {
         </div>
       </header>
 
-      <div className={styles.tabs} role="tablist" aria-label="Employee master functional areas">
+      <div className={styles.tabs} role="tablist" aria-label={tx("Employee master functional areas")}>
         {SECTIONS.map((section) => (
           <button
             key={section.key}
@@ -675,7 +692,7 @@ export default function EmployeeFormPage() {
             onClick={() => setActiveSection(section.key)}
           >
             <i className={`ti ${section.icon}`} aria-hidden="true" />
-            {section.label}
+            {tx(section.label)}
             {validationBySection[section.key] > 0 ? <span>{validationBySection[section.key]}</span> : null}
           </button>
         ))}
@@ -687,7 +704,7 @@ export default function EmployeeFormPage() {
           <form onSubmit={handleSubmit} noValidate>
             {activeSection === "identity" ? (
               <section className={styles.panel}>
-                <header className={styles.panelHeader}><h2>General Information</h2><p>Legal employee identity and contact information.</p></header>
+                <header className={styles.panelHeader}><h2>{tx("General Information")}</h2><p>{tx("Legal employee identity and contact information.")}</p></header>
                 <div className={styles.formGrid3}>
                   <Field label="First name" required error={fieldErrs.firstName} fieldKey="firstName"><input className={inputClass("firstName")} value={values.firstName} onChange={(e) => set("firstName", e.target.value)} /></Field>
                   <Field label="Father's name" required error={fieldErrs.fatherName} fieldKey="fatherName"><input className={inputClass("fatherName")} value={values.fatherName} onChange={(e) => set("fatherName", e.target.value)} /></Field>
@@ -702,7 +719,7 @@ export default function EmployeeFormPage() {
 
             {activeSection === "statutory" ? (
               <section className={styles.panel}>
-                <header className={styles.panelHeader}><h2>Statutory & Government IDs</h2><p>Compliance identifiers used for tax, pension, and reporting.</p></header>
+                <header className={styles.panelHeader}><h2>{tx("Statutory & Government IDs")}</h2><p>{tx("Compliance identifiers used for tax, pension, and reporting.")}</p></header>
                 <div className={styles.formGrid3}>
                   <Field label="TIN number" hint="optional" fieldKey="tinNumber"><input className={inputClass("tinNumber")} value={values.tinNumber} onChange={(e) => set("tinNumber", e.target.value)} /></Field>
                   <Field label="National ID" hint="optional" fieldKey="nationalId"><input className={inputClass("nationalId")} value={values.nationalId} onChange={(e) => set("nationalId", e.target.value)} /></Field>
@@ -715,7 +732,7 @@ export default function EmployeeFormPage() {
 
             {activeSection === "organization" ? (
               <section className={styles.panel}>
-                <header className={styles.panelHeader}><h2>Organization Assignment</h2><p>Branch, department, position, reporting, and employment lifecycle.</p></header>
+                <header className={styles.panelHeader}><h2>{tx("Organization Assignment")}</h2><p>{tx("Branch, department, position, reporting, and employment lifecycle.")}</p></header>
                 <div className={styles.formGrid3}>
                   <Field label="Branch" required error={fieldErrs.branchId} fieldKey="branchId"><select className={selectClass("branchId")} value={values.branchId} onChange={(e) => void handleBranchChange(e.target.value)}><option value="">- Select branch -</option>{branchOptions.map((b) => <option key={b.id} value={b.id}>{b.code ? `${b.name} (${b.code})` : b.name}</option>)}</select></Field>
                   <Field label="Department" required error={fieldErrs.departmentId} fieldKey="departmentId"><select className={selectClass("departmentId")} value={values.departmentId} onChange={(e) => void handleDepartmentChange(e.target.value)}><option value="">- Select department -</option>{departmentOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
@@ -739,7 +756,7 @@ export default function EmployeeFormPage() {
 
             {activeSection === "payroll" ? (
               <section className={styles.panel}>
-                <header className={styles.panelHeader}><h2>Payroll Profile</h2><p>Salary, payment account, and payroll control attributes.</p></header>
+                <header className={styles.panelHeader}><h2>{tx("Payroll Profile")}</h2><p>{tx("Salary, payment account, and payroll control attributes.")}</p></header>
                 <div className={styles.formGrid2}>
                   <Field label="Basic salary" required error={fieldErrs.basicSalary} fieldKey="basicSalary"><div className={styles.moneyWrap}><span>ETB</span><input type="number" min={0} step={0.01} className={inputClass("basicSalary")} value={values.basicSalary} onChange={(e) => set("basicSalary", e.target.value === "" ? "" : Number(e.target.value))} /></div></Field>
                   <Field label="Pay frequency" required error={fieldErrs.payFrequency} fieldKey="payFrequency"><select className={selectClass("payFrequency")} value={values.payFrequency} onChange={(e) => set("payFrequency", e.target.value)}>{PAY_FREQUENCIES.map((x) => <option key={x} value={x}>{labelize(x)}</option>)}</select></Field>
@@ -752,10 +769,10 @@ export default function EmployeeFormPage() {
 
             {activeSection === "review" ? (
               <section className={styles.panel}>
-                <header className={styles.panelHeader}><h2>Review & Workflow</h2><p>Resolve business rules, then save or create the employee master record.</p></header>
+                <header className={styles.panelHeader}><h2>{tx("Review & Workflow")}</h2><p>{tx("Resolve business rules, then save or create the employee master record.")}</p></header>
                 <div className={styles.reviewGrid}>
-                  <div className={styles.reviewCard}><h3>Workflow</h3>{workflow.map((s) => <DetailRow key={s.key} label={s.label} value={s.note} warn={s.state === "blocked" || s.state === "active"} />)}</div>
-                  <div className={styles.reviewCard}><h3>Validation</h3>{errCount ? errEntries.map(([field, msg]) => <button key={field} type="button" className={styles.validationLink} onClick={() => scrollToField(field)}>{msg}</button>) : <p className={styles.successText}>All required business rules passed.</p>}</div>
+                  <div className={styles.reviewCard}><h3>{tx("Workflow")}</h3>{workflow.map((s) => <DetailRow key={s.key} label={s.label} value={s.note} warn={s.state === "blocked" || s.state === "active"} />)}</div>
+                  <div className={styles.reviewCard}><h3>{tx("Validation")}</h3>{errCount ? errEntries.map(([field, msg]) => <button key={field} type="button" className={styles.validationLink} onClick={() => scrollToField(field)}>{msg}</button>) : <p className={styles.successText}>{tx("All required business rules passed.")}</p>}</div>
                 </div>
               </section>
             ) : null}
@@ -765,8 +782,8 @@ export default function EmployeeFormPage() {
                 {activeSection === "review"
                   ? errCount
                     ? `${errCount} validation issue${errCount === 1 ? "" : "s"} must be resolved before submission.`
-                    : "Review complete. Employee master is ready to submit."
-                  : "Complete this functional area, then continue to the next step."}
+                    : tx("Review complete. Employee master is ready to submit.")
+                  : tx("Complete this functional area, then continue to the next step.")}
               </span>
 
               <div className={styles.commandActions}>
@@ -782,11 +799,11 @@ export default function EmployeeFormPage() {
 
                 {activeSection === "review" ? (
                   <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={saving}>
-                    {saving ? "Submitting..." : isEdit ? "Submit Changes" : "Submit Employee"}
+                    {saving ? tx("Submitting...") : isEdit ? tx("Submit Changes") : tx("Submit Employee")}
                   </button>
                 ) : (
                   <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={saving} onClick={goToNextSection}>
-                    Next
+                    {tx("Next")}
                     <i className="ti ti-arrow-right" aria-hidden="true" />
                   </button>
                 )}
@@ -797,8 +814,8 @@ export default function EmployeeFormPage() {
 
         <aside className={styles.sidebar}>
           <section className={styles.sideCard}>
-            <h3>Operational Snapshot</h3>
-            <DetailRow label="Employee" value={fullName || "New employee"} />
+            <h3>{tx("Operational Snapshot")}</h3>
+            <DetailRow label="Employee" value={fullName || tx("New employee")} />
             <DetailRow label="Status" value={labelize(values.status)} />
             <DetailRow label="Branch" value={selectedBranch?.name || "Required"} warn={!selectedBranch} />
             <DetailRow label="Department" value={selectedDepartment?.name || "Required"} warn={!selectedDepartment} />
@@ -807,8 +824,8 @@ export default function EmployeeFormPage() {
             <DetailRow label="Payroll" value={values.basicSalary !== "" ? `${values.basicSalary} / ${labelize(values.payFrequency)}` : "Required"} warn={values.basicSalary === ""} />
           </section>
           <section className={styles.sideCard}>
-            <h3>Business Rules</h3>
-            {errCount ? errEntries.map(([field, message]) => <button type="button" key={field} className={styles.ruleItem} onClick={() => scrollToField(field)}><i className="ti ti-alert-triangle" />{message}</button>) : <div className={styles.ruleOk}><i className="ti ti-circle-check" />Ready for save</div>}
+            <h3>{tx("Business Rules")}</h3>
+            {errCount ? errEntries.map(([field, message]) => <button type="button" key={field} className={styles.ruleItem} onClick={() => scrollToField(field)}><i className="ti ti-alert-triangle" />{message}</button>) : <div className={styles.ruleOk}><i className="ti ti-circle-check" />{tx("Ready for save")}</div>}
           </section>
         </aside>
       </div>

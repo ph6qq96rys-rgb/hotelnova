@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAppScope } from "../../../app/useAppScope";
+import { useI18n } from "../../../i18n";
 import { menuItemsApi } from "../api/menuItemsApi";
 import { productionRecipesApi } from "../api/recipesApi";
-import { fetchInventoryItems, fetchUoms } from "../api/lookups";
+import { fetchInventoryItems, fetchProductionOutputItems, fetchUoms } from "../api/lookups";
 import type { InventoryItemLite, UomLite } from "../api/lookups";
 import type { MenuItemLite, RecipeDto, UpsertRecipeRequest } from "../types";
 import ProductionWorkflowBar from "../components/ProductionWorkflowBar";
@@ -13,6 +14,13 @@ import { RecipeCostingPanel } from "../components/RecipeCostingPanel";
 import "../layout/production.css";
 
 type RecipeMode = "directSale" | "production";
+
+type MenuItemWithOutput = MenuItemLite & {
+  outputItemId?: string | null;
+  outputItemName?: string | null;
+  outputUomId?: string | null;
+  outputUomName?: string | null;
+};
 
 type ItemUomOption = {
   uomId: string;
@@ -64,7 +72,8 @@ function blankRow(): EditRow {
 
 function normalizeItemType(value: unknown): string {
   if (value == null) return "";
-  if (typeof value === "number") {
+  if (typeof value === "number" || (typeof value === "string" && /^\d+$/.test(value.trim()))) {
+    const numericValue = Number(value);
     const map: Record<number, string> = {
       0: "select",
       1: "ingredient",
@@ -74,9 +83,9 @@ function normalizeItemType(value: unknown): string {
       5: "finishedgood",
       6: "rawmaterial",
     };
-    return map[value] ?? String(value);
+    return map[numericValue] ?? String(value);
   }
-  return String(value).toLowerCase();
+  return String(value).replace(/[\s_-]+/g, "").toLowerCase();
 }
 
 const PRODUCIBLE = new Set(["finishedgood", "semifinished"]);
@@ -91,6 +100,17 @@ function extractApiError(e: unknown, fallback: string): string {
   if (!data) return err?.message ?? fallback;
   if (typeof data === "string") return data;
   return data?.message ?? data?.title ?? err?.message ?? fallback;
+}
+
+function inventoryItemDisplayName(item: Pick<InventoryItemLite, "name" | "localName">): string {
+  const englishName = String(item.name ?? "").trim() || "Unnamed item";
+  const amharicName = String(item.localName ?? "").trim();
+
+  if (amharicName && amharicName !== englishName && !englishName.includes(amharicName)) {
+    return `${englishName} - ${amharicName}`;
+  }
+
+  return englishName;
 }
 
 function normalizeRecipeMode(value: unknown): RecipeMode {
@@ -139,6 +159,27 @@ function getRecipeUoms(item?: InventoryItemEx | null): ItemUomOption[] {
   return [];
 }
 
+function getOutputUoms(item?: InventoryItemEx | null): ItemUomOption[] {
+  if (!item) return [];
+
+  const rows = (item.uoms ?? []).filter((u) => u.uomId && u.isActive !== false);
+  if (rows.length > 0) return rows;
+
+  if (item.baseUomId) {
+    return [
+      {
+        uomId: item.baseUomId,
+        code: item.baseUomCode ?? null,
+        name: item.baseUomName ?? "Base UOM",
+        isActive: true,
+        toBaseFactor: 1,
+      },
+    ];
+  }
+
+  return [];
+}
+
 function toEditRow(line: RecipeDto["lines"][number], uomNameById: Map<string, string>): EditRow {
   return {
     _uid: newUid(),
@@ -154,6 +195,7 @@ function toEditRow(line: RecipeDto["lines"][number], uomNameById: Map<string, st
 }
 
 export default function RecipeEditorPage() {
+  const { tx } = useI18n();
   const nav = useNavigate();
   const { companyId, branchId } = useAppScope();
   const { id: routeMenuItemId } = useParams<{ id?: string }>();
@@ -163,19 +205,28 @@ export default function RecipeEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [menuItems, setMenuItems] = useState<MenuItemLite[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItemWithOutput[]>([]);
   const [selectedMenuItemId, setSelectedMenuItemId] = useState("");
   const [items, setItems] = useState<InventoryItemEx[]>([]);
+  const [productionOutputItems, setProductionOutputItems] = useState<InventoryItemEx[]>([]);
   const [uoms, setUoms] = useState<UomLite[]>([]);
   const [ingredientSearch, setIngredientSearch] = useState("");
+  const [importSourceMenuItemId, setImportSourceMenuItemId] = useState("");
+  const [importingRecipe, setImportingRecipe] = useState(false);
 
   const [recipe, setRecipe] = useState<RecipeDto | null>(null);
   const [recipeMode, setRecipeMode] = useState<RecipeMode>("directSale");
   const [outputItemId, setOutputItemId] = useState("");
   const [outputUomId, setOutputUomId] = useState("");
+  const [outputQuantityStr, setOutputQuantityStr] = useState("1");
   const [rows, setRows] = useState<EditRow[]>([]);
 
   const effectiveMenuItemId = routeMenuItemId ?? selectedMenuItemId;
+  const costingMenuItemId = recipeMode === "production"
+    ? (recipe?.outputItemId === outputItemId ? recipe?.menuItemId : null)
+    : (recipe?.menuItemId === effectiveMenuItemId ? effectiveMenuItemId : null);
+  const hasCostingRecipe = Boolean(recipe?.id && recipe.id !== "00000000-0000-0000-0000-000000000000"
+    && costingMenuItemId && costingMenuItemId !== "00000000-0000-0000-0000-000000000000");
   const isDeepLinked = Boolean(routeMenuItemId);
   const busy = loading || saving;
 
@@ -191,22 +242,46 @@ export default function RecipeEditorPage() {
     [menuItems, effectiveMenuItemId]
   );
 
+  const importableMenuItems = useMemo(() => {
+    const otherItems = menuItems.filter((m) => m.id !== effectiveMenuItemId);
+    const withRecipes = otherItems.filter((m) => Boolean((m as MenuItemWithOutput & { hasRecipe?: boolean }).hasRecipe));
+    return withRecipes.length ? withRecipes : otherItems;
+  }, [menuItems, effectiveMenuItemId]);
+
   const outputItems = useMemo(() => {
-    const hasTypes = items.some((i) => i.itemType != null);
-    if (!hasTypes) return items;
-    const list = items.filter(isProducible);
-    return list.length > 0 ? list : items;
-  }, [items]);
+    return productionOutputItems.filter(isProducible);
+  }, [productionOutputItems]);
 
   const ingredientItems = useMemo(() => {
     const hasTypes = items.some((i) => i.itemType != null);
-    if (!hasTypes) return items;
-    return items.filter((i) => normalizeItemType(i.itemType) !== "finishedgood");
-  }, [items]);
+    const candidates = hasTypes
+      ? items.filter((i) => normalizeItemType(i.itemType) !== "finishedgood")
+      : items;
+
+    const q = ingredientSearch.trim().toLowerCase();
+    if (!q) return candidates;
+
+    return candidates.filter((item) =>
+      [
+        inventoryItemDisplayName(item),
+        item.name,
+        item.localName,
+        item.sku,
+        item.code,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q))
+    );
+  }, [items, ingredientSearch]);
 
   const selectedOutputItem = useMemo(
-    () => items.find((i) => i.id === outputItemId) ?? null,
-    [items, outputItemId]
+    () => productionOutputItems.find((i) => i.id === outputItemId) ?? null,
+    [productionOutputItems, outputItemId]
+  );
+
+  const outputUomOptions = useMemo(
+    () => getOutputUoms(selectedOutputItem),
+    [selectedOutputItem]
   );
 
   const activeLines = useMemo(() => rows.filter((r) => r.isActive).length, [rows]);
@@ -214,13 +289,19 @@ export default function RecipeEditorPage() {
   const outputNeedsSetup = recipeMode === "production" && (!outputItemId || !outputUomId);
 
   useEffect(() => {
+    setProductionOutputItems([]);
     if (!companyId) return;
     let cancelled = false;
 
-    Promise.all([fetchInventoryItems(companyId, branchId ?? "", ""), fetchUoms(companyId)])
-      .then(([inv, uomRows]) => {
+    Promise.all([
+      fetchInventoryItems(companyId, branchId ?? "", ""),
+      fetchProductionOutputItems(companyId, branchId),
+      fetchUoms(companyId),
+    ])
+      .then(([inv, outputInv, uomRows]) => {
         if (cancelled) return;
         setItems(inv as InventoryItemEx[]);
+        setProductionOutputItems(outputInv as InventoryItemEx[]);
         setUoms(uomRows);
       })
       .catch((e) => {
@@ -242,10 +323,10 @@ export default function RecipeEditorPage() {
       .list(companyId, branchId)
       .then((list) => {
         if (cancelled) return;
-        setMenuItems(list);
+        setMenuItems(list as MenuItemWithOutput[]);
         if (!routeMenuItemId && list.length > 0) {
           setSelectedMenuItemId((prev) =>
-            list.some((m: MenuItemLite) => m.id === prev) ? prev : list[0].id
+            list.some((m: MenuItemWithOutput) => m.id === prev) ? prev : list[0].id
           );
         }
       })
@@ -281,6 +362,7 @@ export default function RecipeEditorPage() {
 
   useEffect(() => {
     if (!companyId || !branchId || !effectiveMenuItemId) return;
+    if (recipeMode !== "directSale") return;
     let cancelled = false;
 
     setError(null);
@@ -294,6 +376,7 @@ export default function RecipeEditorPage() {
         setRecipeMode(normalizeRecipeMode((dto as any)?.mode));
         setOutputItemId(dto?.outputItemId ?? "");
         setOutputUomId(dto?.outputUomId ?? "");
+        setOutputQuantityStr(String(dto?.outputQuantity ?? 1));
         setRows((dto?.lines ?? []).map((line) => toEditRow(line, uomNameById)));
       })
       .catch((e: any) => {
@@ -304,6 +387,7 @@ export default function RecipeEditorPage() {
           setRecipeMode("directSale");
           setOutputItemId("");
           setOutputUomId("");
+          setOutputQuantityStr("1");
           setRows([]);
         } else {
           setError(extractApiError(e, "Failed to load recipe."));
@@ -313,7 +397,41 @@ export default function RecipeEditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [companyId, effectiveMenuItemId, uomNameById]);
+  }, [companyId, branchId, effectiveMenuItemId, recipeMode, uomNameById]);
+
+  useEffect(() => {
+    if (!companyId || !branchId || recipeMode !== "production" || !outputItemId) return;
+    let cancelled = false;
+
+    setError(null);
+    setSuccess(null);
+
+    productionRecipesApi
+      .getByOutputItem(companyId, branchId, outputItemId, { mode: "production" })
+      .then((dto) => {
+        if (cancelled) return;
+        setRecipe(dto);
+        setRecipeMode("production");
+        setOutputItemId(dto.outputItemId ?? outputItemId);
+        setOutputUomId(dto.outputUomId ?? outputUomId);
+        setOutputQuantityStr(String(dto.outputQuantity ?? outputQuantityStr));
+        setRows((dto.lines ?? []).map((line) => toEditRow(line, uomNameById)));
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        const status = e?.response?.status ?? e?.status;
+        if (status === 404) {
+          setRecipe(null);
+          setRows([]);
+        } else {
+          setError(extractApiError(e, "Failed to load production recipe."));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, branchId, recipeMode, outputItemId, uomNameById]);
 
   const addLine = () => setRows((prev) => [blankRow(), ...prev]);
   const removeRow = (uid: string) => setRows((prev) => prev.filter((r) => r._uid !== uid));
@@ -332,13 +450,64 @@ export default function RecipeEditorPage() {
     });
   };
 
+  async function importRecipeFromMenuItem() {
+    if (!companyId || !branchId || !effectiveMenuItemId) return;
+
+    if (!importSourceMenuItemId) {
+      setError("Select a source menu item to import from.");
+      return;
+    }
+
+    if (importSourceMenuItemId === effectiveMenuItemId) {
+      setError("Choose a different source menu item.");
+      return;
+    }
+
+    setImportingRecipe(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const source = await productionRecipesApi.getByMenuItem(companyId, importSourceMenuItemId, { mode: "directSale" });
+      const importedRows = (source.lines ?? []).map((line) => ({
+        ...toEditRow(line, uomNameById),
+        id: null,
+      }));
+
+      if (!importedRows.length) {
+        setError("The selected source menu item has no ingredient lines to import.");
+        return;
+      }
+
+      setRecipeMode("directSale");
+      setOutputItemId("");
+      setOutputUomId("");
+      setOutputQuantityStr("1");
+      setRows(importedRows);
+      setRecipe((current) => current ? { ...current, notes: source.notes ?? current.notes } : null);
+      setSuccess(`Imported ${importedRows.length} recipe lines. Review quantities, then save this menu item.`);
+    } catch (e) {
+      setError(extractApiError(e, "Unable to import recipe."));
+    } finally {
+      setImportingRecipe(false);
+    }
+  }
+
   function validate(): string | null {
     if (!branchId) return "Branch is required before editing recipes.";
-    if (!effectiveMenuItemId) return "Menu item is required.";
+    if (recipeMode === "directSale" && !effectiveMenuItemId) return "Menu item is required.";
 
     if (recipeMode === "production") {
       if (!outputItemId) return "Output item is required for production recipes.";
+      if (selectedOutputItem && !isProducible(selectedOutputItem)) {
+        return "Output item must be a finished or semi-finished inventory item.";
+      }
       if (!outputUomId) return "Output UOM is required for production recipes.";
+      const outputQuantity = Number(outputQuantityStr);
+      if (!Number.isFinite(outputQuantity) || outputQuantity <= 0) return "Output quantity must be greater than zero for production recipes.";
+      if (outputUomOptions.length > 0 && !outputUomOptions.some((u) => u.uomId === outputUomId)) {
+        return "Output UOM is not configured for the selected output item.";
+      }
     }
 
     const activeRows = rows.filter((x) => x.isActive);
@@ -377,7 +546,8 @@ export default function RecipeEditorPage() {
   }
 
   async function save() {
-    if (!companyId || !effectiveMenuItemId) return;
+    if (!companyId || !branchId) return;
+    if (recipeMode === "directSale" && !effectiveMenuItemId) return;
 
     setError(null);
     setSuccess(null);
@@ -392,12 +562,13 @@ export default function RecipeEditorPage() {
 
     try {
       const body = {
-        menuItemId: effectiveMenuItemId,
+        menuItemId: recipeMode === "directSale" ? effectiveMenuItemId : recipe?.menuItemId ?? null,
         mode: recipeMode,
         notes: recipe?.notes ?? null,
         isActive: recipe?.isActive ?? true,
         outputItemId: recipeMode === "production" ? outputItemId || null : null,
         outputUomId: recipeMode === "production" ? outputUomId || null : null,
+        outputQuantity: recipeMode === "production" ? Number(outputQuantityStr) : null,
         lines: rows.map((row) => ({
           id: row.id ?? null,
           itemId: row.itemId,
@@ -409,18 +580,26 @@ export default function RecipeEditorPage() {
         })),
       };
 
-      const dto = await productionRecipesApi.upsertByMenuItem(
-        companyId,
-        effectiveMenuItemId,
-        body as UpsertRecipeRequest & { mode: RecipeMode }
-      );
+      const dto = recipeMode === "production"
+        ? await productionRecipesApi.upsertByOutputItem(
+            companyId,
+            branchId,
+            outputItemId,
+            body as UpsertRecipeRequest & { mode: RecipeMode }
+          )
+        : await productionRecipesApi.upsertByMenuItem(
+            companyId,
+            effectiveMenuItemId,
+            body as UpsertRecipeRequest & { mode: RecipeMode }
+          );
 
       setRecipe(dto);
       setRecipeMode(normalizeRecipeMode((dto as any)?.mode ?? recipeMode));
       setOutputItemId(dto.outputItemId ?? "");
       setOutputUomId(dto.outputUomId ?? "");
+      setOutputQuantityStr(String(dto.outputQuantity ?? 1));
       setRows(dto.lines.map((line) => toEditRow(line, uomNameById)));
-      setSuccess("Recipe saved successfully.");
+      setSuccess(tx("Recipe saved successfully."));
     } catch (e) {
       setError(extractApiError(e, "Save failed."));
     } finally {
@@ -429,11 +608,6 @@ export default function RecipeEditorPage() {
   }
 
   function goToBatch() {
-    if (!effectiveMenuItemId) {
-      setError("Select or save a menu item first.");
-      return;
-    }
-
     if (!branchId) {
       setError("Select a branch before creating production batches.");
       return;
@@ -449,14 +623,19 @@ export default function RecipeEditorPage() {
       return;
     }
 
-    nav(`/production/batches/new?recipeId=${recipe.id}&menuItemId=${effectiveMenuItemId}`);
+    if (!recipe.menuItemId) {
+      setError("Save the production recipe again so the system can link it to its internal production item.");
+      return;
+    }
+
+    nav(`/production/batches/new?recipeId=${recipe.id}&menuItemId=${recipe.menuItemId}`);
   }
 
   if (!companyId) {
     return (
       <div className="p-page">
         <div className="p-guard">
-          Select a company to continue.
+          {tx("Select a company to continue.")}
         </div>
       </div>
     );
@@ -464,64 +643,70 @@ export default function RecipeEditorPage() {
 
   return (
     <div className="p-page">
-      <ProductionWorkflowBar active="recipe" menuItemId={effectiveMenuItemId} />
+      <ProductionWorkflowBar active="recipe" menuItemId={recipeMode === "production" ? recipe?.menuItemId : effectiveMenuItemId} />
 
-      <section className="p-kitchen-hero" aria-label="Kitchen recipe setup guide">
+      <section className="p-kitchen-hero" aria-label={tx("Kitchen recipe setup guide")}>
         <div>
-          <p className="p-kicker">Kitchen Recipe Setup</p>
-          <h1 className="p-title">Build the recipe the way the kitchen uses it</h1>
+          <p className="p-kicker">{tx("Kitchen Recipe Setup")}</p>
+          <h1 className="p-title">{tx("Build the recipe the way the kitchen uses it")}</h1>
           <p className="p-subtitle">
-            Choose the menu item, decide whether it is made on sale or produced into stock, then add the ingredients the kitchen consumes.
+            {tx("Choose the menu item, decide whether it is made on sale or produced into stock, then add the ingredients the kitchen consumes.")}
           </p>
         </div>
 
         <div className="p-kitchen-status-grid">
           <div className="p-kitchen-status">
-            <span>Menu item</span>
-            <strong>{selectedMenuItem?.name ?? "Not selected"}</strong>
+            <span>{recipeMode === "production" ? tx("Output item") : tx("Menu item")}</span>
+            <strong>
+              {recipeMode === "production"
+                ? selectedOutputItem
+                  ? inventoryItemDisplayName(selectedOutputItem)
+                  : tx("Not selected")
+                : selectedMenuItem?.name ?? tx("Not selected")}
+            </strong>
           </div>
           <div className="p-kitchen-status">
-            <span>Recipe type</span>
-            <strong>{recipeMode === "production" ? "Stocked production" : "Made to order"}</strong>
+            <span>{tx("Recipe type")}</span>
+            <strong>{recipeMode === "production" ? tx("Stocked production") : tx("Made to order")}</strong>
           </div>
           <div className="p-kitchen-status">
-            <span>Active ingredients</span>
+            <span>{tx("Active ingredients")}</span>
             <strong>{activeLines}</strong>
           </div>
           <div className={`p-kitchen-status ${outputNeedsSetup ? "is-warning" : "is-ready"}`}>
-            <span>Readiness</span>
-            <strong>{outputNeedsSetup ? "Needs output setup" : "Ready to edit"}</strong>
+            <span>{tx("Readiness")}</span>
+            <strong>{outputNeedsSetup ? tx("Needs output setup") : tx("Ready to edit")}</strong>
           </div>
         </div>
       </section>
 
-      <section className="p-kitchen-steps" aria-label="Recipe workflow">
+      <section className="p-kitchen-steps" aria-label={tx("Recipe workflow")}>
         <div className="p-kitchen-step is-active">
           <span>1</span>
           <div>
-            <strong>Select item</strong>
-            <small>Pick the menu item this recipe controls.</small>
+            <strong>{tx("Select item")}</strong>
+            <small>{recipeMode === "production" ? tx("Pick the inventory item this recipe produces.") : tx("Pick the menu item this recipe controls.")}</small>
           </div>
         </div>
-        <div className={`p-kitchen-step ${effectiveMenuItemId ? "is-active" : ""}`}>
+        <div className={`p-kitchen-step ${recipeMode === "production" ? outputItemId : effectiveMenuItemId ? "is-active" : ""}`}>
           <span>2</span>
           <div>
-            <strong>Choose recipe type</strong>
-            <small>Made to order or stocked production.</small>
+            <strong>{tx("Choose recipe type")}</strong>
+            <small>{tx("Made to order or stocked production.")}</small>
           </div>
         </div>
         <div className={`p-kitchen-step ${rows.length > 0 ? "is-active" : ""}`}>
           <span>3</span>
           <div>
-            <strong>Add ingredients</strong>
-            <small>Use kitchen quantities and recipe UOMs.</small>
+            <strong>{tx("Add ingredients")}</strong>
+            <small>{tx("Use kitchen quantities and recipe UOMs.")}</small>
           </div>
         </div>
         <div className={`p-kitchen-step ${recipe?.id ? "is-active" : ""}`}>
           <span>4</span>
           <div>
-            <strong>Save and cost</strong>
-            <small>Review food cost before production.</small>
+            <strong>{tx("Save and cost")}</strong>
+            <small>{tx("Review food cost before production.")}</small>
           </div>
         </div>
       </section>
@@ -529,25 +714,42 @@ export default function RecipeEditorPage() {
       <div className="p-card">
         <div className="p-card__head">
           <div>
-            <p className="p-card__title">Recipe Editor</p>
+            <p className="p-card__title">{tx("Recipe Editor")}</p>
             <p className="p-card__subtitle">
-              Define whether the menu item is made-to-order or produced into stock, then configure the ingredients it consumes.
+              {tx("Define whether this is made-to-order or produced into stock, then configure the ingredients it consumes.")}
             </p>
           </div>
 
           <div className="p-btn-row">
+            <select
+              className="p-select"
+              value={importSourceMenuItemId}
+              onChange={(e) => setImportSourceMenuItemId(e.target.value)}
+              disabled={busy || importingRecipe || !effectiveMenuItemId || recipeMode !== "directSale"}
+              style={{ minWidth: 230 }}
+            >
+              <option value="">{tx("Import recipe from...")}</option>
+              {importableMenuItems.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}{m.code ? ` (${m.code})` : ""}
+                </option>
+              ))}
+            </select>
+            <button className="p-btn p-btn--outline" onClick={importRecipeFromMenuItem} disabled={busy || importingRecipe || !importSourceMenuItemId || recipeMode !== "directSale"}>
+              {importingRecipe ? tx("Importing...") : tx("Import Recipe")}
+            </button>
             <button className="p-btn p-btn--outline" onClick={addLine} disabled={busy}>
-              + Add Line
+              {tx("+ Add Line")}
             </button>
             <button className="p-btn p-btn--primary" onClick={save} disabled={busy}>
-              {saving ? "Saving..." : "Save Recipe"}
+              {saving ? tx("Saving...") : tx("Save Recipe")}
             </button>
             <button
               className="p-btn p-btn--success"
               onClick={goToBatch}
               disabled={!recipe?.id || saving || recipeMode !== "production"}
             >
-              Create Production Batch
+              {tx("Create Production Batch")}
             </button>
           </div>
         </div>
@@ -559,7 +761,7 @@ export default function RecipeEditorPage() {
           {outputNeedsSetup && (
             <div className="p-alert p-alert--warning">
               <span className="p-alert__body">
-                <strong>Output setup required:</strong> production recipes must choose the inventory item produced and its output UOM before saving.
+                <strong>{tx("Output setup required:")}</strong> {tx("select the finished or semi-finished inventory item and the UOM this recipe will receive into stock.")}
               </span>
             </div>
           )}
@@ -567,49 +769,51 @@ export default function RecipeEditorPage() {
           <div className="p-alert p-alert--info" style={{ marginBottom: 20 }}>
             <span className="p-alert__body">
               {recipeMode === "directSale" ? (
-                <>Direct-sale recipes consume ingredients during POS sale. They do <strong>not</strong> receive stock into inventory.</>
+                <>{tx("Direct-sale recipes consume ingredients during POS sale. They do not receive stock into inventory.")}</>
               ) : (
-                <>Production recipes consume inputs and receive a finished or semi-finished item into inventory.</>
+                <>{tx("Production recipes consume inputs and receive a finished or semi-finished item into inventory.")}</>
               )}
             </span>
           </div>
 
-          <div className="p-section">
-            <div className="p-section__head p-section__head--slate">Menu Item</div>
-            <div className="p-section__body">
-              <div className="p-field" style={{ maxWidth: 420 }}>
-                <label className="p-field__label">Select Menu Item</label>
-                <select
-                  className="p-select"
-                  value={effectiveMenuItemId}
-                  onChange={(e) => setSelectedMenuItemId(e.target.value)}
-                  disabled={loading || !branchId || isDeepLinked}
-                >
-                  <option value="">{!branchId ? "Select a branch first..." : "Select menu item..."}</option>
-                  {menuItems.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}{m.code ? ` (${m.code})` : ""}
-                    </option>
-                  ))}
-                </select>
-                {isDeepLinked && (
-                  <span className="p-field__hint">
-                    Opened from menu setup. Open the Recipe Editor from the sidebar to switch items.
-                  </span>
-                )}
-                {selectedMenuItem && (
-                  <span className="p-field__hint">
-                    Current: <strong>{selectedMenuItem.name}</strong>
-                  </span>
-                )}
+          {recipeMode === "directSale" && (
+            <div className="p-section">
+              <div className="p-section__head p-section__head--slate">{tx("Menu Item")}</div>
+              <div className="p-section__body">
+                <div className="p-field" style={{ maxWidth: 420 }}>
+                  <label className="p-field__label">{tx("Select Menu Item")}</label>
+                  <select
+                    className="p-select"
+                    value={effectiveMenuItemId}
+                    onChange={(e) => setSelectedMenuItemId(e.target.value)}
+                    disabled={loading || !branchId || isDeepLinked}
+                  >
+                    <option value="">{!branchId ? tx("Select a branch first...") : tx("Select menu item...")}</option>
+                    {menuItems.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}{m.code ? ` (${m.code})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {isDeepLinked && (
+                    <span className="p-field__hint">
+                      {tx("Opened from menu setup. Open the Recipe Editor from the sidebar to switch items.")}
+                    </span>
+                  )}
+                  {selectedMenuItem && (
+                    <span className="p-field__hint">
+                      {tx("Current:")} <strong>{selectedMenuItem.name}</strong>
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="p-section">
             <div className="p-section__head p-section__head--slate">
-              Recipe Mode
-              <span className="p-section__badge">Direct sale vs production</span>
+              {tx("Recipe Mode")}
+              <span className="p-section__badge">{tx("Direct sale vs production")}</span>
             </div>
 
             <div className="p-section__body">
@@ -623,12 +827,13 @@ export default function RecipeEditorPage() {
                       setRecipeMode("directSale");
                       setOutputItemId("");
                       setOutputUomId("");
+                      setOutputQuantityStr("1");
                     }}
                     disabled={busy}
                   />
                   <span>
-                    <strong>Direct Sale / Made-to-Order</strong><br />
-                    <small>Macchiato, cocktail, burger, tea - ingredients are consumed when sold.</small>
+                    <strong>{tx("Direct Sale / Made-to-Order")}</strong><br />
+                    <small>{tx("Macchiato, cocktail, burger, tea - ingredients are consumed when sold.")}</small>
                   </span>
                 </label>
 
@@ -637,12 +842,19 @@ export default function RecipeEditorPage() {
                     type="radio"
                     name="recipeMode"
                     checked={recipeMode === "production"}
-                    onChange={() => setRecipeMode("production")}
+                    onChange={() => {
+                      setRecipeMode("production");
+                      if (!outputItemId) {
+                        const firstOutput = outputItems[0];
+                        setOutputItemId(firstOutput?.id ?? "");
+                        setOutputUomId(firstOutput ? getOutputUoms(firstOutput)[0]?.uomId ?? "" : "");
+                      }
+                    }}
                     disabled={busy}
                   />
                   <span>
-                    <strong>Production / Stocked Output</strong><br />
-                    <small>Sauce, dough, cake batch - recipe creates inventory stock.</small>
+                    <strong>{tx("Production / Stocked Output")}</strong><br />
+                    <small>{tx("Sauce, dough, cake batch - recipe creates inventory stock.")}</small>
                   </span>
                 </label>
               </div>
@@ -652,65 +864,99 @@ export default function RecipeEditorPage() {
           {recipeMode === "production" && (
             <div className="p-section">
               <div className="p-section__head p-section__head--green">
-                Output - Stock received into inventory
+                {tx("Output - Stock received into inventory")}
                 <span className="p-section__badge" style={{ background: "#dcfce7", color: "#166534" }}>
-                  What this recipe PRODUCES
+                  {tx("What this recipe PRODUCES")}
                 </span>
               </div>
 
               <div className="p-section__body">
-                <div className="p-grid-2">
+                <div className="p-grid-2" style={{ gridTemplateColumns: "minmax(260px, 1fr) minmax(180px, 0.7fr) minmax(180px, 0.55fr)" }}>
                   <div className="p-field">
                     <label className="p-field__label">
-                      Finished / Semi-Finished Item <span className="p-field__required">*</span>
+                      {tx("Finished / Semi-Finished Item")} <span className="p-field__required">*</span>
                     </label>
                     <select
                       className="p-select"
                       value={outputItemId}
-                      onChange={(e) => setOutputItemId(e.target.value)}
+                      onChange={(e) => {
+                        const nextOutputItem = productionOutputItems.find((item) => item.id === e.target.value) ?? null;
+                        setOutputItemId(e.target.value);
+                        setOutputUomId(nextOutputItem ? getOutputUoms(nextOutputItem)[0]?.uomId ?? "" : "");
+                      }}
                       disabled={busy}
                     >
-                      <option value="">{items.length === 0 ? "Loading inventory items..." : "Select output item..."}</option>
+                      <option value="">
+                        {productionOutputItems.length === 0
+                          ? tx("No matching output items for this branch")
+                          : tx("Select output item...")}
+                      </option>
                       {outputItems.map((item) => {
                         const type = normalizeItemType(item.itemType);
                         const typeLabel =
                           type === "finishedgood"
-                            ? "Finished Good"
+                            ? tx("Finished Good")
                             : type === "semifinished"
-                              ? "Semi-Finished"
-                              : "Inventory Item";
+                              ? tx("Semi-Finished")
+                              : tx("Inventory Item");
 
                         return (
                           <option key={item.id} value={item.id}>
-                            {item.name}{item.sku ? ` - ${item.sku}` : ""} [{typeLabel}]
+                            {inventoryItemDisplayName(item)}{item.sku ? ` - ${item.sku}` : ""} [{typeLabel}]
                           </option>
                         );
                       })}
                     </select>
+                    <span className="p-field__hint">
+                      {tx("Output choices follow the branch: Food for Prod and Pastry for Pastry Production. Assign the item category in Inventory Items if it is missing here.")}
+                    </span>
                     {selectedOutputItem && !isProducible(selectedOutputItem) && (
                       <span className="p-field__hint" style={{ color: "var(--p-warning)" }}>
-                        This item is not FinishedGood or SemiFinished - update its type in Inventory Items.
+                        {tx("This item is not FinishedGood or SemiFinished - update its type in Inventory Items.")}
                       </span>
                     )}
                   </div>
 
                   <div className="p-field">
                     <label className="p-field__label">
-                      Output UOM <span className="p-field__required">*</span>
+                      {tx("Output UOM")} <span className="p-field__required">*</span>
                     </label>
                     <select
                       className="p-select"
                       value={outputUomId}
                       onChange={(e) => setOutputUomId(e.target.value)}
-                      disabled={busy}
+                      disabled={busy || !outputItemId}
                     >
-                      <option value="">{uoms.length === 0 ? "Loading UOMs..." : "Select unit..."}</option>
-                      {uoms.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.name ?? u.code}
+                      <option value="">
+                        {!outputItemId
+                          ? tx("Select output item first...")
+                          : outputUomOptions.length === 0
+                            ? tx("No UOMs configured for this item")
+                            : tx("Select output unit...")}
+                      </option>
+                      {outputUomOptions.map((u) => (
+                        <option key={u.uomId} value={u.uomId}>
+                          {uomDisplayName(u, uomNameById)}
                         </option>
                       ))}
                     </select>
+                    <span className="p-field__hint">{tx("Production batches receive stock in this configured output unit.")}</span>
+                  </div>
+
+                  <div className="p-field">
+                    <label className="p-field__label">
+                      {tx("Output Quantity")} <span className="p-field__required">*</span>
+                    </label>
+                    <input
+                      className="p-input p-input--num"
+                      type="number"
+                      min={0.000001}
+                      step="0.000001"
+                      value={outputQuantityStr}
+                      onChange={(e) => setOutputQuantityStr(e.target.value)}
+                      disabled={busy}
+                    />
+                    <span className="p-field__hint">{tx("How many output units this recipe standard produces.")}</span>
                   </div>
                 </div>
               </div>
@@ -719,9 +965,9 @@ export default function RecipeEditorPage() {
 
           <div className="p-section">
             <div className="p-section__head p-section__head--orange">
-              Inputs - Ingredients consumed from stock
+              {tx("Inputs - Ingredients consumed from stock")}
               <span className="p-section__badge" style={{ background: "#ffedd5", color: "#9a3412" }}>
-                Recipe / Consume UOM only
+                {tx("Recipe / Consume UOM only")}
               </span>
 
               <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
@@ -729,11 +975,11 @@ export default function RecipeEditorPage() {
                   className="p-input"
                   value={ingredientSearch}
                   onChange={(e) => setIngredientSearch(e.target.value)}
-                  placeholder="Search ingredients..."
+                  placeholder={tx("Search ingredients...")}
                   style={{ width: 180, height: 30, fontSize: 12 }}
                 />
                 <button className="p-btn p-btn--outline p-btn--sm" onClick={addLine} disabled={busy}>
-                  + Add line
+                  {tx("+ Add line")}
                 </button>
               </div>
             </div>
@@ -742,13 +988,13 @@ export default function RecipeEditorPage() {
               <table className="p-table">
                 <thead>
                   <tr>
-                    <th style={{ minWidth: 260 }}>Ingredient</th>
-                    <th style={{ width: 190 }}>Recipe / Consume UOM</th>
-                    <th className="num" style={{ width: 110 }}>Qty / Unit</th>
-                    <th className="num" style={{ width: 110 }}>Waste %</th>
-                    <th style={{ width: 80 }}>Active</th>
-                    <th>Notes</th>
-                    <th className="num" style={{ width: 90 }}>Actions</th>
+                    <th style={{ minWidth: 260 }}>{tx("Ingredient")}</th>
+                    <th style={{ width: 190 }}>{tx("Recipe / Consume UOM")}</th>
+                    <th className="num" style={{ width: 110 }}>{tx("Qty / Unit")}</th>
+                    <th className="num" style={{ width: 110 }}>{tx("Waste %")}</th>
+                    <th style={{ width: 80 }}>{tx("Active")}</th>
+                    <th>{tx("Notes")}</th>
+                    <th className="num" style={{ width: 90 }}>{tx("Actions")}</th>
                   </tr>
                 </thead>
 
@@ -756,7 +1002,7 @@ export default function RecipeEditorPage() {
                   {rows.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="p-table__empty">
-                        No ingredients yet - click "+ Add line" to start.
+                        {tx("No ingredients yet - click add line to start.")}
                       </td>
                     </tr>
                   ) : (
@@ -773,10 +1019,10 @@ export default function RecipeEditorPage() {
                               onChange={(e) => selectIngredient(row._uid, e.target.value)}
                               disabled={saving}
                             >
-                              <option value="">Select ingredient...</option>
+                              <option value="">{tx("Select ingredient...")}</option>
                               {ingredientItems.map((item) => (
                                 <option key={item.id} value={item.id}>
-                                  {item.name}{item.sku ? ` - ${item.sku}` : ""}
+                                  {inventoryItemDisplayName(item)}{item.sku ? ` - ${item.sku}` : ""}
                                 </option>
                               ))}
                             </select>
@@ -796,12 +1042,12 @@ export default function RecipeEditorPage() {
                               }}
                             >
                               <option value="">
-                                {!row.itemId ? "Select ingredient first..." : "Select recipe UOM..."}
+                                {!row.itemId ? tx("Select ingredient first...") : tx("Select recipe UOM...")}
                               </option>
                               {allowedUoms.map((u) => (
                                 <option key={u.uomId} value={u.uomId}>
                                   {uomDisplayName(u, uomNameById)}
-                                  {u.toBaseFactor && u.toBaseFactor !== 1 ? ` - factor ${u.toBaseFactor}` : ""}
+                                  {u.toBaseFactor && u.toBaseFactor !== 1 ? ` - ${tx("factor")} ${u.toBaseFactor}` : ""}
                                 </option>
                               ))}
                             </select>
@@ -843,7 +1089,7 @@ export default function RecipeEditorPage() {
                                 onChange={(e) => updateRow(row._uid, { isActive: e.target.checked })}
                                 disabled={saving}
                               />
-                              Active
+                              {tx("Active")}
                             </label>
                           </td>
 
@@ -852,7 +1098,7 @@ export default function RecipeEditorPage() {
                               className="p-input"
                               value={row.notes ?? ""}
                               onChange={(e) => updateRow(row._uid, { notes: e.target.value || null })}
-                              placeholder="optional"
+                              placeholder={tx("optional")}
                               disabled={saving}
                             />
                           </td>
@@ -863,7 +1109,7 @@ export default function RecipeEditorPage() {
                               onClick={() => removeRow(row._uid)}
                               disabled={saving}
                             >
-                              Remove
+                              {tx("Remove")}
                             </button>
                           </td>
                         </tr>
@@ -875,17 +1121,19 @@ export default function RecipeEditorPage() {
             </div>
 
             <div className="p-section__footer">
-              <span>Total: {rows.length}</span>
-              <span>Active: {activeLines}</span>
-              <span>Inactive: {inactiveLines}</span>
+              <span>{tx("Total:")} {rows.length}</span>
+              <span>{tx("Active:")} {activeLines}</span>
+              <span>{tx("Inactive:")} {inactiveLines}</span>
             </div>
           </div>
 
-          {effectiveMenuItemId && companyId && branchId && (
+          {hasCostingRecipe && costingMenuItemId && companyId && branchId && (
             <RecipeCostingPanel
+              key={JSON.stringify([companyId, branchId, recipeMode, recipe, costingMenuItemId])}
+              isProduction={recipeMode === "production"}
               companyId={companyId}
               branchId={branchId}
-              menuItemId={effectiveMenuItemId}
+              menuItemId={costingMenuItemId}
               disabled={saving}
             />
           )}
@@ -894,3 +1142,6 @@ export default function RecipeEditorPage() {
     </div>
   );
 }
+
+
+

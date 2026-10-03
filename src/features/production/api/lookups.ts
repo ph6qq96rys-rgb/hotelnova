@@ -11,14 +11,29 @@ import { http } from "../../../api/http";
 export interface InventoryItemLite {
   id:            string;
   name:          string;
+  localName?:     string | null;
   isActive:      boolean;
   sku?:          string | null;
   code?:         string | null;
-  itemType?:     string | null;
+  itemType?:     string | number | null;
   baseUomId?:    string | null;
+  baseUomCode?:  string | null;
   baseUomName?:  string | null;
   uomId?:        string | null;
   uomName?:      string | null;
+  uoms?: {
+    uomId: string;
+    code?: string | null;
+    name?: string | null;
+    toBaseFactor?: number | null;
+    isBase?: boolean;
+    isPurchase?: boolean;
+    isIssue?: boolean;
+    isRecipe?: boolean;
+    isConsume?: boolean;
+    isCount?: boolean;
+    isActive?: boolean;
+  }[];
 }
 
 export interface UomLite {
@@ -40,6 +55,17 @@ export async function fetchInventoryItems(
     { params: { q, activeOnly: true } }
   );
   return data;
+}
+
+export async function fetchProductionOutputItems(companyId: string, branchId?: string | null): Promise<InventoryItemLite[]> {
+  if (!branchId) return [];
+  const config = { params: { branchId } };
+  const [finished, semiFinished] = await Promise.all([
+    http.get<InventoryItemLite[]>(`/companies/${companyId}/inventory-items/finished-goods`, config),
+    http.get<InventoryItemLite[]>(`/companies/${companyId}/inventory-items/semi-finished`, config),
+  ]);
+
+  return [...finished.data, ...semiFinished.data];
 }
 
 export async function fetchUoms(companyId: string): Promise<UomLite[]> {

@@ -1,13 +1,10 @@
 import type React from "react";
 import { toUserFriendlyError } from "../../../shared/errors/errorMessage.utils";
+import { formatCurrency } from "../../../shared/currency/currencyFormat";
 import { PAYMENT_STATUS, SALE_STATUS } from "../api/salesTypes";
 
 export const money = (n: number | null | undefined) =>
-  new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(Number(n ?? 0));
+  formatCurrency(n);
 
 export const number = (n: number | null | undefined) =>
   new Intl.NumberFormat().format(Number(n ?? 0));

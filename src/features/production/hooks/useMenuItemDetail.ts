@@ -28,6 +28,10 @@ function isRealId(value?: string | null): value is string {
   );
 }
 
+function canHaveOutputInventory(itemType: number): boolean {
+  return itemType === 5 || itemType === 6;
+}
+
 export function normalizeList<T>(res: T[] | { items?: T[] } | null | undefined): T[] {
   if (!res) return [];
   return Array.isArray(res) ? res : res.items ?? [];
@@ -44,6 +48,9 @@ export function extractApiError(e: unknown, fallback = "Request failed."): strin
 }
 
 export type MenuItemFormState = {
+  vatRateOverride: number | null;
+  serviceChargeRateOverride: number | null;
+  contingencyRateOverride: number | null;
   name: string;
   code: string;
   externalCode: string;
@@ -53,9 +60,13 @@ export type MenuItemFormState = {
   consumptionLocationId: string;
   isActive: boolean;
   isAvailableForSale: boolean;
+  showOnQrMenu: boolean;
 };
 
 const emptyForm: MenuItemFormState = {
+  vatRateOverride: null,
+  serviceChargeRateOverride: null,
+  contingencyRateOverride: null,
   name: "",
   code: "",
   externalCode: "",
@@ -65,6 +76,7 @@ const emptyForm: MenuItemFormState = {
   consumptionLocationId: "",
   isActive: true,
   isAvailableForSale: true,
+  showOnQrMenu: true,
 };
 
 function bindForm(dto: MenuItemDto): MenuItemFormState {
@@ -74,10 +86,14 @@ function bindForm(dto: MenuItemDto): MenuItemFormState {
     externalCode: dto.externalCode ?? "",
     categoryId: dto.categoryId ?? "",
     sellingPrice: String(dto.sellingPrice ?? 0),
+    vatRateOverride: dto.vatRateOverride ?? null,
+    serviceChargeRateOverride: dto.serviceChargeRateOverride ?? null,
+    contingencyRateOverride: dto.contingencyRateOverride ?? null,
     itemType: dto.itemType ?? 1,
     consumptionLocationId: dto.consumptionLocationId ?? "",
     isActive: dto.isActive === true,
     isAvailableForSale: dto.isAvailableForSale === true,
+    showOnQrMenu: dto.showOnQrMenu ?? true,
   };
 }
 
@@ -201,6 +217,8 @@ export function useMenuItemDetail(rawMenuItemId?: string) {
       return setError("Selling price must be zero or greater.");
     }
 
+    const allowOutputInventory = canHaveOutputInventory(form.itemType);
+
     const payload: UpsertMenuItemRequest = {
       name: form.name.trim(),
       code: form.code.trim() || null,
@@ -209,11 +227,15 @@ export function useMenuItemDetail(rawMenuItemId?: string) {
       subCategoryId: item.subCategoryId ?? null,
       itemType: form.itemType,
       sellingPrice: price,
+      vatRateOverride: form.vatRateOverride,
+      serviceChargeRateOverride: form.serviceChargeRateOverride,
+      contingencyRateOverride: form.contingencyRateOverride,
       isActive: form.isActive,
       isAvailableForSale: form.isAvailableForSale,
+      showOnQrMenu: form.showOnQrMenu,
       consumptionLocationId: form.consumptionLocationId || null,
-      outputItemId: item.outputItemId ?? null,
-      outputUomId: item.outputUomId ?? null,
+      outputItemId: allowOutputInventory ? item.outputItemId ?? null : null,
+      outputUomId: allowOutputInventory ? item.outputUomId ?? null : null,
     };
 
     setSaving(true);

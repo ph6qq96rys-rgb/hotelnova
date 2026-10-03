@@ -28,6 +28,14 @@ export function toNullable(value: unknown): string | null {
   return cleaned.length > 0 ? cleaned : null;
 }
 
+export function formatInventoryItemName(name: unknown, localName?: unknown): string {
+  const englishName = trim(name) || "Unnamed item";
+  const amharicName = trim(localName);
+  return amharicName && amharicName !== englishName && !englishName.includes(amharicName)
+    ? `${englishName} - ${amharicName}`
+    : englishName;
+}
+
 export function shortId(id?: string | null, length = 8): string {
   const value = trim(id);
   return value.length <= length ? value : value.slice(-length);
@@ -290,7 +298,7 @@ export function toItemVm(dto: InventoryItemDto): ItemVm {
   const item = dto as InventoryItemLoose;
 
   const id = trim(item.id);
-  const name = trim(item.name) || "Unnamed item";
+  const name = formatInventoryItemName(item.name, item.localName);
   const code = trim(item.code) || trim(item.sku) || undefined;
 
   const baseUomId = trim(item.baseUomId);

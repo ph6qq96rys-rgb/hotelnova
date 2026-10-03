@@ -4,6 +4,7 @@ import { inventoryItemsApi } from "../../../inventoryMaster/items/api/inventoryI
 import type { InventoryItemDto } from "../../../inventoryMaster/items/types";
 import type { SelectOption } from "../types/grn.types";
 import { getApiErrorMessage } from "../helpers/grn.errors";
+import { formatInventoryItemName } from "../utils/grn.utils";
 
 type UomCatalog = Map<string, { code: string; name: string }>;
 
@@ -49,7 +50,7 @@ function uomLabel(uomId: string, catalog: UomCatalog): string {
 
 function itemToVm(dto: InventoryItemDto, catalog: UomCatalog): GrnItemVm {
   const baseUomId = clean(dto.baseUomId);
-  const name = clean(dto.name);
+  const name = formatInventoryItemName(dto.name, dto.localName);
   const sku = clean(dto.sku);
 
   return {
@@ -118,7 +119,7 @@ export function useGrnLookups(companyId?: string | null) {
     setLoadingItems(true);
     setError(null);
 
-    Promise.all([inventoryItemsApi.list(companyId), inventoryItemsApi.getUoms(companyId)])
+    Promise.all([inventoryItemsApi.list(companyId, undefined, true), inventoryItemsApi.getUoms(companyId)])
       .then(([itemsResponse, uomsResponse]) => {
         if (!alive) return;
 

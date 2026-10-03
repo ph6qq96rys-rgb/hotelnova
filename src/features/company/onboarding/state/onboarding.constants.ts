@@ -85,6 +85,7 @@ export const DEFAULT_SETTINGS: CompanySettingsDto = {
   vatRate:              0.15,   // 15% - decimal fraction, NOT a percentage integer
   pricesIncludeVat:     false,
   fiscalYearStartMonth: 1,
+  defaultLanguage:       "en",
   allowNegativeStock:   false,
   costingMethod:        "FIFO" as CostingMethod,
 } as unknown as CompanySettingsDto;

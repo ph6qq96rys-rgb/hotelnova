@@ -39,7 +39,7 @@ function isMissingPunch(record: AttendanceRecordDto): boolean {
 }
 
 export default function AttendancePage() {
-  const { companyId } = useAppScope();
+  const { companyId, branchId } = useAppScope();
   const [report, setReport] = useState<AttendanceReportDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,13 +52,14 @@ export default function AttendancePage() {
     setLoading(true);
     setError(null);
     try {
-      setReport(await attendanceApi.getReport(companyId, { from, to }));
+      setReport(await attendanceApi.getReport(companyId, { from, to, branchId: branchId || undefined }));
     } catch (e) {
+      setReport(null);
       setError(getApiError(e, "Failed to load attendance."));
     } finally {
       setLoading(false);
     }
-  }, [companyId, from, to]);
+  }, [companyId, branchId, from, to]);
 
   useEffect(() => {
     load();
@@ -212,8 +213,8 @@ export default function AttendancePage() {
                     )}
                   </td>
                   <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text-muted)" }}>{fmtDate(record.date)}</td>
-                  <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{fmtTimeInTimeZone(record.clockIn, ATTENDANCE_TIME_ZONE)}</td>
-                  <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{fmtTimeInTimeZone(record.clockOut, ATTENDANCE_TIME_ZONE)}</td>
+                  <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{fmtTimeInTimeZone(record.clockIn, ATTENDANCE_TIME_ZONE)}<small style={{ display: "block" }}>{record.clockInSource}{record.isManualEntry ? " · Corrected" : ""}</small></td>
+                  <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{fmtTimeInTimeZone(record.clockOut, ATTENDANCE_TIME_ZONE)}<small style={{ display: "block" }}>{record.clockOutSource}</small></td>
                   <td style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 12 }}>
                     {record.workedHours ? fmtNumber(record.workedHours) : "-"}
                   </td>

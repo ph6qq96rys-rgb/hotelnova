@@ -3,6 +3,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
+import { useI18n } from "../../../i18n";
 import {
   getTelegramInitData,
   getTelegramRuntimeState,
@@ -52,6 +53,7 @@ const DEFAULT_MESSAGE: MessageState = {
 };
 
 export default function TelegramAttendanceScannerPage() {
+  const { tx } = useI18n();
   const [loading, setLoading] = useState(false);
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [hasInitData, setHasInitData] = useState(false);
@@ -179,7 +181,7 @@ export default function TelegramAttendanceScannerPage() {
     }
 
     telegram.showScanQrPopup(
-      { text: "Scan your branch attendance QR code" },
+      { text: tx("Scan your branch attendance QR code") },
       (qrText: string) => {
         void submitQr(qrText);
         return true;
@@ -198,12 +200,11 @@ export default function TelegramAttendanceScannerPage() {
           <div style={styles.heroContent}>
             <div style={styles.pill}>
               <span style={styles.pulseDot} aria-hidden="true" />
-              HR Attendance
+              {tx("HR Attendance")}
             </div>
-            <h2 style={styles.title}>Branch QR Scanner</h2>
+            <h2 style={styles.title}>{tx("Branch QR Scanner")}</h2>
             <p style={styles.subtitle}>
-              Fast, secure clock in and clock out through your Telegram mini
-              app.
+              {tx("Fast, secure clock in and clock out through your Telegram mini app.")}
             </p>
           </div>
 
@@ -212,7 +213,7 @@ export default function TelegramAttendanceScannerPage() {
           </div>
         </header>
 
-        <Notice message={message} styles={styles} />
+        <Notice message={message} styles={styles} translate={tx} />
 
         <section style={styles.card}>
           <div style={styles.scanVisual} aria-hidden="true">
@@ -235,16 +236,15 @@ export default function TelegramAttendanceScannerPage() {
             <span style={styles.buttonIcon} aria-hidden="true">
               {loading ? "" : ""}
             </span>
-            {loading ? "Processing attendance..." : "Scan Branch QR"}
+            {loading ? tx("Processing attendance...") : tx("Scan Branch QR")}
           </button>
 
           <p style={styles.helperText}>
-            Use the live QR code displayed at your branch. Rotated, expired, or
-            screenshot QR codes may be rejected.
+            {tx("Use the live QR code displayed at your branch. Rotated, expired, or screenshot QR codes may be rejected.")}
           </p>
         </section>
 
-        {result && <AttendanceResultCard result={result} styles={styles} />}
+        {result && <AttendanceResultCard result={result} styles={styles} translate={tx} />}
       </div>
     </section>
   );
@@ -253,9 +253,11 @@ export default function TelegramAttendanceScannerPage() {
 const Notice = memo(function Notice({
   message,
   styles,
+  translate,
 }: {
   message: MessageState;
   styles: ReturnType<typeof createStyles>;
+  translate: (text: string) => string;
 }) {
   return (
     <div
@@ -274,7 +276,7 @@ const Notice = memo(function Notice({
             ? "!"
             : "i"}
       </span>
-      <span>{message.text}</span>
+      <span>{translate(message.text)}</span>
     </div>
   );
 });
@@ -282,9 +284,11 @@ const Notice = memo(function Notice({
 const AttendanceResultCard = memo(function AttendanceResultCard({
   result,
   styles,
+  translate,
 }: {
   result: ClockResult;
   styles: ReturnType<typeof createStyles>;
+  translate: (text: string) => string;
 }) {
   const isClockOut = result.action === "ClockOut";
 
@@ -302,26 +306,26 @@ const AttendanceResultCard = memo(function AttendanceResultCard({
         </div>
 
         <div>
-          <div style={styles.eyebrowDark}>Attendance Recorded</div>
+          <div style={styles.eyebrowDark}>{translate("Attendance Recorded")}</div>
           <h3 style={styles.resultTitle}>
-            {isClockOut ? "Clocked Out" : "Clocked In"}
+            {isClockOut ? translate("Clocked Out") : translate("Clocked In")}
           </h3>
         </div>
       </div>
 
       <div style={styles.resultGrid}>
         <InfoRow
-          label="Employee"
+          label={translate("Employee")}
           value={result.employeeName ?? "-"}
           styles={styles}
         />
         <InfoRow
-          label="Branch"
+          label={translate("Branch")}
           value={result.branchName ?? "-"}
           styles={styles}
         />
         <InfoRow
-          label="Time"
+          label={translate("Time")}
           value={formatAttendanceTime(result.attendanceTime)}
           styles={styles}
         />

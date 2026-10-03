@@ -1,6 +1,9 @@
 import type { Dispatch, SetStateAction } from "react";
+import MenuRateOverrides from "./MenuRateOverrides";
+import { Checkbox } from "../../../components/ui/checkbox";
 import type { MenuCategoryDto, MenuItemDto, StockLocationDto } from "../types";
 import type { MenuItemFormState } from "../hooks/useMenuItemDetail";
+import { useI18n } from "../../../i18n";
 
 type Props = {
   item: MenuItemDto;
@@ -39,6 +42,7 @@ export default function MenuItemForm({
   onSave,
   onReset,
 }: Props) {
+  const { tx } = useI18n();
   const patch = <K extends keyof MenuItemFormState>(
     key: K,
     value: MenuItemFormState[K]
@@ -50,57 +54,57 @@ export default function MenuItemForm({
     <div className="p-card">
       <div className="p-card__head">
         <div>
-          <p className="p-card__title">Sales Item, POS & Consumption Controls</p>
+          <p className="p-card__title">{tx("Sales Item, POS & Consumption Controls")}</p>
           <p className="p-card__subtitle">
-            Menu Items are sales items. Production outputs are Semi-Finished or Finished Goods in Inventory Master and are selected in Recipe Editor OUTPUT.
+            {tx("Menu Items are sales items. Production outputs are Semi-Finished or Finished Goods in Inventory Master and are selected in Recipe Editor OUTPUT.")}
           </p>
         </div>
 
         <span className={`p-badge ${posReady ? "p-badge--active" : "p-badge--inactive"}`}>
-          {posReady ? "POS Ready" : "Blocked"}
+          {posReady ? tx("POS Ready") : tx("Blocked")}
         </span>
       </div>
 
       <div className="p-card__body">
         <div className="p-grid-2">
           <label className="p-field">
-            <span className="p-field__label">Menu Item Name *</span>
+            <span className="p-field__label">{tx("Menu Item Name")} *</span>
             <input
               className="p-input"
               value={form.name}
               onChange={(event) => patch("name", event.target.value)}
-              placeholder="e.g. Chicken Burger"
+              placeholder={tx("e.g. Chicken Burger")}
               disabled={saving}
               autoComplete="off"
             />
           </label>
 
           <label className="p-field">
-            <span className="p-field__label">Code / SKU</span>
+            <span className="p-field__label">{tx("Code / SKU")}</span>
             <input
               className="p-input"
               value={form.code}
               onChange={(event) => patch("code", event.target.value)}
-              placeholder="e.g. BURGER-CHICKEN"
+              placeholder={tx("e.g. BURGER-CHICKEN")}
               disabled={saving}
               autoComplete="off"
             />
           </label>
 
           <label className="p-field">
-            <span className="p-field__label">External POS Code</span>
+            <span className="p-field__label">{tx("External POS Code")}</span>
             <input
               className="p-input"
               value={form.externalCode}
               onChange={(event) => patch("externalCode", event.target.value)}
-              placeholder="Optional POS mapping code"
+              placeholder={tx("Optional POS mapping code")}
               disabled={saving}
               autoComplete="off"
             />
           </label>
 
           <label className="p-field">
-            <span className="p-field__label">Selling Price *</span>
+            <span className="p-field__label">{tx("Selling Price")} *</span>
             <input
               className="p-input"
               type="number"
@@ -114,14 +118,14 @@ export default function MenuItemForm({
           </label>
 
           <label className="p-field">
-            <span className="p-field__label">Category *</span>
+            <span className="p-field__label">{tx("Category")} *</span>
             <select
               className="p-select"
               value={form.categoryId}
               onChange={(event) => patch("categoryId", event.target.value)}
               disabled={saving}
             >
-              <option value="">Select category</option>
+              <option value="">{tx("Select category")}</option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {labelWithCode(category.name, category.code)}
@@ -131,24 +135,26 @@ export default function MenuItemForm({
           </label>
 
           <label className="p-field">
-            <span className="p-field__label">Item Type</span>
+            <span className="p-field__label">{tx("Item Type")}</span>
             <select
               className="p-select"
               value={form.itemType}
               onChange={(event) => patch("itemType", Number(event.target.value))}
               disabled={saving}
             >
-              <option value={1}>Prepared Food - POS sales item</option>
-              <option value={2}>Beverage - POS sales item</option>
-              <option value={3}>Service / Non-stock sales item</option>
+              <option value={1}>{tx("Prepared Food - POS sales item")}</option>
+              <option value={2}>{tx("Beverage - POS sales item")}</option>
+              <option value={3}>{tx("Service / Non-stock sales item")}</option>
+              <option value={5}>{tx("Produced Item - inventory output")}</option>
+              <option value={6}>{tx("Semi-Finished Item - inventory output")}</option>
             </select>
             <span className="p-field__hint">
-              If this is a prep-only production output, create it in Inventory Master as Semi-Finished and select it in Recipe Editor OUTPUT.
+              {tx("If this is a prep-only production output, create it in Inventory Master as Semi-Finished and select it in Recipe Editor OUTPUT.")}
             </span>
           </label>
 
           <label className="p-field">
-            <span className="p-field__label">Consumption Stock Location</span>
+            <span className="p-field__label">{tx("Consumption Stock Location")}</span>
             <select
               className="p-select"
               value={form.consumptionLocationId}
@@ -156,8 +162,8 @@ export default function MenuItemForm({
               disabled={saving}
             >
               <option value="">
-                Use category default
-                {selectedCategory?.defaultConsumptionLocationName
+                {tx("Use available default")}
+                {selectedCategory?.defaultConsumptionLocationName && locations.some(x=>x.id===selectedCategory.defaultConsumptionBranchStockLocationId)
                   ? ` - ${selectedCategory.defaultConsumptionLocationName}`
                   : ""}
               </option>
@@ -170,12 +176,12 @@ export default function MenuItemForm({
             </select>
 
             <span className="p-field__hint">
-              Leave blank to inherit the category default. Override only when this item consumes
-              from a different stock location.
+              {tx("Leave blank to use the category default when available, otherwise an eligible branch location. Select a location to control exactly where this item consumes stock.")}
             </span>
           </label>
         </div>
 
+        <MenuRateOverrides value={form} onChange={rates => setForm(previous => ({ ...previous, ...rates }))} disabled={saving} />
         <div className="p-grid-2" style={{ marginTop: 16 }}>
           <label className="p-checkbox">
             <input
@@ -184,7 +190,7 @@ export default function MenuItemForm({
               onChange={(event) => patch("isActive", event.target.checked)}
               disabled={saving}
             />
-            <span>Active</span>
+            <span>{tx("Active")}</span>
           </label>
 
           <label className="p-checkbox">
@@ -194,9 +200,18 @@ export default function MenuItemForm({
               onChange={(event) => patch("isAvailableForSale", event.target.checked)}
               disabled={saving}
             />
-            <span>Available for POS sale</span>
+            <span>{tx("Available for POS sale")}</span>
+          </label>
+          <label className="p-checkbox">
+            <Checkbox
+              checked={form.showOnQrMenu}
+              onChange={(event) => patch("showOnQrMenu", event.target.checked)}
+              disabled={saving}
+            />
+            <span>{tx("Show on QR menu")}</span>
           </label>
         </div>
+        <p className="p-field__hint">{tx("Items below 1 birr and Management (MGT) items are always hidden from the QR menu.")}</p>
       </div>
 
       <div className="p-card__footer">
@@ -206,7 +221,7 @@ export default function MenuItemForm({
           disabled={saving}
           type="button"
         >
-          Reset
+          {tx("Reset")}
         </button>
 
         <button
@@ -215,7 +230,7 @@ export default function MenuItemForm({
           disabled={!canSave}
           type="button"
         >
-          {saving ? "Saving..." : "Save Configuration"}
+          {saving ? tx("Saving...") : tx("Save Configuration")}
         </button>
       </div>
     </div>

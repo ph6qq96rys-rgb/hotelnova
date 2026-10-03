@@ -11,6 +11,7 @@ interface Props {
   branchId: string;
   menuItemId: string;
   disabled?: boolean;
+  isProduction?: boolean;
 }
 
 function fmt(n: number, dp = 2): string {
@@ -44,6 +45,9 @@ function toUpsertRequest(item: MenuItemDto, sellingPrice: number): UpsertMenuIte
     subCategoryId: item.subCategoryId || null,
     itemType: item.itemType,
     sellingPrice,
+    vatRateOverride: item.vatRateOverride ?? null,
+    serviceChargeRateOverride: item.serviceChargeRateOverride ?? null,
+    contingencyRateOverride: item.contingencyRateOverride ?? null,
     isActive: item.isActive,
     isAvailableForSale: item.isAvailableForSale,
     consumptionLocationId: item.consumptionLocationId || null,
@@ -57,6 +61,7 @@ export function RecipeCostingPanel({
   branchId,
   menuItemId,
   disabled,
+  isProduction = false,
 }: Props) {
   const [previewing, setPreviewing] = useState(false);
   const [savingCost, setSavingCost] = useState(false);
@@ -78,7 +83,7 @@ export function RecipeCostingPanel({
       : 0;
 
   const recommendation =
-    !cost?.foodCostPct
+    cost?.foodCostPct == null
       ? "Preview Required"
       : cost.foodCostPct <= cost.targetFoodCostPct
         ? "Excellent"
@@ -109,7 +114,7 @@ export function RecipeCostingPanel({
     try {
       const dto = await recipeCostingApi.recalculate(companyId, menuItemId, targetPct / 100);
       setCost(dto);
-      setSuccess("Recipe cost saved to menu item.");
+      setSuccess(isProduction ? "Cost per output unit saved to the production menu record." : "Recipe cost saved to menu item.");
     } catch (e) {
       setError(extractApiError(e, "Failed to save recipe cost."));
     } finally {
@@ -145,7 +150,7 @@ export function RecipeCostingPanel({
     <div className="p-section">
       <div className="p-section__head p-section__head--slate">
         <span style={{ color: "#7c3aed" }}></span>
-        COSTING - Menu engineering and theoretical food cost
+        {isProduction ? "COSTING - Production recipe and output unit cost" : "COSTING - Menu engineering and theoretical food cost"}
         <span className="p-section__badge" style={{ background: "#ede9fe", color: "#5b21b6" }}>
           FIFO based
         </span>
@@ -165,7 +170,7 @@ export function RecipeCostingPanel({
         )}
 
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 16, flexWrap: "wrap" }}>
-          <div className="p-field" style={{ margin: 0, width: 150 }}>
+          {!isProduction && <div className="p-field" style={{ margin: 0, width: 150 }}>
             <label className="p-field__label" style={{ fontSize: 11 }}>
               Target food cost %
             </label>
@@ -178,7 +183,7 @@ export function RecipeCostingPanel({
               onChange={(e) => setTargetPct(Number(e.target.value || 0))}
               disabled={busy}
             />
-          </div>
+          </div>}
 
           <button className="p-btn p-btn--outline" onClick={preview} disabled={busy}>
             {previewing ? "Calculating..." : "Preview Cost"}
@@ -193,12 +198,14 @@ export function RecipeCostingPanel({
             {savingCost ? "Saving..." : "Save Cost"}
           </button>
 
-          {cost?.suggestedSellingPrice != null && (
+          {!isProduction && cost?.suggestedSellingPrice != null && (
             <button className="p-btn p-btn--success" onClick={applySuggestedPrice} disabled={busy}>
               {applyingPrice ? "Applying..." : `Apply Suggested Price (${fmt(cost.suggestedSellingPrice)})`}
             </button>
           )}
         </div>
+
+        <p style={{ color: "var(--p-text-muted)", fontSize: 13 }}>Costing uses the saved recipe. Save ingredient or output quantity changes before previewing.</p>
 
         {cost ? (
           <>
@@ -208,9 +215,27 @@ export function RecipeCostingPanel({
                 <div className="p-costing-card__value" style={{ color: "#1e40af" }}>
                   {fmt(cost.totalRecipeCost)}
                 </div>
-                <div className="p-costing-card__sub">per menu unit</div>
+                <div className="p-costing-card__sub">{isProduction ? "total for the saved recipe yield" : "per menu unit"}</div>
               </div>
 
+              <div className="p-costing-card">
+                <div className="p-costing-card__label">Contingency ({fmt(cost.contingencyRate)}%)</div>
+                <div className="p-costing-card__value">{fmt(cost.contingencyAmount)}</div>
+              </div>
+              <div className="p-costing-card">
+                <div className="p-costing-card__label">Cost with Contingency</div>
+                <div className="p-costing-card__value">{fmt(cost.totalCostWithContingency)}</div>
+              </div>
+              <div className="p-costing-card">
+                <div className="p-costing-card__label">Output Unit Cost with Contingency</div>
+                <div className="p-costing-card__value">{fmt(cost.costPerOutputWithContingency, 4)}</div>
+              </div>
+              {isProduction && <div className="p-costing-card" style={{ background: "#f0fdf4" }}>
+                <div className="p-costing-card__label">Cost per Output Unit</div>
+                <div className="p-costing-card__value">{fmt(cost.costPerOutputUnit, 4)}</div>
+                <div className="p-costing-card__sub">Recipe cost / {fmt(cost.outputQuantity, 4)} output units</div>
+              </div>}
+              {!isProduction && <>
               <div className="p-costing-card" style={{ background: "#f0fdf4" }}>
                 <div className="p-costing-card__label">Current Price</div>
                 <div className="p-costing-card__value" style={{ color: "var(--p-success)" }}>
@@ -255,6 +280,7 @@ export function RecipeCostingPanel({
                 <div className="p-costing-card__value">{recommendation}</div>
                 <div className="p-costing-card__sub">pricing review status</div>
               </div>
+              </>}
             </div>
 
             <div className="p-table-wrap">
@@ -262,7 +288,7 @@ export function RecipeCostingPanel({
                 <thead>
                   <tr>
                     <th>Ingredient</th>
-                    <th className="num">Qty / Unit</th>
+                    <th className="num">{isProduction ? "Recipe Qty" : "Qty / Unit"}</th>
                     <th className="num">Waste %</th>
                     <th className="num">UOM</th>
                     <th className="num">Unit Cost</th>

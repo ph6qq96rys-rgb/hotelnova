@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { SivRecommendationCard } from "./SivRecommendationCard";
+import { useI18n } from "../../../../i18n";
 import type { SivApprovalLineInput } from "../types/sivRecommendation";
 
 interface ApprovalLine extends SivApprovalLineInput {
@@ -20,6 +21,7 @@ export function SivApprovalWindow({
   sivId,
   initialLines,
 }: SivApprovalWindowProps) {
+  const { tx } = useI18n();
   const [lines, setLines] = useState(initialLines);
   const [overrideReason, setOverrideReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -82,11 +84,11 @@ export function SivApprovalWindow({
       );
 
       if (!response.ok) {
-        throw new Error((await response.text()) || "Unable to approve SIV.");
+        throw new Error((await response.text()) || tx("Unable to approve SIV."));
       }
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Unable to approve SIV.",
+        cause instanceof Error ? cause.message : tx("Unable to approve SIV."),
       );
     } finally {
       setSubmitting(false);
@@ -96,7 +98,7 @@ export function SivApprovalWindow({
   return (
     <div className="siv-approval-layout">
       <main>
-        <h1>Approve SIV</h1>
+        <h1>{tx("Approve SIV")}</h1>
 
         {error && <p role="alert">{error}</p>}
 
@@ -117,7 +119,7 @@ export function SivApprovalWindow({
         ))}
 
         <label>
-          Override reason
+          {tx("Override reason")}
           <textarea
             value={overrideReason}
             onChange={(event) => setOverrideReason(event.currentTarget.value)}
@@ -129,7 +131,7 @@ export function SivApprovalWindow({
           disabled={submitting || hasInvalidQuantity}
           onClick={() => void approve()}
         >
-          {submitting ? "Approving..." : "Approve SIV"}
+          {submitting ? tx("Approving...") : tx("Approve SIV")}
         </button>
       </main>
 

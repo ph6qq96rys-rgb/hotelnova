@@ -48,6 +48,12 @@ export default function MenuItemMetrics({ item }: { item: MenuItemDto }) {
     <div className="mid-metrics-grid">
       <Metric label="Selling Price" value={money(sellingPrice)} />
       <Metric label="Recipe Cost" value={money(cost)} />
+      {item.pricing && <>
+        <Metric label={`VAT (${item.pricing.vatRate}%)`} value={money(item.pricing.vatAmount)} />
+        <Metric label={`Service Charge (${item.pricing.serviceChargeRate}%)`} value={money(item.pricing.serviceChargeAmount)} />
+        <Metric label="Customer Total" value={money(item.pricing.customerTotal)} />
+        <Metric label={`Cost + Contingency (${item.pricing.contingencyRate}%)`} value={money(item.pricing.costWithContingency)} />
+      </>}
       <Metric
         label="Gross Margin"
         value={marginValue == null ? "-" : `${money(marginValue)} - ${marginPct}`}

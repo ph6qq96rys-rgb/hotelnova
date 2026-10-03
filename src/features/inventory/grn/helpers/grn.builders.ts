@@ -11,7 +11,6 @@ function safeNumber(value: unknown): number {
 
 export type GrnRequestScope = {
   companyId?: Guid;
-  branchId?: Guid;
 };
 
 export function todayLocalDate(): DateOnlyString {
@@ -44,8 +43,8 @@ export const createEmptyGrnDraft = (): GrnDraft => ({
 export function buildCreateGrnRequest(draft: GrnDraft, scope: GrnRequestScope = {}): CreateGrnDraftRequest {
   return {
     companyId: scope.companyId,
-    branchId: scope.branchId,
-    receivingBranchId: scope.branchId,
+    branchId: undefined,
+    receivingBranchId: undefined,
     receivingLocationId: draft.locationId,
     receivedDate: draft.receivedDate,
     supplierName: cleanText(draft.supplierName) || null,

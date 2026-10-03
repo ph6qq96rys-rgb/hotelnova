@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "../../../../auth/AuthProvider";
 import { useAppScope } from "../../../../app/useAppScope";
 import { attendanceApi } from "../../api/hrApi";
 import type { AttendancePolicyDto } from "../../types";
@@ -144,9 +145,15 @@ function Toggle({
 
 export default function AttendanceConfigurationPage() {
   const { companyId, branchId, branchName, companyName } = useAppScope();
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("hr.attendance.policies.manage") || hasPermission("hr.attendance.manage");
+  const generation = useRef(0);
+  const scope = (companyId || "") + ":" + (branchId || "");
+  const [loadedScope, setLoadedScope] = useState("");
+  const [inherited, setInherited] = useState(false);
   const [form, setForm] = useState<PolicyForm>(defaultPolicy);
   const [policies, setPolicies] = useState<AttendancePolicyDto[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -154,6 +161,8 @@ export default function AttendanceConfigurationPage() {
   const load = useCallback(async () => {
     if (!companyId) return;
 
+    const current = ++generation.current;
+    setLoadedScope("");
     setLoading(true);
     setError(null);
     setSaved(null);
@@ -164,17 +173,23 @@ export default function AttendanceConfigurationPage() {
         attendanceApi.listPolicies(companyId, { branchId: branchId || null, includeInactive: true }),
       ]);
 
-      setForm(toForm(effective));
+      if (current !== generation.current) return;
+      const selected = branchId || null;
+      const editable = list.find(p => p.id === effective?.id && (p.branchId ?? null) === selected);
+      setInherited(Boolean(selected && !editable));
+      setForm({ ...toForm(effective), id: editable?.id ?? null, branchId: selected });
       setPolicies(list);
+      setLoadedScope(scope);
     } catch (e) {
-      setError(getApiError(e, "Failed to load attendance configuration."));
+      if (current === generation.current) setError(getApiError(e, "Failed to load attendance configuration."));
     } finally {
-      setLoading(false);
+      if (current === generation.current) setLoading(false);
     }
-  }, [companyId, branchId]);
+  }, [companyId, branchId, scope]);
 
   useEffect(() => {
     void load();
+    return () => { generation.current++; };
   }, [load]);
 
   const update = <K extends keyof PolicyForm>(key: K, value: PolicyForm[K]) => {
@@ -191,8 +206,26 @@ export default function AttendanceConfigurationPage() {
   }, [form]);
 
   const save = async () => {
-    if (!companyId) return;
-
+    if (!companyId || saving || loading || loadedScope !== scope || !canManage) return;
+    const limits: [keyof PolicyForm, string, number, number, boolean][] = [
+      ["standardDailyHours", "Standard daily hours", 0.25, 24, false],
+      ["mealBreakMinutes", "Meal break minutes", 0, 240, true],
+      ["lateGraceMinutes", "Late grace minutes", 0, 240, true],
+      ["earlyDepartureGraceMinutes", "Early departure grace", 0, 240, true],
+      ["overtimeThresholdHours", "Overtime threshold", 0, 24, false],
+      ["overtimeApprovalThresholdHours", "Approval threshold", 0, 24, false],
+      ["overtimeRate", "Overtime rate", 0.01, 5, false],
+      ["duplicateScanGuardMinutes", "Duplicate scan guard", 0, 120, true],
+    ];
+    for (const [key, label, min, max, integer] of limits) {
+      const value = String(form[key]).trim(), number = Number(value);
+      if (!value || !Number.isFinite(number) || number < min || number > max || (integer && !Number.isInteger(number))) {
+        setError(label + " must be " + (integer ? "a whole number" : "a number") + " between " + min + " and " + max + ".");
+        return;
+      }
+    }
+    if (!form.code.trim() || !form.name.trim()) { setError("Policy code and name are required."); return; }
+    const current = generation.current;
     setSaving(true);
     setError(null);
     setSaved(null);
@@ -201,11 +234,10 @@ export default function AttendanceConfigurationPage() {
       await attendanceApi.savePolicy(companyId, {
         id: form.id || undefined,
         companyId,
-        branchId: branchId || form.branchId || undefined,
+        branchId: branchId || undefined,
         code: form.code.trim(),
         name: form.name.trim(),
         isDefault: true,
-        isActive: true,
         timeZoneId: form.timeZoneId.trim() || "Africa/Addis_Ababa",
         standardDailyHours: asNumber(form.standardDailyHours, 8),
         mealBreakMinutes: asNumber(form.mealBreakMinutes, 30),
@@ -218,7 +250,7 @@ export default function AttendanceConfigurationPage() {
         overtimeRate: asNumber(form.overtimeRate, 1.5),
         duplicateScanGuardMinutes: asNumber(form.duplicateScanGuardMinutes, 5),
         allowManualEntry: form.allowManualEntry,
-        requiresManualEntryApproval: form.requiresManualEntryApproval,
+        requiresManualEntryApproval: true,
         requireQrClocking: form.requireQrClocking,
         shiftPatternName: form.shiftPatternName.trim(),
         rosterGroupName: form.rosterGroupName.trim(),
@@ -229,10 +261,11 @@ export default function AttendanceConfigurationPage() {
         mealBreakRuleName: form.mealBreakRuleName.trim(),
       });
 
-      setSaved("Attendance policy saved for the active company and branch scope.");
+      if (current !== generation.current) return;
       await load();
+      if (generation.current === current + 1) setSaved("Attendance policy saved for " + (branchName || "the company default") + ".");
     } catch (e) {
-      setError(getApiError(e, "Failed to save attendance configuration."));
+      if (current === generation.current) setError(getApiError(e, "Failed to save attendance configuration."));
     } finally {
       setSaving(false);
     }
@@ -249,15 +282,17 @@ export default function AttendanceConfigurationPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn" onClick={load} disabled={loading || !companyId}>
+          <button className="btn" onClick={() => void load()} disabled={loading || saving || !companyId}>
             <i className="ti ti-refresh" /> {loading ? "Loading..." : "Refresh"}
           </button>
-          <button className="btn btn-primary" onClick={save} disabled={saving || !companyId}>
+          <button className="btn btn-primary" onClick={save} disabled={saving || loading || loadedScope !== scope || !companyId || !canManage}>
             <i className="ti ti-device-floppy" /> {saving ? "Saving..." : "Save Policy"}
           </button>
         </div>
       </div>
 
+      {!canManage && <div className="alert">Read-only: attendance policy management permission is required to save.</div>}
+      {inherited && <div className="alert">This branch inherits its rules. Saving creates a branch override; the company default stays unchanged.</div>}
       {error && <div className="alert alert-danger">{error}</div>}
       {saved && <div className="alert alert-success">{saved}</div>}
 
@@ -270,12 +305,12 @@ export default function AttendanceConfigurationPage() {
         <div className="kpi">
           <div className="kpi-label">Daily Hours</div>
           <div className="kpi-val">{summary.standardHours}</div>
-          <div className="kpi-sub">standard payable day</div>
+          <div className="kpi-sub">standard working day</div>
         </div>
         <div className="kpi">
           <div className="kpi-label">Overtime Gate</div>
           <div className="kpi-val">{summary.overtimeThreshold}</div>
-          <div className="kpi-sub">hours before approval</div>
+          <div className="kpi-sub">worked hours before overtime</div>
         </div>
         <div className="kpi">
           <div className="kpi-label">Duplicate Guard</div>
@@ -289,43 +324,42 @@ export default function AttendanceConfigurationPage() {
         </div>
       </div>
 
-      <section className="card" style={{ marginBottom: 18 }}>
+      <fieldset disabled={loading || saving || loadedScope !== scope || !canManage} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      <section className="card" style={{ marginBottom: 18, padding: 20 }}>
         <div className="card-title">Policy Identity</div>
         <div className="card-subtitle" style={{ marginBottom: 16 }}>
           Company and branch scope are enforced by the API. A branch policy overrides the company default for employees in that branch.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
           <Field label="Policy Code">
-            <input className="input" value={form.code} onChange={(e) => update("code", e.target.value)} />
+            <input className="input" maxLength={40} value={form.code} onChange={(e) => update("code", e.target.value)} />
           </Field>
           <Field label="Policy Name">
-            <input className="input" value={form.name} onChange={(e) => update("name", e.target.value)} />
+            <input className="input" maxLength={160} value={form.name} onChange={(e) => update("name", e.target.value)} />
           </Field>
           <Field label="Time Zone">
             <select className="input" value={form.timeZoneId} onChange={(e) => update("timeZoneId", e.target.value)}>
               <option value="Africa/Addis_Ababa">Africa/Addis Ababa</option>
               <option value="UTC">UTC</option>
+              {!["Africa/Addis_Ababa", "UTC"].includes(form.timeZoneId) && <option value={form.timeZoneId}>{form.timeZoneId}</option>}
             </select>
           </Field>
         </div>
       </section>
 
-      <section className="card" style={{ marginBottom: 18 }}>
+      <section className="card" style={{ marginBottom: 18, padding: 20 }}>
         <div className="card-title">Payroll & Compliance Rules</div>
         <div className="card-subtitle" style={{ marginBottom: 16 }}>
-          These values drive attendance calculation, overtime flags, and payroll blocking behavior.
+          Rules apply to new attendance calculations. Changing a policy does not recalculate historical records or approve overtime.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
           <Field label="Standard Daily Hours">
             <input className="input" type="number" min="1" max="24" step="0.25" value={form.standardDailyHours} onChange={(e) => update("standardDailyHours", e.target.value)} />
           </Field>
           <Field label="Overtime Threshold">
-            <input className="input" type="number" min="1" max="24" step="0.25" value={form.overtimeThresholdHours} onChange={(e) => update("overtimeThresholdHours", e.target.value)} />
+            <input className="input" type="number" min="0" max="24" step="0.25" value={form.overtimeThresholdHours} onChange={(e) => update("overtimeThresholdHours", e.target.value)} />
           </Field>
-          <Field label="Approval Threshold">
-            <input className="input" type="number" min="1" max="24" step="0.25" value={form.overtimeApprovalThresholdHours} onChange={(e) => update("overtimeApprovalThresholdHours", e.target.value)} />
-          </Field>
-          <Field label="Overtime Rate">
+<Field label="Overtime Rate">
             <input className="input" type="number" min="1" max="5" step="0.1" value={form.overtimeRate} onChange={(e) => update("overtimeRate", e.target.value)} />
           </Field>
           <Field label="Late Grace Minutes">
@@ -343,21 +377,21 @@ export default function AttendanceConfigurationPage() {
         </div>
       </section>
 
-      <section className="card" style={{ marginBottom: 18 }}>
+      <section className="card" style={{ marginBottom: 18, padding: 20 }}>
         <div className="card-title">Operational Controls</div>
         <div className="card-subtitle" style={{ marginBottom: 16 }}>
           These switches define how kitchen and branch employees can create attendance records.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12 }}>
-          <Toggle label="Require QR clocking" checked={form.requireQrClocking} onChange={(value) => update("requireQrClocking", value)} />
+          <p>Telegram attendance uses a branch QR code. Registered PIN kiosks are managed under Attendance kiosks.</p>
           <Toggle label="Allow manual entry" checked={form.allowManualEntry} onChange={(value) => update("allowManualEntry", value)} />
-          <Toggle label="Manual entry requires approval" checked={form.requiresManualEntryApproval} onChange={(value) => update("requiresManualEntryApproval", value)} />
-          <Toggle label="Overtime requires manager approval" checked={form.requiresOvertimeApproval} onChange={(value) => update("requiresOvertimeApproval", value)} />
+          <p>Manual corrections always require independent approval.</p>
+          <p>Overtime is calculated as potential hours. Approval and payment follow the overtime workflow.</p>
           <Toggle label="Deduct meal break automatically" checked={form.deductMealBreakAutomatically} onChange={(value) => update("deductMealBreakAutomatically", value)} />
         </div>
       </section>
 
-      <section className="card" style={{ marginBottom: 18 }}>
+      <section className="card" style={{ marginBottom: 18, padding: 20 }}>
         <div className="card-title">Employee Profile Labels</div>
         <div className="card-subtitle" style={{ marginBottom: 16 }}>
           These labels replace blank attendance configuration fields on employee profiles until dedicated shift, roster, device, and calendar masters are attached.
@@ -387,6 +421,7 @@ export default function AttendanceConfigurationPage() {
         </div>
       </section>
 
+      </fieldset>
       <section className="card" style={{ padding: 0 }}>
         <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)" }}>
           <div className="card-title">Configured Policies</div>

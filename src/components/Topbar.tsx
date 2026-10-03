@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 import { Bell, Menu, Search } from "lucide-react";
+import { LanguageSelector } from "./LanguageSelector";
+import { ScopeSwitcher } from "./ScopeSwitcher";
+import { useI18n } from "../i18n";
 import { useAuth } from "../auth/AuthProvider";
 
 export type PageHeaderProps = {
@@ -30,10 +33,13 @@ type TopbarProps = {
 export default function Topbar({
   onOpenSidebar,
   sidebarOpen = false,
-  title = "Dashboard",
-  subtitle = "Overview & quick actions",
+  title,
+  subtitle,
 }: TopbarProps) {
   const { user, logout } = useAuth();
+  const { t } = useI18n();
+  const resolvedTitle = title ?? t("common.dashboard");
+  const resolvedSubtitle = subtitle ?? t("app.workspace");
 
   const displayName =
     (user as any)?.fullName || (user as any)?.name || user?.email || "Admin";
@@ -57,15 +63,15 @@ export default function Topbar({
             onPointerDown={onOpenSidebar}
             onTouchStart={onOpenSidebar}
             onClick={onOpenSidebar}
-            aria-label="Open menu"
+            aria-label={t("common.openMenu")}
             aria-expanded={sidebarOpen}
           >
             <Menu size={18} strokeWidth={2} aria-hidden="true" />
           </button>
 
           <div className="hna-topbar__title">
-            <span className="hna-topbar__title-main">{title}</span>
-            {subtitle && <span className="hna-topbar__title-sub">{subtitle}</span>}
+            <span className="hna-topbar__title-main">{resolvedTitle}</span>
+            {resolvedSubtitle && <span className="hna-topbar__title-sub">{resolvedSubtitle}</span>}
           </div>
         </div>
 
@@ -73,8 +79,8 @@ export default function Topbar({
           <Search size={18} strokeWidth={2} aria-hidden="true" />
           <input
             className="hna-topbar__search-input"
-            placeholder="Search..."
-            aria-label="Search"
+            placeholder={t("common.search")}
+            aria-label={t("common.search")}
           />
         </div>
 
@@ -82,10 +88,12 @@ export default function Topbar({
           <button
             type="button"
             className="hna-topbar__icon-btn"
-            aria-label="Notifications"
+            aria-label={t("common.notifications")}
           >
             <Bell size={18} strokeWidth={2} aria-hidden="true" />
           </button>
+
+          <ScopeSwitcher />
 
           <div className="hna-topbar__user">
             <div className="hna-topbar__avatar" aria-hidden="true">
@@ -97,12 +105,14 @@ export default function Topbar({
             </div>
           </div>
 
+          <LanguageSelector compact />
+
           <button
             type="button"
             className="hna-topbar__logout-btn"
             onClick={logout}
           >
-            Sign out
+            {t("common.signOut")}
           </button>
         </div>
       </header>
@@ -240,6 +250,66 @@ const TOPBAR_CSS = `
     min-width: 0;
   }
 
+  .hna-scope {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 150px;
+    max-width: 260px;
+    height: 38px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border-tertiary, #e5e7eb);
+    border-radius: 8px;
+    color: var(--color-text-secondary, #6b7280);
+    background: var(--color-background-primary, #fff);
+  }
+
+  .hna-scope__text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .hna-scope__company,
+  .hna-scope__branch {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hna-scope__company {
+    font-size: 10.5px;
+    line-height: 1.1;
+    color: var(--color-text-tertiary, #9ca3af);
+  }
+
+  .hna-scope__branch {
+    font-size: 12px;
+    line-height: 1.2;
+    color: var(--color-text-primary, #111827);
+  }
+
+  .hna-scope__select {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    padding: 0;
+    background: transparent;
+    color: var(--color-text-primary, #111827);
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.2;
+    cursor: pointer;
+  }
+
+  .hna-scope__select:disabled {
+    color: var(--color-text-tertiary, #9ca3af);
+    cursor: default;
+  }
+
   .hna-topbar__user {
     display: flex;
     align-items: center;
@@ -297,10 +367,15 @@ const TOPBAR_CSS = `
   }
 
   @media (max-width: 768px) {
+    .hna-scope {
+      min-width: 120px;
+      max-width: 180px;
+      padding-inline: 8px;
+    }
+
     .hna-topbar__user { padding-right: 4px; }
     .hna-topbar__user-info { display: none; }
   }
-
   .hna-topbar__logout-btn {
     padding: 0 12px;
     height: 32px;
@@ -387,11 +462,23 @@ const TOPBAR_CSS = `
     }
 
     .hna-topbar__title-sub,
-    .hna-topbar__logout-btn {
+    .hn-language svg,
+  .hna-topbar__logout-btn {
       display: none;
     }
 
     .hna-topbar__right { gap: 4px; }
+
+    .hna-scope {
+      max-width: 44px;
+      min-width: 44px;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .hna-scope__text {
+      display: none;
+    }
 
     .hna-page-header {
       flex-direction: column;

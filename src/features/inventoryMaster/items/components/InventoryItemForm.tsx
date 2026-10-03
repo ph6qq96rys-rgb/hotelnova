@@ -5,6 +5,7 @@
 // inline variant for the list page.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "../../../../i18n";
 import type { InventoryItemDto, ItemUomDto } from "../types";
 import { ITEM_TYPES, isServiceLikeType, type ItemType } from "../constants/itemTypes";
 import UomConversionGrid from "./UomConversionGrid";
@@ -62,7 +63,7 @@ function parseOptionalNumber(value: string, label: string): number | null {
 function parseReorderLevel(value: string): number {
   if (!value.trim()) return 0;
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) throw new Error("Reorder level must be  0.");
+  if (!Number.isFinite(n) || n < 0) throw new Error("Reorder level must be greater than or equal to 0.");
   return Math.floor(n);
 }
 
@@ -77,6 +78,21 @@ function extractApiError(e: unknown): string {
 
 function getInitialType(initial: InventoryItemDto | null | undefined): ItemType {
   return (initial as any)?.type ?? (initial as any)?.itemType ?? "RawMaterial";
+}
+
+function findPreferredKgUom(uoms: SelectOption[]): SelectOption | undefined {
+  return uoms.find((u) => {
+    const code = (u.code ?? "").trim().toLowerCase();
+    const name = u.name.trim().toLowerCase();
+    return code === "kg" || code === "kgs" || name === "kg" || name === "kilogram" || name === "kilograms";
+  });
+}
+
+function findButcheryCategory(categories: SelectOption[]): string {
+  return categories.find((category) => {
+    const text = `${category.name} ${category.code ?? ""}`.toLowerCase();
+    return text.includes("butcher") || text.includes("meat") || text.includes("beef") || text.includes("carcass");
+  })?.id ?? "";
 }
 
 //  UOM helpers 
@@ -203,6 +219,7 @@ function Field({
 export default function InventoryItemForm({
   mode, initial, categories, uoms, saving: externalSaving, onSubmit, onCancel,
 }: Props) {
+  const { tx } = useI18n();
   const { companyId }  = useAppScope();
   const factorCache    = useRef<Map<string, number>>(new Map());
 
@@ -230,6 +247,7 @@ export default function InventoryItemForm({
 
   const isServiceLike = isServiceLikeType(type);
   const uomById       = useMemo(() => new Map(uoms.map(u => [u.id, u])), [uoms]);
+  const preferredKgUom = useMemo(() => findPreferredKgUom(uoms), [uoms]);
 
   //  Factor hydration from conversion DB 
 
@@ -355,6 +373,33 @@ export default function InventoryItemForm({
     setAllowedUoms(cur => applyIssueUom(cur, baseUomId, issueUomId));
   }, [baseUomId, ensureNonBaseRow, isServiceLike, issueUomId]);
 
+  const applyCarcassPreset = useCallback(() => {
+    const uom = preferredKgUom ?? uoms[0];
+    setName("Beef carcass");
+    setLocalName("");
+    setSku("CARCASS-BEEF");
+    setBarcode("");
+    setCategoryId(findButcheryCategory(categories));
+    setType("RawMaterial");
+    setTrackInventory(true);
+    setDefaultCost("");
+    setDefaultPrice("");
+    setReorderLevel("0");
+    setError(null);
+
+    if (!uom) {
+      setBaseUomId("");
+      setIssueUomId("");
+      setAllowedUoms([]);
+      return;
+    }
+
+    const baseRow = { ...buildBaseRow(uom.id, uoms), isIssue: true };
+    setBaseUomId(uom.id);
+    setIssueUomId(uom.id);
+    setAllowedUoms([baseRow]);
+  }, [categories, preferredKgUom, uoms]);
+
   //  Submit 
 
   const submit = useCallback(async () => {
@@ -407,11 +452,11 @@ export default function InventoryItemForm({
   //  Derived display values 
 
   const chipTone  = mode === "create" ? "draft" : isActive ? "success" : "danger";
-  const chipLabel = mode === "create" ? "Draft"  : isActive ? "Active"  : "Inactive";
+  const chipLabel = mode === "create" ? tx("Draft") : isActive ? tx("Active") : tx("Inactive");
 
   const uomSubtitle = isServiceLike
-    ? "Service / non-stock items do not require UOM conversions."
-    : "FUOM is the stocking unit. Store UOM maps to the issue / dispensing unit.";
+    ? tx("Service / non-stock items do not require UOM conversions.")
+    : tx("FUOM is the stocking unit. Store UOM maps to the issue / dispensing unit.");
 
   const uomGridRows = allowedUoms.filter(r => !r.isBase);
 
@@ -423,14 +468,14 @@ export default function InventoryItemForm({
       {/*  Header  */}
       <div className="iif-header">
         <div className="iif-header__left">
-          <div className="iif-header__kicker">Item master</div>
+          <div className="iif-header__kicker">{tx("Item master")}</div>
           <div className="iif-header__title">
-            {mode === "create" ? "New inventory item" : "Edit inventory item"}
+            {mode === "create" ? tx("New inventory item") : tx("Edit inventory item")}
           </div>
           <div className="iif-header__subtitle">
             {isServiceLike
-              ? "Service / non-stock item"
-              : "Stock item - define FUOM, store UOM, and conversion rules"}
+              ? tx("Service / non-stock item")
+              : tx("Stock item - define FUOM, store UOM, and conversion rules")}
           </div>
         </div>
         <div className="iif-header__actions">
@@ -442,20 +487,20 @@ export default function InventoryItemForm({
             onClick={onCancel}
             disabled={saving}
           >
-            Cancel
+            {tx("Cancel")}
           </button>
           <button
             className="inv-btn inv-btn--solid"
             onClick={submit}
             disabled={saving}
           >
-            {saving ? "Saving..." : "Save item"}
+            {saving ? tx("Saving...") : tx("Save item")}
           </button>
         </div>
       </div>
 
       {/*  Error banner  */}
-      {error && <div className="iif-alert">{error}</div>}
+      {error && <div className="iif-alert">{tx(error)}</div>}
 
       <div className="iif-body">
 
@@ -463,22 +508,33 @@ export default function InventoryItemForm({
         {/* SECTION 1 - Item information                                    */}
         {/*  */}
         <Section
-          title="Item information"
-          subtitle="Basic identity and classification"
+          title={tx("Item information")}
+          subtitle={tx("Basic identity and classification")}
         >
           <div className="inv-form-grid">
 
-            <Field label="Item name" span={4} required>
+            {mode === "create" && (
+              <div className="inv-field inv-field--span-12 inv-preset-strip">
+                <div>
+                  <strong>{tx("Register carcass item")}</strong>
+                  <span>{tx("Use this before GRN: creates a Raw Material stock item for carcass receiving, batch costing, and butchery yield sheets.")}</span>
+                </div>
+                <button className="inv-btn inv-btn--outline inv-btn--sm" type="button" onClick={applyCarcassPreset} disabled={saving}>
+                  {tx("Use carcass preset")}
+                </button>
+              </div>
+            )}
+            <Field label={tx("Item name")} span={4} required>
               <input
                 className="inv-input"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                placeholder="e.g. Tomato, Beef, Room Service"
+                placeholder={tx("e.g. Tomato, Beef, Room Service")}
                 disabled={saving}
               />
             </Field>
 
-            <Field label="SKU" span={2}>
+            <Field label={tx("SKU")} span={2}>
               <input
                 className="inv-input"
                 value={sku}
@@ -488,7 +544,7 @@ export default function InventoryItemForm({
               />
             </Field>
 
-            <Field label="Barcode" span={3}>
+            <Field label={tx("Barcode")} span={3}>
               <input
                 className="inv-input"
                 value={barcode}
@@ -498,32 +554,32 @@ export default function InventoryItemForm({
               />
             </Field>
 
-            <Field label="Local name" span={3}>
+            <Field label={tx("Local name")} span={3}>
               <input
                 className="inv-input"
                 value={localName}
                 onChange={e => setLocalName(e.target.value)}
-                placeholder="Optional - Arabic / RTL"
+                placeholder={tx("Optional - Amharic / local name")}
                 disabled={saving}
                 dir="auto"
               />
             </Field>
 
-            <Field label="Category" span={3}>
+            <Field label={tx("Category")} span={3}>
               <select
                 className="inv-input"
                 value={categoryId}
                 onChange={e => setCategoryId(e.target.value)}
                 disabled={saving}
               >
-                <option value="">None</option>
+                <option value="">{tx("None")}</option>
                 {categories.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </Field>
 
-            <Field label="Item type" span={3} required>
+            <Field label={tx("Item type")} span={3} required>
               <select
                 className="inv-input"
                 value={type}
@@ -531,15 +587,15 @@ export default function InventoryItemForm({
                 disabled={saving}
               >
                 {ITEM_TYPES.map(t => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
+                  <option key={t.value} value={t.value}>{tx(t.label)}</option>
                 ))}
               </select>
             </Field>
 
             <Field
-              label="Track inventory"
+              label={tx("Track inventory")}
               span={3}
-              hint={isServiceLike ? "Not applicable for service items" : undefined}
+              hint={isServiceLike ? tx("Not applicable for service items") : undefined}
             >
               <label className={`inv-checkbox-row${isServiceLike ? " inv-checkbox-row--disabled" : ""}`}>
                 <input
@@ -548,12 +604,12 @@ export default function InventoryItemForm({
                   disabled={isServiceLike || saving}
                   onChange={e => setTrackInventory(e.target.checked)}
                 />
-                <span>Yes - track stock movements</span>
+                <span>{tx("Yes - track stock movements")}</span>
               </label>
             </Field>
 
             {mode === "edit" && (
-              <Field label="Active status" span={3}>
+              <Field label={tx("Active status")} span={3}>
                 <label className="inv-checkbox-row">
                   <input
                     type="checkbox"
@@ -561,7 +617,7 @@ export default function InventoryItemForm({
                     disabled={saving}
                     onChange={e => setIsActive(e.target.checked)}
                   />
-                  <span>{isActive ? "Active" : "Inactive"}</span>
+                  <span>{isActive ? tx("Active") : tx("Inactive")}</span>
                 </label>
               </Field>
             )}
@@ -572,14 +628,14 @@ export default function InventoryItemForm({
         {/*  */}
         {/* SECTION 2 - Unit of measurement                                 */}
         {/*  */}
-        <Section title="Unit of measurement" subtitle={uomSubtitle}>
+        <Section title={tx("Unit of measurement")} subtitle={uomSubtitle}>
           <div className="inv-form-grid">
 
             <Field
-              label="FUOM / base UOM"
+              label={tx("FUOM / base UOM")}
               span={4}
               required={!isServiceLike}
-              hint="Fundamental stocking unit - all conversions are relative to this"
+              hint={tx("Fundamental stocking unit - all conversions are relative to this")}
             >
               <select
                 className="inv-input"
@@ -597,9 +653,9 @@ export default function InventoryItemForm({
             </Field>
 
             <Field
-              label="Store UOM / issue UOM"
+              label={tx("Store UOM / issue UOM")}
               span={4}
-              hint="Controls the unit used in store requests and stock movements"
+              hint={tx("Controls the unit used in store requests and stock movements")}
             >
               <select
                 className="inv-input"
@@ -616,9 +672,9 @@ export default function InventoryItemForm({
               </select>
             </Field>
 
-            <Field label="Conversion source" span={4}>
+            <Field label={tx("Conversion source")} span={4}>
               <div className="inv-readonly-field">
-                Factors loaded from UOM conversion database
+                {tx("Factors loaded from UOM conversion database")}
               </div>
             </Field>
 
@@ -627,12 +683,12 @@ export default function InventoryItemForm({
           {!isServiceLike && (
             <div className="iif-conv-section">
               <div className="iif-conv-section__label">
-                Allowed units &amp; conversion lines
+                {tx("Allowed units & conversion lines")}
               </div>
               <div className="iif-conv-section__body">
                 {!baseUomId ? (
                   <p className="iif-conv-section__empty">
-                    Select a <strong>FUOM</strong> to enable conversion lines.
+                    {tx("Select a FUOM to enable conversion lines.")}
                   </p>
                 ) : (
                   <UomConversionGrid
@@ -662,12 +718,12 @@ export default function InventoryItemForm({
         {/* SECTION 3 - Costing & control                                   */}
         {/*  */}
         <Section
-          title="Costing & control"
-          subtitle="Default values used by inventory and recipe costing"
+          title={tx("Costing & control")}
+          subtitle={tx("Default values used by inventory and recipe costing")}
         >
           <div className="inv-form-grid">
 
-            <Field label="Default cost" span={3} hint="Fallback unit cost for POs and recipe costing">
+            <Field label={tx("Default cost")} span={3} hint={tx("Fallback unit cost for POs and recipe costing")}>
               <input
                 type="number"
                 inputMode="decimal"
@@ -679,7 +735,7 @@ export default function InventoryItemForm({
               />
             </Field>
 
-            <Field label="Default price" span={3} hint="Fallback selling price">
+            <Field label={tx("Default price")} span={3} hint={tx("Fallback selling price")}>
               <input
                 type="number"
                 inputMode="decimal"
@@ -692,9 +748,9 @@ export default function InventoryItemForm({
             </Field>
 
             <Field
-              label="Reorder level"
+              label={tx("Reorder level")}
               span={3}
-              hint="Low-stock alert triggers when on-hand quantity falls below this"
+              hint={tx("Low-stock alert triggers when on-hand quantity falls below this")}
             >
               <input
                 type="number"
@@ -715,3 +771,4 @@ export default function InventoryItemForm({
     </div>
   );
 }
+

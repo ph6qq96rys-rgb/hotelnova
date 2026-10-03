@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 
+import { useI18n } from "../../../i18n";
 import {
   getTelegramInitData,
   getTelegramRuntimeState,
@@ -48,6 +49,7 @@ function formatDate(value?: string | null): string {
 }
 
 function TelegramHrRequestsPage({ auth }: Props) {
+  const { tx } = useI18n();
   const initData = getTelegramInitData();
   const runtime = getTelegramRuntimeState();
   const theme = getTelegramTheme();
@@ -205,22 +207,22 @@ function TelegramHrRequestsPage({ auth }: Props) {
     <section style={styles.page}>
       <div style={styles.segment}>
         <button type="button" style={{ ...styles.segmentButton, ...(mode === "leave" ? styles.segmentButtonActive : null) }} onClick={() => setMode("leave")}>
-          Leave
+          {tx("Leave")}
         </button>
         <button type="button" style={{ ...styles.segmentButton, ...(mode === "overtime" ? styles.segmentButtonActive : null) }} onClick={() => setMode("overtime")}>
-          Overtime
+          {tx("Overtime")}
         </button>
       </div>
 
       <div style={{ ...styles.notice, ...(notice.type === "error" ? styles.noticeError : notice.type === "success" ? styles.noticeSuccess : null) }}>
-        {notice.text}
+        {tx(notice.text)}
       </div>
 
       {mode === "leave" ? (
         <section style={styles.card}>
-          <h3 style={styles.title}>Leave Request</h3>
+          <h3 style={styles.title}>{tx("Leave Request")}</h3>
           <label style={styles.field}>
-            <span>Leave type</span>
+            <span>{tx("Leave type")}</span>
             <select style={styles.input} value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)}>
               {leaveTypes.map((type) => (
                 <option key={type.id} value={type.id}>{type.name}</option>
@@ -229,100 +231,100 @@ function TelegramHrRequestsPage({ auth }: Props) {
           </label>
           {selectedBalance && (
             <div style={styles.balance}>
-              Available {selectedBalance.available} days. Pending {selectedBalance.pending} days.
+              {tx("Available {available} days. Pending {pending} days.", { available: selectedBalance.available, pending: selectedBalance.pending })}
             </div>
           )}
           <div style={styles.grid2}>
             <label style={styles.field}>
-              <span>Start</span>
+              <span>{tx("Start")}</span>
               <input style={styles.input} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </label>
             <label style={styles.field}>
-              <span>End</span>
+              <span>{tx("End")}</span>
               <input style={styles.input} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </label>
           </div>
           <label style={styles.toggle}>
-            <span>Half day</span>
+            <span>{tx("Half day")}</span>
             <input type="checkbox" checked={isHalfDay} onChange={(e) => setIsHalfDay(e.target.checked)} />
           </label>
           {isHalfDay && (
             <select style={styles.input} value={halfDayPeriod} onChange={(e) => setHalfDayPeriod(e.target.value as "Morning" | "Afternoon")}>
-              <option value="Morning">Morning</option>
-              <option value="Afternoon">Afternoon</option>
+              <option value="Morning">{tx("Morning")}</option>
+              <option value="Afternoon">{tx("Afternoon")}</option>
             </select>
           )}
           <label style={styles.field}>
-            <span>Reason</span>
-            <textarea style={styles.textarea} value={leaveReason} onChange={(e) => setLeaveReason(e.target.value)} placeholder="Brief reason for leave" />
+            <span>{tx("Reason")}</span>
+            <textarea style={styles.textarea} value={leaveReason} onChange={(e) => setLeaveReason(e.target.value)} placeholder={tx("Brief reason for leave")} />
           </label>
           <label style={styles.field}>
-            <span>Document reference</span>
-            <input style={styles.input} value={documentUrl} onChange={(e) => setDocumentUrl(e.target.value)} placeholder="Required for configured leave types" />
+            <span>{tx("Document reference")}</span>
+            <input style={styles.input} value={documentUrl} onChange={(e) => setDocumentUrl(e.target.value)} placeholder={tx("Required for configured leave types")} />
           </label>
           <button type="button" style={styles.primary} disabled={loading} onClick={() => void submitLeave()}>
-            {loading ? "Submitting..." : "Submit Leave"}
+            {loading ? tx("Submitting...") : tx("Submit Leave")}
           </button>
         </section>
       ) : (
         <section style={styles.card}>
-          <h3 style={styles.title}>Overtime Pre-Approval</h3>
+          <h3 style={styles.title}>{tx("Overtime Pre-Approval")}</h3>
           <label style={styles.field}>
-            <span>Date</span>
+            <span>{tx("Date")}</span>
             <input style={styles.input} type="date" value={otDate} onChange={(e) => setOtDate(e.target.value)} />
           </label>
           <div style={styles.grid3}>
             <label style={styles.field}>
-              <span>Start</span>
+              <span>{tx("Start")}</span>
               <input style={styles.input} type="time" value={otStart} onChange={(e) => setOtStart(e.target.value)} />
             </label>
             <label style={styles.field}>
-              <span>End</span>
+              <span>{tx("End")}</span>
               <input style={styles.input} type="time" value={otEnd} onChange={(e) => setOtEnd(e.target.value)} />
             </label>
             <label style={styles.field}>
-              <span>Hours</span>
+              <span>{tx("Hours")}</span>
               <input style={styles.input} type="number" min="0.25" step="0.25" value={otHours} onChange={(e) => setOtHours(e.target.value)} />
             </label>
           </div>
           <label style={styles.field}>
-            <span>Business reason</span>
-            <textarea style={styles.textarea} value={businessReason} onChange={(e) => setBusinessReason(e.target.value)} placeholder="Why this cannot wait for regular hours" />
+            <span>{tx("Business reason")}</span>
+            <textarea style={styles.textarea} value={businessReason} onChange={(e) => setBusinessReason(e.target.value)} placeholder={tx("Why this cannot wait for regular hours")} />
           </label>
           <label style={styles.field}>
-            <span>Work assignment</span>
-            <textarea style={styles.textarea} value={workAssignment} onChange={(e) => setWorkAssignment(e.target.value)} placeholder="Specific task or assignment" />
+            <span>{tx("Work assignment")}</span>
+            <textarea style={styles.textarea} value={workAssignment} onChange={(e) => setWorkAssignment(e.target.value)} placeholder={tx("Specific task or assignment")} />
           </label>
           <label style={styles.field}>
-            <span>KPI / deliverable</span>
-            <textarea style={styles.textarea} value={kpiDescription} onChange={(e) => setKpiDescription(e.target.value)} placeholder="Measurable output expected" />
+            <span>{tx("KPI / deliverable")}</span>
+            <textarea style={styles.textarea} value={kpiDescription} onChange={(e) => setKpiDescription(e.target.value)} placeholder={tx("Measurable output expected")} />
           </label>
           <label style={styles.field}>
-            <span>Target</span>
-            <input style={styles.input} value={kpiTarget} onChange={(e) => setKpiTarget(e.target.value)} placeholder="Target value or completion condition" />
+            <span>{tx("Target")}</span>
+            <input style={styles.input} value={kpiTarget} onChange={(e) => setKpiTarget(e.target.value)} placeholder={tx("Target value or completion condition")} />
           </label>
           <label style={styles.field}>
-            <span>Measurement method</span>
-            <input style={styles.input} value={kpiMeasurement} onChange={(e) => setKpiMeasurement(e.target.value)} placeholder="How the manager verifies the KPI" />
+            <span>{tx("Measurement method")}</span>
+            <input style={styles.input} value={kpiMeasurement} onChange={(e) => setKpiMeasurement(e.target.value)} placeholder={tx("How the manager verifies the KPI")} />
           </label>
           <label style={styles.field}>
-            <span>Evidence expected</span>
-            <input style={styles.input} value={requiredEvidence} onChange={(e) => setRequiredEvidence(e.target.value)} placeholder="Report, checklist, photo, or document" />
+            <span>{tx("Evidence expected")}</span>
+            <input style={styles.input} value={requiredEvidence} onChange={(e) => setRequiredEvidence(e.target.value)} placeholder={tx("Report, checklist, photo, or document")} />
           </label>
           <label style={styles.field}>
-            <span>Related activity</span>
-            <input style={styles.input} value={relatedActivity} onChange={(e) => setRelatedActivity(e.target.value)} placeholder="Project, department, or operation" />
+            <span>{tx("Related activity")}</span>
+            <input style={styles.input} value={relatedActivity} onChange={(e) => setRelatedActivity(e.target.value)} placeholder={tx("Project, department, or operation")} />
           </label>
           <button type="button" style={styles.primary} disabled={loading} onClick={() => void submitOvertime()}>
-            {loading ? "Submitting..." : "Submit Overtime"}
+            {loading ? tx("Submitting...") : tx("Submit Overtime")}
           </button>
         </section>
       )}
 
       <section style={styles.card}>
-        <h3 style={styles.title}>Recent Leave Requests</h3>
+        <h3 style={styles.title}>{tx("Recent Leave Requests")}</h3>
         {requests.length === 0 ? (
-          <div style={styles.empty}>No leave requests yet.</div>
+          <div style={styles.empty}>{tx("No leave requests yet.")}</div>
         ) : (
           <div style={styles.list}>
             {requests.slice(0, 5).map((request) => (

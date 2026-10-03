@@ -1,5 +1,6 @@
 import React, { memo, useMemo } from "react";
 
+import { useI18n } from "../../i18n";
 import { getTelegramTheme } from "./telegramWebApp";
 
 export type TelegramTabKey =
@@ -36,6 +37,7 @@ export default function TelegramTabBar({
   onChange,
   items = defaultTabs,
 }: TelegramTabBarProps) {
+  const { tx } = useI18n();
   const theme = getTelegramTheme();
   const styles = useMemo(
     () => createStyles(theme, items.length),
@@ -43,7 +45,7 @@ export default function TelegramTabBar({
   );
 
   return (
-    <nav style={styles.nav} aria-label="Telegram Mini App navigation">
+    <nav style={styles.nav} aria-label={tx("Telegram Mini App navigation")}>
       {items.map((tab) => (
         <TabButton
           key={tab.key}
@@ -51,6 +53,7 @@ export default function TelegramTabBar({
           active={tab.key === activeTab}
           onChange={onChange}
           styles={styles}
+          translate={tx}
         />
       ))}
     </nav>
@@ -62,11 +65,13 @@ const TabButton = memo(function TabButton({
   active,
   onChange,
   styles,
+  translate,
 }: {
   tab: TelegramTabItem;
   active: boolean;
   onChange: (tab: TelegramTabKey) => void;
   styles: ReturnType<typeof createStyles>;
+  translate: (text: string) => string;
 }) {
   return (
     <button
@@ -104,7 +109,7 @@ const TabButton = memo(function TabButton({
           ...(active ? styles.labelActive : null),
         }}
       >
-        {tab.label}
+        {translate(tab.label)}
       </span>
     </button>
   );

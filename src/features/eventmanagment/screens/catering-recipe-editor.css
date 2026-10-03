@@ -1,0 +1,16 @@
+.co-modal.cr-editor{width:min(1180px,100%);max-height:92dvh;overflow:hidden;color:var(--text);background:var(--surface)}
+.cr-editor form{display:flex;flex-direction:column;max-height:92dvh;min-height:0}
+.cr-header,.cr-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 24px;flex-shrink:0;background:var(--surface)}
+.cr-header{border-bottom:1px solid var(--border)}
+.cr-header h2{margin:0;font-size:20px}.cr-header p,.cr-footer p{margin:6px 0 0;color:var(--text-muted);font-size:13px}
+.cr-body{overflow:auto;padding:20px 24px;min-height:0}.cr-editor .cr-body fieldset{padding:0;margin:0;border:0;min-width:0}
+.cr-location{display:grid;grid-template-columns:minmax(240px,1fr) 1fr;align-items:end;gap:24px;margin-bottom:24px}
+.cr-editor label{display:flex;flex-direction:column;gap:8px;font-size:13px;font-weight:600}
+.cr-location p,.cr-add span{font-size:13px;color:var(--text-muted);margin:0;line-height:1.6}
+.cr-section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.cr-section-heading h3{margin:0;font-size:16px}.cr-section-heading span{font-size:12px;color:var(--text-muted);font-weight:400}
+.cr-editor .cr-ingredients{min-width:900px;width:100%;table-layout:fixed}
+.cr-ingredients th:first-child{width:40px}.cr-ingredients th:nth-child(2){width:26%}.cr-ingredients th:nth-child(3){width:110px}.cr-ingredients th:nth-child(4){width:150px}.cr-ingredients th:nth-child(5){width:100px}.cr-ingredients th:last-child{width:90px}
+.cr-editor .cr-ingredients :is(td,th){padding:10px 8px;text-align:left;white-space:normal}.cr-editor .cr-ingredients :is(input,select){width:100%;max-width:none;min-width:0}
+.cr-add{display:flex;align-items:center;gap:16px;margin:14px 0 24px}.cr-add span{display:none}.cr-notes{margin-bottom:22px}.cr-cost{border-top:1px solid var(--border);padding-top:16px}.cr-cost h3{margin-top:0;font-size:15px}.cr-cost p{font-size:13px;color:var(--text-muted)}.cr-cost table{width:100%;font-size:13px;border-collapse:collapse}.cr-cost :is(th,td){padding:10px;text-align:left;border-bottom:1px solid var(--border)}
+.cr-footer{border-top:1px solid var(--border)}.cr-footer p{margin:0}
+@media(max-width:700px){.cr-header,.cr-footer{padding:14px 16px}.cr-header{align-items:flex-start}.cr-header h2{font-size:17px}.cr-body{padding:16px}.cr-location{grid-template-columns:1fr;gap:10px}.cr-add{align-items:flex-start}.cr-add span{display:block}.cr-footer p{font-size:12px}.cr-footer button{flex-shrink:0}}

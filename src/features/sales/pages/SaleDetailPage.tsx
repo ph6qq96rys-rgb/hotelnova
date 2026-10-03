@@ -145,6 +145,7 @@ export default function SaleDetailPage() {
   const [pageState, setPageState] = useState<PageState>({ status: "idle" });
   const [busyAction, setBusyAction] = useState<"inventory" | "cancel" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const requestIdRef = useRef(0);
 
@@ -175,6 +176,7 @@ export default function SaleDetailPage() {
 
   const load = useCallback(async () => {
     setNotice(null);
+    setActionError(null);
 
     if (!hasCompanyScope || !companyId) {
       setSale(null);
@@ -244,19 +246,19 @@ export default function SaleDetailPage() {
 
     setBusyAction("inventory");
     setNotice(null);
+    setActionError(null);
 
     try {
       await salesApi.postCogs(companyId, branchId || "", sale.id);
-      setNotice("Inventory and COGS posting completed successfully.");
       await load();
+      setNotice("Inventory and COGS posting completed successfully.");
     } catch (error) {
-      setPageState({
-        status: "error",
-        message: extractApiError(
-          error,
-          "Inventory and COGS posting failed. Review recipe setup, stock availability, and branch consumption locations."
-        ),
-      });
+      // Posting can succeed for some lines before another line fails.
+      await load();
+      setActionError(extractApiError(
+        error,
+        "Inventory and COGS posting failed. Review recipe setup, stock availability, and branch consumption locations."
+      ));
     } finally {
       setBusyAction(null);
     }
@@ -272,6 +274,7 @@ export default function SaleDetailPage() {
     if (!confirmed) return;
 
     setBusyAction("cancel");
+    setActionError(null);
     setNotice(null);
 
     try {
@@ -283,10 +286,7 @@ export default function SaleDetailPage() {
       );
       go(paths.register, true);
     } catch (error) {
-      setPageState({
-        status: "error",
-        message: extractApiError(error, "Unable to cancel the sales document."),
-      });
+      setActionError(extractApiError(error, "Unable to cancel the sales document."));
     } finally {
       setBusyAction(null);
     }
@@ -343,6 +343,12 @@ export default function SaleDetailPage() {
       />
 
       {errorMessage ? <Alert tone="danger">{errorMessage}</Alert> : null}
+      {actionError ? (
+        <Alert tone="danger">
+          <div>{actionError}</div>
+          {/insufficient stock/i.test(actionError) ? <div>Check the item's consumption location and replenish stock there before retrying inventory posting.</div> : null}
+        </Alert>
+      ) : null}
       {notice ? <Alert tone="success">{notice}</Alert> : null}
 
       <DocumentKpis totals={totals} sale={sale} />

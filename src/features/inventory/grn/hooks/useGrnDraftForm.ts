@@ -211,10 +211,11 @@ export function useGrnDraftForm(scope: GrnScope | null, draftId?: string, itemMa
     return Boolean(value.receivingLocationId || value.receivedDate || value.lines || Object.keys(value.lineErrors ?? {}).length);
   }
 
-  function buildPayload(branchId?: string | null): CreateGrnDraftRequest {
+  function buildPayload(): CreateGrnDraftRequest {
     return {
       receivingLocationId: clean(form.receivingLocationId),
-      branchId: clean(branchId),
+      branchId: null,
+      receivingBranchId: null,
       receivedDate: form.receivedDate,
       supplierName: nullable(form.supplierName),
       notes: nullable(form.notes),

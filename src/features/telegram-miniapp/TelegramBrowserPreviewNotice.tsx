@@ -1,12 +1,13 @@
 import { memo } from "react";
+import { useI18n } from "../../i18n";
 
 function TelegramBrowserPreviewNotice() {
+  const { tx } = useI18n();
   return (
     <div className="tg-mini-notice">
-      <strong>Preview mode</strong>
+      <strong>{tx("Preview mode")}</strong>
       <span>
-        Open this page from the Telegram bot to authenticate, link your employee
-        profile, and use Telegram-only features.
+        {tx("Open this page from the Telegram bot to authenticate, link your employee profile, and use Telegram-only features.")}
       </span>
     </div>
   );

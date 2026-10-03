@@ -61,6 +61,7 @@ export type UpsertFixedAssetCategoryPayload = {
 };
 
 export type UpsertFixedAssetPayload = {
+  purchaseOrderId?:string|null;
   categoryId: string;
   currentBranchId?: string | null;
   currentLocationId?: string | null;

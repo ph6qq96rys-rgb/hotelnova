@@ -1,0 +1,25 @@
+import {useEffect,useState} from "react";
+import {Link,useNavigate} from "react-router-dom";
+import {http} from "../../../api/http";
+import {Button} from "../../../components/ui/button";
+import {Input} from "../../../components/ui/input";
+import {Select} from "../../../components/ui/select";
+import {Textarea} from "../../../components/ui/textarea";
+import {useI18n} from "../../../i18n";
+import {useHasPermission} from "../../../auth/usePermissions";
+import type {StockLocationDto} from "../../inventory/stock-locations/types";
+import {apiError,qty} from "./p2pShared";
+type Source={kind:string;id:string;reference:string;branchId:string;requiredAt:string};
+type Preview={fingerprint:string;reference:string;requiredDate:string;existingRequisitionId?:string;lines:{itemId:string;itemName:string;unit:string;requiredQuantity:number;usableStock:number;incoming:number;shortage:number;notes:string[]}[]};
+export default function ProductionDemandPanel({companyId,locations}:{companyId:string;locations:StockLocationDto[]}){
+ const {tx}=useI18n(),navigate=useNavigate(),canCreate=useHasPermission("purchasing.create");
+ const [sources,setSources]=useState<Source[]>([]),[key,setKey]=useState(""),[locationId,setLocation]=useState(""),[preview,setPreview]=useState<Preview|null>(null),[quantities,setQuantities]=useState<Record<string,string>>({}),[reason,setReason]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+ const selected=sources.find(s=>`${s.kind}:${s.id}`===key),source={kind:selected?.kind,sourceId:selected?.id,locationId},root=`/companies/${companyId}/procurement/planning/production`;
+ useEffect(()=>{if(!companyId)return;let active=true;http.get<Source[]>(`${root}/sources`).then(r=>{if(active)setSources(r.data);}).catch(e=>{if(active)setError(apiError(e,"Unable to load approved production demand."));});return()=>{active=false;};},[companyId]);
+ useEffect(()=>setPreview(null),[companyId,key,locationId]);
+ async function calculate(){setBusy(true);setError("");try{const r=await http.post<Preview>(`${root}/preview`,source);setPreview(r.data);setQuantities(Object.fromEntries(r.data.lines.map(l=>[l.itemId,String(l.shortage)])));}catch(e){setError(apiError(e,"Unable to calculate production requirements."));}finally{setBusy(false);}}
+ async function create(){if(!preview||busy)return;setBusy(true);setError("");try{const r=await http.post(`${root}/requisition`,{source,fingerprint:preview.fingerprint,reason,lines:preview.lines.map(l=>({itemId:l.itemId,quantity:Number(quantities[l.itemId]||0)})).filter(l=>l.quantity>0)});navigate(`/procurement/requisitions/${r.data.id}`);}catch(e){setError(apiError(e,"Unable to create the production requisition."));}finally{setBusy(false);}}
+ return <section className="prq-panel"><h2>{tx("Production and catering requirements")}</h2><p>{tx("Approved production inputs and accepted catering recipe snapshots determine ingredient demand. Revise and approve the production source before substituting ingredients.")}</p>{error&&<p role="alert">{tx(error)}</p>}<fieldset disabled={busy}><legend>{tx("Approved source")}</legend><label>{tx("Plan or event")}<Select value={key} onChange={e=>{setKey(e.target.value);setLocation("");}}><option value="">{tx("Select an approved plan")}</option>{sources.map(s=><option key={`${s.kind}:${s.id}`} value={`${s.kind}:${s.id}`}>{s.reference} · {s.requiredAt.slice(0,10)}</option>)}</Select></label><label>{tx("Destination stock location")}<Select value={locationId} onChange={e=>setLocation(e.target.value)}><option value="">{tx("Select location")}</option>{locations.filter(l=>l.branchId===selected?.branchId).map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</Select></label><Button disabled={!selected||!locationId} onClick={()=>void calculate()}>{tx("Calculate material shortages")}</Button></fieldset>
+ {preview&&<><h3>{preview.reference} · {tx("Required by")} {preview.requiredDate}</h3>{preview.lines.map(l=><div key={l.itemId}><h4>{l.itemName} · {l.unit}</h4><p>{tx("Required")}: {qty(l.requiredQuantity)} · {tx("Usable stock")}: {qty(l.usableStock)} · {tx("Incoming")}: {qty(l.incoming)} · {tx("Shortage")}: {qty(l.shortage)}</p><details><summary>{tx("Calculation details")}</summary><ul>{l.notes.map((n,i)=><li key={i}>{n}</li>)}</ul></details><label>{tx("Reviewed purchase quantity")}<Input disabled={busy||!!preview.existingRequisitionId} type="number" min={0} step="0.0001" value={quantities[l.itemId]||"0"} onChange={e=>setQuantities({...quantities,[l.itemId]:e.target.value})}/></label></div>)}{preview.existingRequisitionId?<Link to={`/procurement/requisitions/${preview.existingRequisitionId}`}>{tx("Open the linked material requisition")}</Link>:canCreate&&<><label>{tx("Review reason")}<Textarea disabled={busy} maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label><Button disabled={busy||!reason.trim()||!Object.values(quantities).some(q=>Number(q)>0)} onClick={()=>void create()}>{tx("Create material requisition draft")}</Button></>}</>}
+ </section>;
+}

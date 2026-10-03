@@ -132,6 +132,7 @@ export default function MenuItemsListPage() {
         loading={vm.loading}
         onOpen={openItem}
         onOpenRecipe={openRecipe}
+        onOpenCustomerDetails={id => nav(`/production/menu/items/${id}/customer-details`)}
       />
     </div>
   );

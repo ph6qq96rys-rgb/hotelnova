@@ -1,31 +1,37 @@
 // src/routes/routeConfig.tsx
 
-import type { ReactNode } from "react";
+import { lazy, type ReactNode } from "react";
+const CustomerMenuDetailsPage = lazy(() => import("../features/production/pages/CustomerMenuDetailsPage"));
 import type { RouteObject } from "react-router-dom";
 import {
   ArrowLeftRight,
+  BadgeDollarSign,
+  Beef,
   Building2,
+  CalendarDays,
   ChefHat,
   ClipboardList,
+  FileText,
   LayoutDashboard,
+  Receipt,
   Settings,
   Shield,
+  PackageCheck,
   Sliders,
   Upload,
   Users,
-  PackageCheck,
 } from "lucide-react";
 
 import DashboardPage from "../pages/DashboardPage";
 import ForgotPasswordPage from "../pages/ForgotPasswordPage";
 
-import SettingsPage from "../modules/security/pages/SettingsPage";
-import UsersPage from "../modules/security/pages/UsersPage";
-import RolesPermissionsPage from "../modules/security/pages/RolesPermissionsPage";
+const SettingsPage = lazy(() => import("../modules/security/pages/SettingsPage"));
+const UsersPage = lazy(() => import("../modules/security/pages/UsersPage"));
+const RolesPermissionsPage = lazy(() => import("../modules/security/pages/RolesPermissionsPage"));
 
 import CompanyOnboardingModule from "../features/company/onboarding/CompanyOnboardingModule";
 
-import InventoryControlSettingsPage from "../features/inventory/settings/pages/InventoryControlSettingsPage";
+const InventoryControlSettingsPage = lazy(() => import("../features/inventory/settings/pages/InventoryControlSettingsPage"));
 
 import StockTransfersPage from "../features/inventory/stock-transfers/pages/StockTransfersPage";
 import StockTransferCreatePage from "../features/inventory/stock-transfers/pages/StockTransferCreatePage";
@@ -38,18 +44,19 @@ import AdjustmentDetailsPage from "../features/inventory/adjustments/pages/Adjus
 import AdjustmentApprovalPage from "../features/inventory/adjustments/pages/AdjustmentApprovalPage";
 import AdjustmentDraftEditorPage from "../features/inventory/adjustments/pages/AdjustmentDraftEditorPage";
 
-import ProductionBatchPage from "../features/production/pages/ProductionBatchPage";
-import RecipeEditorPage from "../features/production/pages/RecipeEditorPage";
-import MenuItemCreatePage from "../features/production/pages/MenuItemCreatePage";
-import MenuItemDetailPage from "../features/production/pages/MenuItemDetailPage";
-import MenuCategoriesPage from "../features/production/pages/MenuCategoriesPage";
-import MenuEngineeringPage from "../features/production/pages/MenuEngineeringPage";
-import MenuItemListPage from "../features/production/pages/MenuItemsListPage";
+const ProductionBatchPage = lazy(() => import("../features/production/pages/ProductionBatchPage"));
+const RecipeEditorPage = lazy(() => import("../features/production/pages/RecipeEditorPage"));
+const MenuItemCreatePage = lazy(() => import("../features/production/pages/MenuItemCreatePage"));
+const MenuItemDetailPage = lazy(() => import("../features/production/pages/MenuItemDetailPage"));
+const MenuCategoriesPage = lazy(() => import("../features/production/pages/MenuCategoriesPage"));
+const MenuEngineeringPage = lazy(() => import("../features/production/pages/MenuEngineeringPage"));
+const MenuItemListPage = lazy(() => import("../features/production/pages/MenuItemsListPage"));
 
-import FnbControlCenterPage from "../features/reports/fnb/pages/FnbControlCenterPage";
+const FnbControlCenterPage = lazy(() => import("../features/reports/fnb/pages/FnbControlCenterPage"));
 import OrgLocationsPage from "../features/org/pages/OrgLocationsPage";
 import TelegramMiniAppDashboard from "../features/telegram-miniapp/TelegramMiniAppDashboard";
-import FixedAssetsPage from "../features/fixed-assets/pages/FixedAssetsPage";
+const EventManagementPage = lazy(() => import("../features/eventmanagment/pages/EventManagementPage"));
+const SalesWorkbenchPage = lazy(() => import("../features/eventmanagment/sales/SalesWorkbenchPage"));
 
 export type AppRoute = RouteObject & {
   path?: string;
@@ -71,6 +78,7 @@ export type AppRoute = RouteObject & {
 
 export const appPaths = {
   dashboard: "dashboard",
+  eventManagement: "eventmanagment",
 
   users: "users",
   rolesPermissions: "security/roles-permissions",
@@ -80,7 +88,6 @@ export const appPaths = {
   branchOnboarding: "branches/:branchId/onboarding",
 
   inventorySettings: "inventory/control-settings",
-  fixedAssets: "fixed-assets",
 
   stockTransfers: "inventory/stock-transfers",
   stockTransferNew: "inventory/stock-transfers/new",
@@ -131,7 +138,19 @@ export const publicRoutes: AppRoute[] = [
   },
 ];
 
-export const routeConfig: AppRoute[] = [
+
+const eventManagementModuleRoutes: AppRoute[] = [
+  { path: "eventmanagment/command", label: "Command", element: <EventManagementPage />, icon: <LayoutDashboard size={18} />, nav: true, section: "Catering", order: 11, permissions: ["catering.view", "catering.commandcenter.view", "catering.dashboard.view"] },
+  { path: "eventmanagment/sales", label: "Sales", element: <SalesWorkbenchPage />, icon: <Receipt size={18} />, nav: true, section: "Catering", order: 12, permissions: ["catering.view", "catering.quotations.view", "catering.inquiries.view"] },
+  { path: "eventmanagment/event", label: "Event Ops", element: <EventManagementPage />, icon: <CalendarDays size={18} />, nav: true, section: "Catering", order: 13, permissions: ["catering.view", "catering.events.manage"] },
+  { path: "eventmanagment/kitchen", label: "Kitchen", element: <EventManagementPage />, icon: <ChefHat size={18} />, nav: true, section: "Catering", order: 14, permissions: ["catering.view", "catering.events.manage"] },
+  { path: "eventmanagment/butchery", label: "Butchery", element: <EventManagementPage />, icon: <Beef size={18} />, nav: true, section: "Butchery", order: 15, permissions: ["butchery.view"] },
+  { path: "eventmanagment/inventory", label: "Inventory", element: <EventManagementPage />, icon: <PackageCheck size={18} />, nav: true, section: "Catering", order: 16, permissions: ["catering.view", "catering.inventory.view"] },
+  { path: "eventmanagment/finance", label: "Finance", element: <EventManagementPage />, icon: <BadgeDollarSign size={18} />, nav: true, section: "Catering", order: 17, permissions: ["catering.view", "catering.billing.view", "catering.reports.view"] },
+  { path: "eventmanagment/reports", label: "Reports", element: <EventManagementPage />, icon: <FileText size={18} />, nav: true, section: "Catering", order: 18, permissions: ["catering.view", "catering.reports.view"] },
+  { path: "eventmanagment/portal", label: "Customer Portal", element: <EventManagementPage />, icon: <Users size={18} />, nav: true, section: "Catering", order: 19, permissions: ["catering.view", "catering.inquiries.view"] },
+];
+const allRoutes: AppRoute[] = [
   {
     path: appPaths.dashboard,
     label: "Dashboard",
@@ -143,6 +162,22 @@ export const routeConfig: AppRoute[] = [
   },
 
   {
+    path: appPaths.eventManagement,
+    label: "Event Management",
+    element: <EventManagementPage />,
+    icon: <CalendarDays size={18} />,
+    nav: true,
+    section: "Catering",
+    order: 10,
+    permissions: [
+      "catering.view",
+      "catering.events.manage",
+      "catering.commandcenter.view",
+      "catering.dashboard.view",
+    ],
+  },
+  ...eventManagementModuleRoutes,
+  {
     path: appPaths.orgLocations,
     label: "Organization",
     element: <OrgLocationsPage />,
@@ -150,7 +185,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Setup",
     order: 10,
-    permissions: ["companies.view", "branches.view"],
+    permissions: ["branches.view", "stocklocations.view", "stores.view"],
   },
 
   {
@@ -162,8 +197,8 @@ export const routeConfig: AppRoute[] = [
     section: "Setup",
     order: 20,
     permissions: [
-      "companies.view",
-      "companies.update",
+      "company.view",
+      "company.manage",
       "onboarding.view",
       "onboarding.manage",
     ],
@@ -174,12 +209,12 @@ export const routeConfig: AppRoute[] = [
     label: "Branch Onboarding",
     element: <CompanyOnboardingModule />,
     icon: <ClipboardList size={18} />,
-    nav: false,
+    nav: true,
     section: "Setup",
     order: 30,
     permissions: [
-      "branches.view",
-      "branches.update",
+      "company.view",
+      "company.manage",
       "onboarding.view",
       "onboarding.manage",
     ],
@@ -195,8 +230,9 @@ export const routeConfig: AppRoute[] = [
     order: 10,
     permissions: [
       "users.view",
-      "users.create",
-      "users.update",
+      "users.manage",
+      "security.view",
+      "security.manage",
     ],
   },
 
@@ -209,20 +245,11 @@ export const routeConfig: AppRoute[] = [
     section: "Security",
     order: 20,
     permissions: [
+      "security.view",
+      "security.manage",
       "roles.view",
       "roles.manage",
     ],
-  },
-
-  {
-    path: appPaths.fixedAssets,
-    label: "Fixed Assets",
-    element: <FixedAssetsPage />,
-    icon: <PackageCheck size={18} />,
-    nav: true,
-    section: "Finance",
-    order: 20,
-    permissions: ["fixedassets.view"],
   },
 
   {
@@ -233,7 +260,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Inventory",
     order: 40,
-    permissions: ["inventory.view", "settings.view", "settings.update"],
+    permissions: ["settings.view", "settings.update"],
   },
 
   {
@@ -251,7 +278,7 @@ export const routeConfig: AppRoute[] = [
     path: appPaths.stockTransferNew,
     element: <StockTransferCreatePage />,
     nav: false,
-    //permissions: ["inventory.manage", "stock-transfers.manage"],
+    permissions: ["stocktransfers.create"],
   },
 
   {
@@ -259,21 +286,21 @@ export const routeConfig: AppRoute[] = [
     label: "Transfer Approvals",
     element: <StockTransferApprovalsPage />,
     nav: false,
-   // permissions: ["inventory.approve", "stock-transfers.approve"],
+    permissions: ["stocktransfers.approve"],
   },
 
   {
     path: appPaths.stockTransferDetail,
     element: <StockTransferDetailPage />,
     nav: false,
-   // permissions: ["inventory.view", "stock-transfers.view"],
+    permissions: ["stocktransfers.view"],
   },
 
   {
     path: appPaths.stockTransferEdit,
     element: <StockTransferEditPage />,
     nav: false,
-    //permissions: ["inventory.manage", "stock-transfers.manage"],
+    permissions: ["stocktransfers.create"],
   },
 
   {
@@ -291,35 +318,35 @@ export const routeConfig: AppRoute[] = [
     path: appPaths.adjustmentNew,
     element: <AdjustmentDraftEditorPage />,
     nav: false,
-    //permissions: ["inventory.manage", "adjustments.manage"],
+    permissions: ["inventory.adjustments.create"],
   },
 
   {
     path: appPaths.adjustmentDraft,
     element: <AdjustmentDraftEditorPage />,
     nav: false,
-    //permissions: ["inventory.manage", "adjustments.manage"],
+    permissions: ["inventory.adjustments.create"],
   },
 
   {
     path: appPaths.adjustmentEdit,
     element: <AdjustmentDraftEditorPage />,
     nav: false,
-    //permissions: ["inventory.manage", "adjustments.manage"],
+    permissions: ["inventory.adjustments.create"],
   },
 
   {
     path: appPaths.adjustmentDetail,
     element: <AdjustmentDetailsPage />,
     nav: false,
-    //permissions: ["inventory.view", "adjustments.view"],
+    permissions: ["inventory.adjustments.view"],
   },
 
   {
     path: appPaths.adjustmentApprove,
     element: <AdjustmentApprovalPage />,
     nav: false,
-    //permissions: ["inventory.approve", "adjustments.approve"],
+    permissions: ["inventory.adjustments.approve"],
   },
 
   {
@@ -330,12 +357,12 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 10,
-    permissions: ["menu.view"],
+    permissions: ["menu.view", "menu.manage"],
   },
 
   {
     path: appPaths.menuItemNew,
-    label: "Create Menu Item",
+    label: "Create New Menu",
     element: <MenuItemCreatePage />,
     icon: <ChefHat size={18} />,
     nav: true,
@@ -345,12 +372,20 @@ export const routeConfig: AppRoute[] = [
   },
 
   {
+    path: "production/menu/items/:id/customer-details",
+    label: "Customer recipe details",
+    element: <CustomerMenuDetailsPage />,
+    nav: false,
+    section: "Production",
+    permissions: ["menu.view"],
+  },
+  {
     path: appPaths.menuItemDetail,
     label: "Menu Configuration",
     element: <MenuItemDetailPage />,
     nav: false,
     section: "Production",
-    permissions: ["menu.view"],
+    permissions: ["menu.view", "menu.manage"],
   },
 {
     path: appPaths.menuItemsList,
@@ -358,7 +393,7 @@ export const routeConfig: AppRoute[] = [
     element: <MenuItemListPage />,
     nav: true,
     section: "Production",
-    permissions: ["menu.view"],
+    permissions: ["menu.view", "menu.manage"],
   },
   {
     path: appPaths.recipeManagement,
@@ -377,7 +412,7 @@ export const routeConfig: AppRoute[] = [
     element: <RecipeEditorPage />,
     nav: false,
     section: "Production",
-    //permissions: ["production.manage", "recipes.manage"],
+    permissions: ["recipes.manage"],
   },
 
   {
@@ -397,7 +432,7 @@ export const routeConfig: AppRoute[] = [
     element: <ProductionBatchPage />,
     nav: false,
     section: "Production",
-    //permissions: ["production.manage", "production-batches.manage"],
+    permissions: ["production.create"],
   },
 
   {
@@ -406,7 +441,7 @@ export const routeConfig: AppRoute[] = [
     element: <ProductionBatchPage />,
     nav: false,
     section: "Production",
-    //permissions: ["production.view", "production-batches.view"],
+    permissions: ["production.view"],
   },
 
   {
@@ -417,7 +452,7 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Production",
     order: 50,
-    permissions: ["menu.view"],
+    permissions: ["menu.view", "production.view"],
   },
 
   {
@@ -450,6 +485,9 @@ export const routeConfig: AppRoute[] = [
     nav: true,
     section: "Security",
     order: 30,
-    permissions: ["settings.view"],
+    permissions: ["settings.view", "settings.manage", "security.manage"],
   },
 ];
+
+// Navigation and routes remain controlled by each module permission.
+export const routeConfig: AppRoute[] = allRoutes;

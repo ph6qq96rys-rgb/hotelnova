@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAppScope } from "../../../../app/useAppScope";
+import { useI18n } from "../../../../i18n";
 import {
   inventoryControlSettingsApi,
   type InventoryControlSettingsDto,
@@ -34,7 +35,9 @@ const defaults: UpsertInventoryControlSettingsRequest = {
 };
 
 export default function InventoryControlSettingsPage() {
-  const { companyId, branchId } = useAppScope();
+  const { tx } = useI18n();
+  const { companyId, branchId, branchName } = useAppScope();
+  const selectedBranchId = branchId ?? "";
 
   const [form, setForm] =
     useState<UpsertInventoryControlSettingsRequest>(defaults);
@@ -54,7 +57,7 @@ export default function InventoryControlSettingsPage() {
     if (!companyId) return;
 
     const effectiveBranchId =
-      scope === "branch" || scope === "location" ? branchId : null;
+      scope === "branch" || scope === "location" ? selectedBranchId || null : null;
     const effectiveLocationId =
       scope === "location" ? selectedLocationId || null : null;
 
@@ -84,10 +87,10 @@ export default function InventoryControlSettingsPage() {
       })
       .catch((e) => setErr(getError(e)))
       .finally(() => setLoading(false));
-  }, [companyId, branchId, scope, selectedLocationId]);
+  }, [companyId, selectedBranchId, scope, selectedLocationId]);
 
   useEffect(() => {
-    if (!companyId || !branchId) {
+    if (!companyId || !selectedBranchId) {
       setLocations([]);
       setSelectedLocationId("");
       return;
@@ -96,7 +99,7 @@ export default function InventoryControlSettingsPage() {
     const controller = new AbortController();
 
     stockLocationsApi
-      .list(companyId, branchId, undefined, controller.signal)
+      .list(companyId, selectedBranchId, undefined, controller.signal)
       .then((rows) => {
         const activeRows = rows.filter((x) => x.isActive !== false);
         setLocations(activeRows);
@@ -111,7 +114,7 @@ export default function InventoryControlSettingsPage() {
       .catch(() => setLocations([]));
 
     return () => controller.abort();
-  }, [companyId, branchId, selectedLocationId]);
+  }, [companyId, selectedBranchId, selectedLocationId]);
 
   function patch(p: Partial<UpsertInventoryControlSettingsRequest>) {
     setForm((prev) => ({ ...prev, ...p }));
@@ -129,6 +132,10 @@ export default function InventoryControlSettingsPage() {
 
     if (form.highVariancePercent > form.criticalVariancePercent) {
       return "High threshold cannot exceed critical threshold.";
+    }
+
+    if ((scope === "branch" || scope === "location") && !selectedBranchId) {
+      return "Select a branch in the sidebar before saving a branch or location policy.";
     }
 
     if (scope === "location" && !selectedLocationId) {
@@ -155,7 +162,7 @@ export default function InventoryControlSettingsPage() {
       const body: UpsertInventoryControlSettingsRequest = {
         ...form,
         branchId:
-          scope === "branch" || scope === "location" ? branchId ?? null : null,
+          scope === "branch" || scope === "location" ? selectedBranchId || null : null,
         locationId: scope === "location" ? selectedLocationId || null : null,
       };
 
@@ -170,18 +177,17 @@ export default function InventoryControlSettingsPage() {
   }
 
   if (!companyId) {
-    return <div className="ics-guard">Select a company first.</div>;
+    return <div className="ics-guard">{tx("Select a company first.")}</div>;
   }
 
   return (
     <div className="ics-page">
       <div className="ics-header">
         <div>
-          <p className="ics-kicker">Inventory Administration</p>
-          <h1 className="ics-title">Inventory Control Settings</h1>
+          <p className="ics-kicker">{tx("Inventory Administration")}</p>
+          <h1 className="ics-title">{tx("Inventory Control Settings")}</h1>
           <p className="ics-subtitle">
-            Configure stock count variance thresholds, approval rules, posting
-            controls, and negative inventory policy.
+            {tx("Configure stock count variance thresholds, approval rules, posting controls, and negative inventory policy.")}
           </p>
         </div>
 
@@ -190,18 +196,18 @@ export default function InventoryControlSettingsPage() {
           onClick={save}
           disabled={saving || loading}
         >
-          {saving ? "Saving..." : "Save Settings"}
+          {saving ? tx("Saving...") : tx("Save Settings")}
         </button>
       </div>
 
-      {err && <div className="ics-alert ics-alert-error">{err}</div>}
-      {ok && <div className="ics-alert ics-alert-success">{ok}</div>}
+      {err && <div className="ics-alert ics-alert-error">{tx(err)}</div>}
+      {ok && <div className="ics-alert ics-alert-success">{tx(ok)}</div>}
 
       <div className="ics-card">
         <div className="ics-card-head">
           <div>
-            <h2>Settings Scope</h2>
-            <p>Choose whether these settings apply company-wide or only to the active branch.</p>
+            <h2>{tx("Settings Scope")}</h2>
+            <p>{tx("Choose whether these settings apply company-wide, to a branch, or to one stock location.")}</p>
           </div>
         </div>
 
@@ -210,34 +216,44 @@ export default function InventoryControlSettingsPage() {
             className={scope === "company" ? "active" : ""}
             onClick={() => setScope("company")}
           >
-            Company Default
+            {tx("Company Default")}
           </button>
 
           <button
             className={scope === "branch" ? "active" : ""}
             onClick={() => setScope("branch")}
-            disabled={!branchId}
+            disabled={!selectedBranchId}
           >
-            Active Branch
+            Branch
           </button>
 
           <button
             className={scope === "location" ? "active" : ""}
             onClick={() => setScope("location")}
-            disabled={!branchId}
+            disabled={!selectedBranchId}
           >
-            Stock Location
+            {tx("Stock Location")}
           </button>
         </div>
 
+        {(scope === "branch" || scope === "location") && (
+          <label className="ics-field ics-location-field">
+            <span>{tx("Branch")}</span>
+            <input
+              value={branchName || (selectedBranchId ? tx("Active sidebar branch") : tx("No branch selected"))}
+              disabled
+            />
+          </label>
+        )}
+
         {scope === "location" && (
           <label className="ics-field ics-location-field">
-            <span>Stock Location</span>
+            <span>{tx("Stock Location")}</span>
             <select
               value={selectedLocationId}
               onChange={(e) => setSelectedLocationId(e.target.value)}
             >
-              <option value="">Select stock location...</option>
+              <option value="">{tx("Select stock location...")}</option>
               {locations.map((location) => (
                 <option key={location.id} value={location.id}>
                   {location.code
@@ -250,15 +266,15 @@ export default function InventoryControlSettingsPage() {
         )}
 
         <div className="ics-scope-note">
-          Current effective policy:{" "}
+          {tx("Current effective policy:")} {" "}
           <strong>
             {current?.locationId
-              ? "Stock location override"
+              ? tx("Stock location override")
               : current?.branchId
-                ? "Active branch override"
+                ? tx("Active branch override")
                 : current
-                  ? "Company default"
-                  : "System default"}
+                  ? tx("Company default")
+                  : tx("System default")}
           </strong>
         </div>
       </div>
@@ -267,31 +283,31 @@ export default function InventoryControlSettingsPage() {
         <div className="ics-card">
           <div className="ics-card-head">
             <div>
-              <h2>Variance Thresholds</h2>
-              <p>Used by stock count and inventory adjustment anomaly detection.</p>
+              <h2>{tx("Variance Thresholds")}</h2>
+              <p>{tx("Used by stock count and inventory adjustment anomaly detection.")}</p>
             </div>
           </div>
 
           <NumberField
-            label="Warning Variance %"
+            label={tx("Warning Variance %")}
             value={form.warningVariancePercent}
             onChange={(v) => patch({ warningVariancePercent: v })}
           />
 
           <NumberField
-            label="High Variance %"
+            label={tx("High Variance %")}
             value={form.highVariancePercent}
             onChange={(v) => patch({ highVariancePercent: v })}
           />
 
           <NumberField
-            label="Critical Variance %"
+            label={tx("Critical Variance %")}
             value={form.criticalVariancePercent}
             onChange={(v) => patch({ criticalVariancePercent: v })}
           />
 
           <NumberField
-            label="Approval Threshold %"
+            label={tx("Approval Threshold %")}
             value={form.approvalThresholdPercent}
             onChange={(v) => patch({ approvalThresholdPercent: v })}
           />
@@ -300,25 +316,25 @@ export default function InventoryControlSettingsPage() {
         <div className="ics-card">
           <div className="ics-card-head">
             <div>
-              <h2>Approval & Posting Rules</h2>
-              <p>Controls workflow escalation and posting safety.</p>
+              <h2>{tx("Approval & Posting Rules")}</h2>
+              <p>{tx("Controls workflow escalation and posting safety.")}</p>
             </div>
           </div>
 
           <Toggle
-            label="Require approval for high variance"
+            label={tx("Require approval for high variance")}
             checked={form.requireApprovalForHighVariance}
             onChange={(v) => patch({ requireApprovalForHighVariance: v })}
           />
 
           <Toggle
-            label="Block posting on critical variance"
+            label={tx("Block posting on critical variance")}
             checked={form.blockPostingOnCriticalVariance}
             onChange={(v) => patch({ blockPostingOnCriticalVariance: v })}
           />
 
           <Toggle
-            label="Require reason on variance"
+            label={tx("Require reason on variance")}
             checked={form.requireReasonOnVariance}
             onChange={(v) => patch({ requireReasonOnVariance: v })}
           />
@@ -327,13 +343,13 @@ export default function InventoryControlSettingsPage() {
         <div className="ics-card">
           <div className="ics-card-head">
             <div>
-              <h2>Stock Count Controls</h2>
-              <p>Controls count discipline during physical inventory.</p>
+              <h2>{tx("Stock Count Controls")}</h2>
+              <p>{tx("Controls count discipline during physical inventory.")}</p>
             </div>
           </div>
 
           <Toggle
-            label="Lock inventory during count"
+            label={tx("Lock inventory during count")}
             checked={form.lockInventoryDuringCount}
             onChange={(v) => patch({ lockInventoryDuringCount: v })}
           />
@@ -342,13 +358,13 @@ export default function InventoryControlSettingsPage() {
         <div className="ics-card">
           <div className="ics-card-head">
             <div>
-              <h2>Costing Controls</h2>
-              <p>Controls whether stock can go below zero.</p>
+              <h2>{tx("Costing Controls")}</h2>
+              <p>{tx("Controls whether stock can go below zero.")}</p>
             </div>
           </div>
 
           <Toggle
-            label="Allow negative inventory"
+            label={tx("Allow negative inventory")}
             checked={form.allowNegativeInventory}
             onChange={(v) => patch({ allowNegativeInventory: v })}
           />

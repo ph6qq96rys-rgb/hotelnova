@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useI18n } from "../../i18n";
 
 import TelegramAttendanceScannerPage from "./attendance/TelegramAttendanceScannerPage";
 import TelegramHrRequestsPage from "./hr-requests/TelegramHrRequestsPage";
@@ -23,6 +24,7 @@ function TelegramMiniAppContent({
   auth,
   runtime,
 }: Props) {
+  const { tx } = useI18n();
   switch (activeTab) {
     case "workspace":
       return (
@@ -40,7 +42,7 @@ function TelegramMiniAppContent({
       return (
         <section className="tg-mini-section">
           <div className="tg-mini-section__header">
-            <h3>Inventory Operations</h3>
+            <h3>{tx("Inventory Operations")}</h3>
             <span>ERP</span>
           </div>
 
@@ -53,9 +55,9 @@ function TelegramMiniAppContent({
               <span className="tg-mini-menu-card__icon">REQ</span>
               <span className="tg-mini-menu-card__body">
                 <span className="tg-mini-menu-card__title-row">
-                  <strong>My Requests</strong>
+                  <strong>{tx("My Requests")}</strong>
                 </span>
-                <small>Track leave, overtime, and SIV requests.</small>
+                <small>{tx("Track leave, overtime, and SIV requests.")}</small>
               </span>
               <span className="tg-mini-menu-card__chevron">&gt;</span>
             </button>
@@ -72,8 +74,8 @@ function TelegramMiniAppContent({
       return (
         <TelegramComingSoon
           icon="OK"
-          title="Approvals"
-          description="Assigned approvals will appear here once approval list endpoints are connected."
+          title={tx("Approvals")}
+          description={tx("Assigned approvals will appear here once approval list endpoints are connected.")}
         />
       );
 
@@ -100,40 +102,41 @@ function TelegramProfilePanel({
   auth: TelegramMiniAppAuthResult;
   runtime: TelegramRuntimeState;
 }) {
+  const { tx } = useI18n();
   return (
     <section className="tg-profile-card">
       <div className="tg-profile-card__icon">ME</div>
 
-      <h2>{auth.employeeName ?? "Employee"}</h2>
-      <p>{auth.employeeCode ?? "No employee code"}</p>
+      <h2>{auth.employeeName ?? tx("Employee")}</h2>
+      <p>{auth.employeeCode ?? tx("No employee code")}</p>
 
       <dl>
         <div>
-          <dt>Company</dt>
+          <dt>{tx("Company")}</dt>
           <dd>{auth.companyId ?? "-"}</dd>
         </div>
 
         <div>
-          <dt>Branch</dt>
-          <dd>{auth.branchId ?? "Not assigned"}</dd>
+          <dt>{tx("Branch")}</dt>
+          <dd>{auth.branchId ?? tx("Not assigned")}</dd>
         </div>
 
         <div>
-          <dt>ERP User</dt>
-          <dd>{auth.userId ?? "Not linked"}</dd>
+          <dt>{tx("ERP User")}</dt>
+          <dd>{auth.userId ?? tx("Not linked")}</dd>
         </div>
 
         <div>
-          <dt>Telegram</dt>
+          <dt>{tx("Telegram")}</dt>
           <dd>
             {auth.telegramUserName
               ? `@${auth.telegramUserName}`
-              : auth.telegramDisplayName ?? runtime.user?.username ?? "Linked"}
+              : auth.telegramDisplayName ?? runtime.user?.username ?? tx("Linked")}
           </dd>
         </div>
 
         <div>
-          <dt>Telegram ID</dt>
+          <dt>{tx("Telegram ID")}</dt>
           <dd>{auth.telegramUserId ?? runtime.userId ?? "-"}</dd>
         </div>
       </dl>

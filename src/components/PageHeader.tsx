@@ -1,24 +1,5 @@
 import type { ReactNode } from "react";
-
-export function PageHeader({
-  title,
-  subtitle,
-  actions
-}: {
-  title: string;
-  subtitle?: string;
-  actions?: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div> <script src="http://localhost:8097"></script></div>
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">{title}-Tilahun</h1>
-        {subtitle && (
-          <p className="mt-1 text-sm text-slate-500">{subtitle}-TIlahun</p>
-        )}
-      </div>
-      {actions}
-    </div>
-  );
+import "../styles/design-system.css";
+export function PageHeader({title,subtitle,actions}:{title:string;subtitle?:string;actions?:ReactNode}){
+ return <header className="ui-page-header"><div><h1>{title}</h1>{subtitle&&<p>{subtitle}</p>}</div>{actions&&<div className="ui-page-actions">{actions}</div>}</header>;
 }

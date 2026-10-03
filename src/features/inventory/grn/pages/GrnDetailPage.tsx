@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
+import { useI18n } from "../../../../i18n";
+import { formatCurrency } from "../../../../shared/currency/currencyFormat";
+import { useCompanyCurrency } from "../../../../shared/currency/useCompanyCurrency";
 import { grnApi, type GrnScope } from "../api/grnApi";
 import GrnReversalModal from "../components/GrnReverseModal";
 import type { GrnDetailDto, GrnLineDto } from "../types/grn.types";
@@ -54,11 +57,6 @@ type GrnDetailView = GrnDetailDto & {
   createdByName?: string | null;
   reversalReason?: string | null;
 };
-
-const MONEY_FORMATTER = new Intl.NumberFormat(undefined, {
-  style: "currency",
-  currency: "USD",
-});
 
 const QTY_FORMATTER = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 3,
@@ -131,12 +129,12 @@ function formatQty(value?: number | null): string {
   return QTY_FORMATTER.format(Number(value ?? 0));
 }
 
-function formatMoney(value?: number | null): string {
-  return MONEY_FORMATTER.format(Number(value ?? 0));
+function formatMoney(value?: number | null, currencyCode?: string | null): string {
+  return formatCurrency(value, currencyCode);
 }
 
-function getWarehouseLabel(grn: GrnDetailDto & { branchName?: string | null }): string {
-  const warehouse = getGrnLocationName(grn) || "Warehouse not recorded";
+function getWarehouseLabel(grn: GrnDetailDto & { branchName?: string | null }, tx: (text: string) => string = (text) => text): string {
+  const warehouse = getGrnLocationName(grn) || tx("Warehouse not recorded");
   return grn.branchName ? `${grn.branchName} - ${warehouse}` : warehouse;
 }
 
@@ -158,19 +156,30 @@ function isReversalRequested(status: string): boolean {
   return normalized === "REVERSALREQUESTED";
 }
 
+function isCarcassLine(line: GrnLineView): boolean {
+  const text = `${line.itemCode ?? ""} ${line.itemName ?? ""} ${line.notes ?? ""}`.toLowerCase();
+  return text.includes("carcass") || text.includes("carcase") || text.includes("beef side") || text.includes("half side");
+}
+
+function buildButcheryFromGrnPath(companyId: string, grnId: string): string {
+  const params = new URLSearchParams({ source: "grn", grnId });
+  return `/companies/${companyId}/eventmanagment/butchery?${params.toString()}`;
+}
+
 export default function GrnDetailPage() {
   const navigate = useNavigate();
   const params = useParams<RouteParams>();
-  const { companyId: scopeCompanyId, branchId: scopeBranchId } = useAppScope();
+  const { companyId: scopeCompanyId, companyName } = useAppScope();
+  const { tx } = useI18n();
+  const currencyCode = useCompanyCurrency();
 
   const companyId = cleanOptional(params.companyId) ?? cleanOptional(scopeCompanyId) ?? "";
-  const branchId = cleanOptional(params.branchId) ?? cleanOptional(scopeBranchId);
   const grnId = cleanOptional(params.grnId) ?? cleanOptional(params.id) ?? "";
 
   const scope = useMemo<GrnScope | null>(() => {
     if (!companyId) return null;
-    return { companyId, branchId };
-  }, [branchId, companyId]);
+    return { companyId };
+  }, [companyId]);
 
   const [doc, setDoc] = useState<GrnDetailView | null>(null);
   const [loading, setLoading] = useState(false);
@@ -193,15 +202,21 @@ export default function GrnDetailPage() {
       setDoc(toViewModel(dto));
     } catch (err) {
       setDoc(null);
-      setError(getApiError(err, "Unable to load goods receipt."));
+      setError(getApiError(err, tx("Unable to load goods receipt.")));
     } finally {
       setLoading(false);
     }
-  }, [grnId, scope]);
+  }, [grnId, scope, tx]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!doc) return;
+
+    document.title = `${getGrnNumber(doc)} - ${companyName || doc.supplierName || "Goods Receipt"}`;
+  }, [companyName, doc]);
 
   const lines = doc?.lines ?? [];
   const status = doc?.status ?? "DRAFT";
@@ -209,6 +224,10 @@ export default function GrnDetailPage() {
 
   const lineCount = doc ? getGrnLineCount(doc) : lines.length;
   const totalValue = doc ? getGrnTotal(doc) : 0;
+  const printGeneratedAt = useMemo(
+    () => formatDateTime(new Date().toISOString()),
+    [],
+  );
 
   const totalQty = useMemo(
     () => lines.reduce((sum, line) => sum + getLineQty(line), 0),
@@ -219,6 +238,9 @@ export default function GrnDetailPage() {
   const canPost = statusText === "DRAFT";
   const canRequestReversal = statusText === "POSTED";
   const canApproveRejectReversal = isReversalRequested(statusText);
+  const carcassLines = useMemo(() => lines.filter(isCarcassLine), [lines]);
+  const carcassQty = useMemo(() => carcassLines.reduce((sum, line) => sum + getLineQty(line), 0), [carcassLines]);
+  const canCreateButcheryYield = !import.meta.env.PROD && statusText === "POSTED" && carcassLines.length > 0;
 
   const reversalMode: ReversalMode = canApproveRejectReversal ? "approval" : "request";
 
@@ -232,18 +254,18 @@ export default function GrnDetailPage() {
       await grnApi.postDraft(scope, doc.id);
       await load();
     } catch (err) {
-      setError(getApiError(err, "Unable to post goods receipt."));
+      setError(getApiError(err, tx("Unable to post goods receipt.")));
     } finally {
       setPosting(false);
     }
-  }, [doc?.id, load, scope]);
+  }, [doc?.id, load, scope, tx]);
 
   if (!companyId) {
     return (
       <main className="page erp-grn-page">
         <section className="erp-empty-state">
-          <h2>Select a company</h2>
-          <p>Select a company workspace before opening goods receipts.</p>
+          <h2>{tx("Select a company")}</h2>
+          <p>{tx("Select a company workspace before opening goods receipts.")}</p>
         </section>
       </main>
     );
@@ -253,10 +275,10 @@ export default function GrnDetailPage() {
     return (
       <main className="page erp-grn-page">
         <section className="erp-empty-state">
-          <h2>Goods receipt reference missing</h2>
-          <p>The page URL does not include a valid GRN reference.</p>
+          <h2>{tx("Goods receipt reference missing")}</h2>
+          <p>{tx("The page URL does not include a valid GRN reference.")}</p>
           <button type="button" className="btn" onClick={() => navigate(buildGrnPath(companyId))}>
-            Open Goods Receipts
+            {tx("Open Goods Receipts")}
           </button>
         </section>
       </main>
@@ -266,7 +288,7 @@ export default function GrnDetailPage() {
   if (loading) {
     return (
       <main className="page erp-grn-page">
-        <section className="erp-inline-state">Loading goods receipt...</section>
+        <section className="erp-inline-state">{tx("Loading goods receipt...")}</section>
       </main>
     );
   }
@@ -276,10 +298,10 @@ export default function GrnDetailPage() {
       <main className="page erp-grn-page">
         {error ? <div className="alert alert-danger">{error}</div> : null}
         <section className="erp-empty-state">
-          <h2>Goods receipt not found</h2>
-          <p>Open the receipt list and try again.</p>
+          <h2>{tx("Goods receipt not found")}</h2>
+          <p>{tx("Open the receipt list and try again.")}</p>
           <button type="button" className="btn" onClick={() => navigate(buildGrnPath(companyId))}>
-            Open Goods Receipts
+            {tx("Open Goods Receipts")}
           </button>
         </section>
       </main>
@@ -288,6 +310,28 @@ export default function GrnDetailPage() {
 
   return (
     <main className="page erp-grn-page">
+      <section className="erp-grn-print-header" aria-label={tx("Printable goods receipt header")}>
+        <div>
+          <div className="erp-grn-print-company">{companyName || tx("Company")}</div>
+          <div className="erp-grn-print-subtitle">
+            {doc.branchName || tx("Branch")} - {getWarehouseLabel(doc, tx)}
+          </div>
+        </div>
+        <div className="erp-grn-print-meta">
+          <span>{tx("Goods Receipt")}</span>
+          <strong>{getGrnNumber(doc)}</strong>
+          <span>{tx(formatGrnStatusLabel(status))}</span>
+        </div>
+      </section>
+
+      <section className="erp-grn-print-strip" aria-label={tx("Printable receipt summary")}>
+        <Info label={tx("Receipt Date")} value={formatDate(getGrnReceiptDate(doc))} />
+        <Info label={tx("Supplier")} value={doc.supplierName || tx("Supplier not recorded")} />
+        <Info label={tx("Items")} value={String(lineCount)} />
+        <Info label={tx("Total Quantity")} value={formatQty(totalQty)} />
+        <Info label={tx("Inventory Value")} value={formatMoney(totalValue, currencyCode)} />
+      </section>
+
       <header className="erp-grn-detail-hero">
         <div>
           <button
@@ -295,17 +339,17 @@ export default function GrnDetailPage() {
             className="erp-back-link"
             onClick={() => navigate(buildGrnPath(companyId))}
           >
-            - Goods Receipts
+            {`- ${tx("Goods Receipts")}`}
           </button>
-          <div className="erp-kicker">Goods Receipt</div>
+          <div className="erp-kicker">{tx("Goods Receipt")}</div>
           <h1>{getGrnNumber(doc)}</h1>
           <p>
-            {doc.supplierName || "Supplier not recorded"} - {getWarehouseLabel(doc)}
+            {doc.supplierName || tx("Supplier not recorded")} - {getWarehouseLabel(doc, tx)}
           </p>
         </div>
 
         <div className="erp-command-bar">
-          <span className={statusClass(status)}>{formatGrnStatusLabel(status)}</span>
+          <span className={statusClass(status)}>{tx(formatGrnStatusLabel(status))}</span>
 
           {canEdit ? (
             <button
@@ -313,7 +357,7 @@ export default function GrnDetailPage() {
               className="btn"
               onClick={() => navigate(buildGrnPath(companyId, doc.id, "/edit"))}
             >
-              Edit
+              {tx("Edit")}
             </button>
           ) : null}
 
@@ -324,7 +368,7 @@ export default function GrnDetailPage() {
               disabled={posting}
               onClick={() => void postReceipt()}
             >
-              {posting ? "Posting..." : "Post Receipt"}
+              {posting ? tx("Posting...") : tx("Post Receipt")}
             </button>
           ) : null}
 
@@ -334,12 +378,12 @@ export default function GrnDetailPage() {
               className={canApproveRejectReversal ? "btn btn-primary" : "btn btn-danger"}
               onClick={() => setReverseOpen(true)}
             >
-              {canApproveRejectReversal ? "Approve / Reject Reversal" : "Request Reversal"}
+              {canApproveRejectReversal ? tx("Approve / Reject Reversal") : tx("Request Reversal")}
             </button>
           ) : null}
 
           <button type="button" className="btn" onClick={() => window.print()}>
-            Print
+            {tx("Print")}
           </button>
         </div>
       </header>
@@ -347,16 +391,39 @@ export default function GrnDetailPage() {
       {error ? <div className="alert alert-danger">{error}</div> : null}
 
       <section className="erp-grn-summary-grid">
-        <Summary label="Receipt Date" value={formatDate(getGrnReceiptDate(doc))} />
-        <Summary label="Warehouse" value={getWarehouseLabel(doc)} />
-        <Summary label="Items" value={String(lineCount)} />
-        <Summary label="Total Quantity" value={formatQty(totalQty)} />
-        <Summary label="Inventory Value" value={formatMoney(totalValue)} />
+        <Summary label={tx("Receipt Date")} value={formatDate(getGrnReceiptDate(doc))} />
+        <Summary label={tx("Warehouse")} value={getWarehouseLabel(doc, tx)} />
+        <Summary label={tx("Items")} value={String(lineCount)} />
+        <Summary label={tx("Total Quantity")} value={formatQty(totalQty)} />
+        <Summary label={tx("Inventory Value")} value={formatMoney(totalValue, currencyCode)} />
       </section>
 
+      {canCreateButcheryYield ? (
+        <section className="erp-grn-butchery-handoff" aria-label={tx("Butchery yield handoff")}>
+          <div>
+            <span>{tx("Butchery ready")}</span>
+            <strong>{tx("Create yield sheet from this carcass receipt")}</strong>
+            <p>
+              {tx("This posted GRN contains carcass stock. Start the butchery breakdown from the received batch instead of re-entering supplier, weight, cost, and warehouse details.")}
+            </p>
+          </div>
+          <div className="erp-grn-butchery-handoff__facts">
+            <span>{tx("Carcass lines")}</span><strong>{String(carcassLines.length)}</strong>
+            <span>{tx("Received weight")}</span><strong>{formatQty(carcassQty)} {carcassLines[0]?.uomCode || carcassLines[0]?.uomName || ""}</strong>
+            <span>{tx("Source GRN")}</span><strong>{getGrnNumber(doc)}</strong>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => navigate(buildButcheryFromGrnPath(companyId, doc.id))}
+          >
+            {tx("Create Butchery Yield Sheet")}
+          </button>
+        </section>
+      ) : null}
       <div className="erp-grn-detail-layout">
         <section className="card erp-grn-card">
-          <nav className="erp-tabs" aria-label="Goods receipt detail tabs">
+          <nav className="erp-tabs" aria-label={tx("Goods receipt detail tabs")}>
             {TAB_OPTIONS.map((option) => (
               <button
                 key={option.key}
@@ -364,31 +431,31 @@ export default function GrnDetailPage() {
                 className={tab === option.key ? "active" : ""}
                 onClick={() => setTab(option.key)}
               >
-                {option.key === "items" ? `Items (${lineCount})` : option.label}
+                {option.key === "items" ? `${tx("Items")} (${lineCount})` : tx(option.label)}
               </button>
             ))}
           </nav>
 
-          {tab === "items" ? <ItemsTable lines={lines} /> : null}
+          {tab === "items" ? <ItemsTable lines={lines} currencyCode={currencyCode} /> : null}
           {tab === "inventory" ? (
-            <InventoryImpact doc={doc} lines={lines} totalValue={totalValue} />
+            <InventoryImpact doc={doc} lines={lines} totalValue={totalValue} currencyCode={currencyCode} />
           ) : null}
           {tab === "audit" ? <AuditTrail doc={doc} /> : null}
         </section>
 
         <aside className="erp-side-panel">
           <div className="card">
-            <h3>Document Summary</h3>
-            <Info label="Status" value={formatGrnStatusLabel(status)} />
-            <Info label="Supplier" value={doc.supplierName || "-"} />
-            <Info label="Branch" value={doc.branchName || "-"} />
-            <Info label="Warehouse" value={getGrnLocationName(doc) || "-"} />
-            <Info label="Received" value={formatDate(getGrnReceiptDate(doc))} />
-            <Info label="Value" value={formatMoney(totalValue)} />
+            <h3>{tx("Document Summary")}</h3>
+            <Info label={tx("Status")} value={tx(formatGrnStatusLabel(status))} />
+            <Info label={tx("Supplier")} value={doc.supplierName || "-"} />
+            <Info label={tx("Branch")} value={doc.branchName || "-"} />
+            <Info label={tx("Warehouse")} value={getGrnLocationName(doc) || "-"} />
+            <Info label={tx("Received")} value={formatDate(getGrnReceiptDate(doc))} />
+            <Info label={tx("Value")} value={formatMoney(totalValue, currencyCode)} />
           </div>
 
           <div className="card">
-            <h3>Workflow</h3>
+            <h3>{tx("Workflow")}</h3>
             <Workflow status={status} />
           </div>
         </aside>
@@ -414,6 +481,24 @@ export default function GrnDetailPage() {
           await load();
         }}
       />
+
+      <footer className="erp-grn-print-footer">
+        <div>
+          <span>{tx("Prepared by")}</span>
+          <strong>{doc.createdByName || "-"}</strong>
+        </div>
+        <div>
+          <span>{tx("Posted by")}</span>
+          <strong>{doc.postedByName || "-"}</strong>
+        </div>
+        <div>
+          <span>{tx("Printed")}</span>
+          <strong>{printGeneratedAt}</strong>
+        </div>
+        <div className="erp-grn-print-signature">
+          <span>{tx("Received / Verified by")}</span>
+        </div>
+      </footer>
     </main>
   );
 }
@@ -442,45 +527,46 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ItemsTable({ lines }: { lines: GrnLineView[] }) {
+function ItemsTable({ lines, currencyCode }: { lines: GrnLineView[]; currencyCode: string }) {
+  const { tx } = useI18n();
   return (
     <div className="erp-table-wrap">
       <table className="table erp-grn-table">
         <thead>
           <tr>
             <th>#</th>
-            <th>Item</th>
-            <th className="num">Received Qty</th>
-            <th>UOM</th>
-            <th className="num">Unit Cost</th>
-            <th className="num">Line Value</th>
-            <th>Batch</th>
-            <th>Expiry</th>
+            <th>{tx("Item")}</th>
+            <th className="num">{tx("Received Qty")}</th>
+            <th>{tx("UOM")}</th>
+            <th className="num">{tx("Unit Cost")}</th>
+            <th className="num">{tx("Line Value")}</th>
+            <th>{tx("Batch")}</th>
+            <th>{tx("Expiry")}</th>
           </tr>
         </thead>
         <tbody>
           {lines.length === 0 ? (
             <tr>
               <td colSpan={8} className="erp-empty-row">
-                No items on this goods receipt.
+                {tx("No items on this goods receipt.")}
               </td>
             </tr>
           ) : (
             lines.map((line, index) => {
               const qty = getLineQty(line);
-              const lineValue = getGrnLineTotal(line) || getGrnLineAmount(line);
+              const lineValue = getGrnLineAmount(line);
 
               return (
                 <tr key={line.id || index}>
                   <td>{String(line.lineNo ?? index + 1).padStart(2, "0")}</td>
                   <td>
-                    <strong>{line.itemName || "Unknown item"}</strong>
+                    <strong>{line.itemName || tx("Unknown item")}</strong>
                     <small>{line.itemCode || ""}</small>
                   </td>
                   <td className="num">{formatQty(qty)}</td>
                   <td>{line.uomCode || line.uomName || "-"}</td>
-                  <td className="num">{formatMoney(line.unitCost)}</td>
-                  <td className="num">{formatMoney(lineValue)}</td>
+                  <td className="num">{formatMoney(line.unitCost, currencyCode)}</td>
+                  <td className="num">{formatMoney(lineValue, currencyCode)}</td>
                   <td>{line.batchNo || "-"}</td>
                   <td>{formatDate(line.expiryDate)}</td>
                 </tr>
@@ -497,41 +583,45 @@ function InventoryImpact({
   doc,
   lines,
   totalValue,
+  currencyCode,
 }: {
   doc: GrnDetailView;
   lines: GrnLineView[];
   totalValue: number;
+  currencyCode: string;
 }) {
+  const { tx } = useI18n();
   return (
     <div className="erp-impact-grid">
-      <Summary label="FIFO Lots Created" value={String(lines.length)} />
-      <Summary label="Warehouse" value={getWarehouseLabel(doc)} />
-      <Summary label="Inventory Added" value={formatMoney(totalValue)} />
-      <Summary label="Posting Rule" value="Receipt increases stock" />
+      <Summary label={tx("FIFO Lots Created")} value={String(lines.length)} />
+      <Summary label={tx("Warehouse")} value={getWarehouseLabel(doc, tx)} />
+      <Summary label={tx("Inventory Added")} value={formatMoney(totalValue, currencyCode)} />
+      <Summary label={tx("Posting Rule")} value={tx("Receipt increases stock")} />
     </div>
   );
 }
 
 function AuditTrail({ doc }: { doc: GrnDetailView }) {
+  const { tx } = useI18n();
   const events = [
     {
-      label: "Created",
+      label: tx("Created"),
       at: doc.createdAt ?? doc.createdAtUtc,
       by: doc.createdByName,
     },
     {
-      label: "Posted",
+      label: tx("Posted"),
       at: doc.postedAt ?? doc.postedAtUtc,
       by: doc.postedByName,
     },
     {
-      label: "Reversal Requested",
+      label: tx("Reversal Requested"),
       at: doc.reversedAt ?? doc.reversedAtUtc,
       by: doc.reversedByUser,
       note: doc.reversalReason ?? doc.reverseReason,
     },
     {
-      label: "Reversed",
+      label: tx("Reversed"),
       at: doc.reversedAt ?? doc.reversedAtUtc,
       by: doc.reversedByUser,
       note: doc.reversalReason ?? doc.reverseReason,
@@ -539,7 +629,7 @@ function AuditTrail({ doc }: { doc: GrnDetailView }) {
   ].filter((event) => Boolean(event.at));
 
   if (events.length === 0) {
-    return <div className="erp-empty-row">No audit events recorded.</div>;
+    return <div className="erp-empty-row">{tx("No audit events recorded.")}</div>;
   }
 
   return (
@@ -562,6 +652,7 @@ function AuditTrail({ doc }: { doc: GrnDetailView }) {
 }
 
 function Workflow({ status }: { status: GrnStatus }) {
+  const { tx } = useI18n();
   const statusText = String(status).replace(/[_\s-]/g, "").toUpperCase();
 
   const steps =
@@ -579,9 +670,10 @@ function Workflow({ status }: { status: GrnStatus }) {
       {steps.map((step, index) => (
         <div key={step} className={index <= currentIndex ? "done" : ""}>
           <span />
-          {formatGrnStatusLabel(step as GrnStatus)}
+          {tx(formatGrnStatusLabel(step as GrnStatus))}
         </div>
       ))}
     </div>
   );
 }
+

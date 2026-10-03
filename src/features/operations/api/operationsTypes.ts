@@ -173,6 +173,27 @@ export interface DailyOperationPlanDto {
   acknowledgements: DailyOperationBriefingAcknowledgementDto[];
 }
 
+export interface DailyOperationPlanSummaryDto {
+  id: Guid;
+  companyId: Guid;
+  branchId: Guid;
+  branchName: string;
+  branchCode: string;
+  businessDate: string;
+  shiftName: string;
+  status: string;
+  expectedCovers: number;
+  expectedSales: number;
+  requiredEmployees: number;
+  checklistCount: number;
+  completedChecklistCount: number;
+  criticalOpenCount: number;
+  createdAtUtc: string;
+  updatedAtUtc?: string | null;
+  briefedAtUtc?: string | null;
+  readyAtUtc?: string | null;
+}
+
 export interface UpsertDailyOperationPlanDto {
   businessDate: string;
   shiftName: string;

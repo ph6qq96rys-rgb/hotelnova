@@ -145,12 +145,8 @@ function resolveScope(scope: GrnScope): { companyId: string; branchId: string | 
 }
 
 function grnBase(scope: GrnScope): string {
-  const { companyId, branchId } = resolveScope(scope);
+  const { companyId } = resolveScope(scope);
   const encodedCompanyId = encodeURIComponent(companyId);
-
-  if (branchId) {
-    return `/companies/${encodedCompanyId}/branches/${encodeURIComponent(branchId)}/grns`;
-  }
 
   return `/companies/${encodedCompanyId}/grns`;
 }
@@ -168,15 +164,6 @@ function inventoryItemBase(scope: GrnScope): string {
   return `/companies/${encodedCompanyId}/inventory-master/items`;
 }
 
-function resolveBranchId(scope: GrnScope, body: DraftRequestWithBranch): string {
-  const { branchId: scopedBranchId } = resolveScope(scope);
-
-  return requireText(
-    body.branchId ?? body.receivingBranchId ?? scopedBranchId,
-    "Receiving branch",
-  );
-}
-
 function validateReverseRequest(body: ReverseGrnRequest): ReverseGrnRequest {
   return {
     ...body,
@@ -188,7 +175,7 @@ function validateDraftRequest(
   scope: GrnScope,
   body: DraftRequestWithBranch,
 ): DraftRequestWithBranch {
-  const branchId = resolveBranchId(scope, body);
+  resolveScope(scope);
   const receivingLocationId = requireText(body.receivingLocationId, "Receiving warehouse");
   const receivedDate = requireText(body.receivedDate, "Received date");
 
@@ -198,8 +185,8 @@ function validateDraftRequest(
 
   return {
     ...body,
-    branchId,
-    receivingBranchId: branchId,
+    branchId: null,
+    receivingBranchId: null,
     receivingLocationId,
     receivedDate,
     supplierName: cleanNullable(body.supplierName),

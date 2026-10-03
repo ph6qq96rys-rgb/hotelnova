@@ -5,6 +5,7 @@ import { useAppScope } from "../../../../app/useAppScope";
 import { http } from "../../../../api/http";
 import { appPaths } from "../../../../routes/routeConfig";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
+import { useI18n } from "../../../../i18n";
 import "./inventory-items.css";
 
 type ImportRowError = {
@@ -102,7 +103,8 @@ function useSafeErpNavigation() {
   return { go };
 }
 
-export default function ImportInventoryItemsPage() {
+export default function Importinventoryitemspage() {
+  const { tx } = useI18n();
   const { companyId } = useAppScope();
   const { go } = useSafeErpNavigation();
 
@@ -246,7 +248,7 @@ export default function ImportInventoryItemsPage() {
       <div className="inv-page">
         <div className="inv-page-guard">
           <div style={{ fontSize: 32 }}></div>
-          <div>Select a company to import inventory items.</div>
+          <div>{tx("Select a company to import inventory items.")}</div>
         </div>
       </div>
     );
@@ -256,8 +258,8 @@ export default function ImportInventoryItemsPage() {
     <div className="inv-page">
       <div className="inv-banner">
         <div>
-          <p className="inv-banner__kicker">Inventory - Items</p>
-          <h1 className="inv-banner__title">Import Inventory Items</h1>
+          <p className="inv-banner__kicker">{tx("Inventory - Items")}</p>
+          <h1 className="inv-banner__title">{tx("Import Inventory Items")}</h1>
           <p className="inv-banner__subtitle">
             Upload the approved Excel template to create inventory items,
             validate UOMs, skip duplicates, and prepare items for operational
@@ -271,42 +273,42 @@ export default function ImportInventoryItemsPage() {
           onClick={() => go(`/companies/${companyId}/inventory-master/items`)}
           disabled={busy}
         >
-          Back to Items
+          {tx("Back to Items")}
         </button>
       </div>
 
       <div className="inv-kpi-grid" style={{ marginBottom: 16 }}>
         <ImportStepCard
           number="1"
-          title="Upload"
-          text="Choose the Excel file."
+          title={tx("Upload")}
+          text={tx("Choose the Excel file.")}
           active={state.step === "idle" || state.step === "ready"}
         />
         <ImportStepCard
           number="2"
-          title="Validate"
-          text="Check file format and options."
+          title={tx("Validate")}
+          text={tx("Check file format and options.")}
           active={state.step === "ready"}
         />
         <ImportStepCard
           number="3"
-          title="Import"
-          text="Process inventory rows."
+          title={tx("Import")}
+          text={tx("Process inventory rows.")}
           active={state.step === "importing"}
         />
         <ImportStepCard
           number="4"
-          title="Review"
-          text="Review imported and failed rows."
+          title={tx("Review")}
+          text={tx("Review imported and failed rows.")}
           active={state.step === "completed" || state.step === "error"}
         />
       </div>
 
       <div className="inv-card" style={{ marginBottom: 16 }}>
         <div className="inv-card__head">
-          <h2 className="inv-card__title">Spreadsheet Requirements</h2>
+          <h2 className="inv-card__title">{tx("Spreadsheet Requirements")}</h2>
           <p className="inv-card__subtitle">
-            Use this format to prevent import errors.
+            {tx("Use this format to prevent import errors.")}
           </p>
         </div>
 
@@ -314,36 +316,36 @@ export default function ImportInventoryItemsPage() {
           <table className="inv-table">
             <thead>
               <tr>
-                <th>Required Column</th>
-                <th>Example</th>
-                <th>Notes</th>
+                <th>{tx("Required Column")}</th>
+                <th>{tx("Example")}</th>
+                <th>{tx("Notes")}</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Material Name</td>
-                <td>Chicken Breast</td>
-                <td>Must be unique unless duplicate skipping is enabled.</td>
+                <td>{tx("Material Name")}</td>
+                <td>{tx("Chicken Breast")}</td>
+                <td>{tx("Must be unique unless duplicate skipping is enabled.")}</td>
               </tr>
               <tr>
-                <td>Base UOM</td>
+                <td>{tx("Base UOM")}</td>
                 <td>kg</td>
-                <td>Must match an existing unit of measure.</td>
+                <td>{tx("Must match an existing unit of measure.")}</td>
               </tr>
               <tr>
-                <td>Unit Cost</td>
+                <td>{tx("Unit Cost")}</td>
                 <td>12.50</td>
-                <td>Numeric value only.</td>
+                <td>{tx("Numeric value only.")}</td>
               </tr>
               <tr>
-                <td>Recipe/Material Type</td>
-                <td>Raw Material</td>
-                <td>Used for recipe and costing setup.</td>
+                <td>{tx("Recipe/Material Type")}</td>
+                <td>{tx("Raw Material")}</td>
+                <td>{tx("Used for recipe and costing setup.")}</td>
               </tr>
               <tr>
-                <td>Status</td>
-                <td>Active</td>
-                <td>Inactive rows may be imported as inactive.</td>
+                <td>{tx("Status")}</td>
+                <td>{tx("Active")}</td>
+                <td>{tx("Inactive rows may be imported as inactive.")}</td>
               </tr>
             </tbody>
           </table>
@@ -369,7 +371,7 @@ export default function ImportInventoryItemsPage() {
             openFilePicker();
           }
         }}
-        aria-label="Click or drop to upload spreadsheet"
+        aria-label={tx("Click or drop to upload spreadsheet")}
       >
         <span className="inv-import-dropzone__icon"></span>
 
@@ -377,16 +379,16 @@ export default function ImportInventoryItemsPage() {
           <>
             <p className="inv-import-dropzone__title">{fileSummary.name}</p>
             <p className="inv-import-dropzone__sub">
-              {fileSummary.size} - {fileSummary.extension} - click to change
+              {fileSummary.size} - {fileSummary.extension} - {tx("click to change")}
             </p>
           </>
         ) : (
           <>
             <p className="inv-import-dropzone__title">
-              Drop spreadsheet here, or click to browse
+              {tx("Drop spreadsheet here, or click to browse")}
             </p>
             <p className="inv-import-dropzone__sub">
-              .xlsx or .xlsm - max 10 MB
+              {tx(".xlsx or .xlsm - max 10 MB")}
             </p>
           </>
         )}
@@ -406,15 +408,15 @@ export default function ImportInventoryItemsPage() {
 
       {fileError ? (
         <div className="inv-alert inv-alert--error" style={{ marginBottom: 12 }}>
-          {fileError}
+          {tx(fileError)}
         </div>
       ) : null}
 
       <div className="inv-card" style={{ marginBottom: 16 }}>
         <div className="inv-card__head">
-          <h2 className="inv-card__title">Import Options</h2>
+          <h2 className="inv-card__title">{tx("Import Options")}</h2>
           <p className="inv-card__subtitle">
-            Configure how duplicate and review items should be handled.
+            {tx("Configure how duplicate and review items should be handled.")}
           </p>
         </div>
 
@@ -435,7 +437,7 @@ export default function ImportInventoryItemsPage() {
                 updateOption("skipDuplicates", event.target.checked)
               }
             />
-            <span>Skip duplicate item names</span>
+            <span>{tx("Skip duplicate item names")}</span>
           </label>
 
           <label className="inv-import-check">
@@ -447,7 +449,7 @@ export default function ImportInventoryItemsPage() {
                 updateOption("markInactiveReview", event.target.checked)
               }
             />
-            <span>Mark review-price items as inactive</span>
+            <span>{tx("Mark review-price items as inactive")}</span>
           </label>
         </div>
       </div>
@@ -459,7 +461,7 @@ export default function ImportInventoryItemsPage() {
           disabled={!canImport}
           onClick={() => void runImport()}
         >
-          {busy ? "Importing..." : "Import Items"}
+          {busy ? tx("Importing...") : tx("Import Items")}
         </button>
 
         {file && !busy ? (
@@ -468,7 +470,7 @@ export default function ImportInventoryItemsPage() {
             className="inv-btn inv-btn--outline"
             onClick={clearFile}
           >
-            Clear File
+            {tx("Clear File")}
           </button>
         ) : null}
       </div>
@@ -501,18 +503,18 @@ export default function ImportInventoryItemsPage() {
               margin: 0,
             }}
           >
-            {state.label}
+            {tx(state.label)}
           </p>
         </div>
       ) : null}
 
       {state.step === "error" && state.message ? (
         <div className="inv-alert inv-alert--error" style={{ marginBottom: 16 }}>
-          {state.message}
+          {tx(state.message)}
         </div>
       ) : null}
 
-      {result ? <ImportResults result={result} /> : null}
+      {result ? <ImportResults result={result} tx={tx} /> : null}
     </div>
   );
 }
@@ -528,6 +530,8 @@ function ImportStepCard({
   text: string;
   active?: boolean;
 }) {
+  const { tx } = useI18n();
+
   return (
     <div
       className="inv-kpi"
@@ -535,7 +539,7 @@ function ImportStepCard({
         outline: active ? "2px solid var(--erp-accent)" : undefined,
       }}
     >
-      <div className="inv-kpi__label">Step {number}</div>
+      <div className="inv-kpi__label">{tx("Step")} {number}</div>
       <div className="inv-kpi__value" style={{ fontSize: 18 }}>
         {title}
       </div>
@@ -544,34 +548,30 @@ function ImportStepCard({
   );
 }
 
-function ImportResults({ result }: { result: ImportResult }) {
+function ImportResults({ result, tx }: { result: ImportResult; tx: (text: string) => string }) {
   return (
     <>
       <div className="inv-kpi-grid" style={{ marginBottom: 16 }}>
-        <ResultKpi label="Rows Read" value={result.totalRows} />
-        <ResultKpi label="Inserted" value={result.inserted} tone="success" />
-        <ResultKpi label="Skipped" value={result.skipped} />
+        <ResultKpi label={tx("Rows Read")} value={result.totalRows} />
+        <ResultKpi label={tx("Inserted")} value={result.inserted} tone="success" />
+        <ResultKpi label={tx("Skipped")} value={result.skipped} />
         <ResultKpi
-          label="Errors"
+          label={tx("Errors")}
           value={result.failed}
           tone={result.failed > 0 ? "danger" : undefined}
         />
       </div>
 
       {result.inserted > 0 ? (
-        <div className="inv-alert inv-alert--success" style={{ marginBottom: 16 }}>
-           {result.inserted} item{result.inserted !== 1 ? "s" : ""} imported
-          successfully.
+        <div className="inv-alert inv-alert--success" style={{ marginBottom: 16 }}>          {tx("Items imported successfully.").replace("{count}", String(result.inserted))}
         </div>
       ) : null}
 
       {result.errors.length > 0 ? (
         <div className="inv-card">
           <div className="inv-card__head">
-            <h2 className="inv-card__title">Row Errors</h2>
-            <p className="inv-card__subtitle">
-              {result.errors.length} row
-              {result.errors.length !== 1 ? "s" : ""} were skipped or failed.
+            <h2 className="inv-card__title">{tx("Row Errors")}</h2>
+            <p className="inv-card__subtitle">              {tx("Rows were skipped or failed.").replace("{count}", String(result.errors.length))}
             </p>
           </div>
 
@@ -579,9 +579,9 @@ function ImportResults({ result }: { result: ImportResult }) {
             <table className="inv-table">
               <thead>
                 <tr>
-                  <th style={{ width: 70 }}>Row</th>
-                  <th>Item Name</th>
-                  <th>Reason</th>
+                  <th style={{ width: 70 }}>{tx("Row")}</th>
+                  <th>{tx("Item Name")}</th>
+                  <th>{tx("Reason")}</th>
                 </tr>
               </thead>
 
@@ -603,7 +603,7 @@ function ImportResults({ result }: { result: ImportResult }) {
                         fontSize: 12,
                       }}
                     >
-                      {error.reason}
+                      {tx(error.reason)}
                     </td>
                   </tr>
                 ))}

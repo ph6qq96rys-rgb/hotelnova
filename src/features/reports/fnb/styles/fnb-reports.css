@@ -449,8 +449,18 @@
   }
 
   .fnb-filter-grid,
-  .fnb-kpi-grid {
+  .fnb-kpi-grid,
+  .fnb-insight-grid,
+  .fnb-aging-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fnb-insight-hero {
+    flex-direction: column;
+  }
+
+  .fnb-insight-total {
+    text-align: left;
   }
 
   .fnb-report-context {
@@ -477,8 +487,21 @@
 
   .fnb-filter-grid,
   .fnb-kpi-grid,
-  .fnb-report-context {
+  .fnb-report-context,
+  .fnb-insight-grid,
+  .fnb-aging-strip {
     grid-template-columns: 1fr;
+  }
+
+  .fnb-consumption-line,
+  .fnb-aging-bucket {
+    border-right: 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .fnb-consumption-line:last-child,
+  .fnb-aging-bucket:last-child {
+    border-bottom: 0;
   }
 
   .fnb-search-field {
@@ -559,6 +582,7 @@
   .fnb-panel,
   .fnb-warning-list,
   .fnb-kpi-grid,
+  .fnb-insight,
   .fnb-drilldown,
   .fnb-mobile-list {
     display: none !important;

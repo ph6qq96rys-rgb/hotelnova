@@ -3,49 +3,49 @@
    Import this before any feature-specific CSS.
     */
 
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
 
 :root {
   /* Typography */
-  --erp-font:        "Sora", system-ui, sans-serif;
-  --erp-mono:        "JetBrains Mono", "Fira Code", monospace;
+  --erp-font: var(--font-sans);
+  --erp-mono: var(--mono);
 
   /* Surface */
-  --erp-bg:          #f5f3ef;
-  --erp-surface:     #ffffff;
-  --erp-surface-2:   #faf9f7;
-  --erp-surface-3:   #f0ede8;
+  --erp-bg: var(--bg);
+  --erp-surface: var(--surface);
+  --erp-surface-2: var(--surface-2);
+  --erp-surface-3: var(--surface-3);
 
   /* Border */
-  --erp-border:      #dedad4;
-  --erp-border-soft: #ece9e4;
+  --erp-border: var(--border);
+  --erp-border-soft: var(--border-soft);
 
   /* Text */
-  --erp-text:        #1c1a17;
-  --erp-text-muted:  #7a7670;
-  --erp-text-soft:   #b0aca5;
+  --erp-text: var(--text);
+  --erp-text-muted: var(--text-muted);
+  --erp-text-soft: var(--text-muted);
 
   /* Accent - warm amber, not blue */
-  --erp-accent:      #c17f24;
-  --erp-accent-bg:   #fdf3e3;
-  --erp-accent-dark: #9a6318;
+  --erp-accent: var(--accent-dark);
+  --erp-accent-bg: var(--accent-light);
+  --erp-accent-dark: var(--accent-dark);
 
   /* Semantic */
-  --erp-success:     #2d6a4f;
-  --erp-success-bg:  #edf7f2;
-  --erp-success-border: #a7f3d0;
+  --erp-success: var(--success);
+  --erp-success-bg: var(--success-bg);
+  --erp-success-border: var(--success-border);
 
-  --erp-danger:      #b91c1c;
-  --erp-danger-bg:   #fef2f2;
-  --erp-danger-border: #fecaca;
+  --erp-danger: var(--danger);
+  --erp-danger-bg: var(--danger-bg);
+  --erp-danger-border: var(--danger-border);
 
-  --erp-warn:        #92400e;
-  --erp-warn-bg:     #fffbeb;
-  --erp-warn-border: #fde68a;
+  --erp-warn: var(--warn);
+  --erp-warn-bg: var(--warn-bg);
+  --erp-warn-border: var(--warn-border);
 
-  --erp-info:        #1d4ed8;
-  --erp-info-bg:     #eff6ff;
-  --erp-info-border: #bfdbfe;
+  --erp-info: var(--info);
+  --erp-info-bg: var(--info-bg);
+  --erp-info-border: var(--info-border);
 
   /* Radius */
   --erp-r-sm:  4px;

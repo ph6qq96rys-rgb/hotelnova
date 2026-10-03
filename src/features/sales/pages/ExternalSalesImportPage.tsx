@@ -11,13 +11,14 @@ import {
 } from "lucide-react";
 
 import { useAppScope } from "../../../app/useAppScope";
+import { formatCurrency } from "../../../shared/currency/currencyFormat";
+import { useCompanyCurrency } from "../../../shared/currency/useCompanyCurrency";
 import { salesApi } from "../api/salesApi";
 import {
   posApi,
   tryGetStoreId,
   type PosStoreDto,
 } from "../../pos/api/posApi";
-import { usePosSession } from "../../pos/hooks/usePosSession";
 import type { ImportExternalSalesResultDto } from "../api/salesTypes";
 import {
   Alert,
@@ -50,11 +51,8 @@ function isValidGuid(value?: string | null): boolean {
   return Boolean(value && value.trim() && value !== EMPTY_GUID);
 }
 
-function formatMoney(value: number) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-  }).format(value || 0);
+function formatMoney(value: number, currencyCode?: string | null) {
+  return formatCurrency(value, currencyCode);
 }
 
 function storeLabel(store: PosStoreDto): string {
@@ -82,7 +80,8 @@ function getIssueStockLocationLabel(store: PosStoreDto | null): string {
 }
 
 export default function ExternalSalesImportPage() {
-  const { companyId, branchId } = useAppScope();
+  const { companyId, branchId, branchName } = useAppScope();
+  const currencyCode = useCompanyCurrency();
   const scope = useMemo(
   () => ({
     companyId,
@@ -90,15 +89,10 @@ export default function ExternalSalesImportPage() {
   }),
   [companyId, branchId],
 );
-  const {
-    loading: sessionLoading,
-    isOpen: isSessionOpen,
-    refresh: refreshSession,
-  } = usePosSession(scope);
 
   const [stores, setStores] = useState<PosStoreDto[]>([]);
   const [storesLoading, setStoresLoading] = useState(false);
-  const [storeId, setStoreId] = useState(() => tryGetStoreId() ?? "");
+  const [storeId, setStoreId] = useState("");
 
   const [salesDate, setSalesDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
@@ -124,7 +118,6 @@ export default function ExternalSalesImportPage() {
   );
 
   const missingScope = !companyId || !branchId;
-  const missingSession = !sessionLoading && !isSessionOpen;
   const missingStore = !storesLoading && !isValidGuid(storeId);
   const missingIssueLocation =
     Boolean(selectedStore) && !isValidGuid(locationId);
@@ -134,25 +127,21 @@ export default function ExternalSalesImportPage() {
       Boolean(
         companyId &&
           branchId &&
-          isSessionOpen &&
           isValidGuid(storeId) &&
           isValidGuid(locationId) &&
           salesDate &&
           file &&
           !busy &&
-          !sessionLoading &&
           !storesLoading
       ),
     [
       companyId,
       branchId,
-      isSessionOpen,
       storeId,
       locationId,
       salesDate,
       file,
       busy,
-      sessionLoading,
       storesLoading,
     ]
   );
@@ -161,6 +150,13 @@ export default function ExternalSalesImportPage() {
     let cancelled = false;
 
     async function loadStores() {
+      if (!companyId || !branchId) {
+        setStores([]);
+        setStoreId("");
+        setStoresLoading(false);
+        return;
+      }
+
       setStoresLoading(true);
       setError(null);
 
@@ -177,8 +173,10 @@ export default function ExternalSalesImportPage() {
 
         const activeStoreId = tryGetStoreId() ?? "";
 
-        if (activeStoreId) {
+        if (activeStoreId && activeStores.some((store) => store.id === activeStoreId)) {
           setStoreId(activeStoreId);
+        } else {
+          setStoreId(activeStores[0]?.id ?? "");
         }
       } catch (e) {
         if (!cancelled) {
@@ -194,18 +192,11 @@ export default function ExternalSalesImportPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  useEffect(() => {
-    setStoreId(tryGetStoreId() ?? "");
-  }, [isSessionOpen]);
+  }, [companyId, branchId, scope]);
 
   async function refreshPageState() {
     setError(null);
     setResult(null);
-    setStoreId(tryGetStoreId() ?? "");
-
-    await refreshSession();
 
     try {
       setStoresLoading(true);
@@ -226,7 +217,7 @@ export default function ExternalSalesImportPage() {
     setError(null);
     setResult(null);
 
-    const activeStoreId = tryGetStoreId() ?? storeId;
+    const activeStoreId = storeId;
     const activeStore =
       stores.find((x) => x.id === activeStoreId) ?? selectedStore;
     const issueLocationId = getIssueStockLocationId(activeStore);
@@ -238,11 +229,7 @@ export default function ExternalSalesImportPage() {
     }
 
     if (!branchId) {
-      return setError("Branch scope is missing. Please select a branch.");
-    }
-
-    if (!isSessionOpen) {
-      return setError("Please open an active POS session first.");
+      return setError("Import branch is missing. Please select a branch in the sidebar.");
     }
 
     if (!isValidGuid(activeStoreId)) {
@@ -290,38 +277,30 @@ export default function ExternalSalesImportPage() {
   return (
     <PageShell
       title="External Sales Import"
-      subtitle="Import CNET or third-party POS sales using the active POS/store issue location."
+      subtitle="Import POS sales and post consumption to the active sidebar branch store."
     >
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 420px", minWidth: 0 }}>
           <Card
             title="Import Settings"
-            subtitle="Store and consumption location are locked to the active POS session."
+            subtitle="Store and consumption location are scoped to the branch selected in the sidebar."
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {missingScope && (
                 <Alert
                   tone="danger"
                   title="Missing scope"
-                  message="Please select a company and branch before importing sales."
+                  message="Please select a company and branch in the sidebar before importing sales."
                 />
               )}
 
-              {sessionLoading && (
-                <Alert
-                  tone="info"
-                  title="Checking POS session"
-                  message="Loading active POS session."
+              <Field label="Import branch">
+                <input
+                  value={branchName || (branchId ? "Active sidebar branch" : "No branch selected")}
+                  disabled
+                  style={selectStyle}
                 />
-              )}
-
-              {missingSession && (
-                <Alert
-                  tone="danger"
-                  title="No active POS session"
-                  message="Please open a POS session before importing external sales."
-                />
-              )}
+              </Field>
 
               {missingStore && (
                 <Alert
@@ -339,12 +318,20 @@ export default function ExternalSalesImportPage() {
                 />
               )}
 
-              <Field label="Active POS/store">
-                <input
-                  value={selectedStore ? storeLabel(selectedStore) : "No POS/store selected"}
-                  disabled
+              <Field label="POS/store">
+                <select
+                  value={storeId}
+                  onChange={(e) => setStoreId(e.target.value)}
+                  disabled={busy || storesLoading || !branchId}
                   style={selectStyle}
-                />
+                >
+                  <option value="">Select POS/store</option>
+                  {stores.map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {storeLabel(store)}
+                    </option>
+                  ))}
+                </select>
               </Field>
 
               <Field
@@ -438,7 +425,7 @@ export default function ExternalSalesImportPage() {
                 <Btn
                   variant="soft"
                   onClick={refreshPageState}
-                  disabled={busy || sessionLoading || storesLoading}
+                  disabled={busy || storesLoading}
                   style={{ flex: "0 0 auto", gap: 8 }}
                 >
                   <RefreshCcw size={15} />
@@ -481,7 +468,7 @@ export default function ExternalSalesImportPage() {
                   <MetricCard label="Imported lines" value={result.importedLines} />
                   <MetricCard label="Skipped lines" value={result.skippedLines} />
                   <MetricCard label="Total quantity" value={result.totalQuantity} />
-                  <MetricCard label="Total amount" value={formatMoney(result.totalAmount)} accent />
+                  <MetricCard label="Total amount" value={formatMoney(result.totalAmount, currencyCode)} accent />
                 </div>
 
                 {result.warnings?.length > 0 && <WarningsPanel warnings={result.warnings} />}

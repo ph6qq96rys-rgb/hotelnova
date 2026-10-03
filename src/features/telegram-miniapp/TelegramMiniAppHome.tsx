@@ -1,5 +1,6 @@
 import { memo, useCallback } from "react";
 
+import { useI18n } from "../../i18n";
 import type { TelegramTabKey } from "./TelegramTabBar";
 import type {
   TelegramMenuItem,
@@ -15,6 +16,7 @@ type Props = {
 };
 
 function TelegramMiniAppHome({ onOpenTab, auth, runtime }: Props) {
+  const { tx } = useI18n();
   return (
     <section className="tg-mini-home">
       <section className="tg-mini-hero">
@@ -23,8 +25,8 @@ function TelegramMiniAppHome({ onOpenTab, auth, runtime }: Props) {
             <div className="tg-mini-eyebrow">Hotel Nova</div>
             <h2 className="tg-mini-hero__title">
               {auth.employeeName
-                ? `Welcome, ${auth.employeeName}`
-                : "Mobile operations workspace"}
+                ? tx("Welcome, {name}", { name: auth.employeeName })
+                : tx("Mobile operations workspace")}
             </h2>
           </div>
 
@@ -32,13 +34,12 @@ function TelegramMiniAppHome({ onOpenTab, auth, runtime }: Props) {
         </div>
 
         <p className="tg-mini-hero__text">
-          Attendance, inventory requests, approvals, and employee self-service
-          from Telegram.
+          {tx("Attendance, inventory requests, approvals, and employee self-service from Telegram.")}
         </p>
       </section>
 
       <section className="tg-mini-stats">
-        <InfoPill label="Access" value="Linked Employee" />
+        <InfoPill label={tx("Access")} value={tx("Linked Employee")} />
         <InfoPill
           label="Telegram"
           value={
@@ -46,25 +47,25 @@ function TelegramMiniAppHome({ onOpenTab, auth, runtime }: Props) {
               ? `@${auth.telegramUserName}`
               : runtime.user?.username
                 ? `@${runtime.user.username}`
-                : "Verified"
+                : tx("Verified")
           }
         />
-        <InfoPill label="Employee" value={auth.employeeCode ?? "-"} />
+        <InfoPill label={tx("Employee")} value={auth.employeeCode ?? "-"} />
         <InfoPill
-          label="Branch"
-          value={auth.branchId ? "Assigned" : "Not assigned"}
+          label={tx("Branch")}
+          value={auth.branchId ? tx("Assigned") : tx("Not assigned")}
         />
       </section>
 
       <section className="tg-mini-section">
         <div className="tg-mini-section__header">
-          <h3>ERP modules</h3>
-          <span>Tap to continue</span>
+          <h3>{tx("ERP modules")}</h3>
+          <span>{tx("Tap to continue")}</span>
         </div>
 
         <div className="tg-mini-menu">
           {TELEGRAM_MENU_ITEMS.map((item) => (
-            <MenuCard key={item.tab} item={item} onOpenTab={onOpenTab} />
+            <MenuCard key={item.tab} item={item} onOpenTab={onOpenTab} translate={tx} />
           ))}
         </div>
       </section>
@@ -86,9 +87,11 @@ function InfoPill({ label, value }: { label: string; value: string }) {
 function MenuCard({
   item,
   onOpenTab,
+  translate,
 }: {
   item: TelegramMenuItem;
   onOpenTab: (tab: TelegramTabKey) => void;
+  translate: (text: string) => string;
 }) {
   const handleClick = useCallback(() => {
     if (!item.disabled) {
@@ -109,11 +112,11 @@ function MenuCard({
 
       <span className="tg-mini-menu-card__body">
         <span className="tg-mini-menu-card__title-row">
-          <strong>{item.title}</strong>
-          {item.badge ? <span>{item.badge}</span> : null}
+          <strong>{translate(item.title)}</strong>
+          {item.badge ? <span>{translate(item.badge)}</span> : null}
         </span>
 
-        <small>{item.description}</small>
+        <small>{translate(item.description)}</small>
       </span>
 
       <span className="tg-mini-menu-card__chevron"></span>

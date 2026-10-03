@@ -1,7 +1,8 @@
+import { cateringNavigation, isCateringNavigationActive } from "../features/eventmanagment/components/cateringNavigation";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Building2,
   ChevronDown,
@@ -24,7 +25,9 @@ import {
   normalizePermission,
 } from "../auth/erpAccess";
 import { useAppContext } from "../app/AppContext";
+import { useAppScope } from "../app/useAppScope";
 import { useAppRoutes } from "../routes/routeDefConfig";
+import { useI18n, type TranslationKey } from "../i18n";
 import type { AppRoute } from "../routes/routeConfig";
 
 type SidebarProps = {
@@ -50,6 +53,7 @@ type SidebarItem = {
   to: string;
   order: number;
   icon?: ReactNode;
+  children?: SidebarItem[];
 };
 
 type BranchOption = {
@@ -59,6 +63,58 @@ type BranchOption = {
 
 const SIDEBAR_COLLAPSED_KEY = "hotelnova.sidebar.collapsed.v1";
 
+
+const NAV_LABEL_KEYS: Record<string, TranslationKey> = {
+  "Dashboard": "nav.dashboardItem",
+  "Company Settings": "nav.companySettings",
+  "Sales Dashboard": "nav.salesDashboard",
+  "POS": "nav.pos",
+  "POS Operations": "nav.posOperations",
+  "POS Session": "nav.posSession",
+  "Items": "nav.inventoryItems",
+  "Inventory Ledger": "nav.inventoryLedger",
+  "Inventory Control Settings": "nav.inventoryControlSettings",
+  "Stock Transfers": "nav.stockTransfers",
+  "Adjustments": "nav.adjustments",
+  "Goods Receipts": "nav.goodsReceipts",
+  "Stock Issue Vouchers": "nav.stockIssueVouchers",
+  "Purchase Requisitions": "nav.purchaseRequisitions",
+  "Menu Categories": "nav.menuCategories",
+  "Create Menu Item": "nav.createMenuItem",
+  "Create New Menu": "nav.createMenuItem",
+  "Recipe Management": "nav.recipeManagement",
+  "Production Batches": "nav.productionBatches",
+  "Menu Engineering": "nav.menuEngineering",
+  "Menu Items": "nav.menuItems",
+  "Employees": "nav.employees",
+  "Payroll": "nav.payroll",
+  "Leave": "nav.leave",
+  "Attendance": "nav.attendance",
+  "Users": "nav.users",
+  "Roles & Permissions": "nav.rolesPermissions",
+  "Event Management": "nav.eventManagement",
+};
+
+const NAV_SECTION_KEYS: Record<string, TranslationKey> = {
+  "System": "nav.system",
+  "Dashboard": "nav.dashboard",
+  "General": "nav.general",
+  "Setup": "nav.setup",
+  "Administration": "nav.administration",
+  "Security": "nav.security",
+  "Sales": "nav.sales",
+  "Inventory": "nav.inventory",
+  "Procurement": "nav.procurement",
+  "Production": "nav.production",
+  "Finance": "nav.finance",
+  "Human Resources": "nav.humanResources",
+  "HR": "nav.hr",
+  "Operations": "nav.operations",
+  "Events": "nav.events",
+  "Reports": "nav.reports",
+  "Telegram Bot": "nav.telegramBot",
+  "Settings": "nav.settings",
+};
 const SECTION_ORDER = [
   "System",
   "Dashboard",
@@ -74,6 +130,8 @@ const SECTION_ORDER = [
   "Human Resources",
   "HR",
   "Operations",
+  "Catering",
+  "Butchery",
   "Reports",
   "Telegram Bot",
   "Settings",
@@ -158,6 +216,20 @@ function buildSidebarItems(
 
     if (!label || !to) continue;
 
+    if (to.includes("/eventmanagment")) {
+      const marker=to.indexOf("/eventmanagment");
+      const module=to.slice(marker+"/eventmanagment/".length);
+      for(const group of cateringNavigation){
+        group.links.forEach(([label,target],index)=>{
+          if(target.split("?")[0]!==module)return;
+          const href=to.slice(0,marker)+"/eventmanagment/"+target;
+          const key=group.title+":"+href;
+          items.set(key,{key,label,section:group.title,to:href,order:index,icon:route.icon});
+        });
+      }
+      // Keep less common operational destinations available in the main menu.
+      if(!["inventory","reports"].includes(module))continue;
+    }
     const key = `${section}:${to}`;
 
     if (!items.has(key)) {
@@ -222,15 +294,53 @@ function getBranchOptionId(branch: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function replaceBranchInPath(pathname: string, branchId: string): string {
+  const encodedBranchId = encodeURIComponent(branchId);
+
+  return pathname.replace(
+    /(\/branches\/)[^/?#]+/i,
+    `$1${encodedBranchId}`
+  );
+}
+
+function replaceBranchInSearch(search: string, branchId: string): string {
+  if (!search) return search;
+
+  const params = new URLSearchParams(search);
+  let changed = false;
+
+  for (const key of ["branchId", "branch_id", "BranchId"]) {
+    if (params.has(key)) {
+      params.set(key, branchId);
+      changed = true;
+    }
+  }
+
+  return changed ? `?${params.toString()}` : search;
+}
+
 export default function Sidebar({
   open = false,
   onClose,
   onSignOut,
 }: SidebarProps) {
   const routes = useAppRoutes();
+  const { t, tx } = useI18n();
+
+  function translateNavLabel(label: string): string {
+    const key = NAV_LABEL_KEYS[label];
+    return key ? t(key) : tx(label);
+  }
+
+  function translateNavSection(section: string): string {
+    const key = NAV_SECTION_KEYS[section];
+    return key ? t(key) : tx(section);
+  }
   const navigate = useNavigate();
+  const location = useLocation();
   const auth = useAuth();
   const appScope = useAppContext();
+  const resolvedScope = useAppScope();
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -252,19 +362,18 @@ export default function Sidebar({
     );
   }, [collapsed]);
 
-  const companyId = auth.companyId ?? appScope.companyId ?? null;
+  const companyId = resolvedScope.companyId || auth.companyId || appScope.companyId || null;
 
   const companyName =
+    resolvedScope.companyName ??
     auth.auth?.companyName ??
     appScope.companyName ??
-    "No company selected";
+    t("nav.noCompany");
 
   const branchName =
-    appScope.branchName ??
-    auth.auth?.branchName ??
-    "No branch selected";
+    resolvedScope.branchName ?? t("nav.noBranch");
 
-  const branchId = appScope.branchId ?? auth.auth?.branchId ?? null;
+  const branchId = resolvedScope.branchId || null;
 
   const userName =
     auth.user?.fullName ??
@@ -401,21 +510,25 @@ export default function Sidebar({
 
   const scopeLabel =
     isSystemAdmin && !companyId
-      ? "Platform mode"
-      : "Active company";
+      ? tx("Platform mode")
+      : t("nav.activeCompany");
 
   const scopeBranch =
     isSystemAdmin && !companyId
-      ? "System Administrator"
-      : isCompanyAdmin && branchName === "No branch selected"
-        ? "Company Administrator"
+      ? tx("System Administrator")
+      : branchName === t("nav.noBranch")
+        ? isCompanyAdmin
+          ? t("nav.companyAdminAllBranches")
+          : t("nav.allBranches")
         : branchName;
 
   const footerRoleLabel = isSystemAdmin
-    ? "System Administrator"
+    ? tx("System Administrator")
     : isCompanyAdmin
-      ? "Company Administrator"
-      : branchName;
+      ? tx("Company Administrator")
+      : branchName === t("nav.noBranch")
+        ? t("nav.allBranches")
+        : branchName;
 
   function toggleSection(section: string) {
     setCollapsedSections((prev) => ({
@@ -446,13 +559,24 @@ export default function Sidebar({
     auth.logout();
   }
 
-  function handleBranchChange(nextBranchId: string) {
+  async function handleBranchChange(nextBranchId: string) {
     const selected = branches.find((branch) => branch.id === nextBranchId);
+    const selectedBranchId = selected?.id ?? null;
 
-    appScope.setBranch({
-      id: selected?.id ?? null,
+    if(!await appScope.requestBranchChange({
+      id: selectedBranchId,
       name: selected?.name ?? null,
-    });
+    }))return;
+
+    if (selectedBranchId) {
+      const nextPath = replaceBranchInPath(location.pathname, selectedBranchId);
+      const nextSearch = replaceBranchInSearch(location.search, selectedBranchId);
+
+      if (nextPath !== location.pathname || nextSearch !== location.search) {
+        navigate(`${nextPath}${nextSearch}${location.hash}`, { replace: true });
+      }
+    }
+
     setUserMenuOpen(false);
   }
 
@@ -465,21 +589,21 @@ export default function Sidebar({
           type="button"
           className="hnav-overlay"
           onClick={onClose}
-          aria-label="Close sidebar"
+          aria-label={tx("Close sidebar")}
         />
       )}
 
       <aside
         className={`hnav-root${open ? " hnav-open" : ""}${collapsed ? " hnav-collapsed" : ""}`}
-        aria-label="Main navigation"
+        aria-label={tx("Main navigation")}
       >
         <div className="hnav-brand">
           <button
             type="button"
             className="hnav-brand-lockup"
             onClick={() => handleNavigate(dashboardPath)}
-            aria-label="Go to dashboard"
-            title="Go to dashboard"
+            aria-label={tx("Go to dashboard")}
+            title={tx("Go to dashboard")}
           >
             <div className="hnav-brand-mark" aria-hidden="true">
               HN
@@ -496,8 +620,8 @@ export default function Sidebar({
               type="button"
               className="hnav-icon-btn hnav-collapse-btn"
               onClick={toggleSidebar}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={collapsed ? tx("Expand sidebar") : tx("Collapse sidebar")}
+              title={collapsed ? tx("Expand sidebar") : tx("Collapse sidebar")}
             >
               {collapsed ? (
                 <PanelLeftOpen size={15} strokeWidth={2} />
@@ -510,14 +634,14 @@ export default function Sidebar({
               type="button"
               className="hnav-icon-btn hnav-close-btn"
               onClick={onClose}
-              aria-label="Close sidebar"
+              aria-label={tx("Close sidebar")}
             >
               <X size={15} strokeWidth={2} />
             </button>
           </div>
         </div>
 
-        <div className="hnav-scope-card" aria-label="Current company scope">
+        <div className="hnav-scope-card" aria-label={tx("Current company scope")}>
           <div className="hnav-scope-icon" aria-hidden="true">
             <Building2 size={15} strokeWidth={2.2} />
           </div>
@@ -529,15 +653,15 @@ export default function Sidebar({
 
             {companyId && branches.length > 0 && (
               <label className="hnav-branch-select-wrap">
-                <span className="hnav-branch-select-label">Branch</span>
+                <span className="hnav-branch-select-label">{t("nav.branch")}</span>
                 <select
                   className="hnav-branch-select"
                   value={branchId ?? ""}
                   onChange={(event) => handleBranchChange(event.target.value)}
                   disabled={branchesLoading}
-                  aria-label="Select active branch"
+                  aria-label={t("nav.branch")}
                 >
-                  <option value="">Select branch</option>
+                  <option value="">{isCompanyAdmin ? t("nav.companyAdminAllBranches") : t("nav.allBranches")}</option>
                   {branches.map((branch) => (
                     <option key={branch.id} value={branch.id}>
                       {branch.name}
@@ -549,12 +673,12 @@ export default function Sidebar({
           </div>
         </div>
 
-        <nav className="hnav-scroll" aria-label="Sidebar navigation">
+        <nav className="hnav-scroll" aria-label={tx("Sidebar navigation")}>
           {sectionEntries.length === 0 ? (
             <div className="hnav-empty">
               {companyId
-                ? "No modules are available for your role."
-                : "Select a company to load ERP modules."}
+                ? t("nav.noModules")
+                : t("nav.selectCompany")}
             </div>
           ) : (
             sectionEntries.map(([section, items]) => {
@@ -567,9 +691,9 @@ export default function Sidebar({
                     className="hnav-section-head"
                     onClick={() => toggleSection(section)}
                     aria-expanded={!collapsedSection}
-                    title={section}
+                    title={translateNavSection(section)}
                   >
-                    <span className="hnav-section-label">{section}</span>
+                    <span className="hnav-section-label">{translateNavSection(section)}</span>
                     <span className={`hnav-chevron${collapsedSection ? "" : " hnav-chevron-up"}`}>
                       <ChevronDown size={12} strokeWidth={2.5} />
                     </span>
@@ -582,18 +706,40 @@ export default function Sidebar({
                           <NavLink
                             to={item.to}
                             end={item.to === dashboardPath}
+                            aria-current={item.to.includes("/eventmanagment") ? (isCateringNavigationActive(item.to,location.pathname,location.search) ? "page" : false) : undefined}
                             onClick={onClose}
-                            title={collapsed ? item.label : undefined}
+                            title={collapsed ? translateNavLabel(item.label) : undefined}
                             className={({ isActive }) =>
-                              `hnav-item${isActive ? " hnav-item-active" : ""}`
+                              `hnav-item${(item.to.includes("/eventmanagment") ? isCateringNavigationActive(item.to,location.pathname,location.search) : isActive) ? " hnav-item-active" : ""}`
                             }
                           >
                             <span className="hnav-item-icon" aria-hidden="true">
                               {item.icon ?? <Circle size={7} strokeWidth={3} />}
                             </span>
 
-                            <span className="hnav-item-label">{item.label}</span>
+                            <span className="hnav-item-label">{translateNavLabel(item.label)}</span>
                           </NavLink>
+                          {!collapsed && item.children?.length ? (
+                            <ul className="hnav-subitems" role="list">
+                              {item.children.map((child) => (
+                                <li key={child.key} role="listitem">
+                                  <NavLink
+                                    to={child.to}
+                                    onClick={onClose}
+                                    title={translateNavLabel(child.label)}
+                                    className={({ isActive }) =>
+                                      `hnav-subitem${isActive ? " hnav-subitem-active" : ""}`
+                                    }
+                                  >
+                                    <span className="hnav-subitem-icon" aria-hidden="true">
+                                      {child.icon ?? <Circle size={6} strokeWidth={3} />}
+                                    </span>
+                                    <span className="hnav-subitem-label">{translateNavLabel(child.label)}</span>
+                                  </NavLink>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
                         </li>
                       ))}
                     </ul>
@@ -620,7 +766,7 @@ export default function Sidebar({
             <button
               type="button"
               className="hnav-icon-btn hnav-user-toggle"
-              aria-label="User menu"
+              aria-label={tx("User menu")}
               aria-expanded={userMenuOpen}
               onClick={() => setUserMenuOpen((value) => !value)}
             >
@@ -1018,6 +1164,50 @@ const SIDEBAR_CSS = `
   white-space: nowrap;
 }
 
+
+.hnav-subitems {
+  display: grid;
+  gap: 2px;
+  margin: 3px 0 8px 31px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
+  list-style: none;
+}
+
+.hnav-subitem {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #aebccc;
+  text-decoration: none;
+}
+
+.hnav-subitem:hover,
+.hnav-subitem-active {
+  background: rgba(20, 184, 166, 0.1);
+  border-color: rgba(45, 212, 191, 0.16);
+  color: #fff;
+}
+
+.hnav-subitem-icon {
+  display: inline-grid;
+  width: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+}
+
+.hnav-subitem-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .hnav-footer {
   position: relative;
   padding: 0 14px 16px;
@@ -1157,7 +1347,51 @@ const SIDEBAR_CSS = `
   flex: 0 0 22px;
 }
 
-.hnav-root.hnav-collapsed .hnav-footer {
+.hnav-root.hnav-collapsed 
+.hnav-subitems {
+  display: grid;
+  gap: 2px;
+  margin: 3px 0 8px 31px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
+  list-style: none;
+}
+
+.hnav-subitem {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #aebccc;
+  text-decoration: none;
+}
+
+.hnav-subitem:hover,
+.hnav-subitem-active {
+  background: rgba(20, 184, 166, 0.1);
+  border-color: rgba(45, 212, 191, 0.16);
+  color: #fff;
+}
+
+.hnav-subitem-icon {
+  display: inline-grid;
+  width: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+}
+
+.hnav-subitem-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hnav-footer {
   padding-inline: 10px;
 }
 
@@ -1233,7 +1467,51 @@ const SIDEBAR_CSS = `
     padding-top: 9px;
   }
 
-  .hnav-footer {
+  
+.hnav-subitems {
+  display: grid;
+  gap: 2px;
+  margin: 3px 0 8px 31px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
+  list-style: none;
+}
+
+.hnav-subitem {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #aebccc;
+  text-decoration: none;
+}
+
+.hnav-subitem:hover,
+.hnav-subitem-active {
+  background: rgba(20, 184, 166, 0.1);
+  border-color: rgba(45, 212, 191, 0.16);
+  color: #fff;
+}
+
+.hnav-subitem-icon {
+  display: inline-grid;
+  width: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+}
+
+.hnav-subitem-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hnav-footer {
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
   }
 }
@@ -1244,3 +1522,8 @@ const SIDEBAR_CSS = `
   }
 }
 `;
+
+
+
+
+

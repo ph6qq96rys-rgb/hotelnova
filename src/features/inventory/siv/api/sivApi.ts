@@ -39,6 +39,17 @@ export interface SivListItemDto {
   recommendationRiskScore?: number | null;
 }
 
+export interface SivLookupOptionDto {
+  id: string;
+  name: string;
+  code?: string | null;
+}
+
+export interface SivFilterLookupsDto {
+  branches: SivLookupOptionDto[];
+  departments: SivLookupOptionDto[];
+}
+
 export interface SivLineDto {
   id: string;
   lineNo: number;
@@ -52,6 +63,8 @@ export interface SivLineDto {
   approvedQty: number | null;
   issuedQty?: number | null;
   issuedBaseQty: number;
+  postedUnitCost?: number | null;
+  postedLineCost?: number | null;
   remarks: string | null;
   batchNo: string | null;
   expiryDate: string | null;
@@ -116,6 +129,7 @@ export interface SivDetailsDto {
 export interface InventoryItemSearchResult {
   id: string;
   name: string;
+  localName?: string | null;
   sku: string | null;
   barcode?: string | null;
   uomId: string;
@@ -211,7 +225,7 @@ export interface CreateSivDraftRequest {
   companyId: string;
   branchId: string;
   departmentId?: string | null;
-  requestedByUserId?: string | null;
+  requestedByUserId?: string;
   fromLocationId: string;
   toLocationId: string;
   issueDate: string;
@@ -363,6 +377,10 @@ function sivListParams(params: GetSivListParams = {}): QueryParams {
   });
 }
 
+function sivFilterLookupParams(branchId?: string | null): QueryParams {
+  return cleanParams({ branchId });
+}
+
 function inventorySearchParams(params: SearchInventoryItemsParams = {}): QueryParams {
   return cleanParams({
     context: "Issue",
@@ -404,6 +422,23 @@ async function getList(
   });
 
   return normalizeArray<SivListItemDto>(response);
+}
+
+async function getFilterLookups(
+  companyId: string,
+  branchId?: string | null,
+): Promise<SivFilterLookupsDto> {
+  const response = await http.get<unknown>(
+    `${companySivBase(companyId)}/filter-lookups`,
+    { params: sivFilterLookupParams(branchId) },
+  );
+
+  const data = unwrap<Partial<SivFilterLookupsDto>>(response);
+
+  return {
+    branches: Array.isArray(data.branches) ? data.branches : [],
+    departments: Array.isArray(data.departments) ? data.departments : [],
+  };
 }
 
 async function getById(companyId: string, sivId: string): Promise<SivDetailsDto> {
@@ -568,11 +603,33 @@ async function searchInventoryItems(
   companyId: string,
   params: SearchInventoryItemsParams = {},
 ): Promise<InventoryItemSearchResult[]> {
-  const response = await http.get<InventoryItemSearchResult[]>(`${inventoryBase(companyId)}/search`, {
-    params: inventorySearchParams(params),
-  });
+  const pageSize = 200;
+  const items = new Map<string, InventoryItemSearchResult>();
 
-  return normalizeArray<InventoryItemSearchResult>(response);
+  for (let skip = 0; ; skip += pageSize) {
+    const response = await http.get<InventoryItemSearchResult[]>(`${inventoryBase(companyId)}/search`, {
+      params: {
+        ...inventorySearchParams(params),
+        // (SIV item picker fix, 2026-09-09): keep this false. The backend's
+        // Issue-context filter already limits results to items with
+        // positive on-hand stock (i.e. received via a GRN and not yet fully
+        // consumed) — which is exactly the "items which have GRN only"
+        // behavior requested for this picker. Setting this to true would
+        // also surface items that have never been received.
+        includeOutOfStock: false,
+        skip,
+        pageSize,
+      },
+    });
+    const page = normalizeArray<InventoryItemSearchResult>(response);
+    const previousSize = items.size;
+    for (const item of page) items.set(item.id, item);
+
+    if (page.length < pageSize) return [...items.values()];
+    if (items.size === previousSize) {
+      throw new Error("Inventory lookup pagination did not advance. Refresh after updating the API.");
+    }
+  }
 }
 
 async function getStockLocations(
@@ -678,6 +735,7 @@ async function getMyDefaultIssueLocation(
 ========================= */
 
 export const sivApi = {
+  getFilterLookups,
   getList,
   getById,
 

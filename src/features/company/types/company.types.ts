@@ -79,6 +79,7 @@ export interface BranchDto {
   addressLine?: string | null;
   isMain:       boolean;
   isActive:     boolean;
+  hasSalesOperations: boolean;
 }
 
 export interface CreateBranchDto {
@@ -88,6 +89,7 @@ export interface CreateBranchDto {
   city?:        string | null;
   addressLine?: string | null;
   isMain:       boolean;
+  hasSalesOperations?: boolean;
 }
 
 // Store
@@ -137,6 +139,8 @@ export interface CreateStockLocationDto {
 // Settings
 
 export interface CompanySettingsDto {
+  serviceChargeRate?: number | null;
+  contingencyRate?: number | null;
   vatEnabled: boolean;
   vatRate: number;
   pricesIncludeVat: boolean;
@@ -159,6 +163,7 @@ export interface CompanySettingsDto {
   fiscalYearStartMonth: number;
   baseCurrency: string;
 
+  defaultLanguage: string;
   attendanceEnabled: boolean;
   overtimeEnabled: boolean;
 

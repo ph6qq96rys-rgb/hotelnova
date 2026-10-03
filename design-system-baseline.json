@@ -1,0 +1,2117 @@
+{
+  "src/components/controls/SelectDropdown.tsx": {
+    "color:#f0f4ff": 1,
+    "color:#fff": 3,
+    "color:#f5f5f5": 1,
+    "color:#2563eb": 1,
+    "color:#ddd": 2,
+    "color:#f6f6f6": 1,
+    "color:#eee": 1,
+    "color:#e5e5e5": 1,
+    "native-control": 4
+  },
+  "src/components/dashboard-modern-saas.css": {
+    "color:#f5f7fb": 1,
+    "color:#fff": 5,
+    "color:#f8fafc": 1,
+    "color:#e4e7ec": 1,
+    "color:#101828": 1,
+    "color:#667085": 1,
+    "color:#155eef": 1,
+    "color:#039855": 1,
+    "color:#dc6803": 1,
+    "color:#d92d20": 1,
+    "color:#d0d5dd": 1,
+    "color:#eff8ff": 3,
+    "color:#1570ef": 5,
+    "color:#ecfdf3": 2,
+    "color:#fff7ed": 3,
+    "color:#fef3f2": 3,
+    "color:#5488ff": 1,
+    "color:#eef4ff": 3
+  },
+  "src/components/LanguageSelector.tsx": {
+    "native-control": 1
+  },
+  "src/components/ModernDashboardView.tsx": {
+    "native-control": 5
+  },
+  "src/components/ScopeSwitcher.tsx": {
+    "native-control": 1
+  },
+  "src/components/Sidebar.tsx": {
+    "color:#0f172a": 1,
+    "color:#111827": 2,
+    "color:#e5e7eb": 1,
+    "color:#94a3b8": 1,
+    "color:#60a5fa": 1,
+    "color:#fca5a5": 1,
+    "color:#fff": 8,
+    "color:#bfdbfe": 1,
+    "color:#f8fafc": 3,
+    "color:#cbd5e1": 1,
+    "color:#aebccc": 3,
+    "color:#dbeafe": 1,
+    "native-control": 10,
+    "root-theme": 1
+  },
+  "src/components/Topbar.tsx": {
+    "color:#fff": 4,
+    "color:#e5e7eb": 3,
+    "color:#6b7280": 4,
+    "color:#f3f4f6": 5,
+    "color:#111827": 9,
+    "color:#9ca3af": 7,
+    "color:#d1d5db": 2,
+    "color:#1a1a2e": 1,
+    "native-control": 4
+  },
+  "src/features/company/onboarding/company-onboarding.css": {
+    "color:#0f172a": 1,
+    "color:#1e293b": 1,
+    "color:#f8fafc": 1,
+    "color:#f1f5f9": 4,
+    "color:#e2e8f0": 1,
+    "color:#cbd5e1": 1,
+    "color:#94a3b8": 1,
+    "color:#64748b": 1,
+    "color:#475569": 1,
+    "color:#334155": 1,
+    "color:#020617": 1,
+    "color:#f0fdf4": 1,
+    "color:#bbf7d0": 1,
+    "color:#166534": 2,
+    "color:#eff6ff": 1,
+    "color:#bfdbfe": 1,
+    "color:#1e40af": 1,
+    "color:#fef2f2": 1,
+    "color:#fecaca": 1,
+    "color:#991b1b": 1,
+    "color:#fffbeb": 1,
+    "color:#fde68a": 1,
+    "color:#92400e": 1,
+    "color:#fafafa": 6,
+    "color:#fff": 6,
+    "color:#e11d48": 1,
+    "color:#dbe3ee": 1,
+    "color:#fee2e2": 1,
+    "color:#15803d": 1,
+    "color:#b91c1c": 1,
+    "color:#b45309": 1,
+    "color:#1d4ed8": 1,
+    "color:#16a34a": 1,
+    "color:#dcfce7": 1,
+    "root-theme": 1,
+    "font-family: 'Inter', system-ui, sans-serif": 1,
+    "font-family: inherit": 1,
+    "font-family: 'Inter',system-ui,sans-serif": 2
+  },
+  "src/features/company/onboarding/CompanyOnboardingModule.tsx": {
+    "native-control": 4
+  },
+  "src/features/company/onboarding/CompanySettingsPage.tsx": {
+    "native-confirm": 1,
+    "native-control": 3
+  },
+  "src/features/company/onboarding/components/Banner.tsx": {
+    "native-control": 3
+  },
+  "src/features/company/onboarding/components/company.ui.tsx": {
+    "color:#f8fafc": 1,
+    "color:#64748b": 1,
+    "color:#f1f5f9": 1,
+    "native-control": 7
+  },
+  "src/features/company/onboarding/components/Controls.tsx": {
+    "native-control": 3
+  },
+  "src/features/company/onboarding/components/WizardRail.tsx": {
+    "native-control": 1
+  },
+  "src/features/company/onboarding/Createbranchuserform.tsx": {
+    "native-control": 4
+  },
+  "src/features/company/onboarding/steps/BranchStep.tsx": {
+    "color:#94a3b8": 2,
+    "color:#334155": 1,
+    "color:#e2e8f0": 2,
+    "color:#64748b": 2,
+    "color:#6366f1": 1,
+    "native-control": 1
+  },
+  "src/features/company/onboarding/steps/CompanyStep.tsx": {
+    "color:#94a3b8": 2,
+    "color:#334155": 1,
+    "color:#e2e8f0": 2,
+    "color:#6366f1": 1,
+    "color:#64748b": 2,
+    "native-control": 1
+  },
+  "src/features/company/onboarding/steps/ReviewStep.tsx": {
+    "color:#16a34a": 1,
+    "color:#dc2626": 1,
+    "color:#d97706": 1,
+    "color:#f1f5f9": 2,
+    "color:#0f172a": 1,
+    "color:#b91c1c": 1,
+    "color:#92400e": 1,
+    "color:#94a3b8": 3,
+    "color:#fafbfc": 1,
+    "color:#f8fafc": 1
+  },
+  "src/features/company/onboarding/steps/StockLocationsStep.tsx": {
+    "color:#64748b": 6,
+    "color:#22c55e": 1,
+    "color:#e2e8f0": 1,
+    "native-control": 3
+  },
+  "src/features/company/onboarding/steps/StoresStep.tsx": {
+    "color:#64748b": 4,
+    "color:#e2e8f0": 1,
+    "native-control": 1
+  },
+  "src/features/company/onboarding/steps/UsersStep.tsx": {
+    "color:#64748b": 3,
+    "color:#f8fafc": 1,
+    "color:#94a3b8": 1
+  },
+  "src/features/company/onboarding/styles/company-onboarding.css": {
+    "color:#0f172a": 5,
+    "color:#020617": 2,
+    "color:#ffffff": 1,
+    "color:#1e293b": 1,
+    "color:#334155": 1,
+    "color:#e2e8f0": 1,
+    "color:#f8fafc": 2,
+    "color:#cbd5e1": 1,
+    "color:#64748b": 1,
+    "color:#fff": 2
+  },
+  "src/features/company/onboarding/SystemAdmin/pages/SystemAdminCompaniesPage.tsx": {
+    "native-control": 4
+  },
+  "src/features/eventmanagment/components/ActionCenter.tsx": {
+    "native-control": 9
+  },
+  "src/features/eventmanagment/components/EventLifecycleRail.tsx": {
+    "native-control": 1
+  },
+  "src/features/eventmanagment/pages/catering-interactions.css": {
+    "color:#f0f6f2": 1,
+    "color:#fff": 1,
+    "color:#dce6df": 2,
+    "color:#26483d": 1,
+    "color:#70a68d": 1,
+    "color:#f6faf7": 1,
+    "color:#edf4ef": 1,
+    "color:#6b7b71": 1,
+    "color:#f1f6f3": 1,
+    "color:#eef7f1": 1,
+    "color:#28755c": 1,
+    "color:#bbdacb": 1,
+    "color:#255e47": 1
+  },
+  "src/features/eventmanagment/pages/catering-operations.css": {
+    "color:#151c2c": 2,
+    "color:#dce1ed": 1,
+    "color:#d4b978": 1,
+    "color:#a4adbe": 1,
+    "color:#8f9aaf": 2,
+    "color:#bfc7d5": 1,
+    "color:#77849b": 1,
+    "color:#293146": 1,
+    "color:#fff": 4,
+    "color:#d5b775": 1,
+    "color:#30384a": 1,
+    "color:#bc9137": 1,
+    "color:#e9e9e2": 1,
+    "color:#ebebe4": 2,
+    "color:#85867b": 1,
+    "color:#efeee7": 1,
+    "color:#f9f9f5": 1,
+    "color:#808375": 1,
+    "color:#eeeee7": 4,
+    "color:#86887d": 1,
+    "color:#303c32": 1,
+    "color:#fafaf6": 3,
+    "color:#eeeae0": 1,
+    "color:#e7eee3": 1,
+    "color:#42643a": 1,
+    "color:#f9efd8": 1,
+    "color:#92712c": 1,
+    "color:#f8e7e1": 1,
+    "color:#963f2d": 1,
+    "color:#7b7f72": 1,
+    "color:#363b30": 1,
+    "color:#f5f5ef": 1,
+    "color:#e4e4db": 1,
+    "color:#30352d": 1,
+    "color:#8a8e81": 1,
+    "color:#83877a": 1,
+    "color:#eeefdf": 1,
+    "color:#475037": 1,
+    "color:#e2e3d9": 2,
+    "color:#10151b88": 1,
+    "color:#0004": 1,
+    "color:#e1e3d9": 1,
+    "color:#eee": 1,
+    "color:#e4e6db": 1,
+    "color:#a9b692": 1,
+    "color:#eff2e8": 1,
+    "color:#7b846c": 1,
+    "color:#7b816f": 1,
+    "color:#808675": 1,
+    "color:#7a816b": 1,
+    "color:#30352a": 1,
+    "color:#454c3c": 1,
+    "color:#73796b": 1,
+    "color:#615025": 1,
+    "font-family:Inter,system-ui,sans-serif": 1
+  },
+  "src/features/eventmanagment/pages/catering-workspace.css": {
+    "color:#cdd8d4": 3,
+    "color:#fff": 9,
+    "color:#64736f": 6,
+    "color:#172522": 3,
+    "color:#9ec6e4": 1,
+    "color:#eef6fc": 1,
+    "color:#14496e": 1,
+    "color:#dbe4e0": 4,
+    "color:#e6ecea": 2,
+    "color:#0e766e": 9,
+    "color:#c3cecb": 1,
+    "color:#fbfdfc": 3,
+    "color:#7ab8ac": 1,
+    "color:#6d7c78": 4,
+    "color:#90a29d": 1,
+    "color:#2f9e7d": 2,
+    "color:#f2fbf7": 1,
+    "color:#eef7f6": 1,
+    "color:#bfe0db": 1,
+    "color:#c9772f": 2,
+    "color:#fdf5ec": 1,
+    "color:#0b625b": 2,
+    "color:#d8a08a": 2,
+    "color:#9a3d17": 1,
+    "color:#b4451c": 3,
+    "color:#8a3612": 2,
+    "color:#97380f": 2,
+    "color:#5c6b67": 2,
+    "color:#d5eae7": 1,
+    "color:#e2eae7": 1,
+    "color:#e2b9a5": 1,
+    "color:#fdf3ee": 1,
+    "color:#e0a49a": 1,
+    "color:#fdf1ef": 1,
+    "color:#8f2f1e": 1,
+    "color:#eef2f1": 1
+  },
+  "src/features/eventmanagment/pages/components/common.tsx": {
+    "native-control": 3
+  },
+  "src/features/eventmanagment/pages/components/CustomerPortalScreen.tsx": {
+    "native-control": 15
+  },
+  "src/features/eventmanagment/pages/erp/EventManagementScreens.tsx": {
+    "native-control": 24
+  },
+  "src/features/eventmanagment/pages/erp/EventManagementShared.tsx": {
+    "native-control": 1
+  },
+  "src/features/eventmanagment/pages/event-management.css": {
+    "color:#f4f7f6": 1,
+    "color:#d7dfdc": 1,
+    "color:#172522": 6,
+    "color:#102320": 2,
+    "color:#f8fbfa": 3,
+    "color:#e0a13a": 2,
+    "color:#bfd2cd": 2,
+    "color:#1b3934": 1,
+    "color:#8bd1c3": 1,
+    "color:#31524d": 1,
+    "color:#17322e": 1,
+    "color:#62716d": 4,
+    "color:#cdd8d4": 1,
+    "color:#fff": 21,
+    "color:#66736f": 1,
+    "color:#c8d5d0": 1,
+    "color:#19302c": 1,
+    "color:#7ab8ac": 1,
+    "color:#0e766e": 16,
+    "color:#e7c980": 1,
+    "color:#fff8e6": 1,
+    "color:#6b4b00": 1,
+    "color:#dbe4e0": 4,
+    "color:#90a29d": 4,
+    "color:#64736f": 9,
+    "color:#6d7c78": 1,
+    "color:#0f8a5f": 2,
+    "color:#d8982f": 2,
+    "color:#b42318": 2,
+    "color:#1677a2": 1,
+    "color:#e9f5f1": 1,
+    "color:#657571": 5,
+    "color:#667570": 2,
+    "color:#edf2f0": 2,
+    "color:#edf4f1": 2,
+    "color:#566762": 2,
+    "color:#effaf6": 5,
+    "color:#e1e9e5": 1,
+    "color:#34413e": 3,
+    "color:#687873": 1,
+    "color:#cad6d1": 1,
+    "color:#f7faf9": 2,
+    "color:#42504c": 2,
+    "color:#eaf8f1": 2,
+    "color:#08734e": 4,
+    "color:#b7ddcb": 2,
+    "color:#fff7e6": 1,
+    "color:#805700": 1,
+    "color:#ead39b": 1,
+    "color:#fff1ef": 1,
+    "color:#a3271e": 2,
+    "color:#f0b8b2": 1,
+    "color:#eaf6fb": 1,
+    "color:#0f668a": 1,
+    "color:#b8dceb": 1,
+    "color:#fafcfb": 2,
+    "color:#697a75": 1,
+    "color:#f0f8f5": 1,
+    "color:#e4ece8": 1,
+    "color:#fff3e0": 1,
+    "color:#9b6400": 1,
+    "color:#e7f6ef": 1,
+    "color:#cfdad6": 1,
+    "color:#0b5f59": 2,
+    "color:#e2ebe7": 5,
+    "color:#fbfdfc": 5,
+    "color:#12362f": 2,
+    "color:#dfe9e5": 7,
+    "color:#5f706b": 2,
+    "color:#86bdb3": 1,
+    "color:#f1faf7": 1,
+    "color:#f7fcfb": 1,
+    "color:#eefaf4": 1,
+    "color:#fffaf0": 1,
+    "color:#f0f8fb": 1,
+    "color:#eef3f1": 1,
+    "color:#dce7e2": 1,
+    "color:#48635c": 1,
+    "color:#9fcfc5": 1,
+    "color:#0a6f62": 1,
+    "color:#dde8e4": 1,
+    "color:#f0faf7": 1,
+    "color:#61726d": 3,
+    "color:#cfdcd7": 2,
+    "color:#b9dfcf": 1,
+    "color:#f3fbf7": 1,
+    "color:#fff4dc": 1,
+    "color:#a36b00": 1,
+    "color:#dcf7e8": 1,
+    "color:#f0c978": 1,
+    "color:#fff9ea": 1,
+    "color:#745000": 1
+  },
+  "src/features/eventmanagment/pages/EventManagementPage.tsx": {
+    "native-control": 3
+  },
+  "src/features/eventmanagment/sales/CustomersScreen.tsx": {
+    "native-control": 5
+  },
+  "src/features/eventmanagment/sales/EventsScreen.tsx": {
+    "native-control": 5
+  },
+  "src/features/eventmanagment/sales/InquiriesScreen.tsx": {
+    "native-control": 5
+  },
+  "src/features/eventmanagment/sales/QuotationsScreen.tsx": {
+    "native-control": 9
+  },
+  "src/features/eventmanagment/sales/sales.css": {
+    "color:#f4f7f6": 1,
+    "color:#ffffff": 1,
+    "color:#dbe4e0": 1,
+    "color:#cdd8d4": 1,
+    "color:#172522": 1,
+    "color:#64736f": 1,
+    "color:#0e766e": 1,
+    "color:#eef7f6": 1,
+    "color:#b4451c": 1,
+    "color:#d7dfdc": 1,
+    "color:#19302c": 1,
+    "color:#7ab8ac": 1,
+    "color:#fff": 3,
+    "color:#0b625b": 2,
+    "color:#d8a08a": 1,
+    "color:#8a3612": 1,
+    "color:#d5eae7": 2,
+    "color:#eef2f1": 1,
+    "color:#e0a49a": 2,
+    "color:#fdf1ef": 1,
+    "color:#8f2f1e": 3,
+    "color:#e6f6ef": 1,
+    "color:#1d6b4f": 1,
+    "color:#fdf3e3": 1,
+    "color:#85560d": 1,
+    "color:#fdecea": 1,
+    "color:#eaf1fb": 1,
+    "color:#24547f": 1,
+    "color:#cfe3e0": 1
+  },
+  "src/features/eventmanagment/sales/SalesWorkbenchPage.tsx": {
+    "native-control": 1
+  },
+  "src/features/eventmanagment/sales/ui.tsx": {
+    "native-control": 12
+  },
+  "src/features/eventmanagment/screens/ButcherySetup.tsx": {
+    "native-control": 24
+  },
+  "src/features/eventmanagment/screens/ButcheryWorkbench.tsx": {
+    "color:#111": 1,
+    "native-control": 30
+  },
+  "src/features/eventmanagment/screens/CatalogCollection.tsx": {
+    "native-control": 29
+  },
+  "src/features/eventmanagment/screens/CutStock.tsx": {
+    "native-control": 7
+  },
+  "src/features/eventmanagment/screens/EventDocuments.tsx": {
+    "native-control": 27
+  },
+  "src/features/eventmanagment/screens/EventOperations.tsx": {
+    "native-control": 2
+  },
+  "src/features/eventmanagment/screens/OrderPipeline.tsx": {
+    "native-control": 17
+  },
+  "src/features/eventmanagment/screens/package-catalog.css": {
+    "color:#edf5f2": 1,
+    "color:#9dbeb3": 1,
+    "color:#eef3f1": 1,
+    "color:#f3f6f5": 1,
+    "color:#f8faf9": 3,
+    "color:#173c3010": 1,
+    "color:#e9f0ec": 1,
+    "color:#d3e5d8": 1,
+    "color:#eef1e9": 1,
+    "color:#e0eae5": 1,
+    "color:#41685a": 1,
+    "color:#f0f2f3": 1,
+    "color:#596469": 1,
+    "color:#0001": 1,
+    "color:#e8eaed": 1,
+    "color:#535c6b": 1,
+    "color:#f0f6f3": 1,
+    "color:#eef6f2": 1,
+    "color:#c9dfd6": 1,
+    "color:#10251f22": 1,
+    "color:#edf4f0": 1,
+    "color:#f9fbfa": 1,
+    "color:#14554820": 1,
+    "color:#c2d7d0": 1,
+    "color:#eef3f0": 1,
+    "font-family:Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif": 1
+  },
+  "src/features/eventmanagment/screens/PackagesScreen.tsx": {
+    "native-confirm": 1,
+    "native-control": 47
+  },
+  "src/features/eventmanagment/screens/ProductionPlanning.tsx": {
+    "native-control": 2
+  },
+  "src/features/fixed-assets/pages/fixed-assets.css": {
+    "color:#f6f7f9": 1,
+    "color:#0f172a": 2,
+    "color:#64748b": 4,
+    "color:#5f6f86": 1,
+    "color:#cbd5e1": 2,
+    "color:#fff": 4,
+    "color:#111827": 1,
+    "color:#1d4ed8": 2,
+    "color:#fecaca": 1,
+    "color:#fff1f2": 1,
+    "color:#b91c1c": 1,
+    "color:#bbf7d0": 1,
+    "color:#f0fdf4": 1,
+    "color:#166534": 2,
+    "color:#d9e0ea": 1,
+    "color:#e2e8f0": 3,
+    "color:#334155": 2,
+    "color:#f8fafc": 1,
+    "color:#475569": 1,
+    "color:#dcfce7": 1,
+    "color:#eef2ff": 1,
+    "color:#3730a3": 1,
+    "color:#fef3c7": 1,
+    "color:#92400e": 1,
+    "color:#fee2e2": 1,
+    "color:#991b1b": 1
+  },
+  "src/features/fixed-assets/pages/FixedAssetsPage.tsx": {
+    "native-control": 18
+  },
+  "src/features/hr/pages/attendance/attendance-kiosk.css": {
+    "color:#eef3f8": 2,
+    "color:#13253c": 1,
+    "color:#becbdd": 1,
+    "color:#183450": 1,
+    "color:#477be1": 1,
+    "color:#fff": 1,
+    "color:#1b345315": 1,
+    "color:#566a80": 2,
+    "color:#3e608c": 1,
+    "color:#b7c6d9": 1,
+    "color:#f8fafc": 1,
+    "color:#245dc0": 2,
+    "color:#173849": 2,
+    "color:#f1f5f9": 1,
+    "color:#e0f5e9": 1,
+    "color:#155834": 1,
+    "color:#fff0ec": 1,
+    "color:#9a3121": 1,
+    "color:#dce4ee": 1,
+    "font-family:system-ui,sans-serif": 1
+  },
+  "src/features/hr/pages/attendance/AttendanceConfigurationPage.tsx": {
+    "native-control": 20
+  },
+  "src/features/hr/pages/attendance/AttendanceKioskAdminPage.tsx": {
+    "native-confirm": 1,
+    "native-control": 27
+  },
+  "src/features/hr/pages/attendance/AttendanceKioskPage.tsx": {
+    "native-control": 21
+  },
+  "src/features/hr/pages/attendance/AttendancePage.tsx": {
+    "native-control": 3
+  },
+  "src/features/hr/pages/attendance/BranchAttendanceQrGeneratorPage.tsx": {
+    "color:#111827": 4,
+    "color:#f8fafc": 4,
+    "color:#0f172a": 2,
+    "color:#1e293b": 1,
+    "color:#ffffff": 7,
+    "color:#e5e7eb": 2,
+    "color:#64748b": 3,
+    "color:#334155": 1,
+    "color:#cbd5e1": 4,
+    "color:#2563eb": 1,
+    "color:#fecaca": 2,
+    "color:#fef2f2": 2,
+    "color:#991b1b": 2,
+    "color:#bfdbfe": 1,
+    "color:#eff6ff": 1,
+    "color:#1d4ed8": 1,
+    "color:#bbf7d0": 1,
+    "color:#f0fdf4": 1,
+    "color:#166534": 1,
+    "native-control": 7
+  },
+  "src/features/hr/pages/attendance/OvertimeGovernancePage.tsx": {
+    "native-control": 4
+  },
+  "src/features/hr/pages/Employees/Employee-style.css": {
+    "color:#0f172a": 7,
+    "color:#f8fafc": 5,
+    "color:#f1f5f9": 2,
+    "color:#64748b": 6,
+    "color:#2563eb": 5,
+    "color:#cbd5e1": 3,
+    "color:#ffffff": 9,
+    "color:#94a3b8": 7,
+    "color:#1d4ed8": 6,
+    "color:#1e40af": 2,
+    "color:#475569": 2,
+    "color:#fff1f2": 2,
+    "color:#fecdd3": 2,
+    "color:#be123c": 5,
+    "color:#e2e8f0": 5,
+    "color:#dbeafe": 1,
+    "color:#eff6ff": 1,
+    "color:#334155": 1,
+    "color:#e11d48": 2,
+    "color:#fbfdff": 1,
+    "color:#fff7f8": 1,
+    "font-family: inherit": 1
+  },
+  "src/features/hr/pages/Employees/EmployeeConfirmPage.tsx": {
+    "native-control": 4
+  },
+  "src/features/hr/pages/Employees/EmployeeDetailPage.module.css": {
+    "color:#f5f6f8": 1,
+    "color:#1f2937": 2,
+    "color:#d7dce3": 1,
+    "color:#fff": 5,
+    "color:#64748b": 5,
+    "color:#475569": 7,
+    "color:#334155": 1,
+    "color:#cbd5e1": 2,
+    "color:#f8fafc": 5,
+    "color:#1d4ed8": 4,
+    "color:#1e40af": 2,
+    "color:#dc2626": 1,
+    "color:#b91c1c": 2,
+    "color:#eef2ff": 1,
+    "color:#e2e8f0": 10,
+    "color:#111827": 3,
+    "color:#92400e": 3,
+    "color:#dcfce7": 1,
+    "color:#166534": 1,
+    "color:#fef3c7": 1,
+    "color:#fee2e2": 1,
+    "color:#991b1b": 1,
+    "color:#dbeafe": 1,
+    "color:#f1f5f9": 3,
+    "color:#fffbeb": 1,
+    "color:#fde68a": 1,
+    "color:#bfdbfe": 1,
+    "color:#eff6ff": 1,
+    "color:#1e3a8a": 1,
+    "color:#dbe3ee": 2,
+    "color:#fecaca": 1,
+    "color:#fef2f2": 1,
+    "color:#94a3b8": 1,
+    "font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace": 1
+  },
+  "src/features/hr/pages/Employees/EmployeeDetailPage.tsx": {
+    "native-confirm": 1,
+    "native-control": 21
+  },
+  "src/features/hr/pages/Employees/EmployeeFormPage.module.css": {
+    "color:#f4f6f9": 1,
+    "color:#0f172a": 4,
+    "color:#d8dee9": 4,
+    "color:#64748b": 9,
+    "color:#111827": 5,
+    "color:#92400e": 1,
+    "color:#fffbeb": 1,
+    "color:#fde68a": 1,
+    "color:#166534": 2,
+    "color:#f0fdf4": 1,
+    "color:#bbf7d0": 1,
+    "color:#991b1b": 3,
+    "color:#fef2f2": 2,
+    "color:#fecaca": 2,
+    "color:#cbd5e1": 4,
+    "color:#ffffff": 11,
+    "color:#f8fafc": 5,
+    "color:#94a3b8": 4,
+    "color:#1d4ed8": 5,
+    "color:#1e40af": 2,
+    "color:#e5e7eb": 4,
+    "color:#e2e8f0": 3,
+    "color:#16a34a": 1,
+    "color:#2563eb": 2,
+    "color:#dc2626": 2,
+    "color:#eef2f7": 2,
+    "color:#475569": 1,
+    "color:#fee2e2": 1,
+    "color:#334155": 2,
+    "color:#b91c1c": 4,
+    "color:#ef4444": 1,
+    "color:#fff7f7": 1,
+    "color:#f1f5f9": 1
+  },
+  "src/features/hr/pages/Employees/Employeeformpage.tsx": {
+    "native-control": 34
+  },
+  "src/features/hr/pages/Employees/EmployeeListPage.tsx": {
+    "native-control": 6
+  },
+  "src/features/hr/pages/Employees/Employeeterminatepage.tsx": {
+    "native-control": 7
+  },
+  "src/features/hr/pages/HRDashboardPage.tsx": {
+    "native-control": 2
+  },
+  "src/features/hr/pages/leave/LeaveBalancePage.tsx": {
+    "native-control": 3
+  },
+  "src/features/hr/pages/leave/Leavelistpage.tsx": {
+    "native-control": 5
+  },
+  "src/features/hr/pages/leave/LeaveRequestFormPage.tsx": {
+    "native-control": 9
+  },
+  "src/features/hr/pages/payroll/PayrollListPage.tsx": {
+    "color:#fff": 4,
+    "color:#111827": 5,
+    "color:#4b5563": 2,
+    "color:#d1d5db": 3,
+    "color:#f3f4f6": 1,
+    "color:#374151": 1,
+    "native-control": 8
+  },
+  "src/features/hr/pages/payroll/Payrollrundetailpage.tsx": {
+    "color:#fff": 4,
+    "color:#111827": 5,
+    "color:#4b5563": 2,
+    "color:#d1d5db": 4,
+    "color:#f3f4f6": 1,
+    "color:#374151": 1,
+    "native-control": 8
+  },
+  "src/features/hr/pages/payroll/PayrollRunFormPage.tsx": {
+    "native-control": 8
+  },
+  "src/features/hr/pages/payroll/Payslipdetailpage.tsx": {
+    "native-control": 3
+  },
+  "src/features/hr/pages/performance/Performancecycledetailpage.tsx": {
+    "native-control": 4
+  },
+  "src/features/hr/pages/performance/PerformanceCycleFormPage.tsx": {
+    "native-control": 8
+  },
+  "src/features/hr/pages/performance/PerformancePage.tsx": {
+    "native-control": 2
+  },
+  "src/features/hr/pages/performance/Performancereviewpage.tsx": {
+    "native-control": 10
+  },
+  "src/features/hr/pages/recruitment/Jobapplicationdetailpage.tsx": {
+    "native-confirm": 1,
+    "native-control": 13
+  },
+  "src/features/hr/pages/recruitment/Jobpostingdetailpage.tsx": {
+    "native-control": 6
+  },
+  "src/features/hr/pages/recruitment/JobPostingFormPage.tsx": {
+    "native-control": 9
+  },
+  "src/features/hr/pages/RecruitmentPage.tsx": {
+    "native-control": 2
+  },
+  "src/features/hr/pages/training/TrainingPage.tsx": {
+    "native-control": 3
+  },
+  "src/features/hr/pages/training/Trainingprogramdetailpage.tsx": {
+    "native-control": 9
+  },
+  "src/features/hr/pages/training/Trainingprogramformpage.tsx": {
+    "native-control": 11
+  },
+  "src/features/inventory/adjustments/components/AdjustmentWorkflowActionBar.tsx": {
+    "native-control": 6
+  },
+  "src/features/inventory/adjustments/pages/adjustment-draft-editor.css": {
+    "color:#0f172a": 1,
+    "color:#fef3c7": 1,
+    "color:#92400e": 1,
+    "color:#fed7aa": 1,
+    "color:#9a3412": 1,
+    "color:#fecaca": 1,
+    "color:#991b1b": 1,
+    "font-family: inherit": 2
+  },
+  "src/features/inventory/adjustments/pages/AdjustmentApprovalPage.tsx": {
+    "native-control": 6
+  },
+  "src/features/inventory/adjustments/pages/AdjustmentDetailsPage.tsx": {
+    "native-control": 6
+  },
+  "src/features/inventory/adjustments/pages/AdjustmentDraftEditorPage.tsx": {
+    "native-control": 31
+  },
+  "src/features/inventory/adjustments/pages/AdjustmentListPage.tsx": {
+    "native-control": 6
+  },
+  "src/features/inventory/grn/components/grn.ui.tsx": {
+    "color:#f8f9fb": 1,
+    "color:#ffffff": 5,
+    "color:#e8eaf0": 3,
+    "color:#0f172a": 1,
+    "color:#64748b": 1,
+    "color:#94a3b8": 1,
+    "color:#2563eb": 1,
+    "color:#1d4ed8": 2,
+    "color:#eff6ff": 3,
+    "color:#bfdbfe": 3,
+    "color:#f0fdf4": 3,
+    "color:#15803d": 2,
+    "color:#bbf7d0": 3,
+    "color:#fffbeb": 3,
+    "color:#b45309": 2,
+    "color:#fde68a": 3,
+    "color:#fff1f2": 3,
+    "color:#be123c": 2,
+    "color:#fecdd3": 3,
+    "color:#f8fafc": 3,
+    "color:#475569": 2,
+    "color:#e2e8f0": 2,
+    "color:#f1f5f9": 3,
+    "color:#fafbfc": 1,
+    "color:#d1d5db": 1,
+    "color:#f87171": 1,
+    "color:#f5f3ff": 1,
+    "color:#6d28d9": 1,
+    "color:#ddd6fe": 1,
+    "color:#9f1239": 1,
+    "color:#14532d": 1,
+    "color:#78350f": 1,
+    "color:#1e3a5f": 1,
+    "native-control": 1
+  },
+  "src/features/inventory/grn/components/GrnEditorFooter.tsx": {
+    "native-control": 3
+  },
+  "src/features/inventory/grn/components/GrnHeaderForm.tsx": {
+    "native-control": 4
+  },
+  "src/features/inventory/grn/components/GrnLinesTable.tsx": {
+    "native-control": 9
+  },
+  "src/features/inventory/grn/components/GrnRegisterTable.tsx": {
+    "native-control": 2
+  },
+  "src/features/inventory/grn/components/GrnReverseModal.tsx": {
+    "native-control": 7
+  },
+  "src/features/inventory/grn/pages/GrnDetailPage.css": {
+    "color:#475569": 2,
+    "color:#e2e8f0": 1,
+    "color:#cbd5e1": 4,
+    "color:#ffffff": 4,
+    "color:#0f172a": 1,
+    "color:#f8fafc": 4,
+    "color:#94a3b8": 1,
+    "color:#2563eb": 2,
+    "color:#1d4ed8": 3,
+    "color:#dc2626": 2,
+    "color:#b91c1c": 2,
+    "color:#334155": 2,
+    "color:#ecfdf5": 2,
+    "color:#86efac": 2,
+    "color:#166534": 2,
+    "color:#eff6ff": 1,
+    "color:#93c5fd": 1,
+    "color:#fef2f2": 1,
+    "color:#fecaca": 1,
+    "color:#991b1b": 1,
+    "color:#fde68a": 1,
+    "color:#fffbeb": 1,
+    "color:#78350f": 1,
+    "color:#64748b": 3,
+    "color:#eef2f7": 2
+  },
+  "src/features/inventory/grn/pages/GrnDetailPage.tsx": {
+    "native-control": 9
+  },
+  "src/features/inventory/grn/pages/GrnDraftEditorPage.tsx": {
+    "native-control": 1
+  },
+  "src/features/inventory/grn/pages/GrnListPage.css": {
+    "color:#0f172a": 2,
+    "color:#64748b": 4,
+    "color:#fff": 1,
+    "color:#e2e8f0": 3,
+    "color:#fecaca": 2,
+    "color:#fef2f2": 2,
+    "color:#991b1b": 2,
+    "color:#f8fafc": 4,
+    "color:#f1f5f9": 1,
+    "color:#2563eb": 3,
+    "color:#cbd5e1": 4,
+    "color:#ffffff": 4,
+    "color:#94a3b8": 1,
+    "color:#1d4ed8": 3,
+    "color:#dc2626": 2,
+    "color:#b91c1c": 2,
+    "color:#334155": 2,
+    "color:#ecfdf5": 2,
+    "color:#86efac": 2,
+    "color:#166534": 2,
+    "color:#eff6ff": 1,
+    "color:#93c5fd": 1,
+    "color:#fde68a": 1,
+    "color:#fffbeb": 1,
+    "color:#78350f": 1,
+    "color:#475569": 1,
+    "font-family: Inter, system-ui, sans-serif": 1
+  },
+  "src/features/inventory/grn/pages/GrnListPage.tsx": {
+    "native-control": 4
+  },
+  "src/features/inventory/grn/styles/GrnEditor.css": {
+    "color:#e2e8f0": 3,
+    "color:#fff": 3,
+    "color:#64748b": 3,
+    "color:#1d4ed8": 1,
+    "color:#475569": 1,
+    "color:#cbd5e1": 1,
+    "color:#ef4444": 1,
+    "color:#fff7f7": 1,
+    "color:#dc2626": 1
+  },
+  "src/features/inventory/grn/styles/GrnPages.erp.css": {
+    "color:#0e766e": 1,
+    "color:#fff": 6,
+    "color:#111827": 9,
+    "color:#4b5563": 1,
+    "color:#6b7280": 5,
+    "color:#d1d5db": 5,
+    "color:#374151": 1,
+    "color:#f3f4f6": 1,
+    "color:#9ca3af": 2,
+    "color:#64748b": 4,
+    "color:#0f172a": 3,
+    "color:#f1f5f9": 1,
+    "color:#334155": 1,
+    "color:#e2e8f0": 3,
+    "color:#f8fafc": 1,
+    "color:#fde68a": 1,
+    "color:#fffbeb": 1,
+    "color:#92400e": 1,
+    "color:#fecaca": 1,
+    "color:#fef2f2": 1,
+    "color:#991b1b": 1,
+    "color:#dc2626": 2,
+    "color:#cbd5e1": 1,
+    "color:#ef4444": 1,
+    "color:#e6eeee": 3,
+    "color:#526467": 2,
+    "color:#071a1a": 1,
+    "color:#f6f8f8": 1
+  },
+  "src/features/inventory/ledger/pages/InventoryLedgerPage.css": {
+    "color:#ffffff": 3,
+    "color:#64748b": 2,
+    "color:#0f172a": 1
+  },
+  "src/features/inventory/ledger/pages/InventoryLedgerPage.tsx": {
+    "native-control": 7
+  },
+  "src/features/inventory/locations/components/StockLocationForm.tsx": {
+    "native-control": 9
+  },
+  "src/features/inventory/locations/components/StockLocationsTable.tsx": {
+    "native-control": 2
+  },
+  "src/features/inventory/locations/pages/StockLocationsPage.tsx": {
+    "native-control": 3
+  },
+  "src/features/inventory/reports/pages/InventoryReportsPage.css": {
+    "color:#071a1a": 2,
+    "color:#526467": 8,
+    "color:#cad7d4": 2,
+    "color:#fff": 5,
+    "color:#7d8b8d": 1,
+    "color:#247a6b": 1,
+    "color:#2f8274": 1,
+    "color:#d6e0dd": 5,
+    "color:#2f8f67": 1,
+    "color:#d99a16": 1,
+    "color:#edf7f4": 1,
+    "color:#096657": 3,
+    "color:#98cbc1": 1,
+    "color:#e7eeee": 2,
+    "color:#f4f8f7": 1,
+    "color:#40575a": 2,
+    "color:#ccd8d5": 1,
+    "color:#f7faf9": 1,
+    "color:#9ed1b4": 1,
+    "color:#eefaf3": 1,
+    "color:#17643c": 1,
+    "color:#e8c36d": 3,
+    "color:#fff8e6": 3,
+    "color:#875a00": 2,
+    "color:#e1e9e7": 1,
+    "color:#6f4b00": 1,
+    "color:#9cc8e7": 1,
+    "color:#eef7ff": 1,
+    "color:#164e78": 1,
+    "color:#cfe0dc": 1,
+    "color:#f4faf8": 1
+  },
+  "src/features/inventory/reports/pages/InventoryReportsPage.tsx": {
+    "native-control": 14
+  },
+  "src/features/inventory/settings/pages/inventory-control-settings.css": {
+    "color:#0f172a": 2,
+    "color:#64748b": 4,
+    "color:#fff": 2,
+    "color:#e5e7eb": 2,
+    "color:#475569": 1,
+    "color:#cbd5e1": 1,
+    "color:#f8fafc": 1,
+    "color:#f1f5f9": 1,
+    "color:#e2e8f0": 1,
+    "color:#f59e0b": 1,
+    "color:#111827": 1,
+    "color:#fef2f2": 1,
+    "color:#991b1b": 1,
+    "color:#fecaca": 1,
+    "color:#f0fdf4": 1,
+    "color:#166534": 1,
+    "color:#bbf7d0": 1,
+    "color:#92400e": 1
+  },
+  "src/features/inventory/settings/pages/InventoryControlSettingsPage.tsx": {
+    "native-control": 8
+  },
+  "src/features/inventory/siv/components/SivApprovalWindow.tsx": {
+    "native-control": 3
+  },
+  "src/features/inventory/siv/components/SivDraftEditorScreen.tsx": {
+    "native-control": 20
+  },
+  "src/features/inventory/siv/components/sivRecommendation.css": {
+    "color:#d8d8d8": 1,
+    "color:#fff": 1,
+    "color:#e5e5e5": 1,
+    "color:#555": 1
+  },
+  "src/features/inventory/siv/components/SivRecommendationCard.tsx": {
+    "native-control": 5
+  },
+  "src/features/inventory/siv/components/SivWorkflowActionBar.tsx": {
+    "native-control": 10
+  },
+  "src/features/inventory/siv/components/SivWorkflowBar.tsx": {
+    "color:#fff": 1
+  },
+  "src/features/inventory/siv/pages/OverrideReasonTooltip.tsx": {
+    "native-control": 1
+  },
+  "src/features/inventory/siv/pages/siv-approval-copilot.css": {
+    "color:#d97706": 1
+  },
+  "src/features/inventory/siv/pages/siv-draft.css": {
+    "color:#d1d5db": 1,
+    "color:#fff": 1,
+    "color:#18212b": 1
+  },
+  "src/features/inventory/siv/pages/SivApprovalPage.tsx": {
+    "native-control": 13
+  },
+  "src/features/inventory/siv/pages/SivDetailsPage.tsx": {
+    "native-control": 17
+  },
+  "src/features/inventory/siv/pages/SivIssuedPrintPage.tsx": {
+    "color:#111": 1,
+    "color:#b91c1c": 1,
+    "color:#fff": 2,
+    "color:#111827": 5,
+    "color:#6b7280": 3,
+    "color:#374151": 4,
+    "color:#d1d5db": 3,
+    "color:#f3f4f6": 1,
+    "color:#f9fafb": 1,
+    "color:#9ca3af": 1,
+    "native-control": 1,
+    "font-family: \"Segoe UI\", Arial, sans-serif": 1
+  },
+  "src/features/inventory/siv/pages/SivListPage.tsx": {
+    "native-control": 13
+  },
+  "src/features/inventory/siv/pages/SivOpenRedirectPage.tsx": {
+    "native-control": 1
+  },
+  "src/features/inventory/siv/pages/sivRecommendation.css": {
+    "color:#d8d8d8": 1,
+    "color:#fff": 1,
+    "color:#e5e5e5": 1,
+    "color:#555": 1
+  },
+  "src/features/inventory/stock-locations/components/StockLocationForm.tsx": {
+    "native-control": 8
+  },
+  "src/features/inventory/stock-locations/components/StockLocationsTable.tsx": {
+    "native-control": 2
+  },
+  "src/features/inventory/stock-locations/pages/StockLocationsPage.tsx": {
+    "native-control": 4
+  },
+  "src/features/inventory/stock-transfers/pages/StockTransferApprovalsPage.tsx": {
+    "native-control": 2
+  },
+  "src/features/inventory/stock-transfers/pages/StockTransferCreatePage.tsx": {
+    "native-control": 12
+  },
+  "src/features/inventory/stock-transfers/pages/StockTransferDetailPage.tsx": {
+    "color:#f1f5f9": 5,
+    "color:#475569": 8,
+    "color:#fef3c7": 2,
+    "color:#92400e": 2,
+    "color:#dbeafe": 2,
+    "color:#1e40af": 2,
+    "color:#fee2e2": 2,
+    "color:#991b1b": 4,
+    "color:#d1fae5": 1,
+    "color:#065f46": 1,
+    "color:#ede9fe": 1,
+    "color:#5b21b6": 1,
+    "color:#f3f4f6": 1,
+    "color:#374151": 1,
+    "color:#059669": 5,
+    "color:#3b82f6": 2,
+    "color:#e2e8f0": 15,
+    "color:#fff": 10,
+    "color:#94a3b8": 12,
+    "color:#93c5fd": 1,
+    "color:#eff6ff": 1,
+    "color:#0f172a": 8,
+    "color:#64748b": 2,
+    "color:#f8fafc": 7,
+    "color:#dc2626": 4,
+    "color:#2563eb": 2,
+    "color:#334155": 1,
+    "color:#cbd5e1": 1,
+    "color:#fef2f2": 2,
+    "color:#fecaca": 2,
+    "color:#f0fdf4": 1,
+    "color:#bbf7d0": 1,
+    "color:#166534": 1,
+    "native-control": 7
+  },
+  "src/features/inventory/stock-transfers/pages/StockTransferEditPage.tsx": {
+    "color:#64748b": 6,
+    "color:#94a3b8": 3,
+    "color:#0f172a": 2,
+    "color:#fca5a5": 6,
+    "color:#dc2626": 6,
+    "color:#f8fafc": 2,
+    "color:#f1f5f9": 2,
+    "color:#fff5f5": 1,
+    "color:#475569": 1,
+    "native-control": 15
+  },
+  "src/features/inventory/stock-transfers/pages/StockTransfersPage.tsx": {
+    "native-control": 7
+  },
+  "src/features/inventoryMaster/items/components/components.css": {
+    "font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace": 1
+  },
+  "src/features/inventoryMaster/items/components/InventoryItemForm.tsx": {
+    "native-control": 16
+  },
+  "src/features/inventoryMaster/items/components/OpeningStockModal.tsx": {
+    "native-control": 8
+  },
+  "src/features/inventoryMaster/items/components/UomConversionGrid.tsx": {
+    "native-control": 10
+  },
+  "src/features/inventoryMaster/items/pages/Importinventoryitemspage.tsx": {
+    "native-control": 6
+  },
+  "src/features/inventoryMaster/items/pages/inventory-items.css": {
+    "color:#1e40af": 1,
+    "color:#fff": 1,
+    "color:#86efac": 1,
+    "color:#fca5a5": 1,
+    "color:#0e766e": 1,
+    "font-family: inherit": 4
+  },
+  "src/features/inventoryMaster/items/pages/InventoryItemsPage.tsx": {
+    "color:#fff": 2,
+    "color:#e2e8f0": 2,
+    "color:#0f172a": 1,
+    "color:#64748b": 1,
+    "color:#f8fafc": 1,
+    "color:#475569": 1,
+    "color:#059669": 2,
+    "color:#dc2626": 2,
+    "native-control": 16
+  },
+  "src/features/inventoryMaster/items/pages/ItemsPage.tsx": {
+    "color:#0f172a": 9,
+    "color:#181822ff": 1,
+    "color:#f8fafc": 1,
+    "color:#373738ff": 1,
+    "color:#e2e8f0": 1,
+    "native-control": 15
+  },
+  "src/features/inventoryMaster/items/pages/ItemUpsertPage.tsx": {
+    "color:#64748b": 2,
+    "color:#0f172a": 12,
+    "native-control": 19
+  },
+  "src/features/inventoryMaster/pages/CategoriesPage.tsx": {
+    "color:#f5c2c7": 1,
+    "color:#f8d7da": 1,
+    "color:#ddd": 4,
+    "color:#f6f6f6": 1,
+    "color:#eee": 3,
+    "native-control": 4
+  },
+  "src/features/inventoryMaster/pages/UomsPage.tsx": {
+    "color:#0f172a": 7,
+    "color:#ffffff": 1,
+    "color:#181822ff": 1,
+    "color:#f8fafc": 1,
+    "color:#373738ff": 1,
+    "color:#e2e8f0": 1,
+    "native-control": 5
+  },
+  "src/features/operations/pages/OperationsDashboardPage.tsx": {
+    "native-control": 33
+  },
+  "src/features/operations/styles/operations.css": {
+    "color:#08111f": 1,
+    "color:#111827": 3,
+    "color:#e5e7eb": 8,
+    "color:#38bdf8": 8,
+    "color:#94a3b8": 10,
+    "color:#0b1220": 7,
+    "color:#f8fafc": 5,
+    "color:#1f2937": 1,
+    "color:#0ea5e9": 1,
+    "color:#06111f": 4,
+    "color:#22c55e": 2,
+    "color:#f59e0b": 2,
+    "color:#cbd5e1": 2,
+    "color:#fff": 1,
+    "color:#fde68a": 1,
+    "color:#bae6fd": 1,
+    "color:#334155": 1,
+    "color:#7dd3fc": 3,
+    "color:#fecaca": 2,
+    "color:#243044": 2
+  },
+  "src/features/org/components/BranchForm.tsx": {
+    "native-control": 8
+  },
+  "src/features/org/components/CompanyForm.tsx": {
+    "native-control": 9
+  },
+  "src/features/org/components/OrgTree.tsx": {
+    "native-control": 3
+  },
+  "src/features/org/components/StoreForm.tsx": {
+    "native-control": 8
+  },
+  "src/features/org/pages/OrgLocationsPage.tsx": {
+    "native-control": 7
+  },
+  "src/features/pos/components/CartPanel.tsx": {
+    "color:#71717a": 3,
+    "color:#a1a1aa": 1
+  },
+  "src/features/pos/components/MenuGrid.tsx": {
+    "color:#4ade80": 1,
+    "color:#fbbf24": 1,
+    "color:#a1a1aa": 1,
+    "color:#71717a": 3,
+    "color:#d4a853": 1,
+    "native-control": 1
+  },
+  "src/features/pos/components/posUi.tsx": {
+    "color:#d4a853": 5,
+    "color:#1f1f23": 2,
+    "color:#a1a09a": 2,
+    "color:#000": 1,
+    "color:#f87171": 3,
+    "color:#4ade80": 2,
+    "color:#18181b": 1,
+    "color:#27272c": 1,
+    "color:#71717a": 4,
+    "color:#fafaf9": 3,
+    "native-control": 1,
+    "font-family: inherit": 2
+  },
+  "src/features/pos/components/SaleInventoryConsumptionPanel.tsx": {
+    "color:#ffffff": 1,
+    "color:#111827": 2,
+    "color:#e5e7eb": 2,
+    "color:#0f172a": 3,
+    "color:#b91c1c": 1,
+    "color:#475569": 2,
+    "color:#f8fafc": 1
+  },
+  "src/features/pos/components/SessionGate.tsx": {
+    "color:#71717a": 2,
+    "color:#f87171": 2,
+    "color:#fbbf24": 1,
+    "native-control": 4
+  },
+  "src/features/pos/pages/PosOperationsPage.tsx": {
+    "color:#09090b": 1,
+    "color:#fafaf9": 2,
+    "color:#a1a1aa": 4,
+    "color:#f87171": 2,
+    "color:#27272a": 6,
+    "color:#111113": 6,
+    "color:#d4d4d8": 3,
+    "color:#71717a": 2,
+    "color:#3f3f46": 1,
+    "color:#fbbf24": 1,
+    "native-control": 7
+  },
+  "src/features/pos/pages/PosSalesPage.tsx": {
+    "color:#09090b": 2,
+    "color:#fafaf9": 8,
+    "color:#3f3f46": 5,
+    "color:#111113": 6,
+    "color:#a1a1aa": 8,
+    "color:#d4d4d8": 1,
+    "color:#f59e0b": 1,
+    "color:#29210f": 1,
+    "color:#18181b": 2,
+    "color:#27272a": 2,
+    "color:#fca5a5": 2,
+    "color:#86efac": 1,
+    "color:#101014": 1,
+    "color:#0d0d10": 1,
+    "color:#b8b1a5": 1,
+    "color:#f6c86b": 4,
+    "color:#d4a853": 2,
+    "color:#1b1b1f": 1,
+    "color:#151518": 1,
+    "color:#202024": 1,
+    "native-control": 17
+  },
+  "src/features/pos/pages/PosSessionPage.tsx": {
+    "color:#09090b": 1,
+    "color:#fafaf9": 2,
+    "color:#3f3f46": 2,
+    "color:#111113": 2,
+    "color:#a1a1aa": 2,
+    "color:#86efac": 1,
+    "color:#fca5a5": 1,
+    "color:#fbbf24": 3,
+    "color:#93c5fd": 1,
+    "color:#d4d4d8": 2,
+    "color:#27272a": 2,
+    "color:#71717a": 1,
+    "native-control": 5
+  },
+  "src/features/procurement/pages/procurement.css": {
+    "color:#101828": 3,
+    "color:#667085": 5,
+    "color:#475467": 1,
+    "color:#d0d5dd": 3,
+    "color:#fff": 4,
+    "color:#3538cd": 5,
+    "color:#d92d20": 1,
+    "color:#b42318": 3,
+    "color:#fda29b": 1,
+    "color:#fff1f3": 1,
+    "color:#eaecf0": 3,
+    "color:#f8fafc": 2,
+    "color:#344054": 2,
+    "color:#eef4ff": 1,
+    "color:#dcfae6": 1,
+    "color:#067647": 1,
+    "color:#fef0c7": 1,
+    "color:#93370d": 1,
+    "color:#fee4e2": 1,
+    "color:#f4ebff": 1,
+    "color:#6941c6": 1,
+    "font-family: ui-monospace, SFMono-Regular, Consolas, monospace": 1
+  },
+  "src/features/procurement/pages/PurchaseRequisitionCreatePage.tsx": {
+    "native-control": 23
+  },
+  "src/features/procurement/pages/PurchaseRequisitionDetailPage.tsx": {
+    "native-control": 7
+  },
+  "src/features/procurement/pages/PurchaseRequisitionListPage.tsx": {
+    "native-control": 4
+  },
+  "src/features/production/components/MenuItemForm.tsx": {
+    "native-control": 11
+  },
+  "src/features/production/components/MenuItemReadinessCard.tsx": {
+    "native-control": 1
+  },
+  "src/features/production/components/MenuItemsListFilters.tsx": {
+    "native-control": 5
+  },
+  "src/features/production/components/MenuItemsTable.tsx": {
+    "native-control": 3
+  },
+  "src/features/production/components/MenuRateOverrides.tsx": {
+    "native-control": 2
+  },
+  "src/features/production/components/production-workflow-bar.css": {
+    "color:#94a3b8": 1,
+    "color:#fff": 1,
+    "color:#f59e0b": 1,
+    "color:#111827": 1,
+    "color:#64748b": 1
+  },
+  "src/features/production/components/ProductionWorkflowBar.tsx": {
+    "native-control": 1
+  },
+  "src/features/production/components/RecipeCostingPanel.tsx": {
+    "color:#7c3aed": 1,
+    "color:#ede9fe": 1,
+    "color:#5b21b6": 1,
+    "color:#eff6ff": 1,
+    "color:#1e40af": 1,
+    "color:#f0fdf4": 2,
+    "color:#fefce8": 1,
+    "color:#fff7ed": 1,
+    "color:#f8fafc": 3,
+    "native-control": 4
+  },
+  "src/features/production/layout/production-workspace.css": {
+    "color:#0f172a": 1,
+    "color:#e5e7eb": 1,
+    "color:#f59e0b": 2,
+    "color:#facc15": 3,
+    "color:#111827": 2,
+    "color:#94a3b8": 3,
+    "color:#cbd5e1": 1
+  },
+  "src/features/production/layout/production.css": {
+    "color:#f8fafc": 4,
+    "color:#ffffff": 2,
+    "color:#f1f5f9": 2,
+    "color:#e2e8f0": 4,
+    "color:#0f172a": 3,
+    "color:#64748b": 3,
+    "color:#94a3b8": 3,
+    "color:#f59e0b": 2,
+    "color:#16a34a": 1,
+    "color:#dcfce7": 1,
+    "color:#d97706": 1,
+    "color:#fef3c7": 1,
+    "color:#dc2626": 1,
+    "color:#fee2e2": 1,
+    "color:#2563eb": 1,
+    "color:#dbeafe": 1,
+    "color:#0c1422": 1,
+    "color:#facc15": 3,
+    "color:#111827": 1,
+    "color:#475569": 2,
+    "color:#334155": 1,
+    "color:#92400e": 4,
+    "color:#78350f": 4,
+    "color:#1e293b": 2,
+    "color:#fff": 3,
+    "color:#e5930a": 1,
+    "color:#15803d": 1,
+    "color:#b91c1c": 1,
+    "color:#166534": 4,
+    "color:#1e40af": 4,
+    "color:#991b1b": 2,
+    "color:#fca5a5": 1,
+    "color:#86efac": 1,
+    "color:#fcd34d": 1,
+    "color:#93c5fd": 1,
+    "color:#f0fdf4": 1,
+    "color:#fff7ed": 2,
+    "color:#9a3412": 1,
+    "color:#eff6ff": 1,
+    "root-theme": 1
+  },
+  "src/features/production/layout/ProductionWorkspaceLayout.tsx": {
+    "native-control": 2
+  },
+  "src/features/production/pages/menu-item-create.css": {
+    "color:#111827": 1
+  },
+  "src/features/production/pages/menu-item-detail.css": {
+    "color:#dcfce7": 2,
+    "color:#166534": 2,
+    "color:#fef3c7": 2,
+    "color:#92400e": 2
+  },
+  "src/features/production/pages/MenuCategoriesPage.tsx": {
+    "native-control": 11
+  },
+  "src/features/production/pages/MenuEngineeringPage.tsx": {
+    "native-control": 6
+  },
+  "src/features/production/pages/MenuItemCreatePage.tsx": {
+    "native-control": 14
+  },
+  "src/features/production/pages/MenuItemDetailPage.tsx": {
+    "native-control": 7
+  },
+  "src/features/production/pages/MenuItemsListPage.tsx": {
+    "native-control": 5
+  },
+  "src/features/production/pages/ProductionBatchPage.tsx": {
+    "color:#b91c1c": 1,
+    "color:#b45309": 1,
+    "native-control": 33
+  },
+  "src/features/production/pages/RecipeEditorPage.tsx": {
+    "color:#dcfce7": 1,
+    "color:#166534": 1,
+    "color:#ffedd5": 1,
+    "color:#9a3412": 1,
+    "native-control": 20
+  },
+  "src/features/production/ui/ui.tsx": {
+    "color:#eaf7ee": 1,
+    "color:#fdecec": 1,
+    "color:#eaf2ff": 1,
+    "color:#f2f4f7": 1,
+    "color:#1f7a3f": 1,
+    "color:#b42318": 3,
+    "color:#1d4ed8": 1,
+    "color:#344054": 2,
+    "color:#eaecf0": 4,
+    "color:#fff": 5,
+    "color:#101828": 2,
+    "color:#2563eb": 1,
+    "color:#d0d5dd": 4,
+    "color:#667085": 1,
+    "native-control": 4
+  },
+  "src/features/reports/fnb/components/FnbReportFilters.tsx": {
+    "native-control": 10
+  },
+  "src/features/reports/fnb/components/FnbReportSidebar.tsx": {
+    "native-control": 1
+  },
+  "src/features/reports/fnb/components/FnbReportTable.tsx": {
+    "native-control": 2
+  },
+  "src/features/reports/fnb/pages/fnb-reports.css": {
+    "color:#64748b": 23,
+    "color:#0f172a": 14,
+    "color:#e2e8f0": 16,
+    "color:#fff": 16,
+    "color:#92400e": 3,
+    "color:#cbd5e1": 2,
+    "color:#f59e0b": 2,
+    "color:#111827": 1,
+    "color:#991b1b": 1,
+    "color:#ffffff": 1,
+    "color:#fafaf7": 1,
+    "color:#0f766e": 2,
+    "color:#b45309": 1,
+    "color:#f8fafc": 3,
+    "color:#dc2626": 1,
+    "color:#fed7aa": 1,
+    "color:#fff7ed": 1,
+    "color:#9a3412": 1,
+    "color:#94a3b8": 1,
+    "color:#000": 12,
+    "color:#111": 1,
+    "color:#444": 2,
+    "color:#999": 1,
+    "color:#ccc": 4,
+    "color:#555": 4,
+    "color:#d97706": 1,
+    "color:#aaa": 3,
+    "color:#ddd": 1,
+    "color:#e5e7eb": 1,
+    "color:#eee": 1
+  },
+  "src/features/reports/fnb/pages/FnbControlCenterPage.tsx": {
+    "native-control": 7
+  },
+  "src/features/reports/fnb/styles/fnb-reports.css": {
+    "color:#f7f8fa": 1,
+    "color:#6b7280": 12,
+    "color:#111827": 8,
+    "color:#4b5563": 1,
+    "color:#d1d5db": 2,
+    "color:#fff": 8,
+    "color:#f3f4f6": 4,
+    "color:#2563eb": 3,
+    "color:#1d4ed8": 2,
+    "color:#fecaca": 1,
+    "color:#fef2f2": 1,
+    "color:#991b1b": 1,
+    "color:#e5e7eb": 8,
+    "color:#bfdbfe": 2,
+    "color:#eff6ff": 1,
+    "color:#fed7aa": 1,
+    "color:#fff7ed": 1,
+    "color:#9a3412": 1,
+    "color:#f9fafb": 2,
+    "color:#9ca3af": 1,
+    "color:#000": 2,
+    "color:#111": 1,
+    "color:#555": 2,
+    "color:#999": 1,
+    "color:#ccc": 2,
+    "color:#eee": 1
+  },
+  "src/features/sales/components/pos-ui.tsx": {
+    "native-control": 2
+  },
+  "src/features/sales/components/pos.css": {
+    "color:#f4f3f0": 1,
+    "color:#ffffff": 1,
+    "color:#dedad3": 1,
+    "color:#1c1a17": 1,
+    "color:#6b6860": 1,
+    "color:#f0ede8": 1,
+    "color:#1f2937": 1,
+    "color:#b87333": 1,
+    "color:#1d6b45": 1,
+    "color:#b91c1c": 2,
+    "color:#92400e": 2,
+    "color:#6d5a8d": 2,
+    "color:#fff": 13,
+    "color:#c7c0b6": 1,
+    "color:#faf9f7": 1,
+    "color:#eff6ff": 2,
+    "color:#bfdbfe": 1,
+    "color:#1d4ed8": 2,
+    "color:#f0fdf4": 2,
+    "color:#bbf7d0": 1,
+    "color:#15803d": 1,
+    "color:#fef2f2": 2,
+    "color:#fecaca": 1,
+    "color:#fffbeb": 2,
+    "color:#fde68a": 1,
+    "color:#f3f4f6": 1,
+    "color:#4b5563": 1,
+    "color:#16a34a": 1,
+    "color:#dc2626": 1,
+    "color:#d97706": 1,
+    "color:#f2eef8": 1,
+    "color:#111827": 3,
+    "color:#fbfaf8": 3,
+    "color:#e7e1d8": 1,
+    "root-theme": 1,
+    "font-family: inherit": 2
+  },
+  "src/features/sales/pages/ExternalSalesImportPage.tsx": {
+    "color:#6366f1": 3,
+    "color:#4f46e5": 2,
+    "color:#f0fdf4": 1,
+    "color:#fef2f2": 1,
+    "color:#bbf7d0": 1,
+    "color:#fecaca": 1,
+    "color:#16a34a": 2,
+    "color:#dc2626": 2,
+    "color:#15803d": 1,
+    "color:#b91c1c": 1,
+    "color:#fde68a": 2,
+    "color:#fffbeb": 1,
+    "color:#92400e": 1,
+    "color:#78350f": 1,
+    "color:#fef3c7": 1,
+    "color:#f5f3ff": 2,
+    "color:#e0e7ff": 1,
+    "native-control": 7
+  },
+  "src/features/sales/pages/SaleDetailPage.tsx": {
+    "color:#dbe3ef": 1,
+    "color:#0f172a": 4,
+    "color:#111827": 1,
+    "color:#1f2937": 1,
+    "color:#fff": 3,
+    "color:#facc15": 1,
+    "color:#cbd5e1": 2,
+    "color:#e5e7eb": 2,
+    "color:#f8fafc": 2,
+    "color:#64748b": 3,
+    "color:#bbf7d0": 1,
+    "color:#f0fdf4": 1,
+    "color:#fde68a": 1,
+    "color:#fffbeb": 1,
+    "color:#eef2f7": 1,
+    "color:#b45309": 1,
+    "color:#475569": 1,
+    "color:#f1f5f9": 2,
+    "native-confirm": 1
+  },
+  "src/features/sales/pages/SalesListPage.tsx": {
+    "native-control": 4
+  },
+  "src/features/sales/pages/SalesReportsPage.tsx": {
+    "native-control": 2
+  },
+  "src/features/telegram-miniapp/attendance/TelegramAttendanceScannerPage.tsx": {
+    "color:#f6f7fb": 1,
+    "color:#ffffff": 3,
+    "color:#111827": 1,
+    "color:#6b7280": 1,
+    "color:#2481cc": 1,
+    "color:#e5e7eb": 1,
+    "color:#eef2f7": 1,
+    "color:#f9fafb": 1,
+    "color:#0f172a": 1,
+    "color:#1d4ed8": 3,
+    "color:#22c55e": 1,
+    "color:#2563eb": 1,
+    "color:#bfdbfe": 1,
+    "color:#eff6ff": 1,
+    "color:#dbeafe": 2,
+    "color:#bbf7d0": 2,
+    "color:#f0fdf4": 1,
+    "color:#dcfce7": 2,
+    "color:#166534": 2,
+    "color:#fecaca": 1,
+    "color:#fef2f2": 1,
+    "color:#fee2e2": 1,
+    "color:#991b1b": 1,
+    "color:#e0f2fe": 1,
+    "native-control": 1
+  },
+  "src/features/telegram-miniapp/hr-requests/TelegramHrRequestsPage.tsx": {
+    "color:#2481cc": 1,
+    "color:#111827": 1,
+    "color:#6b7280": 1,
+    "color:#eef2ff": 2,
+    "color:#ffffff": 1,
+    "color:#eff6ff": 1,
+    "color:#1d4ed8": 1,
+    "color:#fef2f2": 1,
+    "color:#991b1b": 1,
+    "color:#ecfdf5": 1,
+    "color:#047857": 1,
+    "color:#fff": 2,
+    "color:#e5e7eb": 3,
+    "color:#d1d5db": 2,
+    "color:#f8fafc": 1,
+    "color:#3730a3": 1,
+    "native-control": 22
+  },
+  "src/features/telegram-miniapp/siv-request/TelegramSivRequestPage.tsx": {
+    "color:#374151": 1,
+    "color:#dc2626": 1,
+    "color:#f6f7fb": 1,
+    "color:#ffffff": 4,
+    "color:#111827": 1,
+    "color:#6b7280": 1,
+    "color:#e5e7eb": 1,
+    "color:#2481cc": 1,
+    "color:#0f172a": 1,
+    "color:#1e293b": 1,
+    "color:#334155": 3,
+    "color:#475569": 2,
+    "color:#f8fafc": 1,
+    "color:#cbd5e1": 1,
+    "color:#fef2f2": 3,
+    "color:#991b1b": 3,
+    "color:#ecfdf5": 1,
+    "color:#bbf7d0": 2,
+    "color:#166534": 2,
+    "color:#bfdbfe": 1,
+    "color:#eff6ff": 1,
+    "color:#1d4ed8": 1,
+    "color:#f0fdf4": 1,
+    "color:#fecaca": 2,
+    "color:#fde68a": 1,
+    "color:#fffbeb": 1,
+    "color:#92400e": 1,
+    "color:#f9fafb": 1,
+    "color:#f1f5f9": 1,
+    "color:#f3f4f6": 1,
+    "native-control": 10
+  },
+  "src/features/telegram-miniapp/telegram-miniapp-dashboard.css": {
+    "color:#374151": 2,
+    "color:#64748b": 1,
+    "color:#111827": 9,
+    "color:#1f2937": 1,
+    "color:#334155": 1,
+    "color:#fff": 6,
+    "color:#e5e7eb": 6,
+    "color:#6b7280": 7,
+    "color:#f3f4f6": 2,
+    "color:#eef2ff": 1,
+    "color:#3730a3": 1,
+    "color:#9ca3af": 2,
+    "color:#fde68a": 1,
+    "color:#fffbeb": 1,
+    "color:#92400e": 1,
+    "color:#2481cc": 1,
+    "color:#eff6ff": 1,
+    "color:#f9fafb": 2,
+    "color:#d1d5db": 1,
+    "color:#4b5563": 1,
+    "color:#fef2f2": 1,
+    "color:#fecaca": 1,
+    "color:#991b1b": 1
+  },
+  "src/features/telegram-miniapp/TelegramEmployeeLinkPage.tsx": {
+    "native-control": 3
+  },
+  "src/features/telegram-miniapp/TelegramMiniAppContent.tsx": {
+    "native-control": 1
+  },
+  "src/features/telegram-miniapp/TelegramMiniAppDashboard.tsx": {
+    "native-control": 1
+  },
+  "src/features/telegram-miniapp/TelegramMiniAppHome.tsx": {
+    "native-control": 1
+  },
+  "src/features/telegram-miniapp/TelegramMiniAppShell.tsx": {
+    "color:#f6f7fb": 1,
+    "color:#111827": 1,
+    "color:#6b7280": 1,
+    "color:#ffffff": 1,
+    "color:#e5e7eb": 1
+  },
+  "src/features/telegram-miniapp/TelegramTabBar.tsx": {
+    "color:#ffffff": 1,
+    "color:#6b7280": 1,
+    "color:#2481cc": 1,
+    "color:#e5e7eb": 1,
+    "native-control": 1
+  },
+  "src/layouts/AppShell.tsx": {
+    "native-control": 1
+  },
+  "src/modules/security/components/LinkEmployeeDialog.tsx": {
+    "native-control": 4
+  },
+  "src/modules/security/components/ResetPasswordDialog.tsx": {
+    "native-control": 3
+  },
+  "src/modules/security/components/UserForm.tsx": {
+    "native-control": 14
+  },
+  "src/modules/security/components/UsersFilters.tsx": {
+    "native-control": 5
+  },
+  "src/modules/security/components/UsersTable.tsx": {
+    "native-control": 4
+  },
+  "src/modules/security/pages/roles-permissions.css": {
+    "color:#e5e7eb": 2,
+    "color:#070a11": 1,
+    "color:#0d1320": 1,
+    "color:#769aff": 1,
+    "color:#fff": 4,
+    "color:#fbbf24": 2,
+    "color:#93b4ff": 1,
+    "color:#5b84ff": 2,
+    "color:#fb7185": 3,
+    "color:#34d399": 2,
+    "color:#64748b": 1,
+    "color:#111827": 1,
+    "font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace": 1
+  },
+  "src/modules/security/pages/RolesPermissionsPage.tsx": {
+    "native-confirm": 2,
+    "native-control": 21
+  },
+  "src/modules/security/pages/security.css": {
+    "color:#0c0e14": 1,
+    "color:#13151e": 1,
+    "color:#191c27": 1,
+    "color:#f97316": 2,
+    "color:#ea6c0e": 1,
+    "color:#86efac": 1,
+    "color:#fca5a5": 1,
+    "color:#f1f5f9": 2,
+    "color:#64748b": 9,
+    "color:#374151": 1,
+    "color:#fff": 2,
+    "color:#ef4444": 1,
+    "color:#eab308": 1,
+    "color:#22c55e": 1,
+    "color:#ffffff": 8,
+    "color:#f8fafc": 7,
+    "color:#0f172a": 7,
+    "color:#e2e8f0": 9,
+    "color:#2563eb": 7,
+    "color:#475569": 1,
+    "color:#bbf7d0": 2,
+    "color:#f0fdf4": 2,
+    "color:#166534": 2,
+    "color:#fed7aa": 2,
+    "color:#fff7ed": 2,
+    "color:#9a3412": 2,
+    "color:#fecaca": 2,
+    "color:#fef2f2": 2,
+    "color:#991b1b": 2,
+    "color:#94a3b8": 3,
+    "color:#334155": 4,
+    "color:#eff6ff": 2,
+    "color:#bfdbfe": 2,
+    "color:#1d4ed8": 2,
+    "color:#dbeafe": 1,
+    "color:#cbd5e1": 4,
+    "color:#111827": 1,
+    "root-theme": 1
+  },
+  "src/modules/security/pages/SettingsPage.tsx": {
+    "color:#2563eb": 1,
+    "native-control": 22
+  },
+  "src/modules/security/pages/UserDetailPage.tsx": {
+    "native-control": 7
+  },
+  "src/modules/security/pages/UsersPage.tsx": {
+    "native-confirm": 1,
+    "native-control": 9
+  },
+  "src/pages/DashboardPage.tsx": {
+    "native-control": 1
+  },
+  "src/pages/ForgotPasswordPage.tsx": {
+    "native-control": 3
+  },
+  "src/pages/LoginPage.tsx": {
+    "native-control": 5
+  },
+  "src/pages/platform/PlatformTenantsPage.tsx": {
+    "native-control": 4
+  },
+  "src/pages/RegisterPage.tsx": {
+    "native-control": 6
+  },
+  "src/pages/ResetPasswordPage.tsx": {
+    "native-control": 5
+  },
+  "src/pages/system-admin/SystemAdminLoginPage.tsx": {
+    "native-control": 5
+  },
+  "src/routes/AppRoutes.tsx": {
+    "color:#64748b": 3
+  },
+  "src/shared/DigitalMenuPage.tsx": {
+    "color:#073d2f": 1,
+    "color:#03291f": 1,
+    "color:#d6aa43": 1,
+    "color:#f6f1e8": 1,
+    "color:#fffdf8": 1,
+    "color:#102f27": 1,
+    "color:#6c726f": 1,
+    "color:#eadfc9": 1,
+    "color:#d9c9a7": 2,
+    "color:#dccca9": 4,
+    "color:#d4a94c": 1,
+    "color:#fff7df": 1,
+    "color:#6f4b00": 1,
+    "color:#e6dbc5": 1,
+    "color:#b9aa88": 1,
+    "color:#eee4d1": 1,
+    "color:#8a7a5a": 1,
+    "color:#aaa": 1,
+    "color:#9a6814": 1,
+    "native-control": 4,
+    "root-theme": 1,
+    "font-family: Inter, ui-sans-serif, system-ui, sans-serif": 1
+  },
+  "src/shared/erp-common.css": {
+    "color:#cbd5e1": 1,
+    "color:#2563eb": 2,
+    "color:#dc2626": 2,
+    "color:#f1f5f9": 1,
+    "color:#166534": 1,
+    "color:#92400e": 1,
+    "color:#991b1b": 1,
+    "color:#334155": 1
+  },
+  "src/styles/admin.css": {
+    "color:#0b1220": 2,
+    "color:#0f172a": 4,
+    "color:#ffffff": 3,
+    "color:#94a3b8": 1,
+    "color:#9ca3af": 1,
+    "color:#f7f8fb": 1,
+    "color:#64748b": 1,
+    "color:#e5e7eb": 1,
+    "color:#eef2f7": 1,
+    "color:#111827": 1,
+    "color:#dc2626": 1,
+    "color:#fff7ed": 1,
+    "color:#9a3412": 1,
+    "color:#ecfdf5": 1,
+    "color:#047857": 1,
+    "color:#f1f5f9": 3,
+    "color:#334155": 2,
+    "color:#f8fafc": 4,
+    "color:#fff": 11,
+    "color:#fecaca": 1,
+    "color:#fff5f5": 1,
+    "color:#cbd5e1": 1,
+    "color:#475569": 1,
+    "color:#a7f3d0": 1,
+    "color:#fed7aa": 1,
+    "root-theme": 1,
+    "font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif": 2,
+    "font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace": 1
+  },
+  "src/styles/erp-tokens.css": {
+    "color:#fff": 3,
+    "color:#2e2c28": 1,
+    "color:#1e5c3f": 1,
+    "color:#dbeafe": 1,
+    "color:#1d4ed8": 1,
+    "root-theme": 1
+  },
+  "src/styles/inventory-master.css": {
+    "color:#0f172a": 3,
+    "color:#64748b": 1,
+    "color:#e5e7eb": 2,
+    "color:#ffffff": 2,
+    "color:#2563eb": 3,
+    "color:#eff6ff": 1,
+    "color:#475569": 1,
+    "color:#22c55e": 1,
+    "color:#dc2626": 1,
+    "color:#fff5f5": 1
+  },
+  "src/styles/modules.identity.css": {
+    "color:#f7f8fb": 1,
+    "color:#111827": 3,
+    "color:#1e293b": 2,
+    "color:#93c5fd": 2,
+    "color:#cbd5e1": 1,
+    "color:#dbe3ef": 6,
+    "color:#2563eb": 7,
+    "color:#64748b": 13,
+    "color:#f1f5f9": 1,
+    "color:#f8fafc": 5,
+    "color:#dc2626": 2,
+    "color:#e5eaf2": 3,
+    "color:#edf2f7": 4,
+    "color:#e0ecff": 1,
+    "color:#1d4ed8": 2,
+    "color:#475569": 1,
+    "color:#94a3b8": 1,
+    "color:#15803d": 1,
+    "color:#22c55e": 1,
+    "color:#fef2f2": 1,
+    "color:#fecaca": 1,
+    "color:#991b1b": 1,
+    "color:#fbfdff": 1,
+    "color:#334155": 2,
+    "color:#fff": 3,
+    "color:#eef4ff": 1,
+    "color:#eff6ff": 1,
+    "color:#0f172a": 1,
+    "color:#ecfdf5": 1,
+    "color:#bbf7d0": 1,
+    "color:#166534": 1
+  },
+  "src/styles/modules.org.css": {
+    "color:#f0f0f0": 1,
+    "color:#111": 2,
+    "color:#f3f3f3": 1,
+    "color:#c7c0b5": 2,
+    "color:#fbfaf8": 2,
+    "color:#d9d3c8": 1,
+    "color:#0f172a": 1,
+    "color:#eef2f7": 1,
+    "color:#253044": 2,
+    "color:#f7eadc": 1,
+    "color:#edf2f7": 1,
+    "color:#d8d3ca": 2,
+    "color:#e4dfd7": 2,
+    "color:#fff": 1,
+    "color:#f1f5f9": 1,
+    "color:#344155": 1,
+    "color:#fff7ed": 1,
+    "color:#9ca3af": 1
+  },
+  "src/styles/platform-tenants.css": {
+    "color:#4f46e5": 2,
+    "color:#0f172a": 5,
+    "color:#64748b": 4,
+    "color:#cbd5e1": 3,
+    "color:#ffffff": 7,
+    "color:#111827": 4,
+    "color:#fecaca": 1,
+    "color:#fef2f2": 1,
+    "color:#991b1b": 1,
+    "color:#e2e8f0": 2,
+    "color:#94a3b8": 1,
+    "color:#eef2ff": 1,
+    "color:#bbf7d0": 1,
+    "color:#f0fdf4": 1,
+    "color:#166534": 1,
+    "color:#334155": 1
+  },
+  "src/styles/uomConversionGrid.css": {
+    "font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace": 1
+  }
+}

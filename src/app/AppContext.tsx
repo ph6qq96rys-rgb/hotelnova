@@ -1,3 +1,4 @@
+import ConfirmModal from "../components/ConfirmModal";
 // src/app/AppContext.tsx
 
 import {
@@ -5,6 +6,8 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
+  useEffect,
   useState,
   type ReactNode,
 } from "react";
@@ -62,7 +65,8 @@ export type AppContextValue = AppScopeState & {
   setWorkspace: (workspace: WorkspaceAuth) => void;
   clearCompany: () => void;
 
-  setBranch: (branch: SetBranchInput) => void;
+  setBranch: (branch: SetBranchInput) => boolean;
+  requestBranchChange: (branch: SetBranchInput) => Promise<boolean>;
   setStore: (store: SetStoreInput) => void;
   setStockLocation: (location: SetStockLocationInput) => void;
 
@@ -146,6 +150,8 @@ function readPersistedScope(): AppScopeState | null {
 }
 
 function loadInitialScope(): AppScopeState {
+  const persistedScope = readPersistedScope();
+
   /*
    * A delegated SystemAdmin workspace must take precedence over
    * direct tenant authentication.
@@ -153,21 +159,27 @@ function loadInitialScope(): AppScopeState {
   const workspace = loadWorkspaceAuth();
 
   if (workspace?.accessToken && clean(workspace.companyId)) {
+    const persistedBranchId =
+      persistedScope?.companyId === clean(workspace.companyId)
+        ? persistedScope.branchId
+        : null;
+    const persistedBranchName = persistedBranchId
+      ? persistedScope?.branchName
+      : null;
+
     return normalizeScope({
       mode: "tenant",
       companyId: workspace.companyId,
       companyName: workspace.companyName,
       tenantSlug: workspace.tenantSlug,
-      branchId: workspace.branchId,
-      branchName: workspace.branchName,
+      branchId: workspace.branchId ?? persistedBranchId,
+      branchName: workspace.branchName ?? persistedBranchName,
       storeId: null,
       storeName: null,
       stockLocationId: null,
       stockLocationName: null,
     });
   }
-
-  const persistedScope = readPersistedScope();
 
   if (persistedScope?.companyId) {
     return persistedScope;
@@ -181,8 +193,8 @@ function loadInitialScope(): AppScopeState {
       companyId: auth.companyId,
       companyName: auth.companyName,
       tenantSlug: auth.tenantSlug,
-      branchId: auth.branchId,
-      branchName: auth.branchName,
+      branchId: auth.isCompanyScoped ? null : auth.branchId,
+      branchName: auth.isCompanyScoped ? null : auth.branchName,
       storeId: auth.storeId,
       storeName: null,
       stockLocationId: auth.stockLocationId,
@@ -249,6 +261,10 @@ export function AppProvider({
 }) {
   const [scope, setScope] =
     useState<AppScopeState>(loadInitialScope);
+
+  const [branchRequest,setBranchRequest]=useState<{branch:SetBranchInput;companyId:string|null;fromBranchId:string|null;resolve:(ok:boolean)=>void}|null>(null);
+  const pendingBranch=useRef<((ok:boolean)=>void)|null>(null);
+  useEffect(()=>()=>{pendingBranch.current?.(false);},[]);
 
   const commitScope = useCallback(
     (
@@ -373,8 +389,10 @@ export function AppProvider({
   }, []);
 
   const setBranch = useCallback(
-    (branch: SetBranchInput) => {
+    (branch: SetBranchInput,discardConfirmed=false) => {
       const branchId = clean(branch.id);
+      if(branchId===scope.branchId)return true;
+      if(!window.dispatchEvent(new CustomEvent("scope:before-branch-change",{cancelable:true,detail:{discardConfirmed}})))return false;
       const branchName = clean(branch.name);
       const auth = loadAuth();
       const workspace = loadWorkspaceAuth();
@@ -408,9 +426,22 @@ export function AppProvider({
         stockLocationId: null,
         stockLocationName: null,
       }));
+      return true;
     },
-    [commitScope],
+    [commitScope,scope.branchId],
   );
+
+  const requestBranchChange=useCallback((branch:SetBranchInput):Promise<boolean>=>{
+    if(clean(branch.id)===scope.branchId)return Promise.resolve(true);
+    if(pendingBranch.current)return Promise.resolve(false);
+    return new Promise(resolve=>{pendingBranch.current=resolve;setBranchRequest({branch,companyId:scope.companyId,fromBranchId:scope.branchId,resolve});});
+  },[scope.companyId,scope.branchId]);
+  const finishBranchChange=(confirmed:boolean)=>{
+    if(!branchRequest)return;
+    const sameScope=branchRequest.companyId===scope.companyId&&branchRequest.fromBranchId===scope.branchId;
+    const changed=confirmed&&sameScope?setBranch(branchRequest.branch,true):false;
+    branchRequest.resolve(changed);pendingBranch.current=null;setBranchRequest(null);
+  };
 
   const setStore = useCallback(
     (store: SetStoreInput) => {
@@ -445,6 +476,7 @@ export function AppProvider({
       setWorkspace,
       clearCompany,
       setBranch,
+      requestBranchChange,
       setStore,
       setStockLocation,
       refreshScope,
@@ -455,6 +487,7 @@ export function AppProvider({
       setWorkspace,
       clearCompany,
       setBranch,
+      requestBranchChange,
       setStore,
       setStockLocation,
       refreshScope,
@@ -464,6 +497,7 @@ export function AppProvider({
   return (
     <AppContext.Provider value={value}>
       {children}
+      <ConfirmModal open={!!branchRequest} title="Switch working branch?" message={"Switch to "+(branchRequest?.branch.name||"All branches")+"? Save your work first. Unsaved changes on the current page may be lost."} confirmText="Switch branch" onConfirm={()=>finishBranchChange(true)} onClose={()=>finishBranchChange(false)}/>
     </AppContext.Provider>
   );
 }

@@ -3,6 +3,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
+import { useI18n } from "../../../i18n";
 import {
   closeTelegramMiniApp,
   getTelegramInitData,
@@ -109,6 +110,7 @@ const MAX_LINES = 100;
 const CLOSE_DELAY_MS = 1400;
 
 export default function TelegramMiniAppSivRequestPage() {
+  const { tx } = useI18n();
   const telegram = getTelegramWebApp();
   const initData = getTelegramInitData();
   const runtimeTheme = getTelegramTheme();
@@ -486,35 +488,35 @@ export default function TelegramMiniAppSivRequestPage() {
     <section style={styles.page}>
       <header style={styles.headerCard}>
         <div>
-          <div style={styles.eyebrow}>Inventory - SIV</div>
-          <h2 style={styles.title}>New Store Issue Request</h2>
+          <div style={styles.eyebrow}>{tx("Inventory - SIV")}</div>
+          <h2 style={styles.title}>{tx("New Store Issue Request")}</h2>
           <p style={styles.subtitle}>
             {context?.employeeName || telegramUserName
-              ? `Requester: ${context?.employeeName || telegramUserName}`
-              : "Create a stock issue request for approval."}
+              ? tx("Requester: {name}", { name: context?.employeeName || telegramUserName || "" })
+              : tx("Create a stock issue request for approval.")}
           </p>
         </div>
         <div style={styles.headerIcon}></div>
       </header>
 
-      {message && <Notice message={message} styles={styles} />}
+      {message && <Notice message={message} styles={styles} translate={tx} />}
 
       <section style={styles.workflowCard}>
-        <WorkflowStep active done={Boolean(fromLocationId && toLocationId)} label="Select locations" />
-        <WorkflowStep active={Boolean(canLoadItems)} done={lines.length > 0} label="Add available items" />
-        <WorkflowStep active={lines.length > 0} done={false} label="Submit for approval" />
+        <WorkflowStep active done={Boolean(fromLocationId && toLocationId)} label={tx("Select locations")} />
+        <WorkflowStep active={Boolean(canLoadItems)} done={lines.length > 0} label={tx("Add available items")} />
+        <WorkflowStep active={lines.length > 0} done={false} label={tx("Submit for approval")} />
       </section>
 
       <section style={styles.card}>
-        <SectionTitle title="Document" hint="From warehouse to requesting location" />
+        <SectionTitle title={tx("Document")} hint={tx("From warehouse to requesting location")} />
 
-        <Field label="From Location" required>
+        <Field label={tx("From Location")} required>
           <select
             value={fromLocationId}
             onChange={(event) => handleFromChange(event.target.value)}
             style={styles.input}
           >
-            <option value="">Select issue source</option>
+            <option value="">{tx("Select issue source")}</option>
             {context?.fromLocations.map((location) => (
               <option key={location.id} value={location.id}>
                 {locationLabel(location, "from")}
@@ -523,13 +525,13 @@ export default function TelegramMiniAppSivRequestPage() {
           </select>
         </Field>
 
-        <Field label="To Location" required>
+        <Field label={tx("To Location")} required>
           <select
             value={toLocationId}
             onChange={(event) => handleToChange(event.target.value)}
             style={styles.input}
           >
-            <option value="">Select requesting location</option>
+            <option value="">{tx("Select requesting location")}</option>
             {context?.toLocations.map((location) => (
               <option key={location.id} value={location.id}>
                 {locationLabel(location, "to")}
@@ -539,36 +541,36 @@ export default function TelegramMiniAppSivRequestPage() {
         </Field>
 
         {fromLocation && toLocation && fromLocation.id === toLocation.id && (
-          <div style={styles.inlineError}>From and To locations cannot be the same.</div>
+          <div style={styles.inlineError}>{tx("From and To locations cannot be the same.")}</div>
         )}
 
         <div style={styles.routeBox}>
-          <span>{fromLocation ? locationLabel(fromLocation, "from") : "From"}</span>
-          <strong>to</strong>
-          <span>{toLocation ? locationLabel(toLocation, "to") : "To"}</span>
+          <span>{fromLocation ? locationLabel(fromLocation, "from") : tx("From")}</span>
+          <strong>{tx("to")}</strong>
+          <span>{toLocation ? locationLabel(toLocation, "to") : tx("To")}</span>
         </div>
 
-        <Field label="Remarks">
+        <Field label={tx("Remarks")}>
           <textarea
             value={remarks}
             onChange={(event) => setRemarks(event.target.value)}
-            placeholder="Optional notes for approver"
+            placeholder={tx("Optional notes for approver")}
             style={{ ...styles.input, minHeight: 76, resize: "vertical" }}
           />
         </Field>
       </section>
 
       <section style={styles.card}>
-        <SectionTitle title="Available Items" hint="Only items with available stock are listed" />
+        <SectionTitle title={tx("Available Items")} hint={tx("Only items with available stock are listed")} />
 
-        <Field label="Category">
+        <Field label={tx("Category")}>
           <select
             value={categoryId}
             onChange={(event) => setCategoryId(event.target.value)}
             style={styles.input}
             disabled={!canLoadItems}
           >
-            <option value="">All categories</option>
+            <option value="">{tx("All categories")}</option>
             {categories.map((category) => (
               <option key={category.categoryId} value={category.categoryId}>
                 {category.categoryName}
@@ -577,7 +579,7 @@ export default function TelegramMiniAppSivRequestPage() {
           </select>
         </Field>
 
-        <Field label="Item" required>
+        <Field label={tx("Item")} required>
           <select
             value={selectedItemId}
             onChange={(event) => setSelectedItemId(event.target.value)}
@@ -586,12 +588,12 @@ export default function TelegramMiniAppSivRequestPage() {
           >
             <option value="">
               {!canLoadItems
-                ? "Select From and To locations first"
+                ? tx("Select From and To locations first")
                 : loadingItems
-                ? "Loading available items..."
+                ? tx("Loading available items...")
                 : items.length
-                ? "Select item"
-                : "No available items"}
+                ? tx("Select item")
+                : tx("No available items")}
             </option>
             {items.map((item) => (
               <option key={item.itemId} value={item.itemId}>
@@ -604,13 +606,13 @@ export default function TelegramMiniAppSivRequestPage() {
         {selectedItem && (
           <div style={styles.availabilityBox}>
             <div>
-              <span style={styles.metaLabel}>Available</span>
+              <span style={styles.metaLabel}>{tx("Available")}</span>
               <strong>
                 {fmtQty(selectedItem.availableQty)} {selectedItem.requestUomCode ?? ""}
               </strong>
             </div>
             <div>
-              <span style={styles.metaLabel}>Code</span>
+              <span style={styles.metaLabel}>{tx("Code")}</span>
               <strong>{selectedItem.itemCode || selectedItem.barcode || "-"}</strong>
             </div>
           </div>
@@ -619,7 +621,7 @@ export default function TelegramMiniAppSivRequestPage() {
 
 
         {selectedItem && (
-          <Field label="FIFO Lot" required={fifoLots.length > 0}>
+          <Field label={tx("FIFO Lot")} required={fifoLots.length > 0}>
             <select
               value={selectedFifoLayerId}
               onChange={(event) => setSelectedFifoLayerId(event.target.value)}
@@ -628,10 +630,10 @@ export default function TelegramMiniAppSivRequestPage() {
             >
               <option value="">
                 {loadingFifoLots
-                  ? "Loading FIFO lots..."
+                  ? tx("Loading FIFO lots...")
                   : fifoLots.length
-                  ? "Select FIFO lot"
-                  : "No FIFO lot detail found"}
+                  ? tx("Select FIFO lot")
+                  : tx("No FIFO lot detail found")}
               </option>
               {fifoLots.map((lot) => (
                 <option key={lot.fifoLayerId} value={lot.fifoLayerId}>
@@ -641,7 +643,7 @@ export default function TelegramMiniAppSivRequestPage() {
             </select>
           </Field>
         )}
-        <Field label={selectedItem?.requestUomCode ? `Quantity (${selectedItem.requestUomCode})` : "Quantity"} required>
+        <Field label={selectedItem?.requestUomCode ? `Quantity (${selectedItem.requestUomCode})` : tx("Quantity")} required>
           <input
             type="number"
             min={MIN_QTY}
@@ -660,15 +662,15 @@ export default function TelegramMiniAppSivRequestPage() {
           disabled={!canAddLine}
           style={{ ...styles.primaryButton, ...(!canAddLine ? styles.buttonDisabled : null) }}
         >
-           Add Item
+          {tx("Add Item")}
         </button>
       </section>
 
       <section style={styles.card}>
-        <SectionTitle title="Request Lines" hint={`${lines.length} line${lines.length === 1 ? "" : "s"}`} />
+        <SectionTitle title={tx("Request Lines")} hint={tx("{count} line(s)", { count: lines.length })} />
 
         {lines.length === 0 ? (
-          <div style={styles.emptyState}>No items added yet.</div>
+          <div style={styles.emptyState}>{tx("No items added yet.")}</div>
         ) : (
           <div style={styles.lineList}>
             {lines.map((line, index) => (
@@ -677,7 +679,7 @@ export default function TelegramMiniAppSivRequestPage() {
                 <div style={styles.lineBody}>
                   <strong style={styles.lineTitle}>{line.itemName}</strong>
                   <span style={styles.lineMeta}>
-                    {line.itemCode || "No code"} - Qty {fmtQty(line.quantity)} {line.requestUomCode ?? ""}
+                    {line.itemCode || tx("No code")} - {tx("Qty")} {fmtQty(line.quantity)} {line.requestUomCode ?? ""}
                     {line.batchNo ? ` - Batch ${line.batchNo}` : ""}
                     {line.expiryDate ? ` - Exp ${fmtDate(line.expiryDate)}` : ""}
                   </span>
@@ -687,7 +689,7 @@ export default function TelegramMiniAppSivRequestPage() {
                   onClick={() => removeLine(line.itemId, line.fifoLayerId)}
                   style={styles.removeButton}
                 >
-                  Remove
+                  {tx("Remove")}
                 </button>
               </div>
             ))}
@@ -696,7 +698,7 @@ export default function TelegramMiniAppSivRequestPage() {
 
         {lines.length > 0 && (
           <div style={styles.totalBox}>
-            <span>Total requested quantity</span>
+            <span>{tx("Total requested quantity")}</span>
             <strong>{fmtQty(totalQty)}</strong>
           </div>
         )}
@@ -708,7 +710,7 @@ export default function TelegramMiniAppSivRequestPage() {
         disabled={!canSubmit}
         style={{ ...styles.submitButton, ...(!canSubmit ? styles.buttonDisabled : null) }}
       >
-        {submitting ? "Submitting..." : " Submit for Approval"}
+        {submitting ? tx("Submitting...") : tx("Submit for Approval")}
       </button>
     </section>
   );
@@ -767,7 +769,7 @@ const WorkflowStep = memo(function WorkflowStep({ label, active, done }: { label
   );
 });
 
-const Notice = memo(function Notice({ message, styles }: { message: MessageState; styles: ReturnType<typeof createStyles> }) {
+const Notice = memo(function Notice({ message, styles, translate }: { message: MessageState; styles: ReturnType<typeof createStyles>; translate: (text: string) => string }) {
   return (
     <div
       style={{
@@ -778,7 +780,7 @@ const Notice = memo(function Notice({ message, styles }: { message: MessageState
       }}
       role="alert"
     >
-      {message.text}
+      {translate(message.text)}
     </div>
   );
 });

@@ -12,6 +12,7 @@ type Props = {
   loading: boolean;
   reportName?: string;
   currencyCode?: string;
+  hasRun?: boolean;
   onRowOpen?: (row: FnbReportRow) => void;
 };
 
@@ -49,6 +50,7 @@ export function FnbReportTable({
   loading,
   reportName = "Report Detail",
   currencyCode = "ETB",
+  hasRun = true,
   onRowOpen,
 }: Props) {
   const [sort, setSort] = useState<SortState>(null);
@@ -113,7 +115,7 @@ export function FnbReportTable({
       <div className="fnb-table-toolbar">
         <div>
           <strong>{reportName}</strong>
-          <p>Operational report rows from approved ERP transactions.</p>
+          <p>Quantities use each item's base unit. Select an item to inspect its posted movements.</p>
         </div>
       </div>
 
@@ -125,6 +127,7 @@ export function FnbReportTable({
                 <th
                   key={column.key}
                   className={isNumeric(column.format) ? "num" : undefined}
+                  aria-sort={sort?.key === column.key ? sort.direction === "asc" ? "ascending" : "descending" : "none"}
                 >
                   <button
                     type="button"
@@ -156,7 +159,7 @@ export function FnbReportTable({
                   colSpan={Math.max(visibleColumns.length, 1)}
                   className="fnb-empty"
                 >
-                  No data found.
+                  {hasRun ? "No rows match this report selection." : "Choose the report filters and select Run to load results."}
                 </td>
               </tr>
             ) : (
@@ -168,6 +171,13 @@ export function FnbReportTable({
                     key={`${row.itemId ?? "row"}-${row.locationId ?? "all"}-${index}`}
                     className={canOpen ? "is-clickable" : undefined}
                     onClick={() => handleRowClick(row)}
+                    tabIndex={canOpen ? 0 : undefined}
+                    onKeyDown={(event) => {
+                      if (canOpen && event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        onRowOpen?.(row);
+                      }
+                    }}
                   >
                     {visibleColumns.map((column) => (
                       <td
@@ -203,7 +213,6 @@ export function FnbReportTable({
                 <dl>
                   {visibleColumns
                     .filter((column) => column.key !== "itemName")
-                    .slice(0, 6)
                     .map((column) => (
                       <div key={column.key}>
                         <dt>{column.label}</dt>

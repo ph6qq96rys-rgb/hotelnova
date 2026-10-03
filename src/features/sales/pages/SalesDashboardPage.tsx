@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { useAppScope } from "../../../app/useAppScope";
+import { useI18n } from "../../../i18n";
 import { salesApi } from "../api/salesApi";
 import type { SaleListItemDto } from "../api/salesTypes";
 import {
@@ -32,6 +33,8 @@ import "../components/pos.css";
 
 const DASHBOARD_PAGE_SIZE = 50;
 const RECENT_SALES_LIMIT = 10;
+
+type Translate = (phrase: string) => string;
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -72,15 +75,15 @@ function buildSalesPaths(companyId: string): SalesPaths {
     import: `${base}/import`,
     register: `${base}/list`,
     reports: `${base}/reports`,
-    saleDetail: (saleId: string) => `${base}/${saleId}`,
+    saleDetail: (saleId: string) => `${base}/details/${saleId}`,
   };
 }
 
-function formatRefreshText(pageState: PageState, lastLoadedAt: Date | null): string {
-  if (pageState.status === "loading") return "Refreshing dashboard...";
-  if (pageState.status === "error") return "Dashboard refresh failed";
-  if (lastLoadedAt) return `Last refreshed ${lastLoadedAt.toLocaleTimeString()}`;
-  return "Ready for refresh";
+function formatRefreshText(pageState: PageState, lastLoadedAt: Date | null, tx: Translate): string {
+  if (pageState.status === "loading") return tx("Refreshing dashboard...");
+  if (pageState.status === "error") return tx("Dashboard refresh failed");
+  if (lastLoadedAt) return `${tx("Last refreshed")} ${lastLoadedAt.toLocaleTimeString()}`;
+  return tx("Ready for refresh");
 }
 
 function buildSummary(sales: SaleListItemDto[]): SalesSummary {
@@ -103,6 +106,7 @@ function buildSummary(sales: SaleListItemDto[]): SalesSummary {
 
 export default function SalesDashboardPage() {
   const navigate = useNavigate();
+  const { tx } = useI18n();
   const { companyId, branchId } = useAppScope();
 
   const [sales, setSales] = useState<SaleListItemDto[]>([]);
@@ -116,7 +120,7 @@ export default function SalesDashboardPage() {
 
   const loading = pageState.status === "loading";
   const errorMessage = pageState.status === "error" ? pageState.message : null;
-  const refreshText = formatRefreshText(pageState, lastLoadedAt);
+  const refreshText = formatRefreshText(pageState, lastLoadedAt, tx);
 
   const go = useCallback(
     (path: string) => {
@@ -130,8 +134,7 @@ export default function SalesDashboardPage() {
       setSales([]);
       setPageState({
         status: "error",
-        message:
-          "Company context is required before the sales dashboard can be loaded.",
+        message: tx("Company context is required before the sales dashboard can be loaded."),
       });
       return;
     }
@@ -167,11 +170,11 @@ export default function SalesDashboardPage() {
         status: "error",
         message: extractApiError(
           error,
-          "The sales dashboard could not be refreshed. Please retry or contact your system administrator."
+          tx("The sales dashboard could not be refreshed. Please retry or contact your system administrator.")
         ),
       });
     }
-  }, [companyId, branchId]);
+  }, [companyId, branchId, tx]);
 
   useEffect(() => {
     void load();
@@ -181,7 +184,7 @@ export default function SalesDashboardPage() {
     return (
       <div className="pos-page">
         <Alert tone="warning">
-          Company context is required before opening the sales control dashboard.
+          {tx("Company context is required before opening the sales control dashboard.")}
         </Alert>
       </div>
     );
@@ -191,39 +194,37 @@ export default function SalesDashboardPage() {
     <div className="pos-page">
       <div className="pos-topbar">
         <div className="pos-title">
-          <h1>Sales Control Dashboard</h1>
+          <h1>{tx("Sales Control Dashboard")}</h1>
           <p>
-            Executive view of today&apos;s revenue, COGS, gross profit, cashier activity,
-            and inventory accounting status.
+            {tx("Executive view of today revenue, COGS, gross profit, cashier activity, and inventory accounting status.")}
           </p>
           <p className="sales-refresh-text">{refreshText}</p>
         </div>
 
         <div className="pos-actions">
           <Button onClick={() => go(paths.pos)}>
-            <Monitor size={16} /> POS Terminal
+            <Monitor size={16} /> {tx("POS Terminal")}
           </Button>
 
           <Button onClick={() => go(paths.session)}>
-            <CalendarClock size={16} /> Session Control
+            <CalendarClock size={16} /> {tx("Session Control")}
           </Button>
 
           <Button onClick={() => go(paths.import)}>
-            <Upload size={16} /> Import Sales
+            <Upload size={16} /> {tx("Import Sales")}
           </Button>
 
           <Button variant="primary" onClick={() => go(paths.register)}>
-            <ShoppingCart size={16} /> Sales Register
+            <ShoppingCart size={16} /> {tx("Sales Register")}
           </Button>
         </div>
       </div>
 
-      {errorMessage ? <Alert tone="danger">{errorMessage}</Alert> : null}
+      {errorMessage ? <Alert tone="danger">{tx(errorMessage)}</Alert> : null}
 
       {!branchId ? (
         <Alert tone="warning">
-          Select a branch to load branch-level sales activity. Company administrators can
-          switch branches from the workspace selector.
+          {tx("Select a branch to load branch-level sales activity. Company administrators can switch branches from the workspace selector.")}
         </Alert>
       ) : null}
 
@@ -231,9 +232,9 @@ export default function SalesDashboardPage() {
 
       {summary.pendingInventory > 0 ? (
         <Alert tone="warning">
-          <AlertTriangle size={16} /> {summary.pendingInventory} sale
-          {summary.pendingInventory !== 1 ? "s" : ""} require inventory and COGS posting
-          before the day can be fully reconciled.
+          <AlertTriangle size={16} /> {summary.pendingInventory} {summary.pendingInventory === 1
+            ? tx("sale requires inventory and COGS posting before the day can be fully reconciled.")
+            : tx("sales require inventory and COGS posting before the day can be fully reconciled.")}
         </Alert>
       ) : null}
 
@@ -252,16 +253,18 @@ export default function SalesDashboardPage() {
 }
 
 function SalesKpis({ summary }: { summary: SalesSummary }) {
+  const { tx } = useI18n();
+
   return (
     <div className="sales-kpi-grid">
-      <Kpi label="Net Sales Today" value={money(summary.totalSales)} />
-      <Kpi label="Cost of Goods Sold" value={money(summary.totalCogs)} />
-      <Kpi label="Gross Profit" value={money(summary.grossProfit)} />
-      <Kpi label="Gross Margin" value={`${summary.margin.toFixed(1)}%`} />
-      <Kpi label="Transactions" value={summary.transactions} />
-      <Kpi label="Average Ticket" value={money(summary.avgTicket)} />
-      <Kpi label="Inventory Posted" value={summary.postedInventory} />
-      <Kpi label="Inventory Pending" value={summary.pendingInventory} />
+      <Kpi label={tx("Net Sales Today")} value={money(summary.totalSales)} />
+      <Kpi label={tx("Cost of Goods Sold")} value={money(summary.totalCogs)} />
+      <Kpi label={tx("Gross Profit")} value={money(summary.grossProfit)} />
+      <Kpi label={tx("Gross Margin")} value={`${summary.margin.toFixed(1)}%`} />
+      <Kpi label={tx("Transactions")} value={summary.transactions} />
+      <Kpi label={tx("Average Ticket")} value={money(summary.avgTicket)} />
+      <Kpi label={tx("Inventory Posted")} value={summary.postedInventory} />
+      <Kpi label={tx("Inventory Pending")} value={summary.pendingInventory} />
     </div>
   );
 }
@@ -277,17 +280,18 @@ function RecentSalesCard({
   onRefresh: () => void;
   onOpenSale: (saleId: string) => void;
 }) {
+  const { tx } = useI18n();
   const subtitle = loading
-    ? "Refreshing today&apos;s transaction register"
-    : `${sales.length} transaction${sales.length === 1 ? "" : "s"} recorded today`;
+    ? tx("Refreshing today transaction register")
+    : `${sales.length} ${sales.length === 1 ? tx("transaction recorded today") : tx("transactions recorded today")}`;
 
   return (
     <Card
-      title="Recent Sales Activity"
+      title={tx("Recent Sales Activity")}
       subtitle={subtitle}
       action={
         <Button size="sm" onClick={onRefresh} disabled={loading}>
-          <RefreshCw size={14} /> Refresh
+          <RefreshCw size={14} /> {tx("Refresh")}
         </Button>
       }
     >
@@ -295,12 +299,12 @@ function RecentSalesCard({
         <table className="pos-table">
           <thead>
             <tr>
-              <th>Sale No.</th>
-              <th>Transaction Time</th>
-              <th>Sale Status</th>
-              <th>Payment Status</th>
-              <th style={{ textAlign: "right" }}>Net Amount</th>
-              <th>Inventory Accounting</th>
+              <th>{tx("Sale No.")}</th>
+              <th>{tx("Transaction Time")}</th>
+              <th>{tx("Sale Status")}</th>
+              <th>{tx("Payment Status")}</th>
+              <th style={{ textAlign: "right" }}>{tx("Net Amount")}</th>
+              <th>{tx("Inventory Accounting")}</th>
             </tr>
           </thead>
 
@@ -308,7 +312,7 @@ function RecentSalesCard({
             {loading ? (
               <tr>
                 <td colSpan={6} className="sales-empty-cell">
-                  Loading today&apos;s sales activity...
+                  {tx("Loading today sales activity...")}
                 </td>
               </tr>
             ) : null}
@@ -316,7 +320,7 @@ function RecentSalesCard({
             {!loading && sales.length === 0 ? (
               <tr>
                 <td colSpan={6} className="sales-empty-cell">
-                  No sales transactions have been recorded for today.
+                  {tx("No sales transactions have been recorded for today.")}
                 </td>
               </tr>
             ) : null}
@@ -327,7 +331,7 @@ function RecentSalesCard({
                     key={sale.id}
                     onClick={() => onOpenSale(sale.id)}
                     style={{ cursor: "pointer" }}
-                    title="Open sale detail"
+                    title={tx("Open sale detail")}
                   >
                     <td className="sales-mono">{sale.saleNo}</td>
                     <td>{dateTime(sale.soldAtUtc)}</td>
@@ -352,27 +356,29 @@ function RecentSalesCard({
 }
 
 function QuickActionsCard({ paths, go }: { paths: SalesPaths; go: (path: string) => void }) {
+  const { tx } = useI18n();
+
   return (
-    <Card title="Operational Shortcuts" subtitle="Daily sales and POS control workflow">
+    <Card title={tx("Operational Shortcuts")} subtitle={tx("Daily sales and POS control workflow")}>
       <div className="sales-shortcut-stack">
         <Button variant="primary" size="lg" block onClick={() => go(paths.pos)}>
-          <Monitor size={16} /> Start POS Transaction
+          <Monitor size={16} /> {tx("Start POS Transaction")}
         </Button>
 
         <Button block onClick={() => go(paths.session)}>
-          <CalendarClock size={16} /> Open / Close Cashier Session
+          <CalendarClock size={16} /> {tx("Open / Close Cashier Session")}
         </Button>
 
         <Button block onClick={() => go(paths.register)}>
-          <ShoppingCart size={16} /> Review Sales Register
+          <ShoppingCart size={16} /> {tx("Review Sales Register")}
         </Button>
 
         <Button block onClick={() => go(paths.reports)}>
-          <BarChart3 size={16} /> Open Sales Reports
+          <BarChart3 size={16} /> {tx("Open Sales Reports")}
         </Button>
 
         <Button block onClick={() => go(paths.import)}>
-          <Upload size={16} /> Import External POS Sales
+          <Upload size={16} /> {tx("Import External POS Sales")}
         </Button>
       </div>
     </Card>

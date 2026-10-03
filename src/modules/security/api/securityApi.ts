@@ -285,6 +285,9 @@ function normalizeUserWritePayload<T extends CreateSecurityUserRequest | UpdateS
   body: T,
   roles?: string[]
 ): T {
+  const companyEmployeeId = normalizeGuid(
+    (body as any).companyEmployeeId ?? (body as any).employeeId
+  );
   const stockLocationIds = normalizeStockLocationIdsFromBody(body);
   const defaultStockLocationId = normalizeDefaultId(
     body.stockLocationId,
@@ -294,6 +297,8 @@ function normalizeUserWritePayload<T extends CreateSecurityUserRequest | UpdateS
   return stripEmptyAccessFields({
     ...body,
     ...(roles ? { roles } : {}),
+    companyEmployeeId,
+    employeeId: companyEmployeeId,
     storeId: normalizeGuid((body as any).storeId),
     stockLocationIds,
     allowedStockLocationIds: stockLocationIds,

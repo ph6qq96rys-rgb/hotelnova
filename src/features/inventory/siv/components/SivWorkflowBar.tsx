@@ -7,6 +7,7 @@
 import { WORKFLOW_TRACK, WORKFLOW_ROLES, workflowStep } from "../types/sivTypes";
 import type { SivStatus } from "../types/sivTypes";
 import "../pages/siv-draft.css";
+import { useI18n } from "../../../../i18n";
 
 interface Props {
   status: SivStatus;
@@ -25,6 +26,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 export default function SivWorkflowBar({ status }: Props) {
+  const { tx } = useI18n();
   const cur       = workflowStep(status);
   const isTerminal = TERMINAL.includes(status);
 
@@ -82,7 +84,7 @@ export default function SivWorkflowBar({ status }: Props) {
                     whiteSpace:   "nowrap",
                   }}
                 >
-                  {step}
+                  {tx(step)}
                 </div>
                 <div
                   style={{
@@ -93,7 +95,7 @@ export default function SivWorkflowBar({ status }: Props) {
                     fontFamily:"var(--mono)",
                   }}
                 >
-                  {WORKFLOW_ROLES[step]}
+                  {tx(WORKFLOW_ROLES[step])}
                 </div>
               </div>
             </div>
@@ -120,7 +122,7 @@ export default function SivWorkflowBar({ status }: Props) {
       {isTerminal && (
         <div style={{ marginLeft: 14, paddingBottom: 22 }}>
           <span className={STATUS_BADGE[status] ?? "badge badge-neutral"}>
-            {status}
+            {tx(status)}
           </span>
         </div>
       )}

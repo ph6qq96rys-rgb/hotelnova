@@ -1026,6 +1026,7 @@ export default function CompanyOnboardingModule() {
                   companyId={state.companyId}
                   branchId={state.branchId}
                   branchName={activeBranch?.name ?? branchLabel(activeBranch)}
+                  hasSalesOperations={activeBranch?.hasSalesOperations ?? true}
                   saving={state.saving}
                   dispatch={dispatch}
                   onChanged={refreshCurrentBranch}

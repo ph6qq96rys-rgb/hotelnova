@@ -1,3 +1,4 @@
+import "../../styles/design-system.css";
 import * as React from "react";
 
 type ButtonVariant = "default" | "secondary" | "outline" | "destructive" | "ghost" | "link";
@@ -42,7 +43,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       // Best-effort: render a span wrapper for styling when using asChild.
       // Prefer adding Radix Slot if you need real "asChild" semantics.
       return (
-        <span className={cn(base, variants[variant], sizes[size], className)}>
+        <span className={cn("ui-button", `ui-button--${variant}`, `ui-button-size--${size}`, base, variants[variant], sizes[size], className)}>
           {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
           <button ref={ref} {...props} className="contents" />
         </span>
@@ -52,7 +53,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         ref={ref}
-        className={cn(base, variants[variant], sizes[size], className)}
+        className={cn("ui-button", `ui-button--${variant}`, `ui-button-size--${size}`, base, variants[variant], sizes[size], className)}
         {...props}
       />
     );

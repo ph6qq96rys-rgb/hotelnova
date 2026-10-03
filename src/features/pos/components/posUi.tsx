@@ -1,6 +1,8 @@
 // src/features/pos/components/posUi.tsx
 
 import type { CSSProperties, ReactNode } from "react";
+import { Button as SharedButton } from "../../../components/ui/button";
+import "../../../styles/erp-tokens.css";
 
 export const money = (n: number | null | undefined) =>
   `${Number(n || 0).toFixed(2)} ETB`;
@@ -12,8 +14,8 @@ export function Spinner() {
         display: "inline-block",
         width: 14,
         height: 14,
-        border: "2px solid rgba(255,255,255,0.18)",
-        borderTopColor: "#D4A853",
+        border: "2px solid var(--erp-border)",
+        borderTopColor: "var(--erp-accent)",
         borderRadius: "50%",
         animation: "hn-spin 0.7s linear infinite",
       }}
@@ -40,55 +42,11 @@ export function Button({
   className?: string;
   title?: string;
 }) {
-  const variants = {
-    ghost: {
-      background: "#1F1F23",
-      color: "#A1A09A",
-      border: "1px solid rgba(255,255,255,0.08)",
-    },
-    gold: {
-      background: "#D4A853",
-      color: "#000",
-      border: "1px solid #D4A853",
-    },
-    danger: {
-      background: "rgba(248,113,113,.12)",
-      color: "#F87171",
-      border: "1px solid rgba(248,113,113,.25)",
-    },
-    green: {
-      background: "rgba(74,222,128,.12)",
-      color: "#4ADE80",
-      border: "1px solid rgba(74,222,128,.25)",
-    },
-  } as const;
-
-  return (
-    <button
-      type="button"
-      className={className}
-      title={title}
-      disabled={disabled || loading}
-      onClick={!disabled && !loading ? onClick : undefined}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 8,
-        padding: "9px 14px",
-        borderRadius: 8,
-        fontSize: 13,
-        fontWeight: 600,
-        cursor: disabled || loading ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-        fontFamily: "inherit",
-        ...variants[variant],
-        ...style,
-      }}
-    >
-      {loading ? <Spinner /> : children}
-    </button>
-  );
+  return <SharedButton type="button" className={className} title={title}
+    variant={variant === "danger" ? "destructive" : variant === "ghost" ? "outline" : "default"}
+    disabled={disabled || loading} aria-busy={loading} onClick={onClick} style={style}>
+    {loading && <Spinner />}{children}
+  </SharedButton>;
 }
 
 export function Card({
@@ -107,8 +65,8 @@ export function Card({
       className={className}
       title={title}
       style={{
-        background: "#18181B",
-        border: "1px solid rgba(255,255,255,0.07)",
+        background: "var(--erp-surface)",
+        border: "1px solid var(--erp-border)",
         borderRadius: 8,
         padding: 16,
         ...style,
@@ -127,11 +85,11 @@ export function Pill({
   tone?: "muted" | "green" | "gold" | "danger" | "red";
 }) {
   const tones = {
-    muted: { background: "#27272C", color: "#A1A09A" },
-    green: { background: "rgba(74,222,128,.12)", color: "#4ADE80" },
-    gold: { background: "rgba(212,168,83,.12)", color: "#D4A853" },
-    danger: { background: "rgba(248,113,113,.12)", color: "#F87171" },
-    red: { background: "rgba(248,113,113,.12)", color: "#F87171" },
+    muted: { background: "var(--erp-surface-2)", color: "var(--erp-text-muted)" },
+    green: { background: "var(--erp-success-bg)", color: "var(--erp-success)" },
+    gold: { background: "var(--erp-accent-bg)", color: "var(--erp-accent)" },
+    danger: { background: "var(--erp-danger-bg)", color: "var(--erp-danger)" },
+    red: { background: "var(--erp-danger-bg)", color: "var(--erp-danger)" },
   };
 
   return (
@@ -166,13 +124,13 @@ export function Field({
         justifyContent: "space-between",
         gap: 12,
         padding: "9px 0",
-        borderBottom: "1px solid rgba(255,255,255,.06)",
+        borderBottom: "1px solid var(--erp-border-soft)",
       }}
     >
-      <span style={{ color: "#71717A", fontSize: 12 }}>{label}</span>
+      <span style={{ color: "var(--erp-text-muted)", fontSize: 12 }}>{label}</span>
       <strong
         style={{
-          color: accent ? "#D4A853" : "#FAFAF9",
+          color: accent ? "var(--erp-accent)" : "var(--erp-text)",
           fontSize: 13,
           textAlign: "right",
         }}
@@ -191,8 +149,8 @@ export function EmptyState({
   detail?: string;
 }) {
   return (
-    <div style={{ textAlign: "center", padding: 36, color: "#71717A" }}>
-      <div style={{ fontSize: 15, color: "#FAFAF9", marginBottom: 6 }}>
+    <div style={{ textAlign: "center", padding: 36, color: "var(--erp-text-muted)" }}>
+      <div style={{ fontSize: 15, color: "var(--erp-text)", marginBottom: 6 }}>
         {title}
       </div>
       {detail && (
@@ -218,27 +176,27 @@ export function ensurePosStyles() {
     .erp-pos-input {
       width: 100%;
       box-sizing: border-box;
-      background: #1F1F23;
-      border: 1px solid rgba(255,255,255,.08);
+      background: var(--erp-surface);
+      border: 1px solid var(--erp-border);
       border-radius: 8px;
       padding: 10px 12px;
-      color: #FAFAF9;
+      color: var(--erp-text);
       outline: none;
       font-family: inherit;
     }
 
     .erp-pos-input:focus {
       border-color: rgba(212,168,83,.7);
-      box-shadow: 0 0 0 3px rgba(212,168,83,.12);
+      box-shadow: 0 0 0 3px var(--erp-accent-bg);
     }
 
     .erp-pos-input::placeholder {
-      color: #71717A;
+      color: var(--erp-text-muted);
     }
 
     .erp-pos-label {
       display: block;
-      color: #71717A;
+      color: var(--erp-text-muted);
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: .08em;

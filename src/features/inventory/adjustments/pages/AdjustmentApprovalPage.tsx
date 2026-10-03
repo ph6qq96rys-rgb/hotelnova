@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
+import { formatCurrency } from "../../../../shared/currency/currencyFormat";
 import { adjustmentApi, getApiError } from "../api/adjustmentApi";
 import type { InventoryAdjustmentDto } from "../types";
 import {
@@ -32,10 +33,7 @@ function formatQty(value?: number | null): string {
 }
 
 function formatMoney(value?: number | null): string {
-  return `ETB ${Number(value ?? 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatCurrency(value);
 }
 
 export default function AdjustmentApprovalPage() {

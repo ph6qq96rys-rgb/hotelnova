@@ -65,7 +65,7 @@ type BranchContext = {
   branchName?: string;
 };
 
-const VALID_MINUTES_OPTIONS = [5, 10, 15, 30, 60, 120, 240, 480];
+
 const QR_TYPES: AttendanceQrCodeType[] = ["Both", "ClockIn", "ClockOut"];
 
 export default function BranchAttendanceQrGeneratorPage({
@@ -100,7 +100,7 @@ export default function BranchAttendanceQrGeneratorPage({
   const resolvedBranchName = branchName ?? storedContext.branchName;
 
   const [type, setType] = useState<AttendanceQrCodeType>("Both");
-  const [validMinutes, setValidMinutes] = useState(5);
+  const validMinutes = 0;
   const [qr, setQr] = useState<AttendanceQrCodeDto | null>(null);
   const [qrImageUrl, setQrImageUrl] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -179,11 +179,23 @@ export default function BranchAttendanceQrGeneratorPage({
 
   useEffect(() => {
     void loadCurrent();
+    const poll=window.setInterval(()=>{if(document.visibilityState==="visible")void loadCurrent();},60000);
+    return ()=>window.clearInterval(poll);
   }, [loadCurrent]);
 
   useEffect(() => {
     void loadQrImage();
   }, [loadQrImage]);
+
+  useEffect(() => {
+    if (!qr?.validToUtc) return;
+    const refresh=()=>{clearQrImage();void loadCurrent();};
+    const delay=Math.max(0,new Date(qr.validToUtc).getTime()-Date.now());
+    const timer=window.setTimeout(refresh,Math.min(delay+100,2147483647));
+    const focus=()=>{if(Date.now()>=new Date(qr.validToUtc!).getTime())refresh();};
+    window.addEventListener("focus",focus);
+    return ()=>{clearTimeout(timer);window.removeEventListener("focus",focus);};
+  },[qr?.id,qr?.validToUtc,loadCurrent,clearQrImage]);
 
   const generate = useCallback(
     async (event?: FormEvent) => {
@@ -379,21 +391,7 @@ export default function BranchAttendanceQrGeneratorPage({
             </select>
           </label>
 
-          <label style={styles.label}>
-            Valid for
-            <select
-              value={validMinutes}
-              onChange={(event) => setValidMinutes(Number(event.target.value))}
-              style={styles.input}
-              disabled={loading}
-            >
-              {VALID_MINUTES_OPTIONS.map((minutes) => (
-                <option key={minutes} value={minutes}>
-                  {minutes} minutes
-                </option>
-              ))}
-            </select>
-          </label>
+          <p>QR codes renew daily at midnight in the branch attendance timezone. Replace printed copies each day.</p>
 
           <div style={styles.actions}>
             <button type="submit" style={styles.primaryButton} disabled={loading}>

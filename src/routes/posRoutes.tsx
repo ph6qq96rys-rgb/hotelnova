@@ -1,5 +1,5 @@
 // src/routes/posRoutes.tsx
-import { PosSalesPage, PosSessionPage, PosOperationsPage } from "../features/pos";
+import { PosSalesPage, PosSessionPage, PosOperationsPage, PosTablesSetupPage } from "../features/pos";
 import type { AppRoute } from "./sales-cogsroute";
 
 export function getPostRoutes(): AppRoute[] {
@@ -27,6 +27,14 @@ export function getPostRoutes(): AppRoute[] {
       section: "Sales",
       nav: true,
       permissions: ["pos.view"],
+    },
+    {
+      path: "sales/pos/tables",
+      element: <PosTablesSetupPage />,
+      label: "POS Tables",
+      section: "Sales",
+      nav: true,
+      permissions: ["tables.view"],
     },
   ];
 }

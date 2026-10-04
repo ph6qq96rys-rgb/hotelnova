@@ -144,6 +144,9 @@ export interface SaleDto {
 }
 
 export interface SaleListItemDto {
+  /** Table and waiter when the sale settled a POS ticket. */
+  tableLabel?: string | null;
+  waiterName?: string | null;
   id: Guid;
   saleNo: string;
   soldAtUtc: string;

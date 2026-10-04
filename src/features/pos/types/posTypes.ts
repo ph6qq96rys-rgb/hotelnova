@@ -118,6 +118,14 @@ export interface CreateSaleRequest {
    * posApi should normalize this into payments before sending.
    */
   payment?: SalePaymentRequest | null;
+
+  /** Order type and serving waiter recorded on a counter sale. */
+  service?: {
+    orderType?: "dineIn" | "takeAway" | "delivery" | "roomService" | null;
+    waiterEmployeeId?: Guid | null;
+    waiterUserId?: Guid | null;
+    guestCount?: number | null;
+  } | null;
 }
 
 export interface SaleLineDto {

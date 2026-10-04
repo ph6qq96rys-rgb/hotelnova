@@ -1,0 +1,120 @@
+/* Restaurant POS: floor plan, tickets, waiter assignment. Shared tokens only. */
+
+.rpos-page { min-height: calc(100dvh - 56px); box-sizing: border-box; }
+.rpos-shell { display: flex; flex-direction: column; gap: var(--ui-space-4); min-width: 0; }
+.rpos-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--ui-space-4); flex-wrap: wrap; }
+.rpos-header h1 { margin: 0; font-size: clamp(22px, 2vw, 28px); line-height: 1.25; }
+.rpos-header p { margin: 4px 0 0; }
+.rpos-muted { color: var(--text-muted); font-size: 13px; }
+.rpos-chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2); }
+.rpos-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 600; }
+.rpos-badge--ok { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.rpos-badge--bad { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); }
+.rpos-alert { margin: 0; padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--danger-border); background: var(--danger-bg); color: var(--danger); }
+.rpos-notice { display: flex; align-items: center; gap: var(--ui-space-3); padding: 10px 14px; border-radius: var(--r-md); border: 1px solid var(--border); }
+.rpos-notice > span { flex: 1; }
+.rpos-notice--ok { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.rpos-notice--bad { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); }
+
+/* Floor */
+.rpos-floor { display: flex; flex-direction: column; gap: var(--ui-space-4); }
+.rpos-floor-toolbar { display: flex; justify-content: space-between; gap: var(--ui-space-3); flex-wrap: wrap; }
+.rpos-area h3 { margin: 0 0 var(--ui-space-2); font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+.rpos-table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--ui-space-3); }
+.ui-button.ui-button.rpos-table { display: flex; flex-direction: column; align-items: stretch; justify-content: space-between; gap: 6px; min-height: 112px; padding: 12px; text-align: start; border-width: 2px; border-radius: var(--r-lg); font-weight: 400; background: var(--surface); }
+.ui-button.ui-button.rpos-table--free { border-color: var(--success-border); }
+.ui-button.ui-button.rpos-table--occupied { border-color: var(--warn-border); background: var(--warn-bg); }
+.ui-button.ui-button.rpos-table--mine { border-color: var(--ui-primary); background: var(--accent-light); }
+.rpos-table-head, .rpos-table-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.rpos-table-head strong { font-size: 20px; line-height: 1.1; }
+.rpos-table-head span, .rpos-table-foot span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: 12px; }
+.rpos-table-status { color: var(--text-muted); font-size: 12px; }
+.rpos-table-waiter { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.rpos-ticket-list { display: grid; gap: var(--ui-space-2); }
+.ui-button.ui-button.rpos-ticket-row { display: grid; grid-template-columns: minmax(90px, auto) 1fr 1fr auto auto; justify-content: stretch; gap: var(--ui-space-3); text-align: start; font-weight: 400; }
+.rpos-empty { display: grid; gap: 6px; padding: 24px; border: 1px dashed var(--border); border-radius: var(--r-lg); background: var(--surface-2); }
+
+/* Order screen */
+.rpos-order { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: var(--ui-space-4); align-items: start; }
+.rpos-menu, .rpos-payment, .rpos-ticket { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--ui-space-4); min-width: 0; }
+.rpos-menu { display: flex; flex-direction: column; gap: var(--ui-space-3); }
+.rpos-menu-search { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--ui-space-2); color: var(--text-muted); }
+.rpos-category-strip { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+.rpos-menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--ui-space-3); }
+.ui-button.ui-button.rpos-menu-card { display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 6px; min-height: 112px; padding: 12px; text-align: start; font-weight: 400; border-radius: var(--r-lg); }
+.ui-button.ui-button.rpos-menu-card:hover:not(:disabled) { border-color: var(--ui-primary); filter: none; }
+.rpos-menu-card strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.rpos-menu-name { font-weight: 650; overflow-wrap: anywhere; }
+.rpos-menu-blocked { color: var(--danger); font-size: 11px; }
+
+.rpos-ticket { position: sticky; top: var(--ui-space-4); display: flex; flex-direction: column; gap: var(--ui-space-3); max-height: calc(100dvh - 32px); }
+.rpos-ticket-head { display: flex; align-items: flex-start; gap: var(--ui-space-2); }
+.rpos-ticket-head h2 { margin: 0; font-size: 18px; }
+.rpos-ticket-head p { margin: 2px 0 0; }
+.rpos-ticket-meta { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ui-space-2) var(--ui-space-3); }
+.rpos-ticket-meta label, .rpos-field { display: grid; gap: 4px; font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.rpos-ticket-meta label strong { color: var(--text); font-size: 14px; }
+.rpos-ticket-meta p { grid-column: 1 / -1; margin: 0; }
+.rpos-ticket-lines { overflow: auto; min-height: 80px; display: flex; flex-direction: column; gap: var(--ui-space-3); }
+.rpos-round h3 { margin: 0 0 4px; font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.rpos-round--draft { border: 1px dashed var(--ui-primary); border-radius: var(--r-md); padding: 8px; background: var(--accent-light); }
+.rpos-line { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-soft); font-variant-numeric: tabular-nums; }
+.rpos-round--draft .rpos-line { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+.rpos-line-qty { font-weight: 700; }
+.rpos-line-name { display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.rpos-line-name small { color: var(--text-muted); font-size: 11px; }
+.rpos-line.is-voided { color: var(--text-muted); }
+.rpos-line.is-voided .rpos-line-name, .rpos-line.is-voided strong { text-decoration: line-through; }
+.rpos-qty { display: inline-flex; align-items: center; gap: 6px; }
+.rpos-qty .ui-button.ui-button { min-height: 32px; min-width: 32px; padding: 4px; }
+.rpos-empty-line { margin: 0; padding: 24px 8px; text-align: center; color: var(--text-muted); background: var(--surface-2); border-radius: var(--r-md); }
+.rpos-totals { display: grid; gap: 6px; margin: 0; font-variant-numeric: tabular-nums; }
+.rpos-totals div { display: flex; justify-content: space-between; gap: var(--ui-space-3); }
+.rpos-totals dt { color: var(--text-muted); }
+.rpos-totals dd { margin: 0; }
+.rpos-totals .rpos-grand { border-top: 1px solid var(--border); padding-top: 8px; font-size: 18px; font-weight: 700; }
+.rpos-totals .rpos-grand dt { color: var(--text); }
+.rpos-totals .rpos-pending { color: var(--warn); font-size: 13px; }
+.rpos-ticket-actions { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); }
+.rpos-ticket-actions .ui-button.ui-button { flex: 1 1 auto; }
+
+.rpos-mobile-bar { display: none; position: sticky; bottom: 84px; z-index: 5; align-items: center; justify-content: space-between; gap: var(--ui-space-3); padding: 10px 12px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--ui-primary); box-shadow: var(--shadow-lg); }
+
+/* Payment */
+.rpos-payment { display: flex; flex-direction: column; gap: var(--ui-space-3); }
+.rpos-pay-due, .rpos-pay-change { display: flex; justify-content: space-between; align-items: baseline; gap: var(--ui-space-3); font-variant-numeric: tabular-nums; }
+.rpos-pay-due strong { font-size: 28px; }
+.rpos-pay-change strong { font-size: 20px; }
+.ui-button.ui-button.rpos-pay-confirm { width: 100%; min-height: 52px; font-size: 16px; }
+
+/* Dialogs */
+.rpos-dialog-body { display: flex; flex-direction: column; gap: var(--ui-space-3); }
+.rpos-dialog-actions { display: flex; justify-content: flex-end; gap: var(--ui-space-2); flex-wrap: wrap; }
+.rpos-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ui-space-3); }
+.rpos-span-all { grid-column: 1 / -1; }
+
+/* Table setup */
+.rpos-setup { display: flex; flex-direction: column; gap: var(--ui-space-4); }
+.rpos-setup-area { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--ui-space-4); display: grid; gap: var(--ui-space-3); }
+.rpos-setup-area > header { display: flex; justify-content: space-between; align-items: center; gap: var(--ui-space-3); flex-wrap: wrap; }
+.rpos-setup-area h2 { margin: 0; font-size: 18px; }
+.rpos-setup-row { display: grid; grid-template-columns: minmax(120px, 180px) 90px minmax(150px, 220px) minmax(110px, auto) auto; justify-content: start; gap: var(--ui-space-2); align-items: center; }
+.rpos-setup-head { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.rpos-setup-row--new { padding-top: var(--ui-space-2); border-top: 1px dashed var(--border); }
+.rpos-setup-new-area { display: flex; align-items: flex-end; gap: var(--ui-space-2); flex-wrap: wrap; }
+.rpos-setup-new-area .rpos-field { flex: 1 1 260px; max-width: 420px; }
+.rpos-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; min-height: var(--ui-control-height); }
+
+@media (max-width: 1000px) {
+  .rpos-order { grid-template-columns: minmax(0, 1fr); }
+  .rpos-ticket { position: static; max-height: none; }
+  .rpos-mobile-bar { display: flex; }
+}
+
+@media (max-width: 640px) {
+  .rpos-table-grid, .rpos-menu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rpos-form-grid, .rpos-ticket-meta { grid-template-columns: 1fr; }
+  .ui-button.ui-button.rpos-ticket-row { grid-template-columns: 1fr auto; }
+  .rpos-setup-row { grid-template-columns: 1fr 80px; }
+  .rpos-setup-head { display: none; }
+}

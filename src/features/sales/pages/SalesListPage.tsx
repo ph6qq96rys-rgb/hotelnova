@@ -482,7 +482,14 @@ function SalesTable({
                     onClick={() => onOpenSale(sale.id)}
                     style={{ cursor: "pointer" }}
                   >
-                    <td className="sales-mono">{sale.saleNo}</td>
+                    <td className="sales-mono">
+                      {sale.saleNo}
+                      {sale.tableLabel || sale.waiterName ? (
+                        <small style={{ display: "block", fontFamily: "inherit", color: "var(--text-muted)" }}>
+                          {[sale.tableLabel && `Table ${sale.tableLabel}`, sale.waiterName].filter(Boolean).join(" · ")}
+                        </small>
+                      ) : null}
+                    </td>
                     <td className="sales-item-cell">
                       <div
                         className="sales-item-stack"

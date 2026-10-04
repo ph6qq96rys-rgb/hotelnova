@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-import { stockLocationsApi } from "../../../../features/inventory/stock-locations/api/stockLocationsApi";
+import { stockLocationsApi } from "../../../inventory/stock-locations/api/stockLocationsApi";
+import { requestErrorMessage } from "../utils/fnbRequest";
 
 export type StockLocationOption = {
   id: string;
@@ -72,7 +73,7 @@ export function useStockLocations(
       } catch (error: unknown) {
         if (controller.signal.aborted) return;
 
-        setError(error instanceof Error ? error.message : "Failed to load stock locations.");
+        setError(requestErrorMessage(error, "Failed to load stock locations."));
         setItems([]);
       } finally {
         if (!controller.signal.aborted) {

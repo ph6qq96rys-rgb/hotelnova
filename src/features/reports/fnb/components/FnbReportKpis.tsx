@@ -1,5 +1,6 @@
+import { useI18n } from "../../../../i18n";
 import type { FnbReportKpiDto } from "../api/fnbReportsApi";
-import { formatReportValue } from "../utils/fnbReportFormatting";
+import { formatReportNumber, formatReportValue } from "../utils/fnbReportFormatting";
 
 type Props = {
   kpis: FnbReportKpiDto[];
@@ -12,19 +13,19 @@ export function FnbReportKpis({
   rowsShown,
   currencyCode = "ETB",
 }: Props) {
+  const { tx } = useI18n();
   return (
     <div className="fnb-kpi-grid">
-      {kpis.filter((kpi) => kpi.key !== "averageUnitCost" &&
-        (kpi.key !== "totalQty" || kpi.label.startsWith("Quantity ("))).map((kpi) => (
+      {kpis.map((kpi) => (
         <div key={kpi.key} className="fnb-kpi">
-          <span>{kpi.label}</span>
+          <span>{tx(kpi.label)}</span>
           <strong>{formatReportValue(kpi.value, kpi.format, currencyCode)}</strong>
         </div>
       ))}
 
       <div className="fnb-kpi">
-        <span>Rows Shown</span>
-        <strong>{rowsShown.toLocaleString("en-GB")}</strong>
+        <span>{tx("Rows shown")}</span>
+        <strong>{formatReportNumber(rowsShown)}</strong>
       </div>
     </div>
   );

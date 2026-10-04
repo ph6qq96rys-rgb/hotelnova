@@ -3,6 +3,7 @@ import {
   getFnbReportCatalog,
   type FnbReportCatalogDto,
 } from "../api/fnbReportsApi";
+import { requestErrorMessage } from "../utils/fnbRequest";
 
 export function useFnbReportCatalog(
   companyId?: string | null,
@@ -34,7 +35,7 @@ export function useFnbReportCatalog(
       setCatalog({ ...data, scope });
     } catch (err) {
       if (controller.signal.aborted) return;
-      setError(err instanceof Error ? err.message : "Failed to load F&B catalog.");
+      setError(requestErrorMessage(err, "Failed to load the F&B report catalog."));
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }

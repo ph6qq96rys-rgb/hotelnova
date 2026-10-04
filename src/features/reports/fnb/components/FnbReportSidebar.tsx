@@ -1,3 +1,4 @@
+import { useI18n } from "../../../../i18n";
 import type { FnbReportCatalogItemDto } from "../api/fnbReportsApi";
 
 type Props = {
@@ -13,6 +14,7 @@ export function FnbReportSidebar({
   loading = false,
   onSelect,
 }: Props) {
+  const { tx } = useI18n();
   const groupedReports = reports.reduce<Record<string, FnbReportCatalogItemDto[]>>(
     (acc, report) => {
       const group = report.category || "Other";
@@ -25,13 +27,13 @@ export function FnbReportSidebar({
 
   return (
     <aside className="fnb-sidebar">
-      <h3>Reports</h3>
+      <h3>{tx("Reports")}</h3>
 
-      {loading ? <p className="fnb-muted">Loading reports...</p> : null}
+      {loading ? <p className="fnb-muted">{tx("Loading reports...")}</p> : null}
 
       {Object.entries(groupedReports).map(([category, items]) => (
         <div key={category} className="fnb-sidebar-group">
-          <p className="fnb-sidebar-group-title">{category}</p>
+          <p className="fnb-sidebar-group-title">{tx(category)}</p>
 
           {items.map((report) => (
             <button
@@ -42,9 +44,10 @@ export function FnbReportSidebar({
                   ? "fnb-sidebar-item fnb-sidebar-item--active"
                   : "fnb-sidebar-item"
               }
+              aria-current={report.key === selected ? "true" : undefined}
               onClick={() => onSelect(report.key)}
             >
-              <span>{report.name}</span>
+              <span>{tx(report.name)}</span>
             </button>
           ))}
         </div>

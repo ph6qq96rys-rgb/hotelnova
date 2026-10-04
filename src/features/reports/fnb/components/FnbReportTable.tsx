@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { useI18n } from "../../../../i18n";
 import type {
   FnbReportColumnDto,
   FnbReportRow,
@@ -12,6 +13,8 @@ type Props = {
   loading: boolean;
   reportName?: string;
   currencyCode?: string;
+  /** Company reporting time zone for date-time columns. */
+  timeZone?: string | null;
   hasRun?: boolean;
   onRowOpen?: (row: FnbReportRow) => void;
 };
@@ -48,13 +51,16 @@ export function FnbReportTable({
   columns,
   rows,
   loading,
-  reportName = "Report Detail",
+  reportName,
   currencyCode = "ETB",
+  timeZone,
   hasRun = true,
   onRowOpen,
 }: Props) {
+  const { tx } = useI18n();
   const [sort, setSort] = useState<SortState>(null);
-  const visibleColumns = visibleReportColumns(columns);
+  const visibleColumns = useMemo(() => visibleReportColumns(columns), [columns]);
+  const title = reportName || tx("Report detail");
 
   const sortedRows = useMemo(() => {
     if (!sort) return rows;
@@ -93,7 +99,7 @@ export function FnbReportTable({
     if (column.key === "itemName") {
       return (
         <>
-          <strong>{String(row.itemName || "Unnamed item")}</strong>
+          <strong>{String(row.itemName || tx("Unnamed item"))}</strong>
           <span>
             {String(row.itemCode || "-")} - {String(row.uomName || "-")}
           </span>
@@ -101,21 +107,21 @@ export function FnbReportTable({
       );
     }
 
-    return formatReportValue(row[column.key], column.format, currencyCode);
+    return formatReportValue(row[column.key], column.format, currencyCode, timeZone);
   };
 
   const renderSortMarker = (column: FnbReportColumnDto) => {
     if (column.isSortable === false) return null;
-    if (sort?.key !== column.key) return <span aria-hidden="true">Sort</span>;
-    return <span aria-hidden="true">{sort.direction === "asc" ? "Asc" : "Desc"}</span>;
+    if (sort?.key !== column.key) return <span aria-hidden="true">{tx("Sort")}</span>;
+    return <span aria-hidden="true">{sort.direction === "asc" ? tx("Asc") : tx("Desc")}</span>;
   };
 
   return (
     <div className="fnb-table-card">
       <div className="fnb-table-toolbar">
         <div>
-          <strong>{reportName}</strong>
-          <p>Quantities use each item's base unit. Select an item to inspect its posted movements.</p>
+          <strong>{title}</strong>
+          <p>{tx("Quantities use each item's base unit. Select an item to inspect its posted movements.")}</p>
         </div>
       </div>
 
@@ -135,7 +141,7 @@ export function FnbReportTable({
                     onClick={() => toggleSort(column)}
                     disabled={column.isSortable === false}
                   >
-                    <span>{column.label}</span>
+                    <span>{tx(column.label)}</span>
                     {renderSortMarker(column)}
                   </button>
                 </th>
@@ -150,7 +156,7 @@ export function FnbReportTable({
                   colSpan={Math.max(visibleColumns.length, 1)}
                   className="fnb-empty"
                 >
-                  Loading report...
+                  {tx("Loading report...")}
                 </td>
               </tr>
             ) : sortedRows.length === 0 ? (
@@ -159,7 +165,7 @@ export function FnbReportTable({
                   colSpan={Math.max(visibleColumns.length, 1)}
                   className="fnb-empty"
                 >
-                  {hasRun ? "No rows match this report selection." : "Choose the report filters and select Run to load results."}
+                  {hasRun ? tx("No rows match this report selection.") : tx("Choose the report filters and select Run to load results.")}
                 </td>
               </tr>
             ) : (
@@ -196,7 +202,7 @@ export function FnbReportTable({
       </div>
 
       {!loading && sortedRows.length > 0 ? (
-        <div className="fnb-mobile-list" aria-label={`${reportName} mobile rows`}>
+        <div className="fnb-mobile-list" aria-label={title}>
           {sortedRows.map((row, index) => {
             const canOpen = Boolean(onRowOpen && row.itemId);
 
@@ -208,14 +214,14 @@ export function FnbReportTable({
                 onClick={() => handleRowClick(row)}
                 disabled={!canOpen}
               >
-                <strong>{String(row.itemName || row.itemCode || "Report row")}</strong>
+                <strong>{String(row.itemName || row.itemCode || tx("Report row"))}</strong>
                 <span>{String(row.locationName || row.categoryName || "-")}</span>
                 <dl>
                   {visibleColumns
                     .filter((column) => column.key !== "itemName")
                     .map((column) => (
                       <div key={column.key}>
-                        <dt>{column.label}</dt>
+                        <dt>{tx(column.label)}</dt>
                         <dd>{renderCell(row, column)}</dd>
                       </div>
                     ))}

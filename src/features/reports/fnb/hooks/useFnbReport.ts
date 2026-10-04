@@ -4,13 +4,7 @@ import {
   type FnbReportDto,
   type FnbReportQuery,
 } from "../api/fnbReportsApi";
-
-function isAbortError(error: unknown): boolean {
-  if (error instanceof DOMException && error.name === "AbortError") return true;
-  if (error instanceof Error && error.name === "CanceledError") return true;
-
-  return false;
-}
+import { isAbortError, requestErrorMessage } from "../utils/fnbRequest";
 
 export function useFnbReport(query: FnbReportQuery) {
   const [data, setData] = useState<FnbReportDto | null>(null);
@@ -41,7 +35,7 @@ export function useFnbReport(query: FnbReportQuery) {
       }
     } catch (err) {
       if (requestIdRef.current !== requestId || isAbortError(err)) return;
-      setError(err instanceof Error ? err.message : "Failed to run report.");
+      setError(requestErrorMessage(err, "Failed to run report."));
     } finally {
       if (requestIdRef.current === requestId) {
         setLoading(false);

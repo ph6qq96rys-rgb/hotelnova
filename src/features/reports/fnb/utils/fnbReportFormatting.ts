@@ -1,13 +1,7 @@
-import {
-  formatAppDate,
-  formatAppDateTime,
-  todayLocalIsoDate,
-} from "../../../../shared/datetime/dateFormat";
+import { formatAppDate, formatAppDateTime } from "../../../../shared/datetime/dateFormat";
 import type { FnbReportColumnDto, FnbReportFormat } from "../api/fnbReportsApi";
 
 const DASH = "-";
-
-export { formatAppDate, formatAppDateTime, todayLocalIsoDate };
 
 export function formatReportDate(value?: string | Date | null): string {
   return formatAppDate(value);
@@ -59,6 +53,7 @@ export function formatReportValue(
   value: unknown,
   format?: FnbReportFormat | string,
   currencyCode = "ETB",
+  timeZone?: string | null,
 ): string {
   if (value == null || value === "") return DASH;
 
@@ -83,7 +78,7 @@ export function formatReportValue(
       return formatReportDate(value as string | Date);
 
     case "datetime":
-      return formatReportDateTime(value as string | Date);
+      return formatReportDateTime(value as string | Date, timeZone);
 
     default:
       return String(value);

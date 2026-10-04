@@ -1,6 +1,10 @@
+import { Button } from "../../../../components/ui/button";
+import { Input } from "../../../../components/ui/input";
+import { Select } from "../../../../components/ui/select";
+import { useI18n } from "../../../../i18n";
+import type { DepartmentDto } from "../../../hr/types";
 import type { FnbReportCatalogItemDto } from "../api/fnbReportsApi";
 import type { StockLocationOption } from "../hooks/useStockLocations";
-import type { DepartmentDto } from "../../../hr/types";
 
 type Props = {
   report: FnbReportCatalogItemDto;
@@ -30,157 +34,127 @@ type Props = {
   onPrint: () => void;
 };
 
-export function FnbReportFilters(props: Props) {
+const optionLabel = (option: { code?: string | null; name: string }) =>
+  option.code ? `${option.code} - ${option.name}` : option.name;
+
+/** True when the selected report cannot run with the current date and threshold inputs. */
+function reportFilterErrors(props: Pick<Props, "report" | "from" | "to" | "asOfDate" | "days">) {
   const usesAsOfDate = props.report.supportsAsOfDate;
   const usesDateRange = props.report.supportsDateRange && !usesAsOfDate;
-  const invalidDate = (usesDateRange && (!props.from || !props.to || props.to < props.from)) ||
-    (usesAsOfDate && !props.asOfDate);
-  const invalidDays = props.report.supportsDays && (!Number.isInteger(props.days) || props.days < 1);
+  return {
+    invalidDate: (usesDateRange && (!props.from || !props.to || props.to < props.from)) || (usesAsOfDate && !props.asOfDate),
+    invalidDays: props.report.supportsDays && (!Number.isInteger(props.days) || props.days < 1),
+  };
+}
+
+export function FnbReportFilters(props: Props) {
+  const { tx } = useI18n();
+  const usesAsOfDate = props.report.supportsAsOfDate;
+  const usesDateRange = props.report.supportsDateRange && !usesAsOfDate;
+  const { invalidDate, invalidDays } = reportFilterErrors(props);
+  const busy = props.running;
 
   return (
     <div className="fnb-panel">
       <div className="fnb-panel-heading">
         <div>
-          <p className="fnb-section-kicker">{props.report.category}</p>
-          <h2 className="fnb-section-title">{props.report.name}</h2>
-          <p className="fnb-section-subtitle">{props.report.description}</p>
+          <p className="fnb-section-kicker">{tx(props.report.category)}</p>
+          <h2 className="fnb-section-title">{tx(props.report.name)}</h2>
+          <p className="fnb-section-subtitle">{tx(props.report.description)}</p>
         </div>
 
         <div className="fnb-filter-actions">
-          <button
-            type="button"
-            className="fnb-btn fnb-btn--primary"
-            onClick={props.onRun}
-            disabled={props.running || invalidDate || invalidDays}
-            title="Run Report"
-          >
-            {props.running ? "Running..." : "Run"}
-          </button>
-
-          <button
-            type="button"
-            className="fnb-btn"
-            onClick={props.onExport}
-            disabled={props.running || !props.hasResult}
-            title="Export CSV"
-          >
+          <Button type="button" size="sm" onClick={props.onRun} disabled={busy || invalidDate || invalidDays} title={tx("Run report")}>
+            {busy ? tx("Running...") : tx("Run")}
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={props.onExport} disabled={busy || !props.hasResult} title={tx("Export CSV")}>
             CSV
-          </button>
-
-          <button
-            type="button"
-            className="fnb-btn"
-            onClick={props.onPrint}
-            disabled={props.running || !props.hasResult}
-            title="Print"
-          >
-            Print
-          </button>
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={props.onPrint} disabled={busy || !props.hasResult} title={tx("Print")}>
+            {tx("Print")}
+          </Button>
         </div>
       </div>
 
       <div className="fnb-filter-grid">
-        {props.report.supportsCostCenter && <label>
-          <span>Department / cost center</span>
-          <select
-            className="fnb-input"
-            value={props.departmentId}
-            onChange={(e) => props.onDepartmentChange(e.target.value)}
-            disabled={props.loadingDepartments || props.running || !props.branchId}
-          >
-            <option value="">All departments</option>
-            {props.departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.code ? `${department.code} - ${department.name}` : department.name}
-              </option>
-            ))}
-          </select>
-        </label>}
+        {props.report.supportsCostCenter ? (
+          <label>
+            <span>{tx("Department / cost center")}</span>
+            <Select
+              value={props.departmentId}
+              onChange={(e) => props.onDepartmentChange(e.target.value)}
+              disabled={props.loadingDepartments || busy || !props.branchId}
+            >
+              <option value="">{tx("All departments")}</option>
+              {props.departments.map((department) => (
+                <option key={department.id} value={department.id}>{optionLabel(department)}</option>
+              ))}
+            </Select>
+          </label>
+        ) : null}
 
-        {usesDateRange && (
+        {usesDateRange ? (
           <>
             <label>
-              <span>From</span>
-              <input
-                className="fnb-input"
-                type="date"
-                required
-                value={props.from}
-                onChange={(e) => props.onFromChange(e.target.value)}
-              />
+              <span>{tx("From")}</span>
+              <Input type="date" required value={props.from} onChange={(e) => props.onFromChange(e.target.value)} />
             </label>
-
             <label>
-              <span>To</span>
-              <input
-                className="fnb-input"
-                type="date"
-                required
-                min={props.from}
-                value={props.to}
-                onChange={(e) => props.onToChange(e.target.value)}
-              />
+              <span>{tx("To")}</span>
+              <Input type="date" required min={props.from} value={props.to} onChange={(e) => props.onToChange(e.target.value)} />
             </label>
           </>
-        )}
+        ) : null}
 
-        {usesAsOfDate && (
+        {usesAsOfDate ? (
           <label>
-            <span>As of</span>
-            <input
-              className="fnb-input"
-              type="date"
-              required
-              value={props.asOfDate}
-              onChange={(e) => props.onAsOfDateChange(e.target.value)}
-            />
+            <span>{tx("As of")}</span>
+            <Input type="date" required value={props.asOfDate} onChange={(e) => props.onAsOfDateChange(e.target.value)} />
           </label>
-        )}
+        ) : null}
 
-        {props.report.supportsLocation && (
+        {props.report.supportsLocation ? (
           <label>
-            <span>Location</span>
-            <select
-              className="fnb-input"
+            <span>{tx("Location")}</span>
+            <Select
               value={props.locationId}
               onChange={(e) => props.onLocationChange(e.target.value)}
-              disabled={props.loadingLocations}
+              disabled={props.loadingLocations || busy}
             >
-              <option value="">All locations</option>
-              {props.locations.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.code ? `${x.code} - ${x.name}` : x.name}
-                </option>
+              <option value="">{tx("All locations")}</option>
+              {props.locations.map((location) => (
+                <option key={location.id} value={location.id}>{optionLabel(location)}</option>
               ))}
-            </select>
+            </Select>
           </label>
-        )}
+        ) : null}
 
-        {props.report.supportsDays && (
+        {props.report.supportsDays ? (
           <label>
-            <span>Inactive Days</span>
-            <input
-              className="fnb-input"
+            <span>{tx("Inactive days")}</span>
+            <Input
               type="number"
               min={1}
-              value={props.days}
-              onChange={(e) => props.onDaysChange(Number(e.target.value || 30))}
+              step={1}
+              value={Number.isFinite(props.days) ? props.days : ""}
+              aria-invalid={invalidDays || undefined}
+              onChange={(e) => props.onDaysChange(e.target.value === "" ? Number.NaN : Number(e.target.value))}
             />
           </label>
-        )}
+        ) : null}
 
         <label className="fnb-search-field">
-          <span>Search current result</span>
-          <input
-            className="fnb-input"
-            placeholder="Item, code, location, category..."
+          <span>{tx("Search current result")}</span>
+          <Input
+            type="search"
+            placeholder={tx("Item, code, location, category...")}
             value={props.search}
             onChange={(e) => props.onSearchChange(e.target.value)}
           />
         </label>
       </div>
-      {invalidDate ? <p className="fnb-alert" role="alert">Enter a valid report date or a date range ending on or after the start date.</p> : null}
-      {invalidDays ? <p className="fnb-alert" role="alert">Inactive days must be a whole number greater than zero.</p> : null}
+      {invalidDate ? <p className="fnb-alert" role="alert">{tx("Enter a valid report date or a date range ending on or after the start date.")}</p> : null}
+      {invalidDays ? <p className="fnb-alert" role="alert">{tx("Inactive days must be a whole number greater than zero.")}</p> : null}
     </div>
   );
 }

@@ -13,7 +13,16 @@ export const TEST_TIP_SETTINGS = {
   updatedAtUtc: "2026-10-04T09:00:00Z", version: "tips-v1",
 };
 
-export type PosMockState = { settleRequests: Array<Record<string, unknown>> };
+export type PosMockState = { settleRequests: Array<Record<string, unknown>>; holdRequests: Array<Record<string, unknown>> };
+
+export const TEST_SERVICE_SETTINGS = {
+  source: "branch", serviceStyle: "tableService", quickServiceRequiresTable: false, quickServiceRequiresWaiter: false,
+  requireGuestCount: false, requireHoldReason: false, holdReasons: ["Guests still ordering", "Guest will pay later"],
+  markTableForCleaningAfterPayment: false,
+  tableRequired: { dineIn: true, takeAway: false, delivery: false, roomService: false },
+  waiterRequired: { dineIn: true, takeAway: false, delivery: false, roomService: false },
+  version: "svc-v1",
+};
 
 const json = (route: Route, body: unknown, status = 200) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -38,7 +47,7 @@ const menuItem = {
  * sending a round and reading the ticket back behave like the real service.
  */
 export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Promise<PosMockState> {
-  const mockState: PosMockState = { settleRequests: [] };
+  const mockState: PosMockState = { settleRequests: [], holdRequests: [] };
   const openedAtUtc = new Date().toISOString();
   const waiter = { employeeId: "emp-qae-waiter", userId: "qae-user", name: "QAE Waiter", hasLogin: true, openTickets: 0 };
   let ticket: Record<string, unknown> | null = null;
@@ -63,6 +72,21 @@ export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Pr
       employeeId: mode === "waiter" ? waiter.employeeId : null, canManageTickets: mode === "cashier", canVoid: mode === "cashier" });
     if (path === "menu") return json(route, [menuItem]);
     if (path === "tips/settings") return json(route, TEST_TIP_SETTINGS);
+    if (path === "service-settings") return json(route, TEST_SERVICE_SETTINGS);
+    if (path === "orders/hold" && method === "POST") {
+      const body = route.request().postDataJSON();
+      mockState.holdRequests.push(body);
+      ticket = {
+        id: "ticket-1", ticketNo: "T0101-001", orderType: body.orderType, status: "open", tableId: body.tableId,
+        tableLabel: "T1", areaName: "Main hall", guestCount: body.guestCount ?? 1, waiterEmployeeId: waiter.employeeId,
+        waiterUserId: waiter.userId, waiterName: waiter.name, subtotal: menuItem.sellingPrice, openedAtUtc, lastActivityAtUtc: openedAtUtc,
+        openedByName: waiter.name, version: "v1", canEdit: true, canManage: mode === "cashier", heldAtUtc: openedAtUtc,
+        holdReason: body.holdReason, heldByName: waiter.name, events: [],
+        lines: [{ id: "line-1-0", menuItemId: menuItem.id, itemName: menuItem.name, quantity: 1, unitPrice: menuItem.sellingPrice,
+          lineTotal: menuItem.sellingPrice, round: 1, addedAtUtc: openedAtUtc, addedByName: waiter.name, isVoided: false }],
+      };
+      return json(route, ticket);
+    }
     if (path === "tickets/ticket-1/settle" && ticket) {
       mockState.settleRequests.push(route.request().postDataJSON());
       return json(route, {
@@ -78,8 +102,8 @@ export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Pr
     if (path === "floor") return json(route, {
       generatedAtUtc: new Date().toISOString(),
       areas: [{ id: "area-1", name: "Main hall", tables: [
-        { id: "table-1", number: "T1", seats: 4, status: ticket ? "occupied" : "free", tickets: ticket ? [summary()] : [] },
-        { id: "table-2", number: "T2", seats: 2, status: "free", tickets: [] },
+        { id: "table-1", number: "T1", seats: 4, status: ticket ? (ticket.heldAtUtc ? "held" : "occupied") : "available", serviceState: "available", tickets: ticket ? [summary()] : [] },
+        { id: "table-2", number: "T2", seats: 2, status: "needsCleaning", serviceState: "needsCleaning", tickets: [] },
       ] }],
       unseatedTickets: [],
     });
@@ -89,7 +113,7 @@ export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Pr
         id: "ticket-1", ticketNo: "T0101-001", orderType: body.orderType, status: "open", tableId: body.tableId,
         tableLabel: "T1", areaName: "Main hall", guestCount: body.guestCount, waiterEmployeeId: waiter.employeeId,
         waiterUserId: waiter.userId, waiterName: waiter.name, subtotal: 0, openedAtUtc, lastActivityAtUtc: openedAtUtc,
-        openedByName: waiter.name, version: "v1", canEdit: true, canManage: mode === "cashier", lines: [],
+        openedByName: waiter.name, version: "v1", canEdit: true, canManage: mode === "cashier", lines: [], events: [],
       };
       return json(route, ticket, 201);
     }

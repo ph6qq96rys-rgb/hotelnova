@@ -37,6 +37,11 @@ type Props = {
   onCancelTicket: () => void;
 };
 
+const EVENT_TEXT: Record<string, string> = {
+  opened: "Order opened", held: "Put on hold", resumed: "Resumed", waiterChanged: "Waiter changed",
+  tableMoved: "Table changed", cancelled: "Cancelled",
+};
+
 const orderTypeText: Record<string, string> = {
   dineIn: "Dine In", takeAway: "Take Away", delivery: "Delivery", roomService: "Room Service",
 };
@@ -48,18 +53,18 @@ export function PosTicketPanel(props: Props) {
   const rounds = new Map<number, PosTicketLineDto[]>();
   for (const line of ticket?.lines ?? []) rounds.set(line.round, [...(rounds.get(line.round) ?? []), line]);
   const freeTables = (props.floor?.areas ?? []).flatMap((area) =>
-    area.tables.filter((table) => table.status === "free" || table.id === ticket?.tableId).map((table) => ({ ...table, area: area.name })));
+    area.tables.filter((table) => table.status === "available" || table.id === ticket?.tableId).map((table) => ({ ...table, area: area.name })));
   const draftTotal = draft.reduce((sum, item) => sum + item.lineTotal, 0);
   const editable = counter || !!ticket?.canEdit;
 
   return (
-    <aside className="rpos-ticket" aria-label={tx(counter ? "Counter sale" : "Ticket")}>
+    <aside className="rpos-ticket" aria-label={tx(counter ? "New order" : "Ticket")}>
       <header className="rpos-ticket-head">
         <Button type="button" size="sm" variant="ghost" onClick={props.onBack} aria-label={tx("Back to floor")}>
           <ArrowLeft size={16} aria-hidden="true" />
         </Button>
         <div>
-          <h2>{counter ? tx("Counter sale") : ticket ? `${tx("Ticket")} ${ticket.ticketNo}` : tx("New order")}</h2>
+          <h2>{counter ? tx("New order") : ticket ? `${tx("Ticket")} ${ticket.ticketNo}` : tx("New order")}</h2>
           {ticket ? (
             <p className="rpos-muted">
               {tx(orderTypeText[ticket.orderType] ?? "Dine In")}
@@ -103,6 +108,28 @@ export function PosTicketPanel(props: Props) {
           <p className="rpos-muted">
             {tx("Opened {time} by {name}", { time: formatAppDateTime(ticket.openedAtUtc), name: ticket.openedByName })}
           </p>
+          {ticket.heldAtUtc ? (
+            <p className="rpos-held-banner" role="status">
+              <PauseCircle size={14} aria-hidden="true" />
+              {tx("On hold since {time} by {name}", { time: formatAppDateTime(ticket.heldAtUtc), name: ticket.heldByName ?? "" })}
+              {ticket.holdReason ? ` · ${ticket.holdReason}` : ""}
+            </p>
+          ) : null}
+          {ticket.events?.length ? (
+            <details className="rpos-history">
+              <summary>{tx("History")} · {ticket.events.length}</summary>
+              <ol>
+                {ticket.events.map((event, index) => (
+                  <li key={index}>
+                    <strong>{tx(EVENT_TEXT[event.type] ?? event.type)}</strong>
+                    {event.fromValue || event.toValue ? <span> {[event.fromValue, event.toValue].filter(Boolean).join(" → ")}</span> : null}
+                    {event.reason ? <span className="rpos-muted"> · {event.reason}</span> : null}
+                    <small className="rpos-muted">{formatAppDateTime(event.atUtc)} · {event.byName}</small>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
         </div>
       ) : null}
 

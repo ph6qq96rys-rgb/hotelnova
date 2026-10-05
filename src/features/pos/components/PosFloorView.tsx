@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
-import { Clock3, RefreshCw, ShoppingBag, Users } from "lucide-react";
+import { Clock3, MoreHorizontal, PauseCircle, Plus, RefreshCw, ShoppingBag, Users } from "lucide-react";
 
 import { Button } from "../../../components/ui/button";
 import { useI18n } from "../../../i18n";
 import type { PosActorDto, PosFloorDto, PosFloorTableDto, PosTicketSummaryDto } from "../api/posServiceApi";
 import { money } from "./posUi";
 import { minutesSince } from "../utils/posCart";
+import { isMine, TABLE_STATUS_TEXT } from "../utils/posTables";
+
+export { isMine };
 
 type Props = {
   floor: PosFloorDto | null;
@@ -17,13 +20,13 @@ type Props = {
   onTable: (table: PosFloorTableDto, areaName: string, tickets: PosTicketSummaryDto[]) => void;
   onOpenTicket: (ticket: PosTicketSummaryDto) => void;
   onNewTicket: () => void;
-  onCounterSale?: () => void;
+  /** Start an order item-first; it is held at a table or paid at the counter afterwards. */
+  onNewOrder?: () => void;
+  /** Open the status of a table (clean, dirty, reserved, out of use). */
+  onTableStatus?: (table: PosFloorTableDto, areaName: string) => void;
 };
 
-export function isMine(ticket: PosTicketSummaryDto, actor: PosActorDto | null) {
-  if (!actor) return false;
-  return ticket.waiterUserId === actor.userId || (!!actor.employeeId && ticket.waiterEmployeeId === actor.employeeId);
-}
+const LEGEND: Array<keyof typeof TABLE_STATUS_TEXT> = ["available", "occupied", "held", "reserved", "needsCleaning", "unavailable"];
 
 function elapsedLabel(minutes: number) {
   return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
@@ -34,14 +37,14 @@ function elapsedLabel(minutes: number) {
  * how long it has been seated and the running bill. Waiters see every table so they
  * know what is free, but can open only their own tickets.
  */
-export function PosFloorView({ floor, loading, actor, now, onRefresh, onTable, onOpenTicket, onNewTicket, onCounterSale }: Props) {
+export function PosFloorView({ floor, loading, actor, now, onRefresh, onTable, onOpenTicket, onNewTicket, onNewOrder, onTableStatus }: Props) {
   const { tx } = useI18n();
   const [areaId, setAreaId] = useState<string>("all");
   const [mineOnly, setMineOnly] = useState(false);
   const areas = useMemo(() => floor?.areas ?? [], [floor]);
   const visibleAreas = areaId === "all" ? areas : areas.filter((area) => area.id === areaId);
   const tables = areas.flatMap((area) => area.tables);
-  const occupied = tables.filter((table) => table.status === "occupied").length;
+  const occupied = tables.filter((table) => table.tickets.length > 0).length;
   const unseated = (floor?.unseatedTickets ?? []).filter((ticket) => !mineOnly || isMine(ticket, actor));
   const canManage = !!actor?.canManageTickets;
 
@@ -70,8 +73,15 @@ export function PosFloorView({ floor, loading, actor, now, onRefresh, onTable, o
           <Button type="button" size="sm" variant="outline" onClick={onNewTicket}>
             <ShoppingBag size={15} aria-hidden="true" /> {tx("Take-away ticket")}
           </Button>
-          {onCounterSale ? <Button type="button" size="sm" onClick={onCounterSale}>{tx("Counter sale")}</Button> : null}
+          {onNewOrder ? <Button type="button" size="sm" onClick={onNewOrder}><Plus size={15} aria-hidden="true" /> {tx("New order")}</Button> : null}
         </div>
+      </div>
+      <div className="rpos-legend" aria-label={tx("Table status")}>
+        {LEGEND.map((status) => (
+          <span key={status} className={`rpos-legend-item rpos-table--${status}`}>
+            {tx(TABLE_STATUS_TEXT[status])} · {tables.filter((t) => t.status === status).length}
+          </span>
+        ))}
       </div>
 
       {!loading && tables.length === 0 ? (
@@ -95,19 +105,23 @@ export function PosFloorView({ floor, loading, actor, now, onRefresh, onTable, o
                 const total = tickets.reduce((sum, ticket) => sum + ticket.subtotal, 0);
                 const oldest = tickets.reduce((max, ticket) => Math.max(max, minutesSince(ticket.openedAtUtc, now)), 0);
                 const waiters = [...new Set(tickets.map((ticket) => ticket.waiterName).filter(Boolean))].join(", ");
-                const state = tickets.length === 0 ? "free" : mine ? "mine" : "occupied";
+                const state = tickets.length > 0 && mine ? "mine" : table.status;
+                const held = tickets.length > 0 && tickets.every((ticket) => ticket.heldAtUtc);
                 return (
-                  <Button key={table.id} type="button" variant="outline"
+                  <div key={table.id} className="rpos-table-cell">
+                  <Button type="button" variant="outline"
                     className={`rpos-table rpos-table--${state}`} disabled={locked}
-                    aria-label={`${tx("Table")} ${table.number}, ${tx(state === "free" ? "free" : "occupied")}${waiters ? `, ${waiters}` : ""}`}
-                    title={locked ? tx("This table is served by another waiter.") : undefined}
+                    aria-label={`${tx("Table")} ${table.number}, ${tx(TABLE_STATUS_TEXT[table.status])}${waiters ? `, ${waiters}` : ""}`}
+                    title={locked ? tx("This table is served by another waiter.") : table.serviceNote ?? undefined}
                     onClick={() => openTable(table, area.name)}>
                     <span className="rpos-table-head">
                       <strong>{table.number}</strong>
                       <span><Users size={13} aria-hidden="true" /> {tickets.reduce((sum, ticket) => sum + ticket.guestCount, 0) || table.seats}</span>
                     </span>
                     {tickets.length === 0 ? (
-                      <span className="rpos-table-status">{tx("Free")} · {tx("{seats} seats", { seats: table.seats })}</span>
+                      <span className="rpos-table-status">
+                        {tx(TABLE_STATUS_TEXT[table.status])}{table.serviceNote ? ` · ${table.serviceNote}` : ` · ${tx("{seats} seats", { seats: table.seats })}`}
+                      </span>
                     ) : (
                       <>
                         <span className="rpos-table-waiter">{waiters || tx("No waiter")}</span>
@@ -115,10 +129,18 @@ export function PosFloorView({ floor, loading, actor, now, onRefresh, onTable, o
                           <span><Clock3 size={13} aria-hidden="true" /> {elapsedLabel(oldest)}</span>
                           <strong>{money(total)}</strong>
                         </span>
+                        {held ? <span className="rpos-table-status rpos-held-tag"><PauseCircle size={12} aria-hidden="true" /> {tx("On hold")}</span> : null}
                         {tickets.length > 1 ? <span className="rpos-table-status">{tx("{count} tickets", { count: tickets.length })}</span> : null}
                       </>
                     )}
                   </Button>
+                  {onTableStatus ? (
+                    <Button type="button" size="sm" variant="ghost" className="rpos-table-more"
+                      aria-label={`${tx("Table status")} ${table.number}`} onClick={() => onTableStatus(table, area.name)}>
+                      <MoreHorizontal size={16} aria-hidden="true" />
+                    </Button>
+                  ) : null}
+                  </div>
                 );
               })}
             </div>

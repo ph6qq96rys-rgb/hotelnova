@@ -20,6 +20,8 @@ export type HeldOrderDto = {
   ageMinutes: number;
   idleMinutes: number;
   version: Guid;
+  heldAtUtc?: string | null;
+  holdReason?: string | null;
 };
 
 export type UncollectedSaleDto = {

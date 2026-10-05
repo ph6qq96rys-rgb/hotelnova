@@ -235,7 +235,8 @@ export function PosOpenOrdersPage() {
                 <TableBody>
                   {held.map((order) => (
                     <TableRow key={order.id} className={order.idleMinutes >= (s?.staleAfterMinutes ?? 60) ? "is-stale" : undefined}>
-                      <TableCell><strong>{order.ticketNo}</strong><br /><small className="rpos-muted">{tx(ORDER_TYPES[order.orderType] ?? order.orderType)}</small></TableCell>
+                      <TableCell><strong>{order.ticketNo}</strong><br /><small className="rpos-muted">{tx(ORDER_TYPES[order.orderType] ?? order.orderType)}</small>
+                        {order.heldAtUtc ? <><br /><small className="rpos-held-tag">{tx("On hold")}{order.holdReason ? ` · ${order.holdReason}` : ""}</small></> : null}</TableCell>
                       <TableCell>{order.tableLabel ? `${tx("Table")} ${order.tableLabel}` : order.customerName || "—"}
                         {order.tableLabel && order.customerName ? <><br /><small className="rpos-muted">{order.customerName}</small></> : null}</TableCell>
                       <TableCell>{order.waiterName || tx("Unassigned")}</TableCell>

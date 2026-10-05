@@ -12,8 +12,11 @@ import { useI18n } from "../../../i18n";
 import { useUnsavedChanges } from "../../eventmanagment/components/useUnsavedChanges";
 import { posApi, setActiveStore, tryGetStoreId } from "../api/posApi";
 import {
+  holdRequires,
   posServiceApi,
   waiterKey,
+  type HoldOrderRequest,
+  type TableServiceState,
   type PosFloorTableDto,
   type PosOrderType,
   type PosTicketDto,
@@ -24,6 +27,8 @@ import {
 import { tipsEnabledFor } from "../api/posTipsApi";
 import { PosDialog } from "../components/PosDialog";
 import { PosFloorView } from "../components/PosFloorView";
+import { HoldReasonPicker, PosHoldDialog } from "../components/PosHoldDialog";
+import { PosTableStateDialog } from "../components/PosTableStateDialog";
 import { PosMenuPanel } from "../components/PosMenuPanel";
 import { PosPaymentPanel } from "../components/PosPaymentPanel";
 import { PosTicketPanel } from "../components/PosTicketPanel";
@@ -36,6 +41,7 @@ import { cartReducer, itemBlockReason, ticketChargeLines } from "../utils/posCar
 import { guestCheckHtml, printHtml, receiptHtml, type Receipt } from "../utils/posPrint";
 import { buildPayments, newPayer, paymentProblem, splitEvenly, type PayerDraft, type TipContext } from "../utils/posTips";
 import { extractApiError } from "../utils/posUtils";
+import { TABLE_STATUS_TEXT } from "../utils/posTables";
 import "../pos-workspace.css";
 import "../pos-service.css";
 
@@ -105,7 +111,9 @@ export function PosSalesPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [leaveOpen, setLeaveOpen] = useState(false);
-  const [hold, setHold] = useState<{ customerName: string } | null>(null);
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [holdTicket, setHoldTicket] = useState<{ reason: string } | null>(null);
+  const [tableState, setTableState] = useState<(PosFloorTableDto & { area: string }) | null>(null);
 
   useUnsavedChanges(draft.length > 0 || busy);
 
@@ -233,23 +241,54 @@ export function PosSalesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedTicket, ws.actor]);
 
-  /** Parks a counter order as an open take-away ticket so it can be added to and paid later. */
-  const holdCounterOrder = async () => {
-    if (!hold || draft.length === 0) return;
+  /**
+   * Hold Order for an order built item-first: the waiter (or the server chosen by a cashier)
+   * and the table are recorded, or the items join the table's existing order.
+   */
+  const holdNewOrder = async (request: Omit<HoldOrderRequest, "items">, summary: { tableLabel?: string; waiterName?: string | null; appendTo?: string }) => {
+    if (draft.length === 0) return;
     setBusy(true);
     setNotice(null);
     try {
-      const held = await posServiceApi.openTicket(scope, {
-        orderType: "takeAway",
-        guestCount: 1,
-        customerName: hold.customerName.trim() || null,
-        items: draft.map((item) => ({ menuItemId: item.id, quantity: item.qty })),
-      });
-      setHold(null);
+      const held = await posServiceApi.holdOrder(scope, { ...request, items: draft.map((item) => ({ menuItemId: item.id, quantity: item.qty })) });
+      setHoldOpen(false);
       backToFloor();
-      setNotice({ tone: "ok", text: tx("Order held as ticket {ticket}. Open it from the floor or Held Orders to add items or take payment.", { ticket: held.ticketNo }) });
+      const where = summary.tableLabel ? ` · ${tx("Table")} ${summary.tableLabel}` : held.customerName ? ` · ${held.customerName}` : "";
+      setNotice({ tone: "ok", text: summary.appendTo
+        ? tx("Items added to {ticket}{where}. The order is on hold.", { ticket: held.ticketNo, where })
+        : tx("Order {ticket} held{where}{waiter}.", { ticket: held.ticketNo, where, waiter: held.waiterName ? ` · ${held.waiterName}` : "" }) });
     } catch (err) {
       fail(err, "The order could not be put on hold.");
+      if (isConflict(err)) void ws.refreshFloor();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Holds an open ticket, sending any unsent items with it. */
+  const holdExistingTicket = async () => {
+    if (!ticket || !holdTicket) return;
+    const done = await ticketAction(() => posServiceApi.holdTicket(scope, ticket.id, ticket.version, holdTicket.reason.trim() || null,
+      draft.length ? draft.map((item) => ({ menuItemId: item.id, quantity: item.qty })) : undefined));
+    if (done) {
+      dispatchDraft({ type: "CLEAR" });
+      setHoldTicket(null);
+      backToFloor();
+      setNotice({ tone: "ok", text: tx("Order {ticket} held{where}{waiter}.", { ticket: done.ticketNo, where: done.tableLabel ? ` · ${tx("Table")} ${done.tableLabel}` : "", waiter: done.waiterName ? ` · ${done.waiterName}` : "" }) });
+    }
+  };
+
+  const saveTableState = async (state: TableServiceState, note: string) => {
+    if (!tableState) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const updated = await posServiceApi.setTableState(scope, tableState.id, state, note);
+      setTableState(null);
+      setNotice({ tone: "ok", text: tx("Table {table} is now {status}.", { table: updated.number, status: tx(TABLE_STATUS_TEXT[updated.status]).toLowerCase() }) });
+      void ws.refreshFloor();
+    } catch (err) {
+      fail(err, "The table status could not be changed.");
     } finally {
       setBusy(false);
     }
@@ -275,7 +314,11 @@ export function PosSalesPage() {
   };
 
   const onTable = (table: PosFloorTableDto, areaName: string, tickets: PosTicketSummaryDto[]) => {
-    if (table.tickets.length === 0) startTicket("dineIn", table, areaName);
+    if (table.tickets.length === 0) {
+      // New orders go only to available tables; a supervisor may seat a reservation.
+      if (table.status === "available" || (table.status === "reserved" && cashierMode)) startTicket("dineIn", table, areaName);
+      else setTableState({ ...table, area: areaName });
+    }
     else if (tickets.length === 1) void openTicket(tickets[0]);
     else if (tickets.length > 1) setTableChoice({ label: table.number, tickets });
   };
@@ -485,7 +528,8 @@ export function PosSalesPage() {
           onTable={onTable}
           onOpenTicket={(summary) => void openTicket(summary)}
           onNewTicket={() => startTicket("takeAway")}
-          onCounterSale={cashierMode ? () => { setTicket(null); setCounter(true); dispatchDraft({ type: "CLEAR" }); setView("ORDER"); } : undefined}
+          onNewOrder={() => { setTicket(null); setCounter(true); dispatchDraft({ type: "CLEAR" }); setView("ORDER"); }}
+          onTableStatus={(table, area) => setTableState({ ...table, area })}
         />
       ) : (
         <main className="rpos-order">
@@ -522,7 +566,9 @@ export function PosSalesPage() {
             onClearDraft={() => dispatchDraft({ type: "CLEAR" })}
             onSend={() => void sendDraft()}
             onPay={startPayment}
-            onHold={counter && draft.length > 0 && cashierMode ? () => setHold({ customerName: "" }) : undefined}
+            onHold={counter
+              ? draft.length > 0 ? () => setHoldOpen(true) : undefined
+              : ticket?.canEdit && (draft.length > 0 || ticket.lines.some((line) => !line.isVoided)) ? () => setHoldTicket({ reason: "" }) : undefined}
             onPrintCheck={ticket && chargeLines.length > 0 && draft.length === 0 ? printGuestCheck : undefined}
             onBack={requestBack}
             onAssignWaiter={(waiter) => void assignWaiter(waiter)}
@@ -535,7 +581,10 @@ export function PosSalesPage() {
             <div className="rpos-mobile-bar" role="region" aria-label={tx("Not sent yet")}>
               <span>{tx("{count} items not sent", { count: draft.reduce((sum, item) => sum + item.qty, 0) })}</span>
               {counter ? (
-                <Button type="button" disabled={busy || !!payBlockedReason} onClick={startPayment}>{tx("Take payment")}</Button>
+                <>
+                  <Button type="button" variant="outline" disabled={busy} onClick={() => setHoldOpen(true)}>{tx("Hold order")}</Button>
+                  {cashierMode ? <Button type="button" disabled={busy || !!payBlockedReason} onClick={startPayment}>{tx("Take payment")}</Button> : null}
+                </>
               ) : (
                 <Button type="button" disabled={busy || !ticket?.canEdit} onClick={() => void sendDraft()}>{tx("Send order")}</Button>
               )}
@@ -549,7 +598,8 @@ export function PosSalesPage() {
         title={newTicket?.orderType === "dineIn" ? `${tx("Open table")} ${newTicket.tableLabel}` : tx("New ticket")}
         confirmText={tx("Open ticket")}
         busy={busy}
-        confirmDisabled={!newTicket || !(Number(newTicket.guests) >= 1) || (newTicket.orderType === "dineIn" && !newTicket.tableId)}
+        confirmDisabled={!newTicket || !(Number(newTicket.guests) >= 1) || (newTicket.orderType === "dineIn" && !newTicket.tableId) ||
+          (cashierMode && holdRequires(ws.serviceSettings, newTicket.orderType).waiter && !newTicket.waiter)}
         onConfirm={() => void createTicket()}
         onClose={() => setNewTicket(null)}
       >
@@ -624,15 +674,21 @@ export function PosSalesPage() {
         </label>
       </PosDialog>
 
-      <PosDialog open={!!hold} title={tx("Hold order")} confirmText={tx("Hold order")} busy={busy}
-        description={tx("The items are kept as an open take-away ticket. Anyone with access can add to it, and a cashier takes payment later.")}
-        onConfirm={() => void holdCounterOrder()} onClose={() => setHold(null)}>
-        <label className="rpos-field">
-          <span>{tx("Customer / Guest")}</span>
-          <Input value={hold?.customerName ?? ""} maxLength={200} placeholder={tx("Name to call the order")} autoFocus
-            onChange={(e) => hold && setHold({ customerName: e.target.value })} />
-        </label>
+      <PosHoldDialog open={holdOpen} busy={busy} floor={ws.floor} waiters={ws.waiters} actor={ws.actor} ownWaiterKey={ownWaiterKey}
+        settings={ws.serviceSettings} itemCount={draft.reduce((sum, item) => sum + item.qty, 0)} itemTotal={totals.total}
+        onClose={() => setHoldOpen(false)} onConfirm={(request, summary) => void holdNewOrder(request, summary)} />
+
+      <PosDialog open={!!holdTicket} title={`${tx("Hold order")} ${ticket?.ticketNo ?? ""}`} confirmText={tx("Hold order")} busy={busy}
+        description={draft.length ? tx("Unsent items are sent with the order before it is put on hold.") : tx("The order stays at its table with its waiter until it is resumed or paid.")}
+        confirmDisabled={!!ws.serviceSettings?.requireHoldReason && !holdTicket?.reason.trim()}
+        onConfirm={() => void holdExistingTicket()} onClose={() => setHoldTicket(null)}>
+        <HoldReasonPicker reasons={ws.serviceSettings?.holdReasons ?? []} value={holdTicket?.reason ?? ""}
+          required={ws.serviceSettings?.requireHoldReason} onChange={(reason) => setHoldTicket({ reason })} />
       </PosDialog>
+
+      <PosTableStateDialog table={tableState} busy={busy} canManage={cashierMode} onClose={() => setTableState(null)}
+        onSave={(state, note) => void saveTableState(state, note)}
+        onSeat={tableState ? () => { const t = tableState; setTableState(null); startTicket("dineIn", t, t.area); } : undefined} />
 
       <ConfirmModal open={leaveOpen} title={tx("Leave without sending?")}
         message={tx("Items you picked have not been sent to the ticket and will be discarded.")}

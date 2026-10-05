@@ -9,9 +9,9 @@ test.describe("QAE POS smoke", () => {
     await page.goto(`/companies/${TEST_COMPANY_ID}/sales/pos`);
 
     await expect(page.getByRole("heading", { name: "Point of sale" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Table T1, free/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Table T1, Available/ })).toBeVisible();
 
-    await page.getByRole("button", { name: "Counter sale" }).click();
+    await page.getByRole("button", { name: "New order" }).click();
     await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
     await expect(page.getByRole("region", { name: "Items" }).or(page.locator(".rpos-round--draft"))).toContainText("QAE Burger");
 
@@ -26,7 +26,7 @@ test.describe("QAE POS smoke", () => {
     await page.goto(`/companies/${TEST_COMPANY_ID}/sales/pos`);
 
     await expect(page.getByText("Waiter mode: your tables and tickets. A cashier takes payment.")).toBeVisible();
-    await page.getByRole("button", { name: /^Table T1, free/ }).click();
+    await page.getByRole("button", { name: /^Table T1, Available/ }).click();
     await page.getByLabel("Guest Count").fill("2");
     await page.getByRole("button", { name: "Open ticket" }).click();
 
@@ -43,7 +43,7 @@ test.describe("QAE POS smoke", () => {
     const mock = await mockPosWorkstation(page, "cashier");
     await page.goto(`/companies/${TEST_COMPANY_ID}/sales/pos`);
 
-    await page.getByRole("button", { name: /^Table T1, free/ }).click();
+    await page.getByRole("button", { name: /^Table T1, Available/ }).click();
     await page.getByRole("button", { name: "Open ticket" }).click();
     await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
     await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
@@ -74,5 +74,33 @@ test.describe("QAE POS smoke", () => {
       { method: "CARD", amount: 250, referenceCode: "CARD-1", tipAmount: 25, tipPercent: 10 },
       { method: "CASH", amount: 250, referenceCode: null, tipAmount: 0, tipPercent: null },
     ]);
+  });
+
+  test("waiter builds an order first and holds it at an available table as themselves", async ({ page }) => {
+    await seedWorkspaceAuth(page);
+    const mock = await mockPosWorkstation(page, "waiter");
+    await page.goto(`/companies/${TEST_COMPANY_ID}/sales/pos`);
+
+    await expect(page.getByRole("button", { name: /^Table T2, Needs cleaning/ })).toBeVisible();
+    await page.getByRole("button", { name: "New order" }).click();
+    await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
+    await page.getByRole("button", { name: "Hold order" }).first().click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("QAE Waiter"); // the waiter is the server; no waiter list
+    await expect(dialog.getByRole("combobox", { name: "Waiter/Waitress" })).toHaveCount(0);
+    await expect(dialog.getByRole("radio", { name: /^Table T2/ })).toBeDisabled(); // needs cleaning
+    await expect(dialog.getByRole("button", { name: "Hold order" })).toBeDisabled(); // a table is required
+    await dialog.getByRole("radio", { name: /^Table T1/ }).click();
+    await dialog.getByRole("radio", { name: "Guests still ordering" }).click();
+    await dialog.getByRole("button", { name: "Hold order" }).click();
+
+    await expect(page.getByRole("status").first()).toContainText("Order T0101-001 held");
+    expect(mock.holdRequests).toHaveLength(1);
+    expect(mock.holdRequests[0]).toMatchObject({
+      orderType: "dineIn", tableId: "table-1", waiterEmployeeId: null, waiterUserId: null, holdReason: "Guests still ordering",
+      appendToTicketId: null, items: [{ menuItemId: "menu-qae-1", quantity: 1 }],
+    });
+    await expect(page.getByRole("button", { name: /^Table T1, Held order/ })).toBeVisible();
   });
 });

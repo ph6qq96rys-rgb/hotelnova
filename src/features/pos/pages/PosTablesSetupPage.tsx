@@ -10,7 +10,8 @@ import { Select } from "../../../components/ui/select";
 import { useAppScope } from "../../../app/useAppScope";
 import { useHasPermission } from "../../../auth/usePermissions";
 import { useI18n } from "../../../i18n";
-import { posServiceApi, type DiningAreaDto, type RestaurantTableDto } from "../api/posServiceApi";
+import { posServiceApi, type DiningAreaDto, type PosServiceSettingsDto, type RestaurantTableDto } from "../api/posServiceApi";
+import { Textarea } from "../../../components/ui/textarea";
 import { PosDialog } from "../components/PosDialog";
 import { extractApiError } from "../utils/posUtils";
 import "../pos-service.css";
@@ -57,6 +58,99 @@ function TableRow({ table, areas, busy, canManage, onSave }: {
         </Button>
       ) : null}
     </form>
+  );
+}
+
+type ServiceDraft = Omit<PosServiceSettingsDto, "source" | "tableRequired" | "waiterRequired" | "holdReasons"> & { holdReasons: string };
+
+/** How the branch takes and holds orders: table service or quick service, and what Hold Order asks for. */
+function ServiceSettingsCard({ scope, canManage }: { scope: { companyId: string; branchId: string }; canManage: boolean }) {
+  const { tx } = useI18n();
+  const [current, setCurrent] = useState<PosServiceSettingsDto | null>(null);
+  const [draft, setDraft] = useState<ServiceDraft | null>(null);
+  const [level, setLevel] = useState<"branch" | "company">("branch");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+
+  const toDraft = (x: PosServiceSettingsDto): ServiceDraft => ({
+    serviceStyle: x.serviceStyle, quickServiceRequiresTable: x.quickServiceRequiresTable, quickServiceRequiresWaiter: x.quickServiceRequiresWaiter,
+    requireGuestCount: x.requireGuestCount, requireHoldReason: x.requireHoldReason, holdReasons: x.holdReasons.join("\n"),
+    markTableForCleaningAfterPayment: x.markTableForCleaningAfterPayment, version: x.version ?? null,
+  });
+
+  useEffect(() => {
+    if (!scope.companyId || !scope.branchId) return;
+    posServiceApi.serviceSettings(scope)
+      .then((x) => { setCurrent(x); setDraft(toDraft(x)); setLevel(x.source === "company" ? "company" : "branch"); })
+      .catch((err) => setMessage({ tone: "error", text: extractApiError(err, tx("POS service settings could not be loaded.")) }));
+  }, [scope, tx]);
+
+  if (!draft) return null;
+  const set = (patch: Partial<ServiceDraft>) => setDraft({ ...draft, ...patch });
+  const reasons = draft.holdReasons.split("\n").map((x) => x.trim()).filter(Boolean);
+  const quick = draft.serviceStyle === "quickService";
+  const save = async () => {
+    setBusy(true); setMessage(null);
+    try {
+      const sameRow = current?.source === level;
+      const saved = await posServiceApi.saveServiceSettings(scope, { ...draft, holdReasons: reasons, version: sameRow ? draft.version ?? null : null }, level);
+      setCurrent(saved); setDraft(toDraft(saved));
+      setMessage({ tone: "success", text: tx("POS service settings saved.") });
+    } catch (err) {
+      setMessage({ tone: "error", text: extractApiError(err, tx("The change could not be saved.")) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const locked = !canManage || busy;
+
+  return (
+    <section className="rpos-setup-area" aria-label={tx("Order taking")}>
+      <header><h2>{tx("Order taking")}</h2>
+        <span className="rpos-muted">{tx(current?.source === "branch" ? "This branch uses its own settings." : current?.source === "company" ? "This branch uses the company default." : "Default settings.")}</span>
+      </header>
+      {message ? <StateMessage tone={message.tone}>{message.text}</StateMessage> : null}
+      <div className="rpos-chip-row" role="radiogroup" aria-label={tx("Service style")}>
+        {(["tableService", "quickService"] as const).map((style) => (
+          <Button key={style} type="button" role="radio" aria-checked={draft.serviceStyle === style} disabled={locked}
+            variant={draft.serviceStyle === style ? "default" : "outline"} onClick={() => set({ serviceStyle: style })}>
+            {tx(style === "tableService" ? "Table service (dine-in restaurant)" : "Quick service (fast food)")}
+          </Button>
+        ))}
+      </div>
+      <p className="rpos-muted">{tx(quick
+        ? "Orders can be held without a table or waiter unless you require them below."
+        : "Dine-in orders are held at a table for a waiter. Waiters are their own server; cashiers choose one.")}</p>
+      {quick ? (
+        <div className="rpos-chip-row">
+          <label className="rpos-check"><Checkbox checked={draft.quickServiceRequiresTable} disabled={locked} onChange={(e) => set({ quickServiceRequiresTable: e.target.checked })} />{tx("Dine-in holds need a table")}</label>
+          <label className="rpos-check"><Checkbox checked={draft.quickServiceRequiresWaiter} disabled={locked} onChange={(e) => set({ quickServiceRequiresWaiter: e.target.checked })} />{tx("Holds need a waiter")}</label>
+        </div>
+      ) : null}
+      <div className="rpos-chip-row">
+        <label className="rpos-check"><Checkbox checked={draft.requireGuestCount} disabled={locked} onChange={(e) => set({ requireGuestCount: e.target.checked })} />{tx("Ask for the guest count")}</label>
+        <label className="rpos-check"><Checkbox checked={draft.requireHoldReason} disabled={locked} onChange={(e) => set({ requireHoldReason: e.target.checked })} />{tx("A hold reason is required")}</label>
+        <label className="rpos-check"><Checkbox checked={draft.markTableForCleaningAfterPayment} disabled={locked} onChange={(e) => set({ markTableForCleaningAfterPayment: e.target.checked })} />{tx("Mark tables Needs cleaning after payment")}</label>
+      </div>
+      <label className="rpos-field">
+        <span>{tx("Hold reasons (one per line)")}</span>
+        <Textarea rows={4} value={draft.holdReasons} disabled={locked} onChange={(e) => set({ holdReasons: e.target.value })} />
+      </label>
+      {canManage ? (
+        <div className="rpos-tip-save">
+          <label className="rpos-field">
+            <span>{tx("Save for")}</span>
+            <Select value={level} disabled={busy} onChange={(e) => setLevel(e.target.value as "branch" | "company")}>
+              <option value="branch">{tx("This branch only")}</option>
+              <option value="company">{tx("Company default (branches without their own settings)")}</option>
+            </Select>
+          </label>
+          <Button type="button" disabled={busy || (draft.requireHoldReason && reasons.length === 0)} onClick={() => void save()}>
+            {busy ? tx("Saving...") : tx("Save settings")}
+          </Button>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -120,6 +214,8 @@ export function PosTablesSetupPage() {
       {notice ? <StateMessage tone="success">{notice}</StateMessage> : null}
       {!canManage ? <StateMessage tone="info">{tx("You can view the floor setup. Changing it requires the manage tables permission.")}</StateMessage> : null}
       {loading ? <StateMessage tone="loading">{tx("Loading tables...")}</StateMessage> : null}
+
+      <ServiceSettingsCard scope={scope} canManage={canManage} />
 
       {canManage ? (
         <form className="rpos-setup-area" onSubmit={(event) => {

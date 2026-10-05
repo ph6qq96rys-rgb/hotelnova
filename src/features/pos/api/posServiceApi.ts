@@ -58,14 +58,63 @@ export type PosTicketSummaryDto = {
   openedAtUtc: string;
   lastActivityAtUtc: string;
   version: Guid;
+  heldAtUtc?: string | null;
+  holdReason?: string | null;
 };
+
+/** What staff set on a table. */
+export type TableServiceState = "available" | "reserved" | "needsCleaning" | "unavailable";
+/** What the floor shows: open orders decide occupied/held, otherwise the staff-set state. */
+export type TableFloorStatus = TableServiceState | "occupied" | "held";
 
 export type PosFloorTableDto = {
   id: Guid;
   number: string;
   seats: number;
-  status: "free" | "occupied";
+  status: TableFloorStatus;
+  serviceState: TableServiceState;
+  serviceNote?: string | null;
+  serviceStateChangedAtUtc?: string | null;
+  serviceStateChangedBy?: string | null;
   tickets: PosTicketSummaryDto[];
+};
+
+export type PosTicketEventDto = {
+  type: "opened" | "held" | "resumed" | "waiterChanged" | "tableMoved" | "cancelled" | string;
+  fromValue?: string | null;
+  toValue?: string | null;
+  reason?: string | null;
+  atUtc: string;
+  byName: string;
+};
+
+export type PosServiceSettingsDto = {
+  source: "branch" | "company" | "default";
+  serviceStyle: "tableService" | "quickService";
+  quickServiceRequiresTable: boolean;
+  quickServiceRequiresWaiter: boolean;
+  requireGuestCount: boolean;
+  requireHoldReason: boolean;
+  holdReasons: string[];
+  markTableForCleaningAfterPayment: boolean;
+  tableRequired: Record<string, boolean>;
+  waiterRequired: Record<string, boolean>;
+  version?: Guid | null;
+};
+
+export type SavePosServiceSettingsRequest = Omit<PosServiceSettingsDto, "source" | "tableRequired" | "waiterRequired">;
+
+export type HoldOrderRequest = {
+  orderType: PosOrderType;
+  tableId?: Guid | null;
+  waiterEmployeeId?: Guid | null;
+  waiterUserId?: Guid | null;
+  guestCount?: number | null;
+  customerName?: string | null;
+  note?: string | null;
+  holdReason?: string | null;
+  items: PosTicketItemRequest[];
+  appendToTicketId?: Guid | null;
 };
 
 export type PosFloorDto = {
@@ -97,7 +146,10 @@ export type PosTicketDto = Omit<PosTicketSummaryDto, "itemCount"> & {
   cancelReason?: string | null;
   canEdit: boolean;
   canManage: boolean;
+  posSessionId?: Guid | null;
+  heldByName?: string | null;
   lines: PosTicketLineDto[];
+  events: PosTicketEventDto[];
 };
 
 export type PosTicketItemRequest = { menuItemId: Guid; quantity: number; note?: string | null };
@@ -175,7 +227,24 @@ export const posServiceApi = {
   cancelTicket: (scope: PosScope, id: Guid, version: Guid, reason: string) =>
     post<PosTicketDto>(scope, `/tickets/${id}/cancel`, { version, reason }),
   settle: (scope: PosScope, id: Guid, body: SettleTicketRequest) => post<SaleDto>(scope, `/tickets/${id}/settle`, body),
+
+  holdOrder: (scope: PosScope, body: HoldOrderRequest) => post<PosTicketDto>(scope, "/orders/hold", body),
+  holdTicket: (scope: PosScope, id: Guid, version: Guid, holdReason: string | null, items?: PosTicketItemRequest[]) =>
+    post<PosTicketDto>(scope, `/tickets/${id}/hold`, { version, holdReason, items }),
+  setTableState: (scope: PosScope, tableId: Guid, state: TableServiceState, note?: string | null) =>
+    put<PosFloorTableDto>(scope, `/tables/${tableId}/state`, { state, note: note || null }),
+  serviceSettings: (scope: PosScope) => get<PosServiceSettingsDto>(scope, "/service-settings"),
+  saveServiceSettings: async (scope: PosScope, body: SavePosServiceSettingsRequest, level: "branch" | "company") =>
+    (await http.put<PosServiceSettingsDto>(`${base(scope)}/service-settings`, body, { params: { scope: level } })).data,
 };
+
+/** Whether Hold Order needs a table / a waiter for this order type in this branch. */
+export function holdRequires(settings: PosServiceSettingsDto | null | undefined, orderType: PosOrderType) {
+  return {
+    table: settings ? !!settings.tableRequired[orderType] : orderType === "dineIn",
+    waiter: settings ? !!settings.waiterRequired[orderType] : orderType === "dineIn",
+  };
+}
 
 /** Key used to match a waiter option to the waiter stored on a ticket. */
 export function waiterKey(waiter: { employeeId?: Guid | null; userId?: Guid | null; waiterEmployeeId?: Guid | null; waiterUserId?: Guid | null } | null | undefined) {

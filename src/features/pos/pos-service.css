@@ -140,6 +140,20 @@
 .rpos-tip-history li { display: grid; gap: 2px; padding-bottom: var(--ui-space-2); border-bottom: 1px solid var(--border-soft); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
+/* Held orders and uncollected payments */
+.rpos-oo-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--ui-space-3); }
+.rpos-oo-tile { display: grid; gap: 2px; padding: var(--ui-space-3) var(--ui-space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); font-variant-numeric: tabular-nums; }
+.rpos-oo-tile span { color: var(--text-muted); font-size: 12px; }
+.rpos-oo-tile strong { font-size: 22px; }
+.rpos-oo-tile small { color: var(--text-muted); font-size: 12px; }
+.rpos-oo-tile.is-warn { border-color: var(--warn-border); background: var(--warn-bg); }
+.rpos-oo-tile.is-warn strong { color: var(--warn); }
+.ui-table tr.is-stale td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.rpos-oo-total { display: flex; justify-content: space-between; margin: var(--ui-space-2) 0 0; font-variant-numeric: tabular-nums; }
+.rpos-oo-add { display: grid; gap: var(--ui-space-3); min-width: 0; }
+.rpos-oo-menu { display: grid; gap: 2px; max-height: 50vh; overflow-y: auto; }
+.rpos-oo-menu-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--ui-space-3); padding: 6px 0; border-bottom: 1px solid var(--border-soft); font-variant-numeric: tabular-nums; }
+
 @media (max-width: 1000px) {
   .rpos-order { grid-template-columns: minmax(0, 1fr); }
   .rpos-ticket { position: static; max-height: none; }

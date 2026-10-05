@@ -1,4 +1,4 @@
-import { ArrowLeft, Ban, Minus, Plus, Printer, ReceiptText, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Ban, Minus, PauseCircle, Plus, Printer, ReceiptText, Send, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/button";
 import { Select } from "../../../components/ui/select";
@@ -28,6 +28,8 @@ type Props = {
   onPay: () => void;
   /** Prints the guest check (bill with suggested tips) before payment. */
   onPrintCheck?: () => void;
+  /** Puts a counter order on hold as an open ticket. */
+  onHold?: () => void;
   onBack: () => void;
   onAssignWaiter: (waiter: PosWaiterDto | null) => void;
   onMoveTable: (tableId: string) => void;
@@ -170,6 +172,11 @@ export function PosTicketPanel(props: Props) {
         ) : null}
         {draft.length > 0 ? (
           <Button type="button" variant="outline" disabled={busy} onClick={props.onClearDraft}>{tx("Clear unsent")}</Button>
+        ) : null}
+        {props.onHold ? (
+          <Button type="button" variant="outline" disabled={busy} onClick={props.onHold}>
+            <PauseCircle size={16} aria-hidden="true" /> {tx("Hold order")}
+          </Button>
         ) : null}
         {props.onPrintCheck ? (
           <Button type="button" variant="outline" disabled={busy} onClick={props.onPrintCheck}>

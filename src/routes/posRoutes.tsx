@@ -1,5 +1,5 @@
 // src/routes/posRoutes.tsx
-import { PosSalesPage, PosSessionPage, PosOperationsPage, PosTablesSetupPage, PosTipSettingsPage, PosTipsReportPage } from "../features/pos";
+import { PosSalesPage, PosSessionPage, PosOperationsPage, PosTablesSetupPage, PosTipSettingsPage, PosTipsReportPage, PosOpenOrdersPage } from "../features/pos";
 import type { AppRoute } from "./sales-cogsroute";
 
 export function getPostRoutes(): AppRoute[] {
@@ -35,6 +35,14 @@ export function getPostRoutes(): AppRoute[] {
       section: "Sales",
       nav: true,
       permissions: ["tables.view"],
+    },
+    {
+      path: "sales/pos/open-orders",
+      element: <PosOpenOrdersPage />,
+      label: "Held Orders",
+      section: "Sales",
+      nav: true,
+      permissions: ["pos.orders.view"],
     },
     {
       path: "sales/pos/tips",

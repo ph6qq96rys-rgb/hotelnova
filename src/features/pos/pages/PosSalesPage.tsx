@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { LayoutGrid, Printer, UserRound } from "lucide-react";
 
 import ConfirmModal from "../../../components/ConfirmModal";
@@ -75,6 +75,7 @@ function isUncertain(err: unknown) {
 export function PosSalesPage() {
   const { tx } = useI18n();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { companyId, branchId } = useAppScope();
   const scope = useMemo(() => ({ companyId: companyId ?? "", branchId: branchId ?? "" }), [companyId, branchId]);
 
@@ -104,6 +105,7 @@ export function PosSalesPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [hold, setHold] = useState<{ customerName: string } | null>(null);
 
   useUnsavedChanges(draft.length > 0 || busy);
 
@@ -217,6 +219,37 @@ export function PosSalesPage() {
       setView("ORDER");
     } catch (err) {
       fail(err, "The ticket could not be loaded.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Opened from Held Orders: /sales/pos?ticket=<id> goes straight to that ticket.
+  const linkedTicket = searchParams.get("ticket");
+  useEffect(() => {
+    if (!linkedTicket || !ws.actor) return;
+    setSearchParams((params) => { params.delete("ticket"); return params; }, { replace: true });
+    void openTicket({ id: linkedTicket } as PosTicketSummaryDto);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedTicket, ws.actor]);
+
+  /** Parks a counter order as an open take-away ticket so it can be added to and paid later. */
+  const holdCounterOrder = async () => {
+    if (!hold || draft.length === 0) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const held = await posServiceApi.openTicket(scope, {
+        orderType: "takeAway",
+        guestCount: 1,
+        customerName: hold.customerName.trim() || null,
+        items: draft.map((item) => ({ menuItemId: item.id, quantity: item.qty })),
+      });
+      setHold(null);
+      backToFloor();
+      setNotice({ tone: "ok", text: tx("Order held as ticket {ticket}. Open it from the floor or Held Orders to add items or take payment.", { ticket: held.ticketNo }) });
+    } catch (err) {
+      fail(err, "The order could not be put on hold.");
     } finally {
       setBusy(false);
     }
@@ -489,6 +522,7 @@ export function PosSalesPage() {
             onClearDraft={() => dispatchDraft({ type: "CLEAR" })}
             onSend={() => void sendDraft()}
             onPay={startPayment}
+            onHold={counter && draft.length > 0 && cashierMode ? () => setHold({ customerName: "" }) : undefined}
             onPrintCheck={ticket && chargeLines.length > 0 && draft.length === 0 ? printGuestCheck : undefined}
             onBack={requestBack}
             onAssignWaiter={(waiter) => void assignWaiter(waiter)}
@@ -587,6 +621,16 @@ export function PosSalesPage() {
         <label className="rpos-field">
           <span>{tx("Reason")}</span>
           <Textarea rows={2} maxLength={500} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} required />
+        </label>
+      </PosDialog>
+
+      <PosDialog open={!!hold} title={tx("Hold order")} confirmText={tx("Hold order")} busy={busy}
+        description={tx("The items are kept as an open take-away ticket. Anyone with access can add to it, and a cashier takes payment later.")}
+        onConfirm={() => void holdCounterOrder()} onClose={() => setHold(null)}>
+        <label className="rpos-field">
+          <span>{tx("Customer / Guest")}</span>
+          <Input value={hold?.customerName ?? ""} maxLength={200} placeholder={tx("Name to call the order")} autoFocus
+            onChange={(e) => hold && setHold({ customerName: e.target.value })} />
         </label>
       </PosDialog>
 

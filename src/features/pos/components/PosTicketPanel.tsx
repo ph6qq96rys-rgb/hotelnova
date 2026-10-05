@@ -1,4 +1,4 @@
-import { ArrowLeft, Ban, Minus, Plus, ReceiptText, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Ban, Minus, Plus, Printer, ReceiptText, Send, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/button";
 import { Select } from "../../../components/ui/select";
@@ -26,6 +26,8 @@ type Props = {
   onClearDraft: () => void;
   onSend: () => void;
   onPay: () => void;
+  /** Prints the guest check (bill with suggested tips) before payment. */
+  onPrintCheck?: () => void;
   onBack: () => void;
   onAssignWaiter: (waiter: PosWaiterDto | null) => void;
   onMoveTable: (tableId: string) => void;
@@ -168,6 +170,11 @@ export function PosTicketPanel(props: Props) {
         ) : null}
         {draft.length > 0 ? (
           <Button type="button" variant="outline" disabled={busy} onClick={props.onClearDraft}>{tx("Clear unsent")}</Button>
+        ) : null}
+        {props.onPrintCheck ? (
+          <Button type="button" variant="outline" disabled={busy} onClick={props.onPrintCheck}>
+            <Printer size={16} aria-hidden="true" /> {tx("Print guest check")}
+          </Button>
         ) : null}
         {props.canPay ? (
           <Button type="button" disabled={busy || !!props.payBlockedReason} onClick={props.onPay} title={props.payBlockedReason ? tx(props.payBlockedReason) : undefined}>

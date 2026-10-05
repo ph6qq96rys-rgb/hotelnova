@@ -5,6 +5,16 @@ export const TEST_STORE_ID = "store-qae-main";
 
 type Mode = "cashier" | "waiter";
 
+/** Tip settings the mocked branch returns: tips on for dine-in at 5/10/15%. */
+export const TEST_TIP_SETTINGS = {
+  source: "branch", isEnabled: true, suggestedPercents: [5, 10, 15], allowCustom: true, allowNoTip: true,
+  basis: "afterTax", distribution: "individual", poolingEnabled: false, trackCashTips: true,
+  enabledForDineIn: true, enabledForTakeAway: false, enabledForDelivery: false, enabledForRoomService: false,
+  updatedAtUtc: "2026-10-04T09:00:00Z", version: "tips-v1",
+};
+
+export type PosMockState = { settleRequests: Array<Record<string, unknown>> };
+
 const json = (route: Route, body: unknown, status = 200) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 
@@ -27,7 +37,8 @@ const menuItem = {
  * Mocks the POS API for UI tests. Tickets are kept in memory so opening a table,
  * sending a round and reading the ticket back behave like the real service.
  */
-export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Promise<void> {
+export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Promise<PosMockState> {
+  const mockState: PosMockState = { settleRequests: [] };
   const openedAtUtc = new Date().toISOString();
   const waiter = { employeeId: "emp-qae-waiter", userId: "qae-user", name: "QAE Waiter", hasLogin: true, openTickets: 0 };
   let ticket: Record<string, unknown> | null = null;
@@ -51,6 +62,16 @@ export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Pr
     if (path === "me") return json(route, { userId: "qae-user", name: mode === "cashier" ? "QAE Cashier" : "QAE Waiter",
       employeeId: mode === "waiter" ? waiter.employeeId : null, canManageTickets: mode === "cashier", canVoid: mode === "cashier" });
     if (path === "menu") return json(route, [menuItem]);
+    if (path === "tips/settings") return json(route, TEST_TIP_SETTINGS);
+    if (path === "tickets/ticket-1/settle" && ticket) {
+      mockState.settleRequests.push(route.request().postDataJSON());
+      return json(route, {
+        id: "sale-qae-2", saleNo: "QAE-SALE-002", companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, storeId: TEST_STORE_ID,
+        posSessionId: "session-qae-open", soldAtUtc: new Date().toISOString(), subTotal: ticket.subtotal, discountAmount: 0,
+        taxAmount: 0, serviceChargeAmount: 0, totalAmount: ticket.subtotal, totalCogs: 120, grossProfit: 130,
+        isInventoryPosted: true, saleItems: [], payments: [],
+      });
+    }
     if (path === "waiters") return json(route, [waiter]);
     if (path === "stores") return json(route, [{ id: TEST_STORE_ID, companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID,
       code: "POS-QAE", name: "Main POS", isActive: true }]);
@@ -97,4 +118,5 @@ export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Pr
       taxAmount: 20, serviceChargeAmount: 0, totalAmount: 270, totalCogs: 120, grossProfit: 150,
       isInventoryPosted: true, saleItems: [], payments: [],
     }));
+  return mockState;
 }

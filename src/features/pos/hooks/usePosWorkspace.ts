@@ -9,6 +9,7 @@ import {
   type PosScope,
   type PosWaiterDto,
 } from "../api/posServiceApi";
+import { posTipsApi, type TipSettingsDto } from "../api/posTipsApi";
 import type { MenuItemDto } from "../types/posTypes";
 
 const FLOOR_REFRESH_MS = 20_000;
@@ -24,6 +25,7 @@ export function usePosWorkspace(scope: PosScope, pollFloor: boolean) {
   const [waiters, setWaiters] = useState<PosWaiterDto[]>([]);
   const [menu, setMenu] = useState<MenuItemDto[]>([]);
   const [stores, setStores] = useState<PosStoreDto[]>([]);
+  const [tipSettings, setTipSettings] = useState<TipSettingsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [floorLoading, setFloorLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export function usePosWorkspace(scope: PosScope, pollFloor: boolean) {
 
   useEffect(() => {
     let cancelled = false;
-    setActor(null); setFloor(null); setWaiters([]); setMenu([]); setStores([]); setError(null); setMenuError(null);
+    setActor(null); setFloor(null); setWaiters([]); setMenu([]); setStores([]); setTipSettings(null); setError(null); setMenuError(null);
     if (!ready) { setLoading(false); return; }
     setLoading(true);
 
@@ -78,6 +80,10 @@ export function usePosWorkspace(scope: PosScope, pollFloor: boolean) {
     posServiceApi.menu(scope)
       .then((items) => { if (!cancelled) setMenu(items); })
       .catch((err) => { if (!cancelled) setMenuError(extractApiError(err, "Failed to load menu items.")); });
+    // Without tip settings the POS simply offers no tips.
+    posTipsApi.settings(scope)
+      .then((settings) => { if (!cancelled) setTipSettings(settings); })
+      .catch(() => { if (!cancelled) setTipSettings(null); });
     void refreshWaiters();
     void refreshFloor();
     return () => { cancelled = true; floorAbort.current?.abort(); };
@@ -92,5 +98,5 @@ export function usePosWorkspace(scope: PosScope, pollFloor: boolean) {
     return () => window.clearInterval(id);
   }, [pollFloor, ready, refreshFloor]);
 
-  return { actor, floor, waiters, menu, stores, loading, floorLoading, error, menuError, refreshFloor, refreshWaiters, setError };
+  return { actor, floor, waiters, menu, stores, tipSettings, loading, floorLoading, error, menuError, refreshFloor, refreshWaiters, setError };
 }

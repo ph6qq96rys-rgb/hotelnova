@@ -503,6 +503,9 @@ export function PosSessionPage() {
                     <Field label="Gross Profit" value={money(report.grossProfit)} accent />
                     <Field label="Cash Sales" value={money(report.cashSales)} />
                     <Field label="Card / Other Payments" value={money(report.cardSales)} />
+                    <Field label="Tips Recorded (not sales)" value={money(report.totalTips ?? 0)} />
+                    <Field label="Cash Tips in Drawer" value={money(report.cashTips ?? 0)} />
+                    <Field label="Cash Tips Paid Out" value={money(report.cashTipPayouts ?? 0)} />
                     <Field label="Expected Drawer Balance" value={money(report.expectedCash)} />
                     <Field label="System Cash Difference" value={report.cashVariance == null ? "-" : money(report.cashVariance)} />
                   </div>

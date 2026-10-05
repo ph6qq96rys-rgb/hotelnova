@@ -58,6 +58,12 @@ export interface SessionReportDto {
   cardSales: number;
   openingFloat: number;
   closingFloat?: number | null;
+  /** Tips recorded in the session (all methods). Never part of sales. */
+  totalTips?: number;
+  /** Cash tips that went into the drawer. */
+  cashTips?: number;
+  /** Cash tips paid out of the drawer to servers. */
+  cashTipPayouts?: number;
   expectedCash: number;
   cashVariance?: number | null;
   paymentBreakdown: PaymentBreakdownDto[];

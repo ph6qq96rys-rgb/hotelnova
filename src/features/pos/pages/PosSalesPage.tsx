@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LayoutGrid, UserRound } from "lucide-react";
+import { LayoutGrid, Printer, UserRound } from "lucide-react";
 
 import ConfirmModal from "../../../components/ConfirmModal";
 import { Button } from "../../../components/ui/button";
@@ -21,6 +21,7 @@ import {
   type PosTicketSummaryDto,
   type PosWaiterDto,
 } from "../api/posServiceApi";
+import { tipsEnabledFor } from "../api/posTipsApi";
 import { PosDialog } from "../components/PosDialog";
 import { PosFloorView } from "../components/PosFloorView";
 import { PosMenuPanel } from "../components/PosMenuPanel";
@@ -29,9 +30,11 @@ import { PosTicketPanel } from "../components/PosTicketPanel";
 import { SessionBanner, SessionGate } from "../components/SessionGate";
 import { usePosSession } from "../hooks/usePosSession";
 import { usePosWorkspace } from "../hooks/usePosWorkspace";
-import type { MenuItemDto, PaymentMethod } from "../types/posTypes";
+import type { MenuItemDto } from "../types/posTypes";
 import { buildTotals } from "../utils/checkoutPolicy";
 import { cartReducer, itemBlockReason, ticketChargeLines } from "../utils/posCart";
+import { guestCheckHtml, printHtml, receiptHtml, type Receipt } from "../utils/posPrint";
+import { buildPayments, newPayer, paymentProblem, splitEvenly, type PayerDraft, type TipContext } from "../utils/posTips";
 import { extractApiError } from "../utils/posUtils";
 import "../pos-workspace.css";
 import "../pos-service.css";
@@ -90,9 +93,8 @@ export function PosSalesPage() {
   const [now, setNow] = useState(() => Date.now());
 
   const [storeId, setStoreId] = useState(tryGetStoreId() ?? "");
-  const [method, setMethod] = useState<PaymentMethod>("CASH");
-  const [tendered, setTendered] = useState("");
-  const [reference, setReference] = useState("");
+  const [payers, setPayers] = useState<PayerDraft[]>([]);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
   const submitLock = useRef(false);
 
   const [newTicket, setNewTicket] = useState<NewTicketForm | null>(null);
@@ -124,6 +126,46 @@ export function PosSalesPage() {
 
   const chargeLines = useMemo(() => (counter ? draft : ticketChargeLines(ticket, ws.menu)), [counter, draft, ticket, ws.menu]);
   const totals = useMemo(() => buildTotals(chargeLines), [chargeLines]);
+
+  // Tips belong to the server of the ticket, so they are offered only when tips are on for
+  // this branch and service type and a server is assigned.
+  const tipsOn = tipsEnabledFor(ws.tipSettings, counter ? "takeAway" : ticket?.orderType);
+  const hasServer = !counter && !!(ticket?.waiterEmployeeId || ticket?.waiterUserId);
+  const tipCtx = useMemo<TipContext>(() => ({
+    offered: tipsOn && hasServer, settings: ws.tipSettings, billTotal: totals.total, billTax: totals.tax,
+  }), [hasServer, tipsOn, totals.tax, totals.total, ws.tipSettings]);
+  const tipNote = tipsOn && !hasServer
+    ? counter ? "Tips are recorded on tickets with an assigned server." : "Assign a waiter to the ticket to accept a tip."
+    : null;
+
+  /** A single payer always pays the whole bill. */
+  const changePayers = useCallback((next: PayerDraft[]) => {
+    setPayers(next.length === 1 ? [{ ...next[0], amount: totals.total.toFixed(2) }] : next);
+  }, [totals.total]);
+
+  const startPayment = () => { setPayers([newPayer(totals.total)]); setView("PAY"); };
+
+  const addPayer = () => {
+    const covered = payers.reduce((sum, payer) => sum + (Number(payer.amount) || 0), 0);
+    const next = payers.length === 1 ? [{ ...payers[0], amount: "" }] : payers;
+    changePayers([...next, newPayer(payers.length === 1 ? 0 : Math.max(0, totals.total - covered))]);
+  };
+
+  const splitPayers = (count: number) => {
+    const shares = splitEvenly(totals.total, count);
+    changePayers(shares.map((share, i) => (payers[i] ? { ...payers[i], amount: share.toFixed(2), tendered: "" } : newPayer(share))));
+  };
+
+  const printLines = () => chargeLines.map((line) => ({ quantity: line.qty, name: line.name, amount: line.lineTotal }));
+
+  const printGuestCheck = () => {
+    if (!ticket) return;
+    printHtml(guestCheckHtml({
+      ticketNo: ticket.ticketNo, tableLabel: ticket.tableLabel, guestCount: ticket.guestCount, waiterName: ticket.waiterName,
+      lines: printLines(), subtotal: totals.subtotal, serviceCharge: totals.serviceCharge, tax: totals.tax, total: totals.total,
+      printedAt: new Date(),
+    }, ws.tipSettings, tipCtx.offered, tx));
+  };
 
   const fail = useCallback((err: unknown, fallback: string) => {
     setNotice({ tone: "bad", text: extractApiError(err, tx(fallback)) });
@@ -158,7 +200,7 @@ export function PosSalesPage() {
 
   const backToFloor = () => {
     setTicket(null); setCounter(false); dispatchDraft({ type: "CLEAR" }); setView("FLOOR"); setLeaveOpen(false);
-    setTendered(""); setReference(""); setMethod("CASH");
+    setPayers([]);
     void ws.refreshFloor();
   };
 
@@ -284,9 +326,7 @@ export function PosSalesPage() {
   const paymentDisabledReason = (() => {
     if (payBlockedReason) return payBlockedReason;
     if (!storeId) return "Select a POS location before processing the sale.";
-    if (method === "CASH" && !(Number(tendered) >= totals.total)) return "Cash received is insufficient to complete the transaction.";
-    if (method !== "CASH" && !reference.trim()) return "Payment reference is required for card, mobile, and transfer payments.";
-    return null;
+    return paymentProblem(payers, tipCtx);
   })();
 
   const confirmPayment = async () => {
@@ -294,7 +334,14 @@ export function PosSalesPage() {
     submitLock.current = true;
     setBusy(true);
     setNotice(null);
-    const payments = [{ method, amount: totals.total, referenceCode: reference.trim() || null }];
+    const payments = buildPayments(payers, tipCtx);
+    const snapshot: Omit<Receipt, "saleNo"> = {
+      ticketNo: counter ? "-" : ticket!.ticketNo, tableLabel: counter ? null : ticket!.tableLabel,
+      guestCount: counter ? null : ticket!.guestCount, waiterName: counter ? null : ticket!.waiterName,
+      lines: printLines(), subtotal: totals.subtotal, serviceCharge: totals.serviceCharge, tax: totals.tax, total: totals.total,
+      printedAt: new Date(),
+      payments: payments.map((x) => ({ method: x.method, amount: x.amount, tip: x.tipAmount, reference: x.referenceCode })),
+    };
     try {
       const sale = counter
         ? await posApi.createSale(scope, {
@@ -309,11 +356,13 @@ export function PosSalesPage() {
             discountAmount: totals.discount, taxAmount: totals.tax, serviceChargeAmount: totals.serviceCharge, payments,
           });
       const label = counter ? "" : ` · ${tx("Ticket")} ${ticket!.ticketNo}`;
+      const tipTotal = payments.reduce((sum, x) => sum + x.tipAmount, 0);
       backToFloor();
+      setReceipt({ ...snapshot, saleNo: sale.saleNo ?? sale.id, printedAt: new Date() });
       setNotice({
         tone: "ok",
         sale: true,
-        text: `${tx("Sale saved")}: ${sale.saleNo ?? sale.id}${label}. ${tx(sale.isInventoryPosted ? "Inventory posted." : "Inventory posting pending. Review the sales register.")}`,
+        text: `${tx("Sale saved")}: ${sale.saleNo ?? sale.id}${label}.${tipTotal > 0 ? ` ${tx("Tips recorded")}: ${tipTotal.toFixed(2)}.` : ""} ${tx(sale.isInventoryPosted ? "Inventory posted." : "Inventory posting pending. Review the sales register.")}`,
       });
     } catch (err) {
       if (isUncertain(err)) {
@@ -381,6 +430,11 @@ export function PosSalesPage() {
       {notice ? (
         <div className={notice.tone === "ok" ? "rpos-notice rpos-notice--ok" : "rpos-notice rpos-notice--bad"} role="status" aria-live="polite">
           <span>{notice.text}</span>
+          {notice.sale && receipt ? (
+            <Button type="button" size="sm" variant="outline" onClick={() => printHtml(receiptHtml(receipt, tx))}>
+              <Printer size={14} aria-hidden="true" /> {tx("Print receipt")}
+            </Button>
+          ) : null}
           {notice.sale ? (
             <Button type="button" size="sm" variant="outline" onClick={() => navigate(`/companies/${companyId}/sales/list`)}>{tx("Sales register")}</Button>
           ) : null}
@@ -406,14 +460,14 @@ export function PosSalesPage() {
             <PosPaymentPanel
               title={counter ? tx("Counter sale payment") : `${tx("Payment")} · ${tx("Ticket")} ${ticket?.ticketNo ?? ""}`}
               total={totals.total}
-              method={method}
-              tendered={tendered}
-              reference={reference}
+              payers={payers}
+              tips={tipCtx}
+              tipNote={tipNote}
               busy={busy}
               disabledReason={paymentDisabledReason}
-              onMethod={setMethod}
-              onTendered={setTendered}
-              onReference={setReference}
+              onChange={changePayers}
+              onAddPayer={addPayer}
+              onSplitEvenly={splitPayers}
               onConfirm={() => void confirmPayment()}
               onBack={() => setView("ORDER")}
             />
@@ -434,7 +488,8 @@ export function PosSalesPage() {
             onDraftChange={dispatchDraft}
             onClearDraft={() => dispatchDraft({ type: "CLEAR" })}
             onSend={() => void sendDraft()}
-            onPay={() => { setTendered(""); setReference(""); setView("PAY"); }}
+            onPay={startPayment}
+            onPrintCheck={ticket && chargeLines.length > 0 && draft.length === 0 ? printGuestCheck : undefined}
             onBack={requestBack}
             onAssignWaiter={(waiter) => void assignWaiter(waiter)}
             onMoveTable={moveTable}
@@ -446,7 +501,7 @@ export function PosSalesPage() {
             <div className="rpos-mobile-bar" role="region" aria-label={tx("Not sent yet")}>
               <span>{tx("{count} items not sent", { count: draft.reduce((sum, item) => sum + item.qty, 0) })}</span>
               {counter ? (
-                <Button type="button" disabled={busy || !!payBlockedReason} onClick={() => { setTendered(""); setReference(""); setView("PAY"); }}>{tx("Take payment")}</Button>
+                <Button type="button" disabled={busy || !!payBlockedReason} onClick={startPayment}>{tx("Take payment")}</Button>
               ) : (
                 <Button type="button" disabled={busy || !ticket?.canEdit} onClick={() => void sendDraft()}>{tx("Send order")}</Button>
               )}

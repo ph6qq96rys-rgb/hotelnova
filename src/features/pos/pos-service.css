@@ -105,6 +105,41 @@
 .rpos-setup-new-area .rpos-field { flex: 1 1 260px; max-width: 420px; }
 .rpos-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; min-height: var(--ui-control-height); }
 
+/* Settlement: payers and tips */
+.rpos-payer { display: grid; gap: var(--ui-space-2); padding: var(--ui-space-3); border: 1px solid var(--border-soft); border-radius: var(--r-lg); background: var(--surface-2); }
+.rpos-payer > header { display: flex; justify-content: space-between; align-items: center; gap: var(--ui-space-2); }
+.rpos-payer h3 { margin: 0; font-size: 15px; }
+.rpos-tip { display: grid; gap: 6px; }
+.rpos-tip-label { font-size: 13px; font-weight: 600; }
+.rpos-payer-sum { display: grid; gap: 2px; margin: 0; font-variant-numeric: tabular-nums; }
+.rpos-payer-sum div { display: flex; justify-content: space-between; gap: var(--ui-space-2); }
+.rpos-payer-sum dd { margin: 0; }
+.rpos-pay-summary { border-top: 1px solid var(--border); padding-top: var(--ui-space-2); }
+
+/* Tips settings and report */
+.rpos-tip-settings { max-width: 760px; }
+.rpos-tip-group { display: grid; gap: var(--ui-space-2); border: 1px solid var(--border-soft); border-radius: var(--r-lg); padding: var(--ui-space-3); margin: 0; min-width: 0; }
+.rpos-tip-group legend { font-weight: 600; padding: 0 6px; }
+.rpos-tip-group:disabled { opacity: 0.6; }
+.rpos-check.rpos-tip-toggle { align-items: flex-start; }
+.rpos-tip-toggle > span { display: grid; gap: 2px; }
+.rpos-tip-toggle small { color: var(--text-muted); font-size: 12px; }
+.rpos-tip-percent { display: inline-flex; align-items: center; gap: 4px; }
+.rpos-tip-percent .ui-control.ui-control { width: 84px; }
+.rpos-tip-save { display: flex; align-items: flex-end; gap: var(--ui-space-3); flex-wrap: wrap; }
+.rpos-tip-save .rpos-field { flex: 1 1 260px; max-width: 420px; }
+.rpos-tip-filters { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.rpos-num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ui-table th.rpos-num { text-align: end; }
+.rpos-total-row td { font-weight: 700; background: var(--surface-2); }
+.ui-table tr.is-voided td { color: var(--text-muted); text-decoration: line-through; }
+.ui-table tr.is-voided td:last-child, .ui-table tr.is-voided td:nth-last-child(2) { text-decoration: none; }
+.rpos-row-actions { text-align: end; white-space: nowrap; }
+.rpos-row-actions > * + * { margin-inline-start: 4px; }
+.rpos-tip-history { display: grid; gap: var(--ui-space-2); list-style: none; margin: 0; padding: 0; }
+.rpos-tip-history li { display: grid; gap: 2px; padding-bottom: var(--ui-space-2); border-bottom: 1px solid var(--border-soft); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
 @media (max-width: 1000px) {
   .rpos-order { grid-template-columns: minmax(0, 1fr); }
   .rpos-ticket { position: static; max-height: none; }

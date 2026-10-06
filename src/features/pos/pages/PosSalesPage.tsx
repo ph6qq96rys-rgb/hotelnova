@@ -103,6 +103,8 @@ export function PosSalesPage() {
   const [payers, setPayers] = useState<PayerDraft[]>([]);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const submitLock = useRef(false);
+  // Same id for every retry of one payment, so a lost response never charges the guest twice.
+  const attemptKey = useRef<string | null>(null);
 
   const [newTicket, setNewTicket] = useState<NewTicketForm | null>(null);
   const [tableChoice, setTableChoice] = useState<{ label: string; tickets: PosTicketSummaryDto[] } | null>(null);
@@ -127,7 +129,7 @@ export function PosSalesPage() {
 
   // A different company or branch starts from an empty floor.
   useEffect(() => {
-    setTicket(null); setCounter(false); dispatchDraft({ type: "CLEAR" }); setView("FLOOR"); setNotice(null); setUncertain(false);
+    setTicket(null); setCounter(false); dispatchDraft({ type: "CLEAR" }); setView("FLOOR"); setNotice(null); setUncertain(false); attemptKey.current = null;
   }, [companyId, branchId]);
 
   useEffect(() => {
@@ -392,7 +394,6 @@ export function PosSalesPage() {
 
   const payBlockedReason = (() => {
     if (!online) return "Offline · checkout unavailable";
-    if (uncertain) return "Sale outcome is uncertain. Check the sales register before starting another payment.";
     if (!sessionState.session) return "Open a cashier session to take payment.";
     if (!counter && draft.length > 0) return "Send or clear the unsent items before taking payment.";
     if (totals.total <= 0) return "The transaction total must be greater than zero.";
@@ -411,6 +412,8 @@ export function PosSalesPage() {
     setBusy(true);
     setNotice(null);
     const payments = buildPayments(payers, tipCtx);
+    attemptKey.current ??= crypto.randomUUID();
+    const clientRequestId = attemptKey.current;
     const snapshot: Omit<Receipt, "saleNo"> = {
       ticketNo: counter ? "-" : ticket!.ticketNo, tableLabel: counter ? null : ticket!.tableLabel,
       guestCount: counter ? null : ticket!.guestCount, waiterName: counter ? null : ticket!.waiterName,
@@ -422,15 +425,16 @@ export function PosSalesPage() {
       const sale = counter
         ? await posApi.createSale(scope, {
             companyId: scope.companyId, branchId: scope.branchId, storeId,
-            discountAmount: totals.discount, taxAmount: totals.tax, serviceChargeAmount: totals.serviceCharge,
+            discountAmount: totals.discount, taxAmount: totals.tax, serviceChargeAmount: totals.serviceCharge, clientRequestId,
             lines: draft.map((item) => ({ menuItemId: item.id, quantity: item.qty, unitPrice: item.price })),
             payments,
             service: { orderType: "takeAway" },
           })
         : await posServiceApi.settle(scope, ticket!.id, {
             version: ticket!.version, storeId,
-            discountAmount: totals.discount, taxAmount: totals.tax, serviceChargeAmount: totals.serviceCharge, payments,
+            discountAmount: totals.discount, taxAmount: totals.tax, serviceChargeAmount: totals.serviceCharge, clientRequestId, payments,
           });
+      attemptKey.current = null;
       const label = counter ? "" : ` · ${tx("Ticket")} ${ticket!.ticketNo}`;
       const tipTotal = payments.reduce((sum, x) => sum + x.tipAmount, 0);
       backToFloor();
@@ -442,9 +446,11 @@ export function PosSalesPage() {
       });
     } catch (err) {
       if (isUncertain(err)) {
+        // Keep the key: confirming again returns the saved sale if this one went through.
         setUncertain(true);
-        setNotice({ tone: "bad", text: tx("Sale outcome is uncertain. Check the sales register before starting another payment.") });
+        setNotice({ tone: "bad", text: tx("The connection dropped before the sale was confirmed. Confirm payment again: the guest will not be charged twice.") });
       } else {
+        attemptKey.current = null;
         fail(err, "The operation could not be completed. Please try again.");
         if (isConflict(err) && ticket) await reloadTicket(ticket.id);
       }

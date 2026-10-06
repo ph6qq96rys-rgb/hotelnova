@@ -144,6 +144,10 @@ export interface CompanySettingsDto {
   vatEnabled: boolean;
   vatRate: number;
   pricesIncludeVat: boolean;
+  /** VAT is also charged on the service charge. */
+  vatOnServiceCharge?: boolean;
+  /** Cash differences at drawer close beyond this amount need a supervisor's approval. */
+  cashVarianceApprovalThreshold?: number;
 
   invoicePrefix: string;
   receiptPrefix: string;

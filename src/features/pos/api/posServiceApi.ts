@@ -180,6 +180,9 @@ export type SettleTicketRequest = {
   discountAmount: number;
   taxAmount: number;
   serviceChargeAmount: number;
+  /** One id per payment attempt: a retried request returns the sale already saved instead of charging twice. */
+  clientRequestId?: Guid | null;
+  discountReason?: string | null;
   payments: Array<{ method: PaymentMethod; amount: number; referenceCode?: string | null }>;
 };
 

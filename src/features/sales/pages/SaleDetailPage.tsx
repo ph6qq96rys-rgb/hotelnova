@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import { Textarea } from "../../../components/ui/textarea";
+import { useI18n } from "../../../i18n";
+import { PosDialog } from "../../pos/components/PosDialog";
+import { SaleReturnsPanel } from "../components/SaleReturnsPanel";
 
 import { useAppScope } from "../../../app/useAppScope";
 import { useErpNavigate } from "../../../routes/useErpNavigation";
@@ -140,6 +144,7 @@ export default function SaleDetailPage() {
   const nav = useErpNavigate();
   const { saleId } = useParams<{ saleId: string }>();
   const { companyId, branchId } = useAppScope();
+  const { tx } = useI18n();
 
   const [sale, setSale] = useState<SaleDto | null>(null);
   const [pageState, setPageState] = useState<PageState>({ status: "idle" });
@@ -264,14 +269,11 @@ export default function SaleDetailPage() {
     }
   }, [sale, companyId, branchId, load]);
 
+  const [voidReason, setVoidReason] = useState<string | null>(null);
+
+  // A void takes back a sale nothing was paid for, always with a reason; paid sales are returned.
   const cancelSale = useCallback(async () => {
-    if (!sale || !companyId) return;
-
-    const confirmed = window.confirm(
-      `Cancel sales document ${sale.saleNo}? This action should only be used for approved operational corrections.`
-    );
-
-    if (!confirmed) return;
+    if (!sale || !companyId || voidReason === null) return;
 
     setBusyAction("cancel");
     setActionError(null);
@@ -282,15 +284,16 @@ export default function SaleDetailPage() {
         companyId,
         branchId || "",
         sale.id,
-        "Cancelled from sales document workspace"
+        voidReason.trim()
       );
+      setVoidReason(null);
       go(paths.register, true);
     } catch (error) {
       setActionError(extractApiError(error, "Unable to cancel the sales document."));
     } finally {
       setBusyAction(null);
     }
-  }, [sale, companyId, branchId, paths.register, go]);
+  }, [sale, companyId, branchId, paths.register, go, voidReason]);
 
   if (!companyId) {
     return (
@@ -339,8 +342,17 @@ export default function SaleDetailPage() {
         onBack={() => go(paths.register)}
         onRefresh={() => void load()}
         onRetryInventory={() => void retryInventoryPosting()}
-        onCancel={() => void cancelSale()}
+        onCancel={() => setVoidReason("")}
       />
+      <PosDialog open={voidReason !== null} title={`${tx("Void sale")} · ${sale.saleNo}`}
+        description={tx("Only sales with no payment can be voided. Use a return for paid sales.")}
+        confirmText={tx("Void sale")} danger busy={busyAction === "cancel"}
+        confirmDisabled={(voidReason ?? "").trim().length < 3}
+        onClose={() => setVoidReason(null)} onConfirm={() => void cancelSale()}>
+        <label className="rpos-field"><span>{tx("Reason")}</span>
+          <Textarea rows={2} maxLength={300} value={voidReason ?? ""} onChange={(e) => setVoidReason(e.target.value)} />
+        </label>
+      </PosDialog>
 
       {errorMessage ? <Alert tone="danger">{errorMessage}</Alert> : null}
       {actionError ? (
@@ -357,6 +369,7 @@ export default function SaleDetailPage() {
         <div className="erp-doc-main">
           <DocumentTimeline sale={sale} />
           <SaleLinesCard sale={sale} />
+          <SaleReturnsPanel saleId={sale.id} onChanged={() => void load()} />
           <InventoryAuditCard sale={sale} />
         </div>
 
@@ -437,7 +450,7 @@ function DocumentHeader({
             </Button>
           ) : null}
           <Button variant="danger" onClick={onCancel} disabled={Boolean(busyAction)}>
-            {busyAction === "cancel" ? "Cancelling..." : "Cancel Document"}
+            {busyAction === "cancel" ? "Voiding..." : "Void"}
           </Button>
         </div>
       </div>

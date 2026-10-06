@@ -22,6 +22,8 @@ const DEFAULT_SETTINGS: CompanySettingsDto = {
   serviceChargeRate: 10,
   contingencyRate: 10,
   pricesIncludeVat: false,
+  vatOnServiceCharge: true,
+  cashVarianceApprovalThreshold: 50,
   invoicePrefix: "INV",
   receiptPrefix: "RCPT",
   grnPrefix: "GRN",
@@ -128,11 +130,14 @@ export default function CompanySettingsPage() {
           <Field label="Recipe contingency (%)">
             <Input type="number" value={String(value.contingencyRate ?? 0)} onChange={v => set("contingencyRate", Number(v))} />
           </Field>
-          <InfoRow label="Service charge VAT" value="Not taxable" />
+          <ToggleRow title="VAT on service charge" subtitle="Charge VAT on the service charge as well as on the items." checked={value.vatOnServiceCharge ?? true} onChange={(v) => set("vatOnServiceCharge", v)} />
+          <Field label="Cash difference needing approval (ETB)">
+            <Input type="number" value={String(value.cashVarianceApprovalThreshold ?? 50)} onChange={v => set("cashVarianceApprovalThreshold", Math.max(0, Number(v) || 0))} />
+          </Field>
           <InfoRow label="Contingency" value="Recipe-cost allowance only" />
           <Btn disabled={!canUpdateSettings || saving} onClick={() => setValue(previous => previous ? ({ ...previous,
-            vatEnabled: true, vatRate: 15, pricesIncludeVat: false, serviceChargeRate: 10, contingencyRate: 10,
-          }) : previous)}>Set 15% VAT / 10% service / 10% contingency</Btn>
+            vatEnabled: true, vatRate: 15, pricesIncludeVat: false, serviceChargeRate: 10, contingencyRate: 10, vatOnServiceCharge: true,
+          }) : previous)}>Set 15% VAT / 10% service (VAT-able) / 10% contingency</Btn>
         </Card>
 
         <Card title="Fiscal defaults" subtitle="Financial year and base reporting currency.">

@@ -1,354 +1,281 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatAppDateTime } from "../../../shared/datetime/dateFormat";
-import { salesApi } from "../api/salesApi";
-import type { SaleListItemDto } from "../api/salesTypes";
-import {
-  Alert,
-  Button,
-  Card,
-  Kpi,
-  extractApiError,
-  money,
-} from "../components/pos-ui";
-import "../components/pos.css";
+import { Download, RefreshCw } from "lucide-react";
 
-type SalesSummary = {
-  sales: number;
-  cogs: number;
-  grossProfit: number;
-  margin: number;
-  transactions: number;
-  avgTicket: number;
-  posted: number;
-  pending: number;
-};
+import { http } from "../../../api/http";
+import { PageHeader } from "../../../components/PageHeader";
+import { Button } from "../../../components/ui/button";
+import { StateMessage } from "../../../components/ui/Feedback";
+import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
+import { useAppScope } from "../../../app/useAppScope";
+import { useI18n } from "../../../i18n";
+import { formatAppDateTime, todayLocalIsoDate } from "../../../shared/datetime/dateFormat";
+import { money } from "../../pos/components/posUi";
+import { extractApiError } from "../../pos/utils/posUtils";
+import "../../pos/pos-service.css";
 
-type AppScope = {
-  companyId: string;
-  branchId: string;
-};
-
-function clean(value: unknown): string {
-  return typeof value === "string" && value.trim() ? value.trim() : "";
-}
-
-function readJsonStorage(key: string): any | null {
-  const raw = localStorage.getItem(key) ?? sessionStorage.getItem(key);
-
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function readJwtPayload(token?: string | null): any | null {
-  if (!token || !token.includes(".")) return null;
-
-  try {
-    const payload = token.split(".")[1];
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(window.atob(normalized));
-  } catch {
-    return null;
-  }
-}
-
-function getStoredValue(keys: string[]): string {
-  for (const key of keys) {
-    const value = clean(localStorage.getItem(key) ?? sessionStorage.getItem(key));
-    if (value) return value;
-  }
-
-  return "";
-}
-
-function resolveAppScope(): AppScope {
-  const auth =
-    readJsonStorage("auth") ??
-    readJsonStorage("authState") ??
-    readJsonStorage("restaurantfnb.auth") ??
-    readJsonStorage("hotelnova.auth");
-
-  const token =
-    clean(auth?.accessToken) ||
-    clean(auth?.token) ||
-    clean(localStorage.getItem("accessToken")) ||
-    clean(sessionStorage.getItem("accessToken"));
-
-  const claims = readJwtPayload(token);
-
-  const companyId =
-    getStoredValue(["companyId", "company_id", "selectedCompanyId"]) ||
-    clean(auth?.companyId) ||
-    clean(auth?.company_id) ||
-    clean(claims?.company_id) ||
-    clean(claims?.CompanyId);
-
-  const branchId =
-    getStoredValue(["branchId", "branch_id", "selectedBranchId"]) ||
-    clean(auth?.branchId) ||
-    clean(auth?.branch_id) ||
-    clean(claims?.branch_id) ||
-    clean(claims?.BranchId);
-
-  return {
-    companyId,
-    branchId,
+type Row = { key: string; label: string; saleCount: number; netSales: number; vat: number; serviceCharge: number; total: number; returns: number; netAfterReturns: number };
+type Report = {
+  from: string; to: string; timeZone: string; currencyCode: string; generatedAtUtc: string;
+  summary: {
+    saleCount: number; guestCount: number; grossSales: number; discounts: number; netSales: number; serviceCharge: number; vat: number;
+    totalSales: number; returns: number; returnCount: number; netAfterReturns: number; cogs: number; grossProfit: number; marginPercent: number;
+    averageTicket: number; collected: number; refunded: number; tips: number; openBalance: number; voidCount: number; voidAmount: number; pendingStockPosting: number;
   };
-}
+  days: Row[]; hours: Row[]; categories: Row[]; cashiers: Row[]; waiters: Row[];
+  items: Array<{ menuItemId: string; item: string; category?: string | null; quantity: number; returnedQuantity: number; netSales: number; returns: number; netAfterReturns: number; cogs: number }>;
+  payments: Array<{ method: string; count: number; collected: number; refunded: number; net: number }>;
+  discounts: Array<{ saleId: string; saleNo: string; soldAtUtc: string; soldBy: string; amount: number; reason?: string | null; approvedBy?: string | null }>;
+  returns: Array<{ returnId: string; returnNo: string; saleNo: string; approvedAtUtc: string; requestedBy: string; approvedBy?: string | null; reason: string; total: number; refund: number }>;
+  voids: Array<{ saleId: string; saleNo: string; soldAtUtc: string; soldBy: string; amount: number; reason?: string | null; voidedAtUtc?: string | null }>;
+  priceOverrides: Array<{ saleId: string; saleNo: string; soldAtUtc: string; item: string; quantity: number; listPrice: number; soldPrice: number; reason?: string | null; by?: string | null }>;
+};
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+const SECTIONS = [
+  { value: "days", label: "By day" }, { value: "hours", label: "By hour" }, { value: "items", label: "By item" },
+  { value: "categories", label: "By category" }, { value: "cashiers", label: "By cashier" }, { value: "waiters", label: "By waiter" },
+  { value: "payments", label: "Payments and refunds" }, { value: "discounts", label: "Discounts" }, { value: "returns", label: "Returns" },
+  { value: "voids", label: "Voids" }, { value: "overrides", label: "Price overrides" },
+] as const;
+type Section = (typeof SECTIONS)[number]["value"];
 
-function formatDate(value?: string | null): string {
-  return formatAppDateTime(value);
-}
+function monthStart(iso: string) { return `${iso.slice(0, 8)}01`; }
 
-function normalizeSalesList(response: unknown): SaleListItemDto[] {
-  const data = (response as any)?.data ?? response;
-
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.Items)) return data.Items;
-  if (Array.isArray(data?.data?.items)) return data.data.items;
-
-  return [];
-}
-
+/**
+ * Sales reports computed on the server over the company's local days, so this page, the Z report
+ * and the CSV exports always agree. Returns count on their approval day.
+ */
 export default function SalesReportsPage() {
-  const [scope, setScope] = useState<AppScope>(() => resolveAppScope());
-
-  const [fromDate, setFromDate] = useState(today());
-  const [toDate, setToDate] = useState(today());
-
-  const [items, setItems] = useState<SaleListItemDto[]>([]);
-  const [err, setErr] = useState<string | null>(null);
-
+  const { tx } = useI18n();
+  const { companyId, branchId } = useAppScope();
+  const base = useMemo(() => `/companies/${companyId}/branches/${branchId}/sales/reports`, [companyId, branchId]);
+  const today = todayLocalIsoDate();
+  const [range, setRange] = useState({ from: today, to: today });
+  const [section, setSection] = useState<Section>("days");
+  const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
-  const [postingCogs, setPostingCogs] = useState(false);
-
-  const companyId = scope.companyId;
-  const branchId = scope.branchId;
-
-  const canQuery = Boolean(companyId && branchId);
-
-  const refreshScope = useCallback(() => {
-    const next = resolveAppScope();
-    setScope(next);
-
-    if (!next.companyId || !next.branchId) {
-      setItems([]);
-      setErr(
-        "Missing company or branch context. Please switch tenant again or select a default branch."
-      );
-    } else {
-      setErr(null);
-    }
-
-    return next;
-  }, []);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const activeScope = refreshScope();
-
-    if (!activeScope.companyId || !activeScope.branchId) {
-      return;
-    }
-
+    if (!companyId || !branchId || !range.from || !range.to) return;
     setLoading(true);
-    setErr(null);
-
+    setError(null);
     try {
-      const response = await salesApi.list(
-        activeScope.companyId,
-        activeScope.branchId,
-        {
-          page: 1,
-          pageSize: 100,
-          fromDate,
-          toDate,
-        }
-      );
-
-      setItems(normalizeSalesList(response));
-    } catch (e) {
-      setErr(extractApiError(e, "Failed to load sales reports."));
-      setItems([]);
+      setReport((await http.get<Report>(base, { params: range })).data);
+    } catch (err) {
+      setError(extractApiError(err, "Unable to load the sales report."));
     } finally {
       setLoading(false);
     }
-  }, [fromDate, refreshScope, toDate]);
+  }, [base, companyId, branchId, range]);
 
-  useEffect(() => {
-    const activeScope = refreshScope();
+  useEffect(() => { void load(); }, [load]);
 
-    if (activeScope.companyId && activeScope.branchId) {
-      void load();
-    }
-  }, [load, refreshScope]);
-
-  const summary = useMemo<SalesSummary>(() => {
-    const sales = items.reduce(
-      (sum, row) => sum + Number(row.totalAmount || 0),
-      0
-    );
-
-    const cogs = items.reduce(
-      (sum, row) => sum + Number(row.totalCogs || 0),
-      0
-    );
-
-    const posted = items.filter((row) => row.isInventoryPosted).length;
-    const grossProfit = sales - cogs;
-
-    return {
-      sales,
-      cogs,
-      grossProfit,
-      margin: sales > 0 ? (grossProfit / sales) * 100 : 0,
-      transactions: items.length,
-      avgTicket: items.length > 0 ? sales / items.length : 0,
-      posted,
-      pending: items.length - posted,
-    };
-  }, [items]);
-
-  const handlePostBulkCogs = async () => {
-    const activeScope = refreshScope();
-
-    if (!activeScope.companyId || !activeScope.branchId) {
-      return;
-    }
-
-    setPostingCogs(true);
-    setErr(null);
-
+  async function exportCsv(which: string) {
+    setExporting(true);
+    setError(null);
     try {
-      await salesApi.postBulkCogs(activeScope.companyId, activeScope.branchId, {
-        fromDate,
-        toDate,
-      });
-
-      await load();
-    } catch (e) {
-      setErr(extractApiError(e, "Failed to post bulk COGS."));
+      const response = await http.get<Blob>(`${base}/export`, { params: { ...range, section: which }, responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `sales-${which}-${range.from.replace(/-/g, "")}-${range.to.replace(/-/g, "")}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(extractApiError(err, "The export could not be created."));
     } finally {
-      setPostingCogs(false);
+      setExporting(false);
     }
-  };
+  }
+
+  const s = report?.summary;
+  const groupRows: Row[] | null = report && ["days", "hours", "categories", "cashiers", "waiters"].includes(section)
+    ? (report[section as "days" | "hours" | "categories" | "cashiers" | "waiters"]) : null;
 
   return (
-    <div className="pos-page">
-      <div className="pos-topbar">
-        <div className="pos-title">
-          <h1>Sales Reports</h1>
-          <p>Daily sales, COGS, gross profit, and inventory-posting status.</p>
+    <main className="rpos-page rpos-setup ui-page">
+      <PageHeader title={tx("Sales Reports")}
+        subtitle={report ? tx("Days and hours in {zone}. Returns count on the day they were approved.", { zone: report.timeZone }) : undefined}
+        actions={<>
+          <Button type="button" variant="outline" disabled={exporting || !report} onClick={() => void exportCsv("summary")}><Download size={14} aria-hidden="true" /> {tx("Summary CSV")}</Button>
+          <Button type="button" variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw size={14} aria-hidden="true" /> {tx("Refresh")}</Button>
+        </>} />
+
+      <section className="rpos-setup-area rpos-tip-filters" aria-label={tx("Filters")}>
+        <label className="rpos-field"><span>{tx("From")}</span><Input type="date" value={range.from} max={range.to} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} /></label>
+        <label className="rpos-field"><span>{tx("To")}</span><Input type="date" value={range.to} min={range.from} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} /></label>
+        <div className="rpos-chip-row" style={{ alignSelf: "end" }}>
+          <Button type="button" size="sm" variant="outline" onClick={() => setRange({ from: today, to: today })}>{tx("Today")}</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => setRange({ from: monthStart(today), to: today })}>{tx("This month")}</Button>
         </div>
+      </section>
 
-        <div className="pos-actions">
-          <label className="pos-field">
-            <span>From</span>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-            />
-          </label>
+      {error ? <StateMessage tone="error">{error}</StateMessage> : null}
+      {loading && !report ? <StateMessage tone="loading">{tx("Loading sales report...")}</StateMessage> : null}
 
-          <label className="pos-field">
-            <span>To</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-            />
-          </label>
+      {s ? (
+        <section className="rpos-oo-tiles" aria-label={tx("Summary")}>
+          <div className="rpos-oo-tile"><span>{tx("Net sales after returns")}</span><strong>{money(s.netAfterReturns)}</strong><small>{tx("Excl. VAT and service charge")}</small></div>
+          <div className="rpos-oo-tile"><span>{tx("Total billed")}</span><strong>{money(s.totalSales)}</strong><small>{s.saleCount} {tx("sales")} · {tx("avg")} {money(s.averageTicket)}</small></div>
+          <div className="rpos-oo-tile"><span>{tx("VAT")}</span><strong>{money(s.vat)}</strong><small>{tx("Service charge")} {money(s.serviceCharge)}</small></div>
+          <div className="rpos-oo-tile"><span>{tx("Discounts")}</span><strong>{money(s.discounts)}</strong><small>{report!.discounts.length} {tx("sales")}</small></div>
+          <div className={s.returnCount ? "rpos-oo-tile is-warn" : "rpos-oo-tile"}><span>{tx("Returns")}</span><strong>{money(s.returns)}</strong><small>{s.returnCount} {tx("credit notes")} · {tx("refunded")} {money(s.refunded)}</small></div>
+          <div className={s.voidCount ? "rpos-oo-tile is-warn" : "rpos-oo-tile"}><span>{tx("Voids")}</span><strong>{s.voidCount}</strong><small>{money(s.voidAmount)}</small></div>
+          <div className="rpos-oo-tile"><span>{tx("Gross profit")}</span><strong>{money(s.grossProfit)}</strong><small>{tx("COGS")} {money(s.cogs)} · {s.marginPercent.toFixed(1)}%</small></div>
+          <div className="rpos-oo-tile"><span>{tx("Collected")}</span><strong>{money(s.collected)}</strong><small>{tx("Tips")} {money(s.tips)} · {tx("still owed")} {money(s.openBalance)}</small></div>
+          {s.pendingStockPosting ? <div className="rpos-oo-tile is-warn"><span>{tx("Stock posting pending")}</span><strong>{s.pendingStockPosting}</strong><small>{tx("Sales without COGS yet")}</small></div> : null}
+        </section>
+      ) : null}
 
-          <Button variant="primary" onClick={load} disabled={loading || postingCogs}>
-            {loading ? "Loading..." : "Run"}
-          </Button>
+      {report ? (
+        <section className="rpos-setup-area" aria-label={tx("Details")}>
+          <div className="rpos-tip-filters">
+            <label className="rpos-field"><span>{tx("Show")}</span>
+              <Select value={section} onChange={(e) => setSection(e.target.value as Section)}>
+                {SECTIONS.map((x) => <option key={x.value} value={x.value}>{tx(x.label)}</option>)}
+              </Select>
+            </label>
+            <Button type="button" variant="outline" style={{ alignSelf: "end" }} disabled={exporting} onClick={() => void exportCsv(section)}>
+              <Download size={14} aria-hidden="true" /> {tx("Export CSV")}
+            </Button>
+          </div>
 
-          <Button
-            variant="secondary"
-            onClick={handlePostBulkCogs}
-            disabled={loading || postingCogs || items.length === 0 || !canQuery}
-          >
-            {postingCogs ? "Posting COGS..." : "Post Pending COGS"}
-          </Button>
-        </div>
-      </div>
+          {groupRows ? (
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>{tx(SECTIONS.find((x) => x.value === section)!.label)}</TableHead>
+                <TableHead className="rpos-num">{tx("Sales")}</TableHead><TableHead className="rpos-num">{tx("Net sales")}</TableHead>
+                <TableHead className="rpos-num">{tx("VAT")}</TableHead><TableHead className="rpos-num">{tx("Service charge")}</TableHead>
+                <TableHead className="rpos-num">{tx("Total")}</TableHead><TableHead className="rpos-num">{tx("Returns")}</TableHead>
+                <TableHead className="rpos-num">{tx("Net after returns")}</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {groupRows.map((r) => (
+                  <TableRow key={r.key}>
+                    <TableCell>{r.label}</TableCell><TableCell className="rpos-num">{r.saleCount}</TableCell>
+                    <TableCell className="rpos-num">{money(r.netSales)}</TableCell><TableCell className="rpos-num">{money(r.vat)}</TableCell>
+                    <TableCell className="rpos-num">{money(r.serviceCharge)}</TableCell><TableCell className="rpos-num">{money(r.total)}</TableCell>
+                    <TableCell className="rpos-num">{money(r.returns)}</TableCell><TableCell className="rpos-num"><strong>{money(r.netAfterReturns)}</strong></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
 
-      {!canQuery && (
-        <Alert tone="danger">
-          Missing company or branch context. Please switch tenant again or make sure
-          the selected user has a default branch.
-        </Alert>
-      )}
+          {section === "items" ? (
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>{tx("Item")}</TableHead><TableHead>{tx("Category")}</TableHead><TableHead className="rpos-num">{tx("Quantity")}</TableHead>
+                <TableHead className="rpos-num">{tx("Returned")}</TableHead><TableHead className="rpos-num">{tx("Net sales")}</TableHead>
+                <TableHead className="rpos-num">{tx("Net after returns")}</TableHead><TableHead className="rpos-num">{tx("COGS")}</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {report.items.map((r) => (
+                  <TableRow key={r.menuItemId}>
+                    <TableCell>{r.item}</TableCell><TableCell>{r.category ?? "—"}</TableCell><TableCell className="rpos-num">{r.quantity}</TableCell>
+                    <TableCell className="rpos-num">{r.returnedQuantity}</TableCell><TableCell className="rpos-num">{money(r.netSales)}</TableCell>
+                    <TableCell className="rpos-num"><strong>{money(r.netAfterReturns)}</strong></TableCell><TableCell className="rpos-num">{money(r.cogs)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
 
-      {err && <Alert tone="danger">{err}</Alert>}
+          {section === "payments" ? (
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>{tx("Payment method")}</TableHead><TableHead className="rpos-num">{tx("Payments")}</TableHead>
+                <TableHead className="rpos-num">{tx("Collected")}</TableHead><TableHead className="rpos-num">{tx("Refunded")}</TableHead><TableHead className="rpos-num">{tx("Net")}</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {report.payments.map((r) => (
+                  <TableRow key={r.method}>
+                    <TableCell>{tx(r.method)}</TableCell><TableCell className="rpos-num">{r.count}</TableCell><TableCell className="rpos-num">{money(r.collected)}</TableCell>
+                    <TableCell className="rpos-num">{money(r.refunded)}</TableCell><TableCell className="rpos-num"><strong>{money(r.net)}</strong></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
 
-      <div className="sales-kpi-grid">
-        <Kpi label="Sales" value={money(summary.sales)} />
-        <Kpi label="COGS" value={money(summary.cogs)} />
-        <Kpi label="Gross Profit" value={money(summary.grossProfit)} />
-        <Kpi label="Margin" value={`${summary.margin.toFixed(1)}%`} />
-        <Kpi label="Transactions" value={summary.transactions} />
-        <Kpi label="Average Ticket" value={money(summary.avgTicket)} />
-        <Kpi label="Inventory Posted" value={summary.posted} />
-        <Kpi label="Inventory Pending" value={summary.pending} />
-      </div>
+          {section === "discounts" ? (
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>{tx("Sale")}</TableHead><TableHead>{tx("Sold at")}</TableHead><TableHead>{tx("Sold by")}</TableHead>
+                <TableHead className="rpos-num">{tx("Discount")}</TableHead><TableHead>{tx("Reason")}</TableHead><TableHead>{tx("Approved by")}</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {report.discounts.map((r) => (
+                  <TableRow key={r.saleId}>
+                    <TableCell>{r.saleNo}</TableCell><TableCell>{formatAppDateTime(r.soldAtUtc)}</TableCell><TableCell>{r.soldBy}</TableCell>
+                    <TableCell className="rpos-num">{money(r.amount)}</TableCell><TableCell>{r.reason ?? "—"}</TableCell><TableCell>{r.approvedBy ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
 
-      <Card title="Report Detail">
-        <div className="sales-table-shell">
-          <table className="pos-table">
-            <thead>
-              <tr>
-                <th>Sale</th>
-                <th>Date</th>
-                <th style={{ textAlign: "right" }}>Sales</th>
-                <th style={{ textAlign: "right" }}>COGS</th>
-                <th style={{ textAlign: "right" }}>Profit</th>
-                <th>Inventory</th>
-              </tr>
-            </thead>
+          {section === "returns" ? (
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>{tx("Return")}</TableHead><TableHead>{tx("Sale")}</TableHead><TableHead>{tx("Approved")}</TableHead>
+                <TableHead>{tx("Requested by")}</TableHead><TableHead>{tx("Approved by")}</TableHead><TableHead>{tx("Reason")}</TableHead>
+                <TableHead className="rpos-num">{tx("Total")}</TableHead><TableHead className="rpos-num">{tx("Refund")}</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {report.returns.map((r) => (
+                  <TableRow key={r.returnId}>
+                    <TableCell>{r.returnNo}</TableCell><TableCell>{r.saleNo}</TableCell><TableCell>{formatAppDateTime(r.approvedAtUtc)}</TableCell>
+                    <TableCell>{r.requestedBy}</TableCell><TableCell>{r.approvedBy ?? "—"}</TableCell><TableCell>{r.reason}</TableCell>
+                    <TableCell className="rpos-num">{money(r.total)}</TableCell><TableCell className="rpos-num">{money(r.refund)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
 
-            <tbody>
-              {items.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="sales-empty-cell">
-                    {loading ? "Loading sales..." : "No sales found for this date range."}
-                  </td>
-                </tr>
-              )}
+          {section === "voids" ? (
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>{tx("Sale")}</TableHead><TableHead>{tx("Sold at")}</TableHead><TableHead>{tx("Sold by")}</TableHead>
+                <TableHead className="rpos-num">{tx("Amount")}</TableHead><TableHead>{tx("Reason")}</TableHead><TableHead>{tx("Voided at")}</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {report.voids.map((r) => (
+                  <TableRow key={r.saleId}>
+                    <TableCell>{r.saleNo}</TableCell><TableCell>{formatAppDateTime(r.soldAtUtc)}</TableCell><TableCell>{r.soldBy}</TableCell>
+                    <TableCell className="rpos-num">{money(r.amount)}</TableCell><TableCell>{r.reason ?? "—"}</TableCell>
+                    <TableCell>{r.voidedAtUtc ? formatAppDateTime(r.voidedAtUtc) : "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
 
-              {items.map((row) => {
-                const totalAmount = Number(row.totalAmount || 0);
-                const totalCogs = Number(row.totalCogs || 0);
-
-                const grossProfit =
-                  typeof row.grossProfit === "number"
-                    ? row.grossProfit
-                    : totalAmount - totalCogs;
-
-                return (
-                  <tr key={row.id}>
-                    <td className="sales-mono">{row.saleNo || "Pending sale number"}</td>
-                    <td>{formatDate(row.soldAtUtc)}</td>
-                    <td style={{ textAlign: "right" }}>{money(totalAmount)}</td>
-                    <td style={{ textAlign: "right" }}>{money(totalCogs)}</td>
-                    <td style={{ textAlign: "right" }}>{money(grossProfit)}</td>
-                    <td>{row.isInventoryPosted ? "Posted" : "Pending"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
+          {section === "overrides" ? (
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>{tx("Sale")}</TableHead><TableHead>{tx("Item")}</TableHead><TableHead className="rpos-num">{tx("Quantity")}</TableHead>
+                <TableHead className="rpos-num">{tx("Menu price")}</TableHead><TableHead className="rpos-num">{tx("Sold at price")}</TableHead>
+                <TableHead>{tx("Reason")}</TableHead><TableHead>{tx("By")}</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {report.priceOverrides.map((r, i) => (
+                  <TableRow key={`${r.saleId}-${i}`}>
+                    <TableCell>{r.saleNo}<br /><span className="rpos-muted">{formatAppDateTime(r.soldAtUtc)}</span></TableCell><TableCell>{r.item}</TableCell>
+                    <TableCell className="rpos-num">{r.quantity}</TableCell><TableCell className="rpos-num">{money(r.listPrice)}</TableCell>
+                    <TableCell className="rpos-num">{money(r.soldPrice)}</TableCell><TableCell>{r.reason ?? "—"}</TableCell><TableCell>{r.by ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
+          <p className="rpos-muted">{tx("Generated")} {formatAppDateTime(report.generatedAtUtc)}</p>
+        </section>
+      ) : null}
+    </main>
   );
 }

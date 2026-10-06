@@ -15,7 +15,7 @@ export function getPostRoutes(): AppRoute[] {
     {
       path: "sales/pos/session",
       element: <PosSessionPage />,
-      label: "POS Session",
+      label: "Cash Drawer",
       section: "Sales",
       nav: true,
       permissions: ["pos.close"],

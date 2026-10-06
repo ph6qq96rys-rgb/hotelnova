@@ -16,6 +16,9 @@ export type MenuPriceBreakdown = {
   recipeCost: number;
   contingencyAmount: number;
   costWithContingency: number;
+  /** VAT is also charged on the service charge (company setting). */
+  vatOnServiceCharge?: boolean;
+  serviceChargeVatAmount?: number;
 };
 
 //  Catalog lookups 

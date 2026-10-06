@@ -14,6 +14,7 @@ import SalesDashboardPage from "../features/sales/pages/SalesDashboardPage";
 import SalesListPage from "../features/sales/pages/SalesListPage";
 import SaleDetailPage from "../features/sales/pages/SaleDetailPage";
 import SalesReportsPage from "../features/sales/pages/SalesReportsPage";
+import SalesReturnsPage from "../features/sales/pages/SalesReturnsPage";
 import ExternalSalesImportPage from "../features/sales/pages/ExternalSalesImportPage";
 import OperationsDashboardPage from "../features/operations/pages/OperationsDashboardPage";
 import DigitalMenuPage from "../shared/DigitalMenuPage";
@@ -75,9 +76,20 @@ export const salesRoutes: AppRoute[] = [
     label: "Sales Reports",
     element: <SalesReportsPage />,
     icon: <BarChart3 size={18} />,
-    nav: false,
-    section: "Reports",
+    nav: true,
+    section: "Sales",
     order: 30,
+    permissions: ["sales.view", "reports.view"],
+  },
+  {
+    path: "sales/returns",
+    label: "Returns & Refunds",
+    element: <SalesReturnsPage />,
+    icon: <ClipboardList size={18} />,
+    nav: true,
+    section: "Sales",
+    order: 35,
+    permissions: ["sales.refund.approve", "sales.view", "pos.view"],
   },
   {
     path: "sales/import",

@@ -111,6 +111,9 @@ export interface CreateSaleRequest {
   discountAmount: number;
   taxAmount: number;
   serviceChargeAmount: number;
+  /** One id per payment attempt: a retried request returns the sale already saved instead of charging twice. */
+  clientRequestId?: Guid | null;
+  discountReason?: string | null;
   lines: SaleLineRequest[];
 
   /**

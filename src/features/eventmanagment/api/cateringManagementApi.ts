@@ -958,23 +958,39 @@ async function optionalGet<T>(url: string, signal?: AbortSignal): Promise<T | nu
   }
 }
 
-export async function getCateringDashboard(
-  companyId: string,
-  params?: { branchId?: string | null; signal?: AbortSignal }
-): Promise<EventDashboardDto> {
-  const { data } = await http.get<EventDashboardDto>(`${cateringBase(companyId)}/dashboard`, {
-    params: withBranch(params),
-    signal: params?.signal,
-  });
-  return data;
-}
+export type CateringKpiMetricDto = { key: string; label: string; value: number; unit: "money" | "percent" | "count" | string; helpText?: string | null };
+export type CateringKpiPackageDto = { packageName: string; eventCount: number; guestCount: number; revenue: number; averageRevenuePerEvent: number };
+export type CateringKpiEventDto = {
+  eventId: string;
+  eventNo: string;
+  eventType: string;
+  eventDateUtc: string;
+  venueName: string;
+  packageName?: string | null;
+  guestCount: number;
+  revenue: number;
+  contributionMargin: number;
+  contributionMarginPercent: number;
+};
+export type CateringKpiDashboardDto = {
+  generatedAtUtc: string;
+  fromUtc: string;
+  toUtc: string;
+  companyId: string;
+  branchId?: string | null;
+  currencyCode: string;
+  metrics: CateringKpiMetricDto[];
+  topPackages: CateringKpiPackageDto[];
+  mostProfitableEvents: CateringKpiEventDto[];
+};
 
-export async function getCateringExperience(
+/** Catering KPIs (GET /catering/dashboard/kpis, permission catering.dashboard.view). */
+export async function getCateringKpis(
   companyId: string,
-  params?: { branchId?: string | null; signal?: AbortSignal }
-): Promise<CateringExperienceDto> {
-  const { data } = await http.get<CateringExperienceDto>(`${cateringBase(companyId)}/dashboard/experience`, {
-    params: withBranch(params),
+  params?: { branchId?: string | null; fromUtc?: string; toUtc?: string; signal?: AbortSignal }
+): Promise<CateringKpiDashboardDto> {
+  const { data } = await http.get<CateringKpiDashboardDto>(`${cateringBase(companyId)}/dashboard/kpis`, {
+    params: { ...withBranch(params), fromUtc: params?.fromUtc, toUtc: params?.toUtc },
     signal: params?.signal,
   });
   return data;

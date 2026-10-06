@@ -1,21 +1,13 @@
 // src/features/eventmanagment/screens/ReportsScreen.tsx
 //
-// The Reports route has existed in routeConfig since the module was added, but
-// no ReportsScreen was ever written and moduleFromParam did not recognise
-// "reports" — so clicking Reports silently rendered the Command screen. This is
-// that missing screen.
-//
-// It reads the catering KPI dashboard endpoint, which the UI never called, and
-// pairs it with the event-scoped financial analysis panels.
+// Catering reports: KPIs from GET /catering/dashboard/kpis (last 30 days by default)
+// plus the event-scoped financial panels.
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarDays, ListChecks } from "lucide-react";
-import {
-  getCateringDashboard,
-  type CateringEventScopedSnapshot,
-  type EventDashboardDto,
-} from "../api/cateringManagementApi";
-import { PanelHeader, StatusBadge } from "../pages/erp/EventManagementShared";
+import { AlertTriangle, BarChart3, CalendarDays, Package } from "lucide-react";
+import { getCateringKpis, type CateringEventScopedSnapshot, type CateringKpiDashboardDto, type CateringKpiMetricDto } from "../api/cateringManagementApi";
+import { formatCurrency } from "../../../shared/currency/currencyFormat";
+import { PanelHeader } from "../pages/erp/EventManagementShared";
 import { formatDate } from "../pages/erp/eventManagementUtils";
 import { FinalBillsPanel, ProfitabilityPanel, ReconciliationsPanel } from "./OperationsPanels";
 
@@ -28,8 +20,14 @@ type ReportsScreenProps = {
 type DashboardState = {
   loading: boolean;
   error: string | null;
-  data: EventDashboardDto | null;
+  data: CateringKpiDashboardDto | null;
 };
+
+function formatMetric(metric: CateringKpiMetricDto, currencyCode: string): string {
+  if (metric.unit === "money") return formatCurrency(metric.value, currencyCode);
+  if (metric.unit === "percent") return `${metric.value.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+  return metric.value.toLocaleString();
+}
 
 export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenProps) {
   const [state, setState] = useState<DashboardState>({ loading: false, error: null, data: null });
@@ -45,13 +43,14 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
 
     void (async () => {
       try {
-        const data = await getCateringDashboard(companyId, { branchId, signal: controller.signal });
+        const data = await getCateringKpis(companyId, { branchId, signal: controller.signal });
         if (!controller.signal.aborted) setState({ loading: false, error: null, data });
-      } catch {
+      } catch (error) {
         if (!controller.signal.aborted) {
+          const status = (error as { response?: { status?: number } })?.response?.status;
           setState({
             loading: false,
-            error: "The catering dashboard endpoint did not return data.",
+            error: status === 403 ? "You do not have access to catering KPIs." : "Catering KPIs could not be loaded.",
             data: null,
           });
         }
@@ -60,6 +59,9 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
 
     return () => controller.abort();
   }, [branchId, companyId]);
+
+  const data = state.data;
+  const currency = data?.currencyCode ?? "";
 
   return (
     <div className="erp-stack">
@@ -70,36 +72,30 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
           </span>
           <div>
             <h2>Reports</h2>
-            <p>Catering KPIs, outstanding tasks and event financial analysis.</p>
+            <p>Catering KPIs, top packages and event financial analysis.</p>
           </div>
         </div>
-        {state.data ? <small>Generated {formatDate(state.data.generatedAtUtc)}</small> : null}
+        {data ? <small>{formatDate(data.fromUtc)} – {formatDate(data.toUtc)}</small> : null}
       </header>
 
       {state.error ? (
-        <div className="erp-event-alert" role="status">
+        <div className="erp-event-alert" role="alert">
           <AlertTriangle size={17} />
           <span>{state.error}</span>
         </div>
       ) : null}
 
       <section className="erp-panel">
-        <PanelHeader
-          meta={state.data ? `${state.data.cards.length} indicators` : undefined}
-          title="Key indicators"
-        />
+        <PanelHeader meta={data ? `${data.metrics.length} indicators` : undefined} title="Key indicators" />
         {state.loading ? (
-          <p className="erp-record-empty">Loading indicators.</p>
-        ) : state.data && state.data.cards.length ? (
+          <p className="erp-record-empty" role="status">Loading indicators.</p>
+        ) : data && data.metrics.length ? (
           <div className="erp-event-kpis">
-            {state.data.cards.map((card) => (
-              <article className={`erp-metric tone-${toneFromSeverity(card.severity)}`} key={card.key}>
-                <span>{card.title}</span>
-                <strong>
-                  {card.value.toLocaleString()}
-                  {card.unit ? ` ${card.unit}` : ""}
-                </strong>
-                <small>{card.severity}</small>
+            {data.metrics.map((metric) => (
+              <article className="erp-metric tone-info" key={metric.key} title={metric.helpText ?? undefined}>
+                <span>{metric.label}</span>
+                <strong>{formatMetric(metric, currency)}</strong>
+                {metric.helpText ? <small>{metric.helpText}</small> : null}
               </article>
             ))}
           </div>
@@ -110,64 +106,51 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
 
       <div className="erp-split">
         <section className="erp-panel">
-          <PanelHeader
-            meta={state.data ? `${state.data.tasks.length} open` : undefined}
-            title="Outstanding tasks"
-          />
-          {state.data && state.data.tasks.length ? (
+          <PanelHeader meta={data ? `${data.topPackages.length} packages` : undefined} title="Top packages" />
+          {data && data.topPackages.length ? (
             <ul className="erp-task-list">
-              {state.data.tasks.map((task) => (
-                <li key={task.key}>
+              {data.topPackages.map((item) => (
+                <li key={item.packageName}>
                   <span className="erp-task-list__icon">
-                    <ListChecks size={15} />
+                    <Package size={15} />
                   </span>
                   <div>
-                    <strong>{task.title}</strong>
+                    <strong>{item.packageName}</strong>
                     <small>
-                      {task.area}
-                      {task.dueAtUtc ? ` · due ${formatDate(task.dueAtUtc)}` : ""}
+                      {item.eventCount} events · {item.guestCount} guests · {formatCurrency(item.revenue, currency)}
                     </small>
                   </div>
-                  <StatusBadge status={task.severity} />
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="erp-record-empty">
-              {state.loading ? "Loading tasks." : "No outstanding tasks reported."}
-            </p>
+            <p className="erp-record-empty">{state.loading ? "Loading packages." : "No package sales in this period."}</p>
           )}
         </section>
 
         <section className="erp-panel">
-          <PanelHeader
-            meta={state.data ? `${state.data.upcomingEvents.length} scheduled` : undefined}
-            title="Upcoming events"
-          />
-          {state.data && state.data.upcomingEvents.length ? (
+          <PanelHeader meta={data ? `${data.mostProfitableEvents.length} events` : undefined} title="Most profitable events" />
+          {data && data.mostProfitableEvents.length ? (
             <ul className="erp-task-list">
-              {state.data.upcomingEvents.map((event) => (
-                <li key={event.eventQuotationId}>
+              {data.mostProfitableEvents.map((event) => (
+                <li key={event.eventId}>
                   <span className="erp-task-list__icon">
                     <CalendarDays size={15} />
                   </span>
                   <div>
                     <strong>
-                      {event.reference} · {event.customerName}
+                      {event.eventNo} · {event.venueName}
                     </strong>
                     <small>
-                      {event.eventType} · {event.guestCount} guests ·{" "}
-                      {formatDate(event.eventStartUtc)}
+                      {formatDate(event.eventDateUtc)} · {event.guestCount} guests · margin {formatCurrency(event.contributionMargin, currency)} (
+                      {event.contributionMarginPercent.toLocaleString(undefined, { maximumFractionDigits: 1 })}%)
                     </small>
                   </div>
-                  <StatusBadge status={event.status} />
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="erp-record-empty">
-              {state.loading ? "Loading events." : "No upcoming events scheduled."}
-            </p>
+            <p className="erp-record-empty">{state.loading ? "Loading events." : "No analysed events in this period."}</p>
           )}
         </section>
       </div>
@@ -177,12 +160,4 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
       <ReconciliationsPanel workspace={workspace} />
     </div>
   );
-}
-
-function toneFromSeverity(severity: string): string {
-  const normalized = severity.toLowerCase();
-  if (normalized === "critical") return "critical";
-  if (normalized === "warning") return "warning";
-  if (normalized === "success") return "success";
-  return "info";
 }

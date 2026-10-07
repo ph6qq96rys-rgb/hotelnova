@@ -5,16 +5,22 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, BarChart3, CalendarDays, Package } from "lucide-react";
-import { getCateringKpis, type CateringEventScopedSnapshot, type CateringKpiDashboardDto, type CateringKpiMetricDto } from "../api/cateringManagementApi";
+import { getCateringKpis, type CateringKpiDashboardDto, type CateringKpiMetricDto } from "../api/cateringManagementApi";
 import { formatCurrency } from "../../../shared/currency/currencyFormat";
-import { PanelHeader } from "../pages/erp/EventManagementShared";
-import { formatDate } from "../pages/erp/eventManagementUtils";
-import { FinalBillsPanel, ProfitabilityPanel, ReconciliationsPanel } from "./OperationsPanels";
+import { formatDay as formatDate } from "../sales/ui";
+
+function PanelHeader({ title, meta }: { title: string; meta?: string }) {
+  return (
+    <header className="erp-panel-header">
+      <h3>{title}</h3>
+      {meta ? <span>{meta}</span> : null}
+    </header>
+  );
+}
 
 type ReportsScreenProps = {
   companyId: string;
   branchId: string;
-  workspace: CateringEventScopedSnapshot | null;
 };
 
 type DashboardState = {
@@ -29,7 +35,7 @@ function formatMetric(metric: CateringKpiMetricDto, currencyCode: string): strin
   return metric.value.toLocaleString();
 }
 
-export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenProps) {
+export function ReportsScreen({ companyId, branchId }: ReportsScreenProps) {
   const [state, setState] = useState<DashboardState>({ loading: false, error: null, data: null });
 
   useEffect(() => {
@@ -75,7 +81,11 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
             <p>Catering KPIs, top packages and event financial analysis.</p>
           </div>
         </div>
-        {data ? <small>{formatDate(data.fromUtc)} – {formatDate(data.toUtc)}</small> : null}
+        {data ? (
+          <small>
+            {formatDate(data.fromUtc)} – {formatDate(data.toUtc)}
+          </small>
+        ) : null}
       </header>
 
       {state.error ? (
@@ -88,7 +98,9 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
       <section className="erp-panel">
         <PanelHeader meta={data ? `${data.metrics.length} indicators` : undefined} title="Key indicators" />
         {state.loading ? (
-          <p className="erp-record-empty" role="status">Loading indicators.</p>
+          <p className="erp-record-empty" role="status">
+            Loading indicators.
+          </p>
         ) : data && data.metrics.length ? (
           <div className="erp-event-kpis">
             {data.metrics.map((metric) => (
@@ -124,12 +136,17 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
               ))}
             </ul>
           ) : (
-            <p className="erp-record-empty">{state.loading ? "Loading packages." : "No package sales in this period."}</p>
+            <p className="erp-record-empty">
+              {state.loading ? "Loading packages." : "No package sales in this period."}
+            </p>
           )}
         </section>
 
         <section className="erp-panel">
-          <PanelHeader meta={data ? `${data.mostProfitableEvents.length} events` : undefined} title="Most profitable events" />
+          <PanelHeader
+            meta={data ? `${data.mostProfitableEvents.length} events` : undefined}
+            title="Most profitable events"
+          />
           {data && data.mostProfitableEvents.length ? (
             <ul className="erp-task-list">
               {data.mostProfitableEvents.map((event) => (
@@ -142,7 +159,8 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
                       {event.eventNo} · {event.venueName}
                     </strong>
                     <small>
-                      {formatDate(event.eventDateUtc)} · {event.guestCount} guests · margin {formatCurrency(event.contributionMargin, currency)} (
+                      {formatDate(event.eventDateUtc)} · {event.guestCount} guests · margin{" "}
+                      {formatCurrency(event.contributionMargin, currency)} (
                       {event.contributionMarginPercent.toLocaleString(undefined, { maximumFractionDigits: 1 })}%)
                     </small>
                   </div>
@@ -150,14 +168,12 @@ export function ReportsScreen({ companyId, branchId, workspace }: ReportsScreenP
               ))}
             </ul>
           ) : (
-            <p className="erp-record-empty">{state.loading ? "Loading events." : "No analysed events in this period."}</p>
+            <p className="erp-record-empty">
+              {state.loading ? "Loading events." : "No analysed events in this period."}
+            </p>
           )}
         </section>
       </div>
-
-      <ProfitabilityPanel workspace={workspace} />
-      <FinalBillsPanel workspace={workspace} />
-      <ReconciliationsPanel workspace={workspace} />
     </div>
   );
 }

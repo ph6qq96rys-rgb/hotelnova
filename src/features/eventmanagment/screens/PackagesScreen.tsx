@@ -1,4 +1,5 @@
 import { CateringItemCostPreview } from "./CateringItemCostPreview";
+import { formatAppDateTime } from "../../../shared/datetime/dateFormat";
 import { Select } from "../../../components/ui/select";
 import { CateringItemRecipeEditor } from "./CateringItemRecipeEditor";
 import { StateMessage } from "../../../components/ui/Feedback";
@@ -467,7 +468,7 @@ export function PackagesScreen({ companyId, branchId }: { companyId: string; bra
           {!history.length && <p>No revision history is available for this package.</p>}
           {history.map((h) => (
             <p key={h.version}>
-              v{h.version} · {h.action} · {new Date(h.createdAt).toLocaleString()} · {h.createdBy} · {h.reason}
+              v{h.version} · {h.action} · {formatAppDateTime(h.createdAt)} · {h.createdBy} · {h.reason}
             </p>
           ))}
           <button onClick={() => setHistory(null)}>Close history</button>

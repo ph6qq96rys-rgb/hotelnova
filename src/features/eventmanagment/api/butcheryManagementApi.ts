@@ -17,6 +17,11 @@ export type ButcheryProcessingOutputDto = {
   costAllocationMethod: ButcheryCostAllocationMethod;
   wasteReason?: string | null;
   notes?: string | null;
+  relativeValueWeight?: number;
+  byProductUnitValue?: number;
+  /** Joint cost given to this output when the batch was posted. */
+  allocatedCost?: number;
+  allocatedUnitCost?: number;
 };
 
 export type ButcheryProcessingBatchDto = {
@@ -54,6 +59,7 @@ export type ButcheryProcessingBatchDto = {
   unaccountedVarianceWeightBase: number;
   toleranceWeightBase: number;
   isVarianceWithinTolerance: boolean;
+  cancellationReason?: string | null;
   outputs: ButcheryProcessingOutputDto[];
 };
 
@@ -66,8 +72,8 @@ export type UpdateButcheryActualOutputsDto = {
   }>;
 };
 
+/** The server approves the whole unexplained gap; only the reason is sent. */
 export type ApproveButcheryVarianceDto = {
-  approvedVarianceWeightBase: number;
   reason: string;
 };
 
@@ -224,6 +230,14 @@ export const butcheryManagementApi = {
   },
   async complete(companyId: string, batchId: string) {
     const { data } = await http.post<ButcheryProcessingBatchDto>(`${companyPath(companyId)}/${encodeURIComponent(batchId)}/complete`);
+    return data;
+  },
+  async cancel(companyId: string, batchId: string, reason: string) {
+    const { data } = await http.post<ButcheryProcessingBatchDto>(`${companyPath(companyId)}/${encodeURIComponent(batchId)}/cancel`, { reason });
+    return data;
+  },
+  async reverse(companyId: string, batchId: string, reason: string) {
+    const { data } = await http.post<ButcheryProcessingBatchDto>(`${companyPath(companyId)}/${encodeURIComponent(batchId)}/reverse`, { reason });
     return data;
   },
   async post(companyId: string, batchId: string) {

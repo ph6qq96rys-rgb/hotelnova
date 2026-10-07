@@ -390,10 +390,16 @@ export async function rejectQuotation(
 
 export type CateringEventPaymentDto = {
   id: string;
+  type: CateringPaymentType;
+  method: CateringPaymentMethod;
+  status: "received" | "reversed";
   amount: number;
   receivedAtUtc: string;
   referenceNo?: string | null;
+  receivedByName?: string | null;
   notes?: string | null;
+  reversedAtUtc?: string | null;
+  reversalReason?: string | null;
 };
 
 export type CateringEventRecordDto = {
@@ -420,6 +426,8 @@ export type CateringEventRecordDto = {
   requiredDepositAmount: number;
   depositReceivedAmount: number;
   paymentReceivedAmount: number;
+  refundAmount: number;
+  additionalChargesAmount: number;
   remainingBalance: number;
   confirmedAtUtc: string;
   notes?: string | null;
@@ -434,6 +442,8 @@ export type RecordCateringEventPaymentDto = {
   referenceNo?: string | null;
   receivedByName?: string | null;
   notes?: string | null;
+  /** New per submit; the server returns the first payment when a request is repeated. */
+  clientRequestId?: string | null;
 };
 
 export type ConfirmCateringEventDto = {
@@ -496,6 +506,19 @@ export async function cancelEvent(
 ) {
   const { data } = await http.post<CateringEventRecordDto>(
     `${base(companyId)}/events/${eventId}/cancel`,
+    body,
+  );
+  return data;
+}
+
+export async function reverseEventPayment(
+  companyId: string,
+  eventId: string,
+  paymentId: string,
+  body: { reason: string },
+) {
+  const { data } = await http.post<CateringEventRecordDto>(
+    `${base(companyId)}/events/${eventId}/payments/${paymentId}/reverse`,
     body,
   );
   return data;

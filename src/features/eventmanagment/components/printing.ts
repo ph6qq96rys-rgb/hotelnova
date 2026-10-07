@@ -1,3 +1,4 @@
+import { formatAppDate } from "../../../shared/datetime/dateFormat";
 export function printDocument(title: string, facts: string[], columns: string[], rows: string[][]) {
   const frame = document.createElement("iframe");
   frame.style.cssText = "position:fixed;width:0;height:0;border:0";
@@ -27,7 +28,7 @@ export function printCutLabels(cuts:StockCut[]){
   const style=doc.createElement("style");style.textContent="@page{size:100mm 70mm;margin:5mm}body{font:13px system-ui}article{break-after:page}article:last-child{break-after:auto}h1{font-size:21px;margin:7px 0}p{margin:6px 0}small{font-size:9px}";
   doc.head.append(style);
   for(const cut of cuts){const card=doc.createElement("article");const h=doc.createElement("h1");h.textContent=cut.cut;card.append(h);
-    for(const value of ["Lot: "+(cut.lot??"Not recorded"),"Batch: "+cut.batchNo,"Net output: "+cut.weight.toFixed(2)+" kg","Source lot: "+(cut.sourceLot??"Not recorded"),"Produced: "+new Date(cut.postedAt).toLocaleDateString(),"Expiry: "+(cut.expiryDate??"Not recorded")]){const p=doc.createElement("p");p.textContent=value;card.append(p);}
+    for(const value of ["Lot: "+(cut.lot??"Not recorded"),"Batch: "+cut.batchNo,"Net output: "+cut.weight.toFixed(2)+" kg","Source lot: "+(cut.sourceLot??"Not recorded"),"Produced: "+formatAppDate(cut.postedAt),"Expiry: "+(cut.expiryDate??"Not recorded")]){const p=doc.createElement("p");p.textContent=value;card.append(p);}
     const ref=doc.createElement("small");ref.textContent="Trace ID: "+cut.lotId;card.append(ref);doc.body.append(card);
   }
   frame.contentWindow?.addEventListener("afterprint",()=>frame.remove(),{once:true});frame.contentWindow?.focus();frame.contentWindow?.print();setTimeout(()=>frame.remove(),60000);

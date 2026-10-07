@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { useAuth } from "../../../auth/AuthProvider";
 import { formatCurrency } from "../../../shared/currency/currencyFormat";
 import {
   cancelEvent,
@@ -9,6 +10,8 @@ import {
   listEvents,
   listQuotations,
   recordEventPayment,
+  reverseEventPayment,
+  type CateringEventPaymentDto,
   type CateringEventRecordDto,
   type CateringEventStatus,
   type CateringPaymentMethod,
@@ -46,7 +49,29 @@ type PaymentForm = {
   referenceNo: string;
   receivedByName: string;
   notes: string;
+  /** Fixed for the life of the form so a retried submit cannot record the payment twice. */
+  clientRequestId: string;
 };
+
+const newRequestId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+        (Number(c) ^ ((Math.random() * 16) >> (Number(c) / 4))).toString(16),
+      );
+
+/** Methods that leave a trail outside the till need its reference (bank slip, cheque, transaction id). */
+const needsReference = (method: CateringPaymentMethod) => method !== "cash" && method !== "credit";
+
+function paymentProblem(form: PaymentForm): string | null {
+  if (typeof form.amount !== "number" || form.amount <= 0) return "Enter an amount above zero.";
+  if (form.receivedAtUtc && new Date(form.receivedAtUtc).getTime() > Date.now() + 5 * 60_000)
+    return "The received date cannot be in the future.";
+  if (needsReference(form.method) && !form.referenceNo.trim()) return "Enter the reference for this payment method.";
+  if (form.type === "refund" && !form.referenceNo.trim() && !form.notes.trim())
+    return "Give a reference or a note explaining the refund.";
+  return null;
+}
 
 function emptyPayment(type: CateringPaymentType = "deposit"): PaymentForm {
   return {
@@ -57,6 +82,7 @@ function emptyPayment(type: CateringPaymentType = "deposit"): PaymentForm {
     referenceNo: "",
     receivedByName: "",
     notes: "",
+    clientRequestId: newRequestId(),
   };
 }
 
@@ -69,6 +95,7 @@ function paymentPayload(form: PaymentForm) {
     referenceNo: form.referenceNo.trim() || null,
     receivedByName: form.receivedByName.trim() || null,
     notes: form.notes.trim() || null,
+    clientRequestId: form.clientRequestId,
   };
 }
 
@@ -104,7 +131,12 @@ export function EventsScreen({
   } | null>(null);
   const [payment, setPayment] = useState<PaymentForm | null>(null);
   const [cancelling, setCancelling] = useState<{ reason: string } | null>(null);
+  const [reversing, setReversing] = useState<{ payment: CateringEventPaymentDto; reason: string } | null>(null);
   const mutation = useMutation();
+  const { hasPermission } = useAuth();
+  const canTakePayments = hasPermission("catering.payments.manage");
+  const canReversePayments = hasPermission("catering.billing.approve");
+  const canManageEvents = hasPermission("catering.events.manage");
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -194,6 +226,8 @@ export function EventsScreen({
             <>
               <button
                 className="cat-btn cat-btn--primary"
+                disabled={!canTakePayments || selected.status === "cancelled"}
+                title={canTakePayments ? undefined : "Requires catering.payments.manage"}
                 onClick={() => {
                   mutation.setError(null);
                   setPayment(emptyPayment(selected.depositReceivedAmount > 0 ? "progress" : "deposit"));
@@ -205,6 +239,8 @@ export function EventsScreen({
               {selected.status !== "cancelled" && selected.status !== "completed" ? (
                 <button
                   className="cat-btn cat-btn--danger"
+                  disabled={!canManageEvents}
+                  title={canManageEvents ? undefined : "Requires catering.events.manage"}
                   onClick={() => {
                     mutation.setError(null);
                     setCancelling({ reason: "" });
@@ -267,6 +303,18 @@ export function EventsScreen({
                   <td>Total received</td>
                   <td className="is-end">{formatCurrency(selected.paymentReceivedAmount)}</td>
                 </tr>
+                {selected.refundAmount ? (
+                  <tr>
+                    <td>Refunded</td>
+                    <td className="is-end">−{formatCurrency(selected.refundAmount)}</td>
+                  </tr>
+                ) : null}
+                {selected.additionalChargesAmount ? (
+                  <tr>
+                    <td>Final bill adjustment</td>
+                    <td className="is-end">{formatCurrency(selected.additionalChargesAmount)}</td>
+                  </tr>
+                ) : null}
                 <tr className="cat-total-row">
                   <td>Remaining balance</td>
                   <td className="is-end">{formatCurrency(selected.remainingBalance)}</td>
@@ -282,34 +330,58 @@ export function EventsScreen({
               <thead>
                 <tr>
                   <th>Received</th>
+                  <th>Type</th>
+                  <th>Method</th>
                   <th>Reference</th>
                   <th>Notes</th>
                   <th className="is-end">Amount</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {selected.payments.map((entry) => (
-                  <tr key={entry.id}>
+                  <tr key={entry.id} className={entry.status === "reversed" ? "is-muted" : undefined}>
                     <td>{formatDateTime(entry.receivedAtUtc)}</td>
+                    <td>{humanize(entry.type)}</td>
+                    <td>{humanize(entry.method)}</td>
                     <td>{entry.referenceNo || "—"}</td>
-                    <td>{entry.notes || "—"}</td>
-                    <td className="is-end">{formatCurrency(entry.amount)}</td>
+                    <td>
+                      {entry.status === "reversed"
+                        ? `Reversed ${formatDay(entry.reversedAtUtc ?? null)}: ${entry.reversalReason ?? ""}`
+                        : entry.notes || "—"}
+                    </td>
+                    <td className="is-end">
+                      {entry.type === "refund" ? "−" : ""}
+                      {formatCurrency(entry.amount)}
+                    </td>
+                    <td className="is-end">
+                      {entry.status !== "reversed" && canReversePayments ? (
+                        <button
+                          className="cat-btn"
+                          onClick={() => {
+                            mutation.setError(null);
+                            setReversing({ payment: entry, reason: "" });
+                          }}
+                          type="button"
+                        >
+                          Reverse
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
-            <EmptyState
-              detail="Record the deposit to move the event out of pending."
-              title="No payments recorded"
-            />
+            <EmptyState detail="Record the deposit to move the event out of pending." title="No payments recorded" />
           )}
         </Card>
 
         {payment ? (
           <FormDialog
             busy={mutation.busy}
-            disabled={typeof payment.amount !== "number" || payment.amount <= 0}
+            disabled={Boolean(paymentProblem(payment))}
+            description={paymentProblem(payment) ?? undefined}
             error={mutation.error}
             onClose={() => setPayment(null)}
             onSubmit={() =>
@@ -328,10 +400,42 @@ export function EventsScreen({
           </FormDialog>
         ) : null}
 
+        {reversing ? (
+          <FormDialog
+            busy={mutation.busy}
+            description={`Reverses ${formatCurrency(reversing.payment.amount)} received ${formatDay(reversing.payment.receivedAtUtc)}. You cannot reverse a payment you recorded unless your company allows it.`}
+            destructive
+            disabled={!reversing.reason.trim()}
+            error={mutation.error}
+            onClose={() => setReversing(null)}
+            onSubmit={() =>
+              void (async () => {
+                const ok = await mutation.run(
+                  () =>
+                    reverseEventPayment(companyId, selected.id, reversing.payment.id, {
+                      reason: reversing.reason.trim(),
+                    }),
+                  () => setReversing(null),
+                );
+                if (ok) void load();
+              })()
+            }
+            submitLabel="Reverse payment"
+            title="Reverse payment"
+          >
+            <TextAreaField
+              label="Reason"
+              onChange={(value) => setReversing({ ...reversing, reason: value })}
+              required
+              value={reversing.reason}
+            />
+          </FormDialog>
+        ) : null}
+
         {cancelling ? (
           <FormDialog
             busy={mutation.busy}
-            description="Cancelling stops all downstream planning for this event."
+            description="Cancelling releases stock reservations and cancels open issues, dispatches and plans. It is refused while issued stock is still out at the event."
             destructive
             disabled={!cancelling.reason.trim()}
             error={mutation.error}
@@ -375,7 +479,7 @@ export function EventsScreen({
         </button>
         <button
           className="cat-btn cat-btn--primary"
-          disabled={!acceptedQuotes.length}
+          disabled={!acceptedQuotes.length || !canManageEvents}
           onClick={() => {
             mutation.setError(null);
             setConfirming({
@@ -432,11 +536,7 @@ export function EventsScreen({
         </table>
       ) : (
         <EmptyState
-          detail={
-            loading
-              ? "Loading events."
-              : "Accept a quotation, then confirm it to create the event."
-          }
+          detail={loading ? "Loading events." : "Accept a quotation, then confirm it to create the event."}
           title="No events"
         />
       )}
@@ -445,7 +545,9 @@ export function EventsScreen({
         <FormDialog
           busy={mutation.busy}
           description="Creates the event from an accepted quotation. Contract values are copied from the quote."
-          disabled={!confirming.acceptedQuotationId}
+          disabled={
+            !confirming.acceptedQuotationId || (confirming.withDeposit && Boolean(paymentProblem(confirming.deposit)))
+          }
           error={mutation.error}
           onClose={() => setConfirming(null)}
           onSubmit={submitConfirm}
@@ -491,9 +593,7 @@ export function EventsScreen({
           <label className="cat-check">
             <input
               checked={confirming.withDeposit}
-              onChange={(event) =>
-                setConfirming({ ...confirming, withDeposit: event.target.checked })
-              }
+              onChange={(event) => setConfirming({ ...confirming, withDeposit: event.target.checked })}
               type="checkbox"
             />
             Record an initial deposit now
@@ -511,15 +611,8 @@ export function EventsScreen({
   );
 }
 
-function PaymentFields({
-  form,
-  onChange,
-}: {
-  form: PaymentForm;
-  onChange: (form: PaymentForm) => void;
-}) {
-  const set = <K extends keyof PaymentForm>(key: K, value: PaymentForm[K]) =>
-    onChange({ ...form, [key]: value });
+function PaymentFields({ form, onChange }: { form: PaymentForm; onChange: (form: PaymentForm) => void }) {
+  const set = <K extends keyof PaymentForm>(key: K, value: PaymentForm[K]) => onChange({ ...form, [key]: value });
 
   return (
     <>
@@ -550,15 +643,11 @@ function PaymentFields({
           value={form.receivedAtUtc}
         />
         <TextField
-          label="Reference no."
+          label={needsReference(form.method) ? "Reference no. (required)" : "Reference no."}
           onChange={(value) => set("referenceNo", value)}
           value={form.referenceNo}
         />
-        <TextField
-          label="Received by"
-          onChange={(value) => set("receivedByName", value)}
-          value={form.receivedByName}
-        />
+        <TextField label="Received by" onChange={(value) => set("receivedByName", value)} value={form.receivedByName} />
       </div>
       <TextAreaField label="Notes" onChange={(value) => set("notes", value)} value={form.notes} />
     </>

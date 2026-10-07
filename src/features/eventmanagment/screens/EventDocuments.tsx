@@ -1,4 +1,5 @@
 import { printDocument } from "../components/printing";
+import { formatAppDate } from "../../../shared/datetime/dateFormat";
 import { useUnsavedChanges } from "../components/useUnsavedChanges";
 import { useDialogFocus } from "../components/useDialogFocus";
 import { useEffect, useRef, useState } from "react";
@@ -29,7 +30,30 @@ type Document = {
   grandTotalAmount?: number;
   balanceDueAmount?: number;
   notes?: string;
+  invoiceNo?: string | null;
+  customerName?: string | null;
+  customerTaxRegistrationNo?: string | null;
+  contractTaxableAmount?: number;
+  contractTaxAmount?: number;
+  additionalTaxableAmount?: number;
+  additionalTaxAmount?: number;
+  additionalServiceChargeAmount?: number;
+  taxPercent?: number;
+  serviceChargePercent?: number;
+  creditNoteNo?: string | null;
+  creditedAtUtc?: string | null;
+  creditReason?: string | null;
 };
+/** Dispatch line moves the server accepts (CateringDispatchNoteLine.ChangeStatus). */
+function dispatchLineMoves(line: string, note: string): string[] {
+  const open = note === "draft" || note === "ready";
+  if (line === "planned" && open) return ["loaded", "cancelled"];
+  if (line === "loaded" && open) return ["cancelled"];
+  if (line === "dispatched" && (note === "dispatched" || note === "delivered")) return ["delivered"];
+  if (line === "delivered" && note === "delivered") return ["returned"];
+  return [];
+}
+const fmtDate = (value?: string | null) => (value ? formatAppDate(value) : "Not recorded");
 type Field = {
   key: string;
   label: string;
@@ -127,7 +151,6 @@ const configs: Record<Kind, { label: string; permission: string; fields: Field[]
           "damageLoss",
           "otherCharge",
           "discount",
-          "tax",
         ],
         required: true,
       },
@@ -171,7 +194,7 @@ export function EventDocuments({
     [notes, setNotes] = useState(""),
     [activate, setActivate] = useState(true);
   const [extra, setExtra] = useState<Line>({}),
-    [confirm, setConfirm] = useState<{ action: string; label: string } | null>(null),
+    [confirm, setConfirm] = useState<{ action: string; label: string; lineId?: string; status?: string } | null>(null),
     [reason, setReason] = useState("");
   const guard = useUnsavedChanges(!!(draft || editLine));
   const closeDraft = () => {
@@ -457,17 +480,25 @@ export function EventDocuments({
                 <button
                   onClick={() =>
                     printDocument(
-                      "Invoice " + doc.billNo,
+                      doc.invoiceNo ? "Tax invoice " + doc.invoiceNo : "Draft bill " + doc.billNo,
                       [
                         "Status: " + humanize(doc.status),
-                        "Customer: " + event.customerName,
+                        "Customer: " + (doc.customerName ?? event.customerName),
+                        "Customer TIN: " + (doc.customerTaxRegistrationNo || "Not recorded"),
                         "Event: " + event.eventNo,
-                        "Date: " + (doc.billDateUtc ? new Date(doc.billDateUtc).toLocaleDateString() : "Not recorded"),
-                        "Contract: " + formatCurrency(doc.contractAmount ?? 0),
+                        "Bill: " + doc.billNo,
+                        "Date: " + fmtDate(doc.billDateUtc),
+                        "Contract (incl. tax): " + formatCurrency(doc.contractAmount ?? 0),
                         "Guest adjustment: " + formatCurrency(doc.guestCountAdjustmentAmount ?? 0),
                         "Discount: " + formatCurrency(doc.discountAmount ?? 0),
-                        "Subtotal: " + formatCurrency(doc.subtotalAmount ?? 0),
-                        "Tax: " + formatCurrency(doc.taxAmount ?? 0),
+                        "Service charge on extras (" +
+                          (doc.serviceChargePercent ?? 0) +
+                          "%): " +
+                          formatCurrency(doc.additionalServiceChargeAmount ?? 0),
+                        "Subtotal before tax: " + formatCurrency(doc.subtotalAmount ?? 0),
+                        "Taxable amount: " +
+                          formatCurrency((doc.contractTaxableAmount ?? 0) + (doc.additionalTaxableAmount ?? 0)),
+                        "VAT (" + (doc.taxPercent ?? 0) + "%): " + formatCurrency(doc.taxAmount ?? 0),
                         "Total: " + formatCurrency(doc.grandTotalAmount ?? 0),
                         "Deposit paid: " + formatCurrency(doc.depositPaidAmount ?? 0),
                         "Payments received: " + formatCurrency(doc.paymentsReceivedAmount ?? 0),
@@ -484,7 +515,7 @@ export function EventDocuments({
                     )
                   }
                 >
-                  Print invoice
+                  {doc.invoiceNo ? "Print invoice" : "Print draft"}
                 </button>
               )}
               {kind === "final-bills" && (
@@ -493,6 +524,53 @@ export function EventDocuments({
                 </strong>
               )}
             </div>
+            {kind === "final-bills" && (
+              <dl className="co-summary">
+                <div>
+                  <dt>Invoice no.</dt>
+                  <dd>{doc.invoiceNo ?? "Assigned when issued"}</dd>
+                </div>
+                <div>
+                  <dt>Customer TIN</dt>
+                  <dd>{doc.customerTaxRegistrationNo || "Not recorded"}</dd>
+                </div>
+                <div>
+                  <dt>Subtotal before tax</dt>
+                  <dd>{formatCurrency(doc.subtotalAmount ?? 0)}</dd>
+                </div>
+                <div>
+                  <dt>Service charge on extras</dt>
+                  <dd>{formatCurrency(doc.additionalServiceChargeAmount ?? 0)}</dd>
+                </div>
+                <div>
+                  <dt>VAT {doc.taxPercent ? `(${doc.taxPercent}%)` : ""}</dt>
+                  <dd>
+                    {formatCurrency(doc.taxAmount ?? 0)}
+                    <small>
+                      {" "}
+                      contract {formatCurrency(doc.contractTaxAmount ?? 0)} + extras{" "}
+                      {formatCurrency(doc.additionalTaxAmount ?? 0)}
+                    </small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Paid</dt>
+                  <dd>
+                    {formatCurrency(
+                      (doc.depositPaidAmount ?? 0) + (doc.paymentsReceivedAmount ?? 0) - (doc.refundAmount ?? 0),
+                    )}
+                  </dd>
+                </div>
+                {doc.creditNoteNo && (
+                  <div>
+                    <dt>Credit note</dt>
+                    <dd>
+                      {doc.creditNoteNo} · {fmtDate(doc.creditedAtUtc)} · {doc.creditReason}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            )}
             <div className="co-table-wrap">
               <table className="co-table">
                 <thead>
@@ -533,25 +611,62 @@ export function EventDocuments({
                               Edit
                             </button>
                           )}
-                          {cfg.states.length > 0 && (
+                          {kind === "dispatches" ? (
                             <select
-                              aria-label={"Status for line " + (i + 1)}
-                              disabled={busy || !canManage || doc.status === "cancelled"}
-                              value={String(l.status ?? "")}
+                              aria-label={"Move line " + (i + 1)}
+                              disabled={busy || !canManage || !dispatchLineMoves(String(l.status), doc.status).length}
+                              value=""
                               onChange={(e) => {
                                 const status = e.target.value;
+                                if (!status) return;
+                                if (status === "cancelled") {
+                                  setReason("");
+                                  setConfirm({
+                                    action: "line-status",
+                                    label: "Cancel dispatch line",
+                                    lineId: String(l.id),
+                                    status,
+                                  });
+                                  return;
+                                }
                                 void mutate(
                                   () => http.post(path + "/" + doc.id + "/lines/" + l.id + "/status", { status }),
-                                  "Line status updated.",
+                                  "Line moved to " + humanize(status).toLowerCase() + ".",
                                 );
                               }}
                             >
-                              {cfg.states.map((s) => (
+                              <option value="">
+                                {dispatchLineMoves(String(l.status), doc.status).length
+                                  ? "Move to..."
+                                  : "No further moves"}
+                              </option>
+                              {dispatchLineMoves(String(l.status), doc.status).map((s) => (
                                 <option value={s} key={s}>
                                   {humanize(s)}
                                 </option>
                               ))}
                             </select>
+                          ) : (
+                            cfg.states.length > 0 && (
+                              <select
+                                aria-label={"Status for line " + (i + 1)}
+                                disabled={busy || !canManage || doc.status === "cancelled"}
+                                value={String(l.status ?? "")}
+                                onChange={(e) => {
+                                  const status = e.target.value;
+                                  void mutate(
+                                    () => http.post(path + "/" + doc.id + "/lines/" + l.id + "/status", { status }),
+                                    "Line status updated.",
+                                  );
+                                }}
+                              >
+                                {cfg.states.map((s) => (
+                                  <option value={s} key={s}>
+                                    {humanize(s)}
+                                  </option>
+                                ))}
+                              </select>
+                            )
                           )}
                         </div>
                       </td>
@@ -574,9 +689,21 @@ export function EventDocuments({
                 {kind === "final-bills" && doc.status === "approved" && (
                   <button
                     disabled={busy || !canManage}
-                    onClick={() => setConfirm({ action: "issue", label: "Issue bill" })}
+                    onClick={() => setConfirm({ action: "issue", label: "Issue tax invoice" })}
                   >
-                    Issue bill
+                    Issue invoice
+                  </button>
+                )}
+                {kind === "final-bills" && ["issued", "partiallyPaid", "paid"].includes(doc.status) && (
+                  <button
+                    disabled={busy || !hasPermission("catering.billing.approve")}
+                    title="Raises a credit note against the issued invoice"
+                    onClick={() => {
+                      setReason("");
+                      setConfirm({ action: "credit", label: "Credit invoice" });
+                    }}
+                  >
+                    Credit invoice
                   </button>
                 )}
                 {kind === "dispatches" && ["draft", "ready"].includes(doc.status) && (
@@ -595,7 +722,16 @@ export function EventDocuments({
                     Mark delivered
                   </button>
                 )}
-                {!["cancelled", "issued", "delivered"].includes(doc.status) && (
+                {![
+                  "cancelled",
+                  "issued",
+                  "partiallyPaid",
+                  "paid",
+                  "credited",
+                  "delivered",
+                  "dispatched",
+                  "completed",
+                ].includes(doc.status) && (
                   <button
                     disabled={busy || !canManage}
                     onClick={() => {
@@ -626,12 +762,22 @@ export function EventDocuments({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (confirm && doc && confirm.action === "line-status") {
+                  void mutate(
+                    () =>
+                      http.post(path + "/" + doc.id + "/lines/" + confirm.lineId + "/status", {
+                        status: confirm.status,
+                      }),
+                    "Dispatch line cancelled.",
+                  );
+                  return;
+                }
                 if (confirm && doc) {
                   void mutate(
                     () =>
                       http.post(
                         path + "/" + doc.id + "/" + confirm.action,
-                        confirm.action === "cancel" ? { reason: reason.trim() } : {},
+                        confirm.action === "cancel" || confirm.action === "credit" ? { reason: reason.trim() } : {},
                       ),
                     confirm.label + " saved.",
                   );
@@ -674,9 +820,25 @@ export function EventDocuments({
                 {confirm ? (
                   <>
                     <p>Apply this action to {doc?.planNo ?? doc?.billNo ?? doc?.dispatchNo}?</p>
-                    {confirm.action === "cancel" && (
+                    {confirm.action === "issue" && (
+                      <p>
+                        Issuing assigns the next tax invoice number and charges any difference from the contract to the
+                        event balance. An issued invoice can only be corrected with a credit note.
+                      </p>
+                    )}
+                    {confirm.action === "approve" && (
+                      <p>You cannot approve a bill you prepared unless your company allows it.</p>
+                    )}
+                    {confirm.action === "credit" && (
+                      <p>
+                        A credit note reverses this invoice's adjustment on the event balance. Prepare a new bill
+                        afterwards if needed.
+                      </p>
+                    )}
+                    {confirm.action === "line-status" && <p>Cancelled dispatch lines cannot be reinstated.</p>}
+                    {(confirm.action === "cancel" || confirm.action === "credit") && (
                       <label>
-                        Cancellation reason
+                        {confirm.action === "credit" ? "Credit reason" : "Cancellation reason"}
                         <textarea required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
                       </label>
                     )}

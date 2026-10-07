@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatAppDateTime } from "../../../shared/datetime/dateFormat";
 import { Link, useLocation } from "react-router-dom";
 import { http } from "../../../api/http";
 import { butcheryManagementApi as api, type ButcheryProcessingBatchDto as Batch } from "../api/butcheryManagementApi";
@@ -173,10 +174,10 @@ export function ProductionPlanning({ companyId, branchId }: { companyId: string;
                           <td>
                             {d.demandNo}
                             <small>
-                              {d.cateringEventNo} · Snapshot {new Date(d.generatedAtUtc).toLocaleString()}
+                              {d.cateringEventNo} · Snapshot {formatAppDateTime(d.generatedAtUtc)}
                             </small>
                           </td>
-                          <td>{new Date(d.requiredByUtc).toLocaleString()}</td>
+                          <td>{formatAppDateTime(d.requiredByUtc)}</td>
                           <td>{l.requiredItemName}</td>
                           <td>
                             {l.requiredBaseQty.toFixed(2)} {l.baseUomCode}

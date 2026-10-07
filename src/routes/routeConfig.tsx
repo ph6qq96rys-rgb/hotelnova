@@ -140,15 +140,15 @@ export const publicRoutes: AppRoute[] = [
 
 
 const eventManagementModuleRoutes: AppRoute[] = [
-  { path: "eventmanagment/command", label: "Command", element: <EventManagementPage />, icon: <LayoutDashboard size={18} />, nav: true, section: "Catering", order: 11, permissions: ["catering.view", "catering.commandcenter.view", "catering.dashboard.view"] },
-  { path: "eventmanagment/sales", label: "Sales", element: <SalesWorkbenchPage />, icon: <Receipt size={18} />, nav: true, section: "Catering", order: 12, permissions: ["catering.view", "catering.quotations.view", "catering.inquiries.view"] },
-  { path: "eventmanagment/event", label: "Event Ops", element: <EventManagementPage />, icon: <CalendarDays size={18} />, nav: true, section: "Catering", order: 13, permissions: ["catering.view", "catering.events.manage"] },
-  { path: "eventmanagment/kitchen", label: "Kitchen", element: <EventManagementPage />, icon: <ChefHat size={18} />, nav: true, section: "Catering", order: 14, permissions: ["catering.view", "catering.events.manage"] },
-  { path: "eventmanagment/butchery", label: "Butchery", element: <EventManagementPage />, icon: <Beef size={18} />, nav: true, section: "Butchery", order: 15, permissions: ["butchery.view"] },
-  { path: "eventmanagment/inventory", label: "Inventory", element: <EventManagementPage />, icon: <PackageCheck size={18} />, nav: true, section: "Catering", order: 16, permissions: ["catering.view", "catering.inventory.view"] },
-  { path: "eventmanagment/finance", label: "Finance", element: <EventManagementPage />, icon: <BadgeDollarSign size={18} />, nav: true, section: "Catering", order: 17, permissions: ["catering.view", "catering.billing.view", "catering.reports.view"] },
-  { path: "eventmanagment/reports", label: "Reports", element: <EventManagementPage />, icon: <FileText size={18} />, nav: true, section: "Catering", order: 18, permissions: ["catering.view", "catering.reports.view"] },
-  { path: "eventmanagment/portal", label: "Customer Portal", element: <EventManagementPage />, icon: <Users size={18} />, nav: true, section: "Catering", order: 19, permissions: ["catering.view", "catering.inquiries.view"] },
+  { path: "eventmanagment/command", label: "Command", element: <EventManagementPage />, icon: <LayoutDashboard size={18} />, nav: true, section: "Catering", order: 11, permissions: ["catering.commandcenter.view", "catering.dashboard.view"] },
+  { path: "eventmanagment/sales", label: "Sales", element: <SalesWorkbenchPage />, icon: <Receipt size={18} />, nav: true, section: "Catering", order: 12, permissions: ["catering.view", "catering.manage", "catering.approve"] },
+  { path: "eventmanagment/event", label: "Event Ops", element: <EventManagementPage />, icon: <CalendarDays size={18} />, nav: true, section: "Catering", order: 13, permissions: ["catering.events.manage", "catering.siv.manage", "catering.reservations.manage", "catering.dispatch.manage", "catering.returns.manage", "catering.waste.manage", "catering.waste.approve", "catering.reconciliation.manage", "catering.reconciliation.approve", "catering.staffing.manage", "catering.equipment.manage"] },
+  { path: "eventmanagment/kitchen", label: "Kitchen", element: <EventManagementPage />, icon: <ChefHat size={18} />, nav: true, section: "Catering", order: 14, permissions: ["catering.production.manage", "catering.events.manage"] },
+  { path: "eventmanagment/butchery", label: "Butchery", element: <EventManagementPage />, icon: <Beef size={18} />, nav: true, section: "Butchery", order: 15, permissions: ["butchery.view", "butchery.process", "butchery.approve", "butchery.dashboard.view"] },
+  { path: "eventmanagment/inventory", label: "Inventory", element: <EventManagementPage />, icon: <PackageCheck size={18} />, nav: true, section: "Catering", order: 16, permissions: ["catering.reservations.manage", "catering.siv.manage", "catering.returns.manage", "catering.waste.manage", "catering.reconciliation.manage", "inventory.view"] },
+  { path: "eventmanagment/finance", label: "Finance", element: <EventManagementPage />, icon: <BadgeDollarSign size={18} />, nav: true, section: "Catering", order: 17, permissions: ["catering.billing.manage", "catering.billing.approve", "catering.payments.manage", "catering.profitability.view"] },
+  { path: "eventmanagment/reports", label: "Reports", element: <EventManagementPage />, icon: <FileText size={18} />, nav: true, section: "Catering", order: 18, permissions: ["catering.dashboard.view", "catering.profitability.view"] },
+  { path: "eventmanagment/portal", label: "Customer Portal", element: <EventManagementPage />, icon: <Users size={18} />, nav: true, section: "Catering", order: 19, permissions: ["catering.manage"] },
 ];
 const allRoutes: AppRoute[] = [
   {

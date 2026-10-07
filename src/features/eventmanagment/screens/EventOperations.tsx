@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { listCateringEvents, type CateringEventDto } from "../api/cateringManagementApi";
 import { EventDocuments } from "./EventDocuments";
+import { EventLifecycleCard, EventProfitabilityCard, EventStockWorkspace } from "./EventStock";
 import { cateringPath } from "../components/CateringLayout";
 import { formatCurrency } from "../../../shared/currency/currencyFormat";
-import { readApiError } from "../sales/ui";
+import { formatDateTime, formatDay, readApiError } from "../sales/ui";
 import { humanize } from "../sales/options";
 export function EventOperations({
   companyId,
@@ -13,7 +14,7 @@ export function EventOperations({
 }: {
   companyId: string;
   branchId: string;
-  mode: "event" | "kitchen" | "finance";
+  mode: "event" | "kitchen" | "finance" | "inventory";
 }) {
   const { pathname } = useLocation();
   const [params, setParams] = useSearchParams();
@@ -43,7 +44,14 @@ export function EventOperations({
     return () => c.abort();
   }, [companyId, branchId, revision]);
   const selected = events.find((e) => e.id === params.get("event")) ?? events[0] ?? null;
-  const title = mode === "event" ? "Staffing & logistics" : mode === "kitchen" ? "Production plan" : "Invoicing";
+  const title =
+    mode === "event"
+      ? "Staffing & logistics"
+      : mode === "kitchen"
+        ? "Production plan"
+        : mode === "inventory"
+          ? "Event stock"
+          : "Invoicing";
   return (
     <section className="co-workspace">
       <header className="co-heading">
@@ -55,7 +63,9 @@ export function EventOperations({
               ? "Coordinate people, equipment and deliveries."
               : mode === "kitchen"
                 ? "Turn the accepted menu into a working kitchen schedule."
-                : "Prepare, approve and issue the event bill."}
+                : mode === "inventory"
+                  ? "Reserve, issue, return, write off and reconcile the event's stock."
+                  : "Prepare, approve and issue the event bill."}
           </p>
         </div>
         <div className="co-actions">
@@ -92,7 +102,7 @@ export function EventOperations({
               {!events.length && <option value="">{loading ? "Loading events..." : "No confirmed events"}</option>}
               {events.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.eventNo} · {e.customerName} · {new Date(e.eventDateUtc).toLocaleDateString()}
+                  {e.eventNo} · {e.customerName} · {formatDay(e.eventDateUtc)}
                 </option>
               ))}
             </select>
@@ -105,7 +115,7 @@ export function EventOperations({
           <article>
             <span>Venue</span>
             <strong style={{ fontSize: 19 }}>{selected.venueName}</strong>
-            <small>{new Date(selected.eventDateUtc).toLocaleString()}</small>
+            <small>{formatDateTime(selected.eventDateUtc)}</small>
           </article>
           <article>
             <span>Guests</span>
@@ -124,7 +134,16 @@ export function EventOperations({
           </article>
         </div>
       )}
-      {!loading && <EventDocuments key={mode + (selected?.id ?? "none")} event={selected} mode={mode} />}
+      {selected && (mode === "event" || mode === "finance") && (
+        <EventLifecycleCard key={"life" + selected.id} event={selected} onChanged={() => setRevision((r) => r + 1)} />
+      )}
+      {!loading && mode === "inventory" && selected && (
+        <EventStockWorkspace key={"stock" + selected.id} event={selected} onChanged={() => setRevision((r) => r + 1)} />
+      )}
+      {!loading && mode !== "inventory" && (
+        <EventDocuments key={mode + (selected?.id ?? "none")} event={selected} mode={mode} />
+      )}
+      {selected && mode === "finance" && <EventProfitabilityCard key={"profit" + selected.id} event={selected} />}
     </section>
   );
 }

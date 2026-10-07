@@ -14,7 +14,8 @@ import {
 } from "../api/butcheryManagementApi";
 import { grnApi } from "../../inventory/grn/api/grnApi";
 import type { GrnListDto, GrnDetailDto } from "../../inventory/grn/types/grn.types";
-import { readApiError } from "../sales/ui";
+import { formatDay, readApiError } from "../sales/ui";
+import { formatCurrency } from "../../../shared/currency/currencyFormat";
 import { humanize } from "../sales/options";
 
 const states = ["", "draft", "submitted", "approved", "inProcessing", "completed", "posted", "cancelled", "reversed"];
@@ -47,7 +48,7 @@ function printLabel(trace: Trace, output: Trace["outputs"][number]) {
     "Batch: " + trace.batch.batchNo,
     "Net output: " + fixed(output.actualWeightBase) + " kg",
     "Source lot: " + (trace.sourceLot.batchNo ?? "Unspecified"),
-    "Produced: " + (trace.postedAtUtc ? new Date(trace.postedAtUtc).toLocaleDateString() : "Unspecified"),
+    "Produced: " + (trace.postedAtUtc ? formatDay(trace.postedAtUtc) : "Unspecified"),
     "Expiry: " + (ledger?.expiryDate ?? "Not recorded"),
   ]) {
     const p = doc.createElement("p");
@@ -98,7 +99,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
     [traces, setTraces] = useState<Trace[]>([]),
     [traceLoading, setTraceLoading] = useState(false);
   const [varianceReason, setVarianceReason] = useState(""),
-    [confirm, setConfirm] = useState<"variance" | "post" | null>(null);
+    [confirm, setConfirm] = useState<"variance" | "post" | "cancel" | "reverse" | null>(null);
   useDialogFocus(creating, busy, () => {
     if (guard.confirmDiscard()) setCreating(false);
   });
@@ -564,6 +565,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                               <th>Cut / classification</th>
                               <th>Expected kg</th>
                               <th>Actual kg</th>
+                              {status === "posted" && <th>Allocated cost</th>}
                               <th>Reason / notes</th>
                             </tr>
                           </thead>
@@ -600,6 +602,12 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                                       }
                                     />
                                   </td>
+                                  {status === "posted" && (
+                                    <td>
+                                      {formatCurrency(c.allocatedCost ?? 0)}
+                                      <small>{formatCurrency(c.allocatedUnitCost ?? 0)} / kg</small>
+                                    </td>
+                                  )}
                                   <td>
                                     <input
                                       aria-label={c.outputItemName + " reason"}
@@ -717,6 +725,28 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                       {status === "posted" && (
                         <button onClick={() => changeView("labels")}>Open labels & tracing</button>
                       )}
+                      {["submitted", "approved", "inProcessing", "completed"].includes(status) && (
+                        <button
+                          disabled={busy || dirty || !hasPermission("butchery.remove")}
+                          onClick={() => {
+                            setVarianceReason("");
+                            setConfirm("cancel");
+                          }}
+                        >
+                          Cancel batch
+                        </button>
+                      )}
+                      {status === "posted" && (
+                        <button
+                          disabled={busy || !canPost}
+                          onClick={() => {
+                            setVarianceReason("");
+                            setConfirm("reverse");
+                          }}
+                        >
+                          Reverse posting
+                        </button>
+                      )}
                     </div>
                   </div>
                   {confirm && (
@@ -729,26 +759,41 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                         else
                           void run(
                             () =>
-                              api.approveVariance(companyId, batch.id, {
-                                approvedVarianceWeightBase:
-                                  batch.approvedVarianceWeightBase + Math.max(0, batch.unaccountedVarianceWeightBase),
-                                reason: varianceReason.trim(),
-                              }),
-                            "Variance approved.",
+                              confirm === "cancel"
+                                ? api.cancel(companyId, batch.id, varianceReason.trim())
+                                : confirm === "reverse"
+                                  ? api.reverse(companyId, batch.id, varianceReason.trim())
+                                  : api.approveVariance(companyId, batch.id, { reason: varianceReason.trim() }),
+                            confirm === "cancel"
+                              ? "Batch cancelled and its demand reopened."
+                              : confirm === "reverse"
+                                ? "Posting reversed; the carcass lot is restored."
+                                : "Variance approved.",
                           );
                       }}
                     >
                       <h3>
-                        {confirm === "post" ? "Post this batch to inventory?" : "Approve unexplained weight variance"}
+                        {confirm === "post"
+                          ? "Post this batch to inventory?"
+                          : confirm === "cancel"
+                            ? "Cancel this batch?"
+                            : confirm === "reverse"
+                              ? "Reverse this posted batch?"
+                              : "Approve unexplained weight variance"}
                       </h3>
                       <p>
                         {confirm === "post"
-                          ? "This consumes the source lot and creates the output stock lots."
-                          : fixed(batch.unaccountedVarianceWeightBase) + " kg requires an explanation."}
+                          ? "This consumes the source lot and creates the output stock lots. Joint cost is shared by relative market value; by-products carry their fixed value."
+                          : confirm === "cancel"
+                            ? "The carcass lot is released for another batch. Cancelled batches stay on record."
+                            : confirm === "reverse"
+                              ? "Refused if any produced cut has already been used. Reverses the cuts and restores the carcass lot."
+                              : fixed(batch.unaccountedVarianceWeightBase) +
+                                " kg is unexplained. Approving accepts it as processing loss; you cannot approve a batch you weighed unless your company allows it."}
                       </p>
-                      {confirm === "variance" && (
+                      {confirm !== "post" && (
                         <label>
-                          Approval reason
+                          {confirm === "variance" ? "Approval reason" : "Reason"}
                           <textarea
                             required
                             minLength={3}
@@ -760,7 +805,8 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                       )}
                       <div className="co-actions">
                         <button disabled={busy} className="co-primary">
-                          Confirm {confirm === "post" ? "posting" : "variance approval"}
+                          Confirm{" "}
+                          {confirm === "post" ? "posting" : confirm === "variance" ? "variance approval" : confirm}
                         </button>
                         <button disabled={busy} type="button" onClick={() => setConfirm(null)}>
                           Cancel

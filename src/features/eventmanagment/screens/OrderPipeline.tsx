@@ -1,4 +1,5 @@
 import "../pages/catering-interactions.css";
+import { formatAppDate } from "../../../shared/datetime/dateFormat";
 import { http } from "../../../api/http";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -373,7 +374,7 @@ export function OrderPipeline({
                     <tr key={r.id}>
                       <td>
                         <Link to={href(r)}>{r.reference}</Link>
-                        <small>{r.date ? new Date(r.date).toLocaleDateString() : "Date pending"}</small>
+                        <small>{r.date ? formatAppDate(r.date) : "Date pending"}</small>
                       </td>
                       <td>
                         <strong>{r.customer}</strong>

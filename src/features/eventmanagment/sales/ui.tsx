@@ -9,7 +9,8 @@ import { useDialogFocus } from "../../../components/ui/useDialogFocus";
 // action was decorative. Everything here is wired: forms submit, errors from
 // the API surface verbatim, and busy state blocks double submission.
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { formatAppDate, formatAppDateTime } from "../../../shared/datetime/dateFormat";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AlertTriangle, ArrowLeft, Loader2, X } from "lucide-react";
 
 /* =========================
@@ -62,27 +63,11 @@ export function fromDateTimeInput(value: string): string | null {
 }
 
 export function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return iso ? formatAppDateTime(iso) : "—";
 }
 
 export function formatDay(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  }).format(date);
+  return iso ? formatAppDate(iso) : "—";
 }
 
 /* =========================
@@ -96,13 +81,7 @@ type BaseFieldProps = {
   error?: string | null;
 };
 
-function FieldFrame({
-  label,
-  help,
-  required,
-  error,
-  children,
-}: BaseFieldProps & { children: ReactNode }) {
+function FieldFrame({ label, help, required, error, children }: BaseFieldProps & { children: ReactNode }) {
   return (
     <label className={`cat-field${error ? " has-error" : ""}`}>
       <span className="cat-field__label">
@@ -130,12 +109,7 @@ export function TextField({
 }) {
   return (
     <FieldFrame {...frame}>
-      <input
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        type={type}
-        value={value}
-      />
+      <input onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type={type} value={value} />
     </FieldFrame>
   );
 }
@@ -175,9 +149,7 @@ export function NumberField({
         <input
           max={max}
           min={min}
-          onChange={(event) =>
-            onChange(event.target.value === "" ? "" : Number(event.target.value))
-          }
+          onChange={(event) => onChange(event.target.value === "" ? "" : Number(event.target.value))}
           step={step}
           type="number"
           value={value}
@@ -221,11 +193,7 @@ export function DateTimeField({
 }: BaseFieldProps & { value: string; onChange: (value: string) => void }) {
   return (
     <FieldFrame {...frame}>
-      <input
-        onChange={(event) => onChange(event.target.value)}
-        type="datetime-local"
-        value={value}
-      />
+      <input onChange={(event) => onChange(event.target.value)} type="datetime-local" value={value} />
     </FieldFrame>
   );
 }
@@ -257,7 +225,7 @@ export function FormDialog({
   disabled?: boolean;
   children: ReactNode;
 }) {
-  useDialogFocus(true,busy,onClose);
+  useDialogFocus(true, busy, onClose);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -384,8 +352,12 @@ export function Card({ title, meta, children }: { title: string; meta?: ReactNod
   );
 }
 
-export function EmptyState({title,detail}:{title:string;detail:string}){return <SharedEmptyState title={title} detail={detail}/>;}
-export function ErrorBanner({message}:{message:string}){return <StateMessage tone="error">{message}</StateMessage>;}
+export function EmptyState({ title, detail }: { title: string; detail: string }) {
+  return <SharedEmptyState title={title} detail={detail} />;
+}
+export function ErrorBanner({ message }: { message: string }) {
+  return <StateMessage tone="error">{message}</StateMessage>;
+}
 
 export function Pill({ value }: { value: string }) {
   const tone = pillTone(value);
@@ -395,8 +367,10 @@ export function Pill({ value }: { value: string }) {
 function pillTone(value: string): string {
   const normalized = value.toLowerCase();
   if (["cancelled", "rejected", "lost", "superseded"].some((t) => normalized.includes(t))) return "danger";
-  if (["draft", "new", "pending", "submitted", "contacted", "negotiating"].some((t) => normalized.includes(t))) return "warn";
-  if (["accepted", "approved", "won", "confirmed", "completed", "issued"].some((t) => normalized.includes(t))) return "good";
+  if (["draft", "new", "pending", "submitted", "contacted", "negotiating"].some((t) => normalized.includes(t)))
+    return "warn";
+  if (["accepted", "approved", "won", "confirmed", "completed", "issued"].some((t) => normalized.includes(t)))
+    return "good";
   return "info";
 }
 
@@ -404,19 +378,24 @@ function pillTone(value: string): string {
 export function useMutation() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // State updates are async, so a double click could start two requests; the ref blocks the second at once.
+  const lock = useRef(false);
 
   async function run<T>(action: () => Promise<T>, onDone?: (result: T) => void) {
+    if (lock.current) return false;
+    lock.current = true;
     setBusy(true);
     setError(null);
     try {
       const result = await action();
       onDone?.(result);
-      setBusy(false);
       return true;
     } catch (cause) {
       setError(readApiError(cause));
-      setBusy(false);
       return false;
+    } finally {
+      lock.current = false;
+      setBusy(false);
     }
   }
 

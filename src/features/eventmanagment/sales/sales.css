@@ -283,3 +283,4 @@
   .cat-detail-head__actions { width: 100%; }
   .cat-table { display: block; overflow-x: auto; }
 }
+.cat-table tr.is-muted td{color:var(--text-muted);text-decoration:line-through}.cat-table tr.is-muted td:last-child{text-decoration:none}

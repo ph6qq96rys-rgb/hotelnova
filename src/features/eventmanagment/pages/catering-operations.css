@@ -14,3 +14,6 @@
 .co-layout.co-layout--main-navigation{grid-template-columns:minmax(0,1fr)}
 
 .co-layout{font-family:var(--font-sans);background:var(--bg);color:var(--text)}.co-workspace :is(input,select,textarea){border-color:var(--border);color:var(--text)}.co-workspace button{border-radius:var(--r);font-family:var(--font-sans)}.co-table th{color:var(--text-muted);background:var(--surface-2)}.co-card{border-color:var(--border);border-radius:var(--r-lg)}
+.co-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0;margin:0;border-bottom:1px solid #ebebe4}.co-summary>div{padding:14px 20px;border-right:1px solid #f0f0ea}.co-summary dt{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px}.co-summary dd{margin:6px 0 0;font-size:13px;font-weight:600;overflow-wrap:anywhere}.co-summary dd small{font-weight:400;color:var(--text-muted)}
+.co-checklist{list-style:none;margin:0;padding:12px 20px}.co-checklist li{display:flex;gap:10px;padding:8px 0;font-size:12px;border-bottom:1px solid #f0f0ea}.co-checklist li::before{content:"\2715";color:#963f2d;font-weight:700}.co-checklist li.is-met::before{content:"\2713";color:#42643a}.co-checklist small{color:var(--text-muted)}
+.co-stock-tabs{display:flex;gap:6px;flex-wrap:wrap}

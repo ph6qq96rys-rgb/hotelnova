@@ -4,6 +4,7 @@ import type { CateringPackage } from "../screens/PackagesScreen";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw } from "lucide-react";
+import { useAuth } from "../../../auth/AuthProvider";
 import { formatCurrency } from "../../../shared/currency/currencyFormat";
 import {
   acceptQuotation,
@@ -86,16 +87,29 @@ function emptyPricing(inquiryId = ""): PricingForm {
 }
 
 function toPricing(quote: CateringQuotationDto): PricingForm {
-  let snapshot: {offering?:{pricingMode?:string;sections?:{items:{itemId:string}[]}[]};selectedLineKeys?:string[];items?:{itemId:string}[]}|null=null;
-  try{snapshot=quote.packageSnapshotJson?JSON.parse(quote.packageSnapshotJson):null;}catch{/* Legacy quotation without snapshot. */}
+  let snapshot: {
+    offering?: { pricingMode?: string; sections?: { items: { itemId: string }[] }[] };
+    selectedLineKeys?: string[];
+    items?: { itemId: string }[];
+  } | null = null;
+  try {
+    snapshot = quote.packageSnapshotJson ? JSON.parse(quote.packageSnapshotJson) : null;
+  } catch {
+    /* Legacy quotation without snapshot. */
+  }
   return {
-    pricingMode:snapshot?.offering?.pricingMode,
-    selectedLineKeys:snapshot?.selectedLineKeys??snapshot?.offering?.sections?.flatMap((s,i)=>s.items.filter(l=>snapshot?.items?.some(x=>x.itemId===l.itemId)).map(l=>`${i}:${l.itemId}`))??[],
-    priceOverrideReason:quote.priceOverrideReason??"",
+    pricingMode: snapshot?.offering?.pricingMode,
+    selectedLineKeys:
+      snapshot?.selectedLineKeys ??
+      snapshot?.offering?.sections?.flatMap((s, i) =>
+        s.items.filter((l) => snapshot?.items?.some((x) => x.itemId === l.itemId)).map((l) => `${i}:${l.itemId}`),
+      ) ??
+      [],
+    priceOverrideReason: quote.priceOverrideReason ?? "",
     inquiryId: quote.inquiryId,
     packageId: quote.packageId ?? "",
     guestCount: quote.guestCount,
-    pricePerPerson: snapshot?.offering?.pricingMode==="Fixed"?quote.foodAmount:quote.pricePerPerson,
+    pricePerPerson: snapshot?.offering?.pricingMode === "Fixed" ? quote.foodAmount : quote.pricePerPerson,
     venueCharge: quote.venueCharge,
     equipmentCharge: quote.equipmentCharge,
     staffingCharge: quote.staffingCharge,
@@ -173,7 +187,23 @@ export function QuotationsScreen({
   onConfirmEvent: (quotationId: string) => void;
 }) {
   const [packages, setPackages] = useState<CateringPackage[]>([]);
-  useEffect(() => { const c = new AbortController(); setPackages([]); if (companyId) http.get<CateringPackage[]>("/companies/"+companyId+"/catering/packages",{params:{branchId:branchId||undefined},signal:c.signal}).then(r=>{if(!c.signal.aborted)setPackages(r.data);}).catch(e=>{if(!c.signal.aborted)setLoadError(readApiError(e,"Could not load packages."));}); return ()=>c.abort(); },[companyId,branchId]);
+  useEffect(() => {
+    const c = new AbortController();
+    setPackages([]);
+    if (companyId)
+      http
+        .get<CateringPackage[]>("/companies/" + companyId + "/catering/packages", {
+          params: { branchId: branchId || undefined },
+          signal: c.signal,
+        })
+        .then((r) => {
+          if (!c.signal.aborted) setPackages(r.data);
+        })
+        .catch((e) => {
+          if (!c.signal.aborted) setLoadError(readApiError(e, "Could not load packages."));
+        });
+    return () => c.abort();
+  }, [companyId, branchId]);
   const [rows, setRows] = useState<CateringQuotationDto[]>([]);
   const [inquiries, setInquiries] = useState<CateringInquiryDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -183,6 +213,10 @@ export function QuotationsScreen({
   const [accepting, setAccepting] = useState<{ reference: string } | null>(null);
   const [rejecting, setRejecting] = useState<{ reason: string } | null>(null);
   const mutation = useMutation();
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("catering.manage");
+  const canApproveQuotes = hasPermission("catering.approve");
+  const canCreateEvents = hasPermission("catering.events.manage");
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -255,12 +289,13 @@ export function QuotationsScreen({
   }
 
   if (selected) {
-    const canRevise = selected.status === "draft";
-    const canSubmit = selected.status === "draft";
-    const canApprove = selected.status === "submitted";
-    const canAccept = selected.status === "approved";
-    const canReject = selected.status === "submitted" || selected.status === "approved";
-    const canConfirmEvent = selected.status === "accepted";
+    const expired = new Date(selected.validUntilUtc).getTime() < Date.now();
+    const canRevise = canManage && selected.status === "draft";
+    const canSubmit = canManage && selected.status === "draft";
+    const canApprove = canApproveQuotes && selected.status === "submitted";
+    const canAccept = canManage && selected.status === "approved";
+    const canReject = canManage && (selected.status === "submitted" || selected.status === "approved");
+    const canConfirmEvent = canCreateEvents && selected.status === "accepted";
 
     return (
       <div className="cat-stack">
@@ -293,6 +328,7 @@ export function QuotationsScreen({
                 <button
                   className="cat-btn cat-btn--primary"
                   disabled={mutation.busy}
+                  title="You cannot approve a quotation you prepared unless your company allows it."
                   onClick={() => void runLifecycle(() => approveQuotation(companyId, selected.id))}
                   type="button"
                 >
@@ -302,6 +338,8 @@ export function QuotationsScreen({
               {canAccept ? (
                 <button
                   className="cat-btn cat-btn--primary"
+                  disabled={expired}
+                  title={expired ? "This quotation has expired. Revise it with a new validity date." : undefined}
                   onClick={() => {
                     mutation.setError(null);
                     setAccepting({ reference: "" });
@@ -324,11 +362,7 @@ export function QuotationsScreen({
                 </button>
               ) : null}
               {canConfirmEvent ? (
-                <button
-                  className="cat-btn cat-btn--primary"
-                  onClick={() => onConfirmEvent(selected.id)}
-                  type="button"
-                >
+                <button className="cat-btn cat-btn--primary" onClick={() => onConfirmEvent(selected.id)} type="button">
                   Confirm event
                 </button>
               ) : null}
@@ -352,7 +386,9 @@ export function QuotationsScreen({
             <table className="cat-table cat-table--totals">
               <tbody>
                 <tr>
-                  <td>Food ({selected.guestCount} guests × {formatCurrency(selected.pricePerPerson)})</td>
+                  <td>
+                    Food ({selected.guestCount} guests × {formatCurrency(selected.pricePerPerson)})
+                  </td>
                   <td className="is-end">{formatCurrency(selected.foodAmount)}</td>
                 </tr>
                 <tr>
@@ -399,7 +435,7 @@ export function QuotationsScreen({
             </table>
           </Card>
 
-          {selected.packageSnapshotJson&&<QuotedPackage json={selected.packageSnapshotJson}/>}
+          {selected.packageSnapshotJson && <QuotedPackage json={selected.packageSnapshotJson} />}
           <Card title="Document">
             <Facts
               items={[
@@ -422,7 +458,7 @@ export function QuotationsScreen({
 
         {editing ? (
           <PricingDialog
-          packages={packages}
+            packages={packages}
             busy={mutation.busy}
             error={mutation.error}
             form={editing.form}
@@ -510,7 +546,7 @@ export function QuotationsScreen({
         </button>
         <button
           className="cat-btn cat-btn--primary"
-          disabled={!inquiries.length}
+          disabled={!inquiries.length || !canManage}
           onClick={() => {
             mutation.setError(null);
             setEditing({ mode: "create", form: emptyPricing() });
@@ -559,11 +595,7 @@ export function QuotationsScreen({
         </table>
       ) : (
         <EmptyState
-          detail={
-            loading
-              ? "Loading quotations."
-              : "Raise a quotation from an inquiry to price the job."
-          }
+          detail={loading ? "Loading quotations." : "Raise a quotation from an inquiry to price the job."}
           title="No quotations"
         />
       )}
@@ -606,11 +638,17 @@ function PricingDialog({
   busy: boolean;
   error: string | null;
 }) {
-  const set = <K extends keyof PricingForm>(key: K, value: PricingForm[K]) =>
-    onChange({ ...form, [key]: value });
+  const set = <K extends keyof PricingForm>(key: K, value: PricingForm[K]) => onChange({ ...form, [key]: value });
   const totals = useMemo(() => estimate(form), [form]);
-  const selectedPackage=packages.find(p=>p.id===form.packageId);
-  const packagePrice=(p:CateringPackage,selected:string[],guests:number)=>{const o=p.offering;const extras=o?.sections.flatMap((s,i)=>s.items.filter(l=>s.rule==="All"||selected.includes(`${i}:${l.itemId}`))).reduce((sum,l)=>sum+l.additionalCharge*(l.perGuest?guests:1),0)??0;return o?.pricingMode==="Fixed"?o.fixedPrice+extras:p.pricePerPerson+extras/Math.max(1,guests);};
+  const selectedPackage = packages.find((p) => p.id === form.packageId);
+  const packagePrice = (p: CateringPackage, selected: string[], guests: number) => {
+    const o = p.offering;
+    const extras =
+      o?.sections
+        .flatMap((s, i) => s.items.filter((l) => s.rule === "All" || selected.includes(`${i}:${l.itemId}`)))
+        .reduce((sum, l) => sum + l.additionalCharge * (l.perGuest ? guests : 1), 0) ?? 0;
+    return o?.pricingMode === "Fixed" ? o.fixedPrice + extras : p.pricePerPerson + extras / Math.max(1, guests);
+  };
 
   return (
     <FormDialog
@@ -641,17 +679,78 @@ function PricingDialog({
         />
       ) : null}
 
-      <SelectField label="Menu package" value={form.packageId} placeholder="Custom pricing (no package)" options={packages.filter(p=>p.offering&&!p.offering.archived&&(p.offering.companyWide||p.branchId===inquiries.find(i=>i.id===form.inquiryId)?.branchId)).map(p=>({value:p.id!,label:p.name}))} onChange={id=>{const p=packages.find(p=>p.id===id);onChange({...form,packageId:id,selectedLineKeys:[],pricingMode:p?.offering?.pricingMode,pricePerPerson:p?packagePrice(p,[],n(form.guestCount)):form.pricePerPerson,taxPercent:p?.offering?.taxPercent??form.taxPercent,serviceChargePercent:p?.offering?.serviceChargePercent??form.serviceChargePercent});}} />
-      {selectedPackage?.offering?.sections.map((s,i)=>s.rule!=="All"&&<fieldset key={i}><legend>{s.name} · {s.rule==="Choose"?"Select "+s.selectCount:"Optional add-ons"}</legend>{s.items.map(l=><label key={l.itemId}><input type="checkbox" checked={form.selectedLineKeys?.includes(`${i}:${l.itemId}`)??false} onChange={e=>{const selected=e.target.checked?[...(form.selectedLineKeys??[]),`${i}:${l.itemId}`]:(form.selectedLineKeys??[]).filter(id=>id!==`${i}:${l.itemId}`);onChange({...form,selectedLineKeys:selected,pricePerPerson:packagePrice(selectedPackage,selected,n(form.guestCount))});}}/>{l.name??"Catering option"} {l.additionalCharge>0?" + "+formatCurrency(l.additionalCharge):""}</label>)}</fieldset>)}
+      <SelectField
+        label="Menu package"
+        value={form.packageId}
+        placeholder="Custom pricing (no package)"
+        options={packages
+          .filter(
+            (p) =>
+              p.offering &&
+              !p.offering.archived &&
+              (p.offering.companyWide || p.branchId === inquiries.find((i) => i.id === form.inquiryId)?.branchId),
+          )
+          .map((p) => ({ value: p.id!, label: p.name }))}
+        onChange={(id) => {
+          const p = packages.find((p) => p.id === id);
+          onChange({
+            ...form,
+            packageId: id,
+            selectedLineKeys: [],
+            pricingMode: p?.offering?.pricingMode,
+            pricePerPerson: p ? packagePrice(p, [], n(form.guestCount)) : form.pricePerPerson,
+            taxPercent: p?.offering?.taxPercent ?? form.taxPercent,
+            serviceChargePercent: p?.offering?.serviceChargePercent ?? form.serviceChargePercent,
+          });
+        }}
+      />
+      {selectedPackage?.offering?.sections.map(
+        (s, i) =>
+          s.rule !== "All" && (
+            <fieldset key={i}>
+              <legend>
+                {s.name} · {s.rule === "Choose" ? "Select " + s.selectCount : "Optional add-ons"}
+              </legend>
+              {s.items.map((l) => (
+                <label key={l.itemId}>
+                  <input
+                    type="checkbox"
+                    checked={form.selectedLineKeys?.includes(`${i}:${l.itemId}`) ?? false}
+                    onChange={(e) => {
+                      const selected = e.target.checked
+                        ? [...(form.selectedLineKeys ?? []), `${i}:${l.itemId}`]
+                        : (form.selectedLineKeys ?? []).filter((id) => id !== `${i}:${l.itemId}`);
+                      onChange({
+                        ...form,
+                        selectedLineKeys: selected,
+                        pricePerPerson: packagePrice(selectedPackage, selected, n(form.guestCount)),
+                      });
+                    }}
+                  />
+                  {l.name ?? "Catering option"}{" "}
+                  {l.additionalCharge > 0 ? " + " + formatCurrency(l.additionalCharge) : ""}
+                </label>
+              ))}
+            </fieldset>
+          ),
+      )}
       <div className="cat-form-grid">
         <NumberField
           label="Guest count"
           min={0}
-          onChange={(value) => onChange({...form,guestCount:value,pricePerPerson:selectedPackage?packagePrice(selectedPackage,form.selectedLineKeys??[],n(value)):form.pricePerPerson})}
+          onChange={(value) =>
+            onChange({
+              ...form,
+              guestCount: value,
+              pricePerPerson: selectedPackage
+                ? packagePrice(selectedPackage, form.selectedLineKeys ?? [], n(value))
+                : form.pricePerPerson,
+            })
+          }
           value={form.guestCount}
         />
         <NumberField
-          label={form.pricingMode==="Fixed"?"Fixed package price":"Price per person"}
+          label={form.pricingMode === "Fixed" ? "Fixed package price" : "Price per person"}
           min={0}
           onChange={(value) => set("pricePerPerson", value)}
           step={10}
@@ -702,6 +801,7 @@ function PricingDialog({
         />
         <NumberField
           label="Discount amount"
+          help="Needs catering approval permission and an override reason below."
           min={0}
           onChange={(value) => set("discountAmount", value)}
           step={100}
@@ -757,15 +857,39 @@ function PricingDialog({
         <small>Preview only — the server recalculates and stores the authoritative figures.</small>
       </div>
 
-      <TextAreaField label="Commercial override reason (requires catering approval permission)" onChange={value=>set("priceOverrideReason",value)} value={form.priceOverrideReason??""}/>
+      <TextAreaField
+        label="Commercial override reason (requires catering approval permission)"
+        onChange={(value) => set("priceOverrideReason", value)}
+        value={form.priceOverrideReason ?? ""}
+      />
       <TextAreaField label="Notes" onChange={(value) => set("notes", value)} value={form.notes} />
     </FormDialog>
   );
 }
 
-
-function QuotedPackage({json}:{json:string}){
- let snapshot:{packageVersion:number;offering:{terms?:string;inclusions?:string;exclusions?:string};items:{itemId:string;name:string;quantity:number;sellingPrice:number}[]};
- try{snapshot=JSON.parse(json);}catch{return <p>Package snapshot could not be displayed.</p>;}
- return <Card title={"Quoted package · revision "+snapshot.packageVersion}><ul>{snapshot.items.map((i,n)=><li key={n}>{i.name} · {i.quantity} units · catalog price {formatCurrency(i.sellingPrice)}</li>)}</ul><p>{snapshot.offering.inclusions}</p><p>{snapshot.offering.exclusions}</p><p>{snapshot.offering.terms}</p></Card>;
+function QuotedPackage({ json }: { json: string }) {
+  let snapshot: {
+    packageVersion: number;
+    offering: { terms?: string; inclusions?: string; exclusions?: string };
+    items: { itemId: string; name: string; quantity: number; sellingPrice: number }[];
+  };
+  try {
+    snapshot = JSON.parse(json);
+  } catch {
+    return <p>Package snapshot could not be displayed.</p>;
+  }
+  return (
+    <Card title={"Quoted package · revision " + snapshot.packageVersion}>
+      <ul>
+        {snapshot.items.map((i, n) => (
+          <li key={n}>
+            {i.name} · {i.quantity} units · catalog price {formatCurrency(i.sellingPrice)}
+          </li>
+        ))}
+      </ul>
+      <p>{snapshot.offering.inclusions}</p>
+      <p>{snapshot.offering.exclusions}</p>
+      <p>{snapshot.offering.terms}</p>
+    </Card>
+  );
 }

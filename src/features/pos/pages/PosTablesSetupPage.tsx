@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Plus } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { LayoutGrid, Plus, Settings2 } from "lucide-react";
 
 import { PageHeader } from "../../../components/PageHeader";
 import { Button } from "../../../components/ui/button";
@@ -13,8 +14,10 @@ import { useI18n } from "../../../i18n";
 import { posServiceApi, type DiningAreaDto, type PosServiceSettingsDto, type RestaurantTableDto } from "../api/posServiceApi";
 import { Textarea } from "../../../components/ui/textarea";
 import { PosDialog } from "../components/PosDialog";
+import { PosLiveFloorBoard } from "../components/PosLiveFloorBoard";
 import { extractApiError } from "../utils/posUtils";
 import "../pos-service.css";
+import "../pos-control.css";
 
 type TableDraft = Omit<RestaurantTableDto, "id"> & { id?: string };
 
@@ -154,11 +157,45 @@ function ServiceSettingsCard({ scope, canManage }: { scope: { companyId: string;
   );
 }
 
-/** Dining areas and numbered tables that the POS floor plan is built from. */
+/**
+ * POS Tables: a live board of every table (status, guests, seated time, bill, actions)
+ * and the setup of dining areas, numbered tables and order-taking rules.
+ */
 export function PosTablesSetupPage() {
   const { tx } = useI18n();
   const { companyId, branchId } = useAppScope();
   const scope = useMemo(() => ({ companyId: companyId ?? "", branchId: branchId ?? "" }), [companyId, branchId]);
+  const canFloor = useHasPermission("pos.view");
+  const [params, setParams] = useSearchParams();
+  const tab = !canFloor || params.get("tab") === "setup" ? "setup" : "live";
+  const setTab = (next: "live" | "setup") => {
+    const p = new URLSearchParams(params);
+    if (next === "live") p.delete("tab"); else p.set("tab", next);
+    setParams(p, { replace: true });
+  };
+
+  return (
+    <main className="rpos-page rpos-setup ui-page">
+      <PageHeader title={tx("Tables")}
+        subtitle={tx(tab === "live" ? "Live status of every table. Select a table to open, move or seat an order, or change its status." : "Dining areas, tables and how this branch takes orders.")} />
+      {canFloor ? (
+        <div className="rpos-tabs" role="tablist" aria-label={tx("Tables view")}>
+          <Button type="button" variant="ghost" className="rpos-tab" role="tab" aria-selected={tab === "live"} onClick={() => setTab("live")}>
+            <LayoutGrid size={15} aria-hidden="true" /> {tx("Live tables")}
+          </Button>
+          <Button type="button" variant="ghost" className="rpos-tab" role="tab" aria-selected={tab === "setup"} onClick={() => setTab("setup")}>
+            <Settings2 size={15} aria-hidden="true" /> {tx("Setup")}
+          </Button>
+        </div>
+      ) : null}
+      {tab === "live" ? <PosLiveFloorBoard scope={scope} companyId={companyId ?? ""} /> : <TablesSetup scope={scope} />}
+    </main>
+  );
+}
+
+/** Dining areas and numbered tables that the POS floor plan is built from. */
+function TablesSetup({ scope }: { scope: { companyId: string; branchId: string } }) {
+  const { tx } = useI18n();
   const canManage = useHasPermission("tables.manage");
   const [areas, setAreas] = useState<DiningAreaDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -207,9 +244,10 @@ export function PosTablesSetupPage() {
   const tableCount = areas.reduce((sum, area) => sum + area.tables.length, 0);
 
   return (
-    <main className="rpos-page rpos-setup ui-page">
-      <PageHeader title={tx("Tables and dining areas")}
-        subtitle={tx("{areas} areas · {tables} tables. The POS floor plan shows active tables of active areas.", { areas: areas.length, tables: tableCount })} />
+    <div className="rpos-setup">
+      <p className="rpos-muted" style={{ margin: 0 }}>
+        {tx("{areas} areas · {tables} tables. The POS floor plan shows active tables of active areas.", { areas: areas.length, tables: tableCount })}
+      </p>
       {error ? <StateMessage tone="error">{error}</StateMessage> : null}
       {notice ? <StateMessage tone="success">{notice}</StateMessage> : null}
       {!canManage ? <StateMessage tone="info">{tx("You can view the floor setup. Changing it requires the manage tables permission.")}</StateMessage> : null}
@@ -272,6 +310,6 @@ export function PosTablesSetupPage() {
           <Input value={rename?.name ?? ""} maxLength={80} onChange={(e) => rename && setRename({ ...rename, name: e.target.value })} />
         </label>
       </PosDialog>
-    </main>
+    </div>
   );
 }

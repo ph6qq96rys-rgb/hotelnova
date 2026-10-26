@@ -1,5 +1,5 @@
 // src/routes/posRoutes.tsx
-import { PosSalesPage, PosSessionPage, PosOperationsPage, PosTablesSetupPage, PosTipSettingsPage, PosTipsReportPage, PosOpenOrdersPage } from "../features/pos";
+import { PosSalesPage, PosSessionPage, PosOperationsPage, PosTablesSetupPage, PosTipSettingsPage, PosTipsReportPage, PosOpenOrdersPage, KitchenDisplayPage, PosDevicesPage } from "../features/pos";
 import type { AppRoute } from "./sales-cogsroute";
 
 export function getPostRoutes(): AppRoute[] {
@@ -59,6 +59,22 @@ export function getPostRoutes(): AppRoute[] {
       section: "Sales",
       nav: true,
       permissions: ["settings.update"],
+    },
+    {
+      path: "sales/pos/kitchen",
+      element: <KitchenDisplayPage />,
+      label: "Kitchen Display",
+      section: "Sales",
+      nav: true,
+      permissions: ["kitchen.view"],
+    },
+    {
+      path: "sales/pos/devices",
+      element: <PosDevicesPage />,
+      label: "POS Devices",
+      section: "Sales",
+      nav: true,
+      permissions: ["pos.devices.manage"],
     },
   ];
 }

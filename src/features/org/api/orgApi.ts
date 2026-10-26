@@ -124,29 +124,16 @@ function branchIdOf(dto: unknown): string | undefined {
   return typeof d.branchId === "string" && d.branchId ? d.branchId : undefined;
 }
 
-const legacyOrganizations = (filter: OrgFilter = {}) => `/identity/organizations${qs(filter)}`;
 
 export const orgApi = {
-  list: (filter: OrgFilter = {}) =>
-    getFirstPaged<OrganizationDto>([
-      legacyOrganizations(filter),
-      `/companies${qs(filter)}`,
-    ]),
-
   listCompanies: (filter: OrgFilter = {}) =>
     getFirstPaged<OrganizationDto>([
       `/companies${qs(filter)}`,
-      `/company${qs(filter)}`,
-      `/identity/companies${qs(filter)}`,
-      legacyOrganizations({ ...filter, companyId: undefined, branchId: undefined }),
     ]),
 
   listBranches: (companyId: string, filter: OrgFilter = {}) =>
     getFirstPaged<OrganizationDto>([
       `/companies/${companyId}/branches${qs(filter)}`,
-      `/company/${companyId}/branches${qs(filter)}`,
-      `/branches${qs({ ...filter, companyId })}`,
-      legacyOrganizations({ ...filter, companyId }),
     ]),
 
   listStores: (companyId: string, branchId?: string | null, filter: OrgFilter = {}) =>
@@ -154,13 +141,7 @@ export const orgApi = {
       branchId
         ? `/companies/${companyId}/branches/${branchId}/stock-locations${qs(filter)}`
         : `/companies/${companyId}/stock-locations${qs(filter)}`,
-      `/stock-locations${qs({ ...filter, companyId, branchId: branchId || undefined })}`,
-      `/stores${qs({ ...filter, companyId, branchId: branchId || undefined })}`,
-      legacyOrganizations({ ...filter, companyId, branchId: branchId || undefined }),
     ]),
-
-  get: (id: string) =>
-    http<OrganizationDto>(url(`/identity/organizations/${id}`)),
 
   create: (dto: CreateOrganizationDto) => {
     const companyId = companyIdOf(dto);
@@ -170,19 +151,13 @@ export const orgApi = {
       ? [
           `/companies/${companyId}/branches/${branchId}/stock-locations`,
           `/companies/${companyId}/stock-locations`,
-          `/stock-locations`,
-          `/identity/organizations`,
         ]
       : companyId
         ? [
             `/companies/${companyId}/branches`,
-            `/branches`,
-            `/identity/organizations`,
           ]
         : [
             `/companies`,
-            `/identity/companies`,
-            `/identity/organizations`,
           ];
 
     return sendFirst<OrganizationDto>("POST", paths, dto);
@@ -196,33 +171,17 @@ export const orgApi = {
       ? [
           `/companies/${companyId}/branches/${branchId}/stock-locations/${id}`,
           `/companies/${companyId}/stock-locations/${id}`,
-          `/stock-locations/${id}`,
-          `/identity/organizations/${id}`,
         ]
       : companyId
         ? [
             `/companies/${companyId}/branches/${id}`,
-            `/branches/${id}`,
-            `/identity/organizations/${id}`,
           ]
         : [
             `/companies/${id}`,
-            `/identity/companies/${id}`,
-            `/identity/organizations/${id}`,
           ];
 
     return sendFirst<OrganizationDto>("PUT", paths, dto);
   },
 
-  setActive: (id: string, isActive: boolean) =>
-    sendFirst<void>(
-      "PUT",
-      [
-        `/identity/organizations/${id}/active`,
-        `/companies/${id}/active`,
-        `/branches/${id}/active`,
-        `/stock-locations/${id}/active`,
-      ],
-      { isActive },
-    ),
+
 };

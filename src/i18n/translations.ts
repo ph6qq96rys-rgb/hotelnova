@@ -1,6 +1,6 @@
 export const en = {
-  "app.name": "Hotel Nova",
-  "app.workspace": "Hotel Nova workspace",
+  "app.name": "Process360",
+  "app.workspace": "Process360 workspace",
   "common.dashboard": "Dashboard",
   "common.search": "Search...",
   "common.signOut": "Sign out",
@@ -60,6 +60,7 @@ export const en = {
   "nav.dashboardItem": "Dashboard",
   "nav.goodsReceipts": "Goods Receipts",
   "nav.stockIssueVouchers": "Stock Issue Vouchers",
+  "nav.replenishmentRules": "Replenishment Rules",
   "nav.purchaseRequisitions": "Purchase Requisitions",
   "nav.menuCategories": "Menu Categories",
   "nav.createMenuItem": "Create New Menu Item",
@@ -85,8 +86,8 @@ export const en = {
 } as const;
 
 export const am: Partial<Record<keyof typeof en, string>> = {
-  "app.name": "ሆቴል ኖቫ",
-  "app.workspace": "የሆቴል ኖቫ የስራ ቦታ",
+  "app.name": "Process360",
+  "app.workspace": "የProcess360 የስራ ቦታ",
   "common.dashboard": "ዳሽቦርድ",
   "common.search": "ፈልግ...",
   "common.signOut": "ውጣ",
@@ -146,6 +147,7 @@ export const am: Partial<Record<keyof typeof en, string>> = {
   "nav.dashboardItem": "ዳሽቦርድ",
   "nav.goodsReceipts": "የእቃ መቀበያዎች",
   "nav.stockIssueVouchers": "የእቃ ማውጫ ቫውቸሮች",
+  "nav.replenishmentRules": "የክምችት መሙያ ደንቦች",
   "nav.purchaseRequisitions": "የግዢ ጥያቄዎች",
   "nav.menuCategories": "የምናሌ ምድቦች",
   "nav.createMenuItem": "አዲስ የምናሌ ንጥል ፍጠር",

@@ -1,12 +1,16 @@
 import "../pages/catering-interactions.css";
 import { formatAppDate } from "../../../shared/datetime/dateFormat";
 import { http } from "../../../api/http";
-import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
 import { formatCurrency } from "../../../shared/currency/currencyFormat";
 import { humanize } from "../sales/options";
 import { readApiError } from "../sales/ui";
 import { cateringPath } from "../components/CateringLayout";
+import { appDayKey, appMonthKey, appMonthRange, weekdayNames } from "./eventWorkspaceDates";
 
 type Row = {
   id: string;
@@ -20,6 +24,24 @@ type Row = {
   status: string;
   value: number;
 };
+type Summary = { openOrders: number; upcomingGuests: number; upcomingEvents: number; contractedValue: number; awaitingDeposit: number };
+type Page = { items: Row[]; total: number; summary: Summary };
+
+const PAGE_SIZE = 25;
+const ALL_PAGE_SIZE = 200;
+
+/** Quotation and event statuses are different documents; the filter keeps them apart. */
+const STATUS_GROUPS: Array<{ doc: "quotations" | "events"; label: string; statuses: string[] }> = [
+  { doc: "quotations", label: "Quotations", statuses: ["draft", "submitted", "approved", "accepted", "rejected"] },
+  {
+    doc: "events",
+    label: "Events",
+    statuses: ["pendingDeposit", "confirmed", "inPlanning", "inExecution", "completed", "cancelled"],
+  },
+];
+
+const EMPTY_SUMMARY: Summary = { openOrders: 0, upcomingGuests: 0, upcomingEvents: 0, contractedValue: 0, awaitingDeposit: 0 };
+
 export function OrderPipeline({
   companyId,
   branchId,
@@ -30,120 +52,170 @@ export function OrderPipeline({
   calendar?: boolean;
 }) {
   const { pathname } = useLocation();
+  const [params, setParams] = useSearchParams();
+  // Filters live in the URL: Back, refresh and a shared link keep them.
+  const search = params.get("q") ?? "";
+  const statusFilter = params.get("status") ?? ""; // "doc:status"
+  const month = params.get("month") ?? "";
+  const venue = params.get("venue") ?? "";
+  const layout = params.get("layout") === "board" ? "board" : "table";
+  const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
+  const calendarMonth = /^\d{4}-\d{2}$/.test(params.get("month") ?? "") ? (params.get("month") as string) : appMonthKey();
+
+  // Typing is kept locally and written to the URL after a short pause.
+  const [searchDraft, setSearchDraft] = useState(search);
+  const [venueDraft, setVenueDraft] = useState(venue);
+  useEffect(() => setSearchDraft(search), [search]);
+  useEffect(() => setVenueDraft(venue), [venue]);
+
+  function update(changes: Record<string, string | null>, resetPage = true) {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    if (resetPage) next.delete("page");
+    setParams(next, { replace: true });
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (searchDraft !== search || venueDraft !== venue) update({ q: searchDraft.trim() || null, venue: venueDraft.trim() || null });
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchDraft, venueDraft]);
+
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [month, setMonth] = useState("");
-  const [venue, setVenue] = useState("");
-  const [view, setView] = useState<"table" | "board">("table");
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [rows, setRows] = useState<Row[]>([]);
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [summary, setSummary] = useState({
-    openOrders: 0,
-    upcomingGuests: 0,
-    upcomingEvents: 0,
-    contractedValue: 0,
-    awaitingDeposit: 0,
-  });
-  useEffect(() => setPage(1), [search, status, month, venue, companyId, branchId]);
+  const [summary, setSummary] = useState<Summary>(EMPTY_SUMMARY);
+
+  const [docFilter, statusValue] = statusFilter.includes(":") ? statusFilter.split(":") : ["", ""];
+  const queryParams = useMemo(() => {
+    const selectedMonth = calendar ? calendarMonth : month;
+    const range = selectedMonth ? appMonthRange(selectedMonth) : null;
+    return {
+      branchId: branchId || undefined,
+      q: search || undefined,
+      status: statusValue || undefined,
+      venue: venue || undefined,
+      from: range?.from.toISOString(),
+      to: range?.to.toISOString(),
+      doc: calendar ? "events" : docFilter || undefined,
+    };
+  }, [branchId, search, statusValue, venue, calendar, calendarMonth, month, docFilter]);
+
+  /** Every matching row, page by page (board, calendar and export need the whole set). */
+  async function loadAll(signal?: AbortSignal): Promise<Page> {
+    const url = "/companies/" + companyId + "/operations-query/orders";
+    const first = await http.get<Page>(url, { params: { ...queryParams, page: 1, pageSize: ALL_PAGE_SIZE }, signal });
+    const items = [...first.data.items];
+    for (let p = 2; items.length < first.data.total; p++) {
+      const next = await http.get<Page>(url, { params: { ...queryParams, page: p, pageSize: ALL_PAGE_SIZE }, signal });
+      if (!next.data.items.length) break;
+      items.push(...next.data.items);
+    }
+    return { ...first.data, items };
+  }
+
+  const wantsAll = calendar || layout === "board";
   useEffect(() => {
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      setError("");
-      setLoading(true);
-      if (!companyId) {
-        setLoading(false);
-        return;
-      }
-      const selectedMonth = calendar ? calendarMonth : month;
-      const start = selectedMonth ? new Date(selectedMonth + "-01T00:00:00") : null;
-      const end = start ? new Date(start.getFullYear(), start.getMonth() + 1, 1) : null;
-      try {
-        const params = {
-          branchId: branchId || undefined,
-          q: search || undefined,
-          status: status || undefined,
-          venue: venue || undefined,
-          from: start?.toISOString(),
-          to: end?.toISOString(),
-          page: calendar ? 1 : page,
-          pageSize: calendar ? 200 : 25,
-          doc: calendar ? "events" : undefined,
-        };
-        const first = await http.get<{ items: Row[]; total: number; summary: typeof summary }>(
-          "/companies/" + companyId + "/operations-query/orders",
-          { params, signal: controller.signal },
-        );
-        const records = [...first.data.items];
-        if (calendar) {
-          for (let p = 2; records.length < first.data.total; p++) {
-            const next = await http.get<{ items: Row[] }>("/companies/" + companyId + "/operations-query/orders", {
-              params: { ...params, page: p },
-              signal: controller.signal,
-            });
-            if (!next.data.items.length) break;
-            records.push(...next.data.items);
-          }
-        }
-        if (!controller.signal.aborted) {
-          setRows(records);
-          setTotal(first.data.total);
-          setSummary(first.data.summary);
-        }
-      } catch (e) {
-        if (!controller.signal.aborted) {
-          setRows([]);
-          setError(readApiError(e, "Unable to load orders."));
-        }
-      } finally {
+    setError("");
+    setLoading(true);
+    if (!companyId) {
+      setLoading(false);
+      return;
+    }
+    const request = wantsAll
+      ? loadAll(controller.signal)
+      : http
+          .get<Page>("/companies/" + companyId + "/operations-query/orders", {
+            params: { ...queryParams, page, pageSize: PAGE_SIZE },
+            signal: controller.signal,
+          })
+          .then((r) => r.data);
+    request
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setRows(data.items);
+        setTotal(data.total);
+        setSummary(data.summary);
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        setRows([]);
+        setError(readApiError(e, "Unable to load orders."));
+      })
+      .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
-      }
-    }, 200);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [companyId, branchId, revision, search, status, month, venue, page, calendar, calendarMonth]);
-  const filtered = rows;
+      });
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, queryParams, page, wantsAll, revision]);
+
   const href = (r: Row) => cateringPath(pathname, "sales?doc=" + r.doc + "&id=" + encodeURIComponent(r.id));
-  function exportRows() {
-    const cell = (v: unknown) =>
-      '"' +
-      String(v ?? "")
-        .replace(/^[=+@-]/, "'$&")
-        .replace(/"/g, '""') +
-      '"';
-    const csv = [
-      ["Order", "Client", "Service", "Date", "Venue", "Guests", "Status", "Value"],
-      ...filtered.map((r) => [r.reference, r.customer, r.service, r.date, r.venue, r.guests, r.status, r.value]),
-    ]
-      .map((r) => r.map(cell).join(","))
-      .join("\r\n");
-    const url = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "catering-orders.csv";
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  async function exportRows() {
+    setExporting(true);
+    try {
+      const all = wantsAll ? rows : (await loadAll()).items;
+      const cell = (v: unknown) =>
+        '"' +
+        String(v ?? "")
+          .replace(/^[=+@-]/, "'$&")
+          .replace(/"/g, '""') +
+        '"';
+      const csv = [
+        ["Order", "Client", "Service", "Date", "Venue", "Guests", "Status", "Value"],
+        ...all.map((r) => [r.reference, r.customer, r.service, r.date ? appDayKey(r.date) : "", r.venue, r.guests, r.status, r.value]),
+      ]
+        .map((r) => r.map(cell).join(","))
+        .join("\r\n");
+      const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "catering-orders.csv";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setError(readApiError(e, "Unable to export orders."));
+    } finally {
+      setExporting(false);
+    }
   }
+
+  // Calendar grid: calendar dates in the business time zone, weeks starting on Monday.
   const [year, mm] = calendarMonth.split("-").map(Number);
-  const dayCount = new Date(year, mm, 0).getDate();
-  const offset = new Date(year, mm - 1, 1).getDay();
-  const hasFilters = !!(search || status || month || venue);
+  const dayCount = new Date(Date.UTC(year, mm, 0)).getUTCDate();
+  const offset = (new Date(Date.UTC(year, mm - 1, 1)).getUTCDay() + 6) % 7;
+  const weekdays = weekdayNames(document.documentElement.lang || undefined);
+  const today = appDayKey(new Date());
+  const rowsByDay = useMemo(() => {
+    const map = new Map<string, Row[]>();
+    for (const r of rows) {
+      const key = appDayKey(r.date);
+      map.set(key, [...(map.get(key) ?? []), r]);
+    }
+    return map;
+  }, [rows]);
+
+  const hasFilters = !!(search || statusFilter || month || venue);
   function shiftMonth(amount: number) {
-    const next = new Date(year, mm - 1 + amount, 1);
-    setCalendarMonth(next.getFullYear() + "-" + String(next.getMonth() + 1).padStart(2, "0"));
+    const next = new Date(Date.UTC(year, mm - 1 + amount, 1));
+    update({ month: next.getUTCFullYear() + "-" + String(next.getUTCMonth() + 1).padStart(2, "0") });
   }
   const resetFilters = () => {
-    setSearch("");
-    setStatus("");
-    setMonth("");
-    setVenue("");
+    setSearchDraft("");
+    setVenueDraft("");
+    update({ q: null, status: null, month: null, venue: null });
   };
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
   return (
     <section className="co-workspace ci-pipeline">
       <header className="co-heading">
@@ -153,23 +225,23 @@ export function OrderPipeline({
           <p>Plan the service. Keep every handoff in view.</p>
         </div>
         <div className="co-actions">
-          <button disabled={loading} onClick={() => setRevision((r) => r + 1)}>
+          <Button variant="outline" disabled={loading} onClick={() => setRevision((r) => r + 1)}>
             Refresh
-          </button>
-          <button disabled={loading || !!error} onClick={exportRows}>
-            Export this page
-          </button>
+          </Button>
+          <Button variant="outline" disabled={loading || exporting || !!error || !total} onClick={() => void exportRows()}>
+            {exporting ? "Exporting…" : "Export CSV"}
+          </Button>
           <Link className="co-primary" to={cateringPath(pathname, "sales?doc=inquiries&new=1")}>
-            + New order
+            + New inquiry
           </Link>
         </div>
       </header>
       {error && (
         <div role="alert" className="co-notice">
           {error}{" "}
-          <button disabled={loading} onClick={() => setRevision((r) => r + 1)}>
+          <Button variant="outline" disabled={loading} onClick={() => setRevision((r) => r + 1)}>
             Try again
-          </button>
+          </Button>
         </div>
       )}
       {!calendar && (
@@ -215,35 +287,30 @@ export function OrderPipeline({
           <div className="co-toolbar">
             <h2>Confirmed event schedule</h2>
             <div className="co-actions">
-              <button aria-label="Previous month" onClick={() => shiftMonth(-1)}>
+              <Button variant="outline" aria-label="Previous month" onClick={() => shiftMonth(-1)}>
                 ← Previous
-              </button>
-              <button
-                onClick={() => {
-                  const today = new Date();
-                  setCalendarMonth(today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0"));
-                }}
-              >
+              </Button>
+              <Button variant="outline" onClick={() => update({ month: appMonthKey() })}>
                 This month
-              </button>
-              <button aria-label="Next month" onClick={() => shiftMonth(1)}>
+              </Button>
+              <Button variant="outline" aria-label="Next month" onClick={() => shiftMonth(1)}>
                 Next →
-              </button>
+              </Button>
             </div>
             <label>
               Month
-              <input
+              <Input
                 type="month"
                 value={calendarMonth}
                 required
                 onChange={(e) => {
-                  if (e.target.value) setCalendarMonth(e.target.value);
+                  if (e.target.value) update({ month: e.target.value });
                 }}
               />
             </label>
           </div>
           <div className="co-calendar">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+            {weekdays.map((d) => (
               <strong key={d}>{d}</strong>
             ))}
             {Array.from({ length: offset }, (_, i) => (
@@ -252,23 +319,16 @@ export function OrderPipeline({
             {Array.from({ length: dayCount }, (_, i) => {
               const day = calendarMonth + "-" + String(i + 1).padStart(2, "0");
               return (
-                <article key={day} className={new Date().toLocaleDateString("en-CA") === day ? "ci-today" : undefined}>
+                <article key={day} className={today === day ? "ci-today" : undefined}>
                   <span>{i + 1}</span>
-                  {rows
-                    .filter(
-                      (e) =>
-                        new Date(new Date(e.date).getTime() - new Date(e.date).getTimezoneOffset() * 60000)
-                          .toISOString()
-                          .slice(0, 10) === day,
-                    )
-                    .map((e) => (
-                      <Link key={e.id} to={cateringPath(pathname, "sales?doc=events&id=" + e.id)}>
-                        <strong>{e.customer}</strong>
-                        <small>
-                          {e.guests} guests · {humanize(e.status)}
-                        </small>
-                      </Link>
-                    ))}
+                  {(rowsByDay.get(day) ?? []).map((e) => (
+                    <Link key={e.id} to={cateringPath(pathname, "sales?doc=events&id=" + e.id)}>
+                      <strong>{e.customer}</strong>
+                      <small>
+                        {e.guests} guests · {humanize(e.status)}
+                      </small>
+                    </Link>
+                  ))}
                 </article>
               );
             })}
@@ -290,56 +350,51 @@ export function OrderPipeline({
         <section className="co-card">
           <div className="co-toolbar">
             <div className="co-view">
-              <button aria-pressed={view === "table"} onClick={() => setView("table")}>
+              <Button variant="ghost" aria-pressed={layout === "table"} onClick={() => update({ layout: null }, false)}>
                 Table
-              </button>
-              <button aria-pressed={view === "board"} onClick={() => setView("board")}>
+              </Button>
+              <Button variant="ghost" aria-pressed={layout === "board"} onClick={() => update({ layout: "board" }, false)}>
                 Pipeline board
-              </button>
+              </Button>
             </div>
             <span aria-live="polite">{loading ? "Updating orders…" : total + " orders"}</span>
           </div>
           <div className="co-filters">
-            <input
+            <Input
               aria-label="Search orders"
               placeholder="Search orders, clients or venues…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
             />
-            <select aria-label="Order status" value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">All statuses</option>
-              {[
-                "draft",
-                "submitted",
-                "approved",
-                "accepted",
-                "rejected",
-                "pendingDeposit",
-                "confirmed",
-                "inPlanning",
-                "inExecution",
-                "completed",
-                "cancelled",
-              ].map((s) => (
-                <option key={s} value={s}>
-                  {humanize(s)}
-                </option>
+            <Select aria-label="Order status" value={statusFilter} onChange={(e) => update({ status: e.target.value || null })}>
+              <option value="">All quotations and events</option>
+              {STATUS_GROUPS.map((g) => (
+                <optgroup key={g.doc} label={g.label}>
+                  <option value={g.doc + ":"}>All {g.label.toLowerCase()}</option>
+                  {g.statuses.map((s) => (
+                    <option key={s} value={g.doc + ":" + s}>
+                      {humanize(s)}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
-            </select>
-            <input aria-label="Event month" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-            <input
+            </Select>
+            <Input aria-label="Event month" type="month" value={month} onChange={(e) => update({ month: e.target.value || null })} />
+            <Input
               aria-label="Venue"
-              placeholder="Venue (exact name)"
-              value={venue}
-              onChange={(e) => setVenue(e.target.value)}
+              placeholder="Venue"
+              value={venueDraft}
+              onChange={(e) => setVenueDraft(e.target.value)}
             />
-            <button onClick={resetFilters}>Clear</button>
+            <Button variant="outline" onClick={resetFilters} disabled={!hasFilters}>
+              Clear
+            </Button>
           </div>
           {loading ? (
             <p className="co-empty" role="status">
               Loading orders…
             </p>
-          ) : filtered.length === 0 ? (
+          ) : rows.length === 0 ? (
             <div className="co-empty">
               <h3>
                 {error ? "Orders unavailable" : hasFilters ? "No matching orders" : "Your next event starts here"}
@@ -350,7 +405,9 @@ export function OrderPipeline({
                   : "Create an inquiry, prepare a quote, then confirm the event."}
               </p>
               {hasFilters ? (
-                <button onClick={resetFilters}>Clear filters</button>
+                <Button variant="outline" onClick={resetFilters}>
+                  Clear filters
+                </Button>
               ) : (
                 !error && (
                   <Link className="co-primary" to={cateringPath(pathname, "sales?doc=inquiries&new=1")}>
@@ -359,7 +416,7 @@ export function OrderPipeline({
                 )
               )}
             </div>
-          ) : view === "table" ? (
+          ) : layout === "table" ? (
             <div className="co-table-wrap">
               <table className="co-table">
                 <thead>
@@ -370,7 +427,7 @@ export function OrderPipeline({
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((r) => (
+                  {rows.map((r) => (
                     <tr key={r.id}>
                       <td>
                         <Link to={href(r)}>{r.reference}</Link>
@@ -398,40 +455,53 @@ export function OrderPipeline({
             </div>
           ) : (
             <div className="co-board">
-              {[...new Set(filtered.map((r) => r.status))].map((s) => (
-                <section key={s}>
-                  <h3>
-                    {humanize(s)} <small>{filtered.filter((r) => r.status === s).length}</small>
-                  </h3>
-                  {filtered
-                    .filter((r) => r.status === s)
-                    .map((r) => (
-                      <Link key={r.id} to={href(r)}>
-                        <small>{r.reference}</small>
-                        <strong>{r.customer}</strong>
-                        <span>
-                          {r.guests} guests · {r.service}
-                        </span>
-                        <b>{formatCurrency(r.value)}</b>
-                      </Link>
-                    ))}
-                </section>
-              ))}
+              {/* The board holds every matching order, so each column is the real pipeline stage. */}
+              {STATUS_GROUPS.flatMap((g) => g.statuses)
+                .filter((s) => rows.some((r) => r.status === s))
+                .map((s) => (
+                  <section key={s}>
+                    <h3>
+                      {humanize(s)} <small>{rows.filter((r) => r.status === s).length}</small>
+                    </h3>
+                    {rows
+                      .filter((r) => r.status === s)
+                      .map((r) => (
+                        <Link key={r.id} to={href(r)}>
+                          <small>{r.reference}</small>
+                          <strong>{r.customer}</strong>
+                          <span>
+                            {r.guests} guests · {r.service}
+                          </span>
+                          <b>{formatCurrency(r.value)}</b>
+                        </Link>
+                      ))}
+                  </section>
+                ))}
             </div>
           )}
-          <footer className="co-toolbar">
-            <span>
-              Page {page} of {Math.max(1, Math.ceil(total / 25))} · 25 orders per page
-            </span>
-            <div className="co-actions">
-              <button disabled={loading || page <= 1} onClick={() => setPage((p) => p - 1)}>
-                Previous
-              </button>
-              <button disabled={loading || page * 25 >= total} onClick={() => setPage((p) => p + 1)}>
-                Next
-              </button>
-            </div>
-          </footer>
+          {layout === "table" && (
+            <footer className="co-toolbar">
+              <span>
+                Page {page} of {pageCount} · {PAGE_SIZE} orders per page
+              </span>
+              <div className="co-actions">
+                <Button
+                  variant="outline"
+                  disabled={loading || page <= 1}
+                  onClick={() => update({ page: page - 1 > 1 ? String(page - 1) : null }, false)}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={loading || page >= pageCount}
+                  onClick={() => update({ page: String(page + 1) }, false)}
+                >
+                  Next
+                </Button>
+              </div>
+            </footer>
+          )}
         </section>
       )}
     </section>

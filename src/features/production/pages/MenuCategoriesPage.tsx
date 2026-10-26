@@ -83,8 +83,7 @@ export default function MenuCategoriesPage() {
             x.isActive !== false &&
             x.isConsumptionLocation === true &&
             x.canReceiveGrn !== true &&
-            x.isMainWarehouse !== true &&
-            x.isProductionCenter !== true
+            x.isMainWarehouse !== true
         )
         .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")),
     [locations]

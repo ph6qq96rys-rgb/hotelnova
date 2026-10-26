@@ -78,6 +78,14 @@ export interface LoginResponse {
   tenantSlug?: string | null;
   preferredLanguage?: string | null;
   defaultLanguage?: string | null;
+  /** The account still uses a password someone else set; it must be changed before anything else. */
+  mustChangePassword?: boolean | null;
+}
+
+export interface ChangePasswordResponse {
+  message?: string;
+  /** A fresh session for the current scope, or null when the user must sign in again. */
+  tokens?: LoginResponse | null;
 }
 
 export interface AuthScope {
@@ -103,4 +111,5 @@ export interface AuthState extends AuthScope {
   permissions: string[];
   roles: string[];
   sessionOnly: boolean;
+  mustChangePassword?: boolean;
 }

@@ -69,7 +69,7 @@ export function getPageMeta(pathname: string): PageMeta {
     matchDynamicRoute(pathname) ??
     {
       title: "Dashboard",
-      subtitle: "Hotel Nova workspace",
+      subtitle: "Process360 workspace",
       crumbs: [],
     }
   );

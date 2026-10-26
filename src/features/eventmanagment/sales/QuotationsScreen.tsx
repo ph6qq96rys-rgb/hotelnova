@@ -1,3 +1,5 @@
+import { Button } from "../../../components/ui/button";
+import { Checkbox } from "../../../components/ui/checkbox";
 import { http } from "../../../api/http";
 import type { CateringPackage } from "../screens/PackagesScreen";
 // src/features/eventmanagment/sales/QuotationsScreen.tsx
@@ -303,8 +305,8 @@ export function QuotationsScreen({
           actions={
             <>
               {canRevise ? (
-                <button
-                  className="cat-btn"
+                <Button variant="outline"
+                  
                   onClick={() => {
                     mutation.setError(null);
                     setEditing({ mode: "revise", form: toPricing(selected) });
@@ -312,32 +314,32 @@ export function QuotationsScreen({
                   type="button"
                 >
                   Revise
-                </button>
+                </Button>
               ) : null}
               {canSubmit ? (
-                <button
-                  className="cat-btn"
+                <Button variant="outline"
+                  
                   disabled={mutation.busy}
                   onClick={() => void runLifecycle(() => submitQuotation(companyId, selected.id))}
                   type="button"
                 >
                   Submit for approval
-                </button>
+                </Button>
               ) : null}
               {canApprove ? (
-                <button
-                  className="cat-btn cat-btn--primary"
+                <Button variant="default"
+                  
                   disabled={mutation.busy}
                   title="You cannot approve a quotation you prepared unless your company allows it."
                   onClick={() => void runLifecycle(() => approveQuotation(companyId, selected.id))}
                   type="button"
                 >
                   Approve
-                </button>
+                </Button>
               ) : null}
               {canAccept ? (
-                <button
-                  className="cat-btn cat-btn--primary"
+                <Button variant="default"
+                  
                   disabled={expired}
                   title={expired ? "This quotation has expired. Revise it with a new validity date." : undefined}
                   onClick={() => {
@@ -347,11 +349,11 @@ export function QuotationsScreen({
                   type="button"
                 >
                   Mark accepted
-                </button>
+                </Button>
               ) : null}
               {canReject ? (
-                <button
-                  className="cat-btn cat-btn--danger"
+                <Button variant="destructive"
+                  
                   onClick={() => {
                     mutation.setError(null);
                     setRejecting({ reason: "" });
@@ -359,12 +361,12 @@ export function QuotationsScreen({
                   type="button"
                 >
                   Reject
-                </button>
+                </Button>
               ) : null}
               {canConfirmEvent ? (
-                <button className="cat-btn cat-btn--primary" onClick={() => onConfirmEvent(selected.id)} type="button">
+                <Button variant="default" onClick={() => onConfirmEvent(selected.id)} type="button">
                   Confirm event
-                </button>
+                </Button>
               ) : null}
             </>
           }
@@ -541,11 +543,11 @@ export function QuotationsScreen({
           placeholder="All statuses"
           value={status}
         />
-        <button className="cat-btn" onClick={() => void load()} type="button">
+        <Button variant="outline" onClick={() => void load()} type="button">
           <RefreshCw className={loading ? "cat-spin" : ""} size={15} /> Refresh
-        </button>
-        <button
-          className="cat-btn cat-btn--primary"
+        </Button>
+        <Button variant="default"
+          
           disabled={!inquiries.length || !canManage}
           onClick={() => {
             mutation.setError(null);
@@ -555,7 +557,7 @@ export function QuotationsScreen({
           type="button"
         >
           <Plus size={15} /> New quotation
-        </button>
+        </Button>
       </Toolbar>
 
       {loadError ? <ErrorBanner message={loadError} /> : null}
@@ -713,8 +715,7 @@ function PricingDialog({
               </legend>
               {s.items.map((l) => (
                 <label key={l.itemId}>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={form.selectedLineKeys?.includes(`${i}:${l.itemId}`) ?? false}
                     onChange={(e) => {
                       const selected = e.target.checked

@@ -394,6 +394,9 @@ export function ReviewStep(props: Props) {
   const missingItems: string[] = Array.isArray(backend?.missingItems)
     ? backend.missingItems.filter(Boolean).map(String)
     : [];
+  const readinessWarnings: string[] = Array.isArray((backend as any)?.warnings)
+    ? (backend as any).warnings.filter(Boolean).map(String)
+    : [];
 
   const handleActivate = useCallback(
     async (event?: React.MouseEvent<HTMLButtonElement>) => {
@@ -621,6 +624,18 @@ export function ReviewStep(props: Props) {
             </div>
             {missingItems.map((item) => (
               <CheckRow key={item} done={false} required label={item} />
+            ))}
+          </div>
+        </div>
+      )}
+      {readinessWarnings.length > 0 && (
+        <div className="ob-inner-card">
+          <div className="ob-inner-card-body">
+            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
+              Worth checking
+            </div>
+            {readinessWarnings.map((item) => (
+              <CheckRow key={item} done={false} label={item} />
             ))}
           </div>
         </div>

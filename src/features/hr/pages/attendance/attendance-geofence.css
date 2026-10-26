@@ -1,0 +1,82 @@
+.att-geofence {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.att-geofence__head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: var(--accent-dark);
+}
+
+.att-geofence__head h2 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.att-geofence__head p,
+.att-geofence__hint {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.att-geofence__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.att-geofence__field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.att-geofence__toggle {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--ui-radius);
+  background: var(--surface-2);
+}
+
+.att-geofence__toggle input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--ui-primary);
+}
+
+.att-geofence__toggle span {
+  display: grid;
+  gap: 2px;
+}
+
+.att-geofence__toggle small {
+  color: var(--text-muted);
+}
+
+.att-geofence__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.att-geofence__map {
+  color: var(--ui-primary);
+  font-size: 14px;
+  font-weight: 600;
+}

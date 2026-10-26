@@ -11,7 +11,10 @@ type Props = {
 export function FnbReportFamilies({ liveReportKeys, onOpen }: Props) {
   const { tx } = useI18n();
   const live = new Set(liveReportKeys);
-  const families = REPORT_FAMILIES.filter((family) => !family.preview || !import.meta.env.PROD);
+  // Only areas the user can open: a live report or a linked workspace. Roadmap areas are not advertised.
+  const families = REPORT_FAMILIES
+    .filter((family) => !family.preview || !import.meta.env.PROD)
+    .filter((family) => Boolean(family.route) || family.liveReportKeys.some((key) => live.has(key)));
 
   return (
     <section className="fnb-family-grid" aria-label={tx("F&B report families")}>

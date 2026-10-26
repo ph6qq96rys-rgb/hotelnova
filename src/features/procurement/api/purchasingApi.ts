@@ -277,6 +277,7 @@ export type PurchaseOrderLineInput = {
 };
 
 export type PurchaseOrderInput = {
+  clientRequestId?: string;
   supplierId: string;
   branchId?: string | null;
   deliveryLocationId: string;

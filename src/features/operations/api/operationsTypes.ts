@@ -133,6 +133,7 @@ export interface DailyOperationChecklistItemDto {
   isCritical: boolean;
   isCompleted: boolean;
   notes: string;
+  completedAtUtc?: string | null;
 }
 
 export interface DailyOperationBriefingAcknowledgementDto {
@@ -169,6 +170,10 @@ export interface DailyOperationPlanDto {
   readyByName: string;
   readinessExceptionReason: string;
   criticalOpenCount: number;
+  /** Concurrency stamp: sent back as expectedUpdatedAtUtc when saving. */
+  updatedAtUtc?: string | null;
+  /** End-of-day was generated for this business date; the plan is read-only. */
+  isLocked?: boolean;
   checklistItems: DailyOperationChecklistItemDto[];
   acknowledgements: DailyOperationBriefingAcknowledgementDto[];
 }
@@ -208,4 +213,5 @@ export interface UpsertDailyOperationPlanDto {
   openOperationalIssues?: string | null;
   salesTargets?: string | null;
   planningInputs?: string | null;
+  expectedUpdatedAtUtc?: string | null;
 }

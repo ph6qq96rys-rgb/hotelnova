@@ -1,138 +1,46 @@
-import type { CSSProperties, ReactNode } from "react";
-import { memo, useMemo } from "react";
+import type { ReactNode } from "react";
+import { memo } from "react";
 
 import { LanguageSelector } from "../../components/LanguageSelector";
 import { useI18n } from "../../i18n";
-import { getTelegramTheme } from "./telegramWebApp";
 
 type TelegramMiniAppShellProps = {
   title?: string;
   subtitle?: string;
+  /** Shown as-is (a company name, for example) rather than translated. */
+  subtitleIsName?: boolean;
   children: ReactNode;
   footer?: ReactNode;
-  noPadding?: boolean;
 };
 
-function TelegramMiniAppShell({
-  title,
-  subtitle,
-  children,
-  footer,
-  noPadding = false,
-}: TelegramMiniAppShellProps) {
+/** Page frame for the Mini App. Colours come from the Telegram theme mapped onto the app tokens. */
+function TelegramMiniAppShell({ title, subtitle, subtitleIsName = false, children, footer }: TelegramMiniAppShellProps) {
   const { tx } = useI18n();
-  const theme = getTelegramTheme();
-
-  const styles = useMemo(
-    () => createStyles(theme, footer, noPadding),
-    [theme, footer, noPadding]
-  );
 
   return (
-    <div style={styles.root}>
-      <main style={styles.shell}>
-        {(title || subtitle) && (
-          <header style={styles.header}>
-            <div style={styles.headerTop}>
-              <div style={styles.headerText}>
-                {title && <h1 style={styles.title}>{tx(title)}</h1>}
-                {subtitle && <p style={styles.subtitle}>{tx(subtitle)}</p>}
+    <div className="tg-mini-host">
+      <div className="tg-mini-root">
+        <main className={`tg-mini-shell${footer ? "" : " tg-mini-shell--bare"}`}>
+          {(title || subtitle) && (
+            <header className="tg-mini-header">
+              <div className="tg-mini-header__text">
+                {title && <h1>{tx(title)}</h1>}
+                {subtitle && <p>{subtitleIsName ? subtitle : tx(subtitle)}</p>}
               </div>
 
               <div className="tg-mini-language">
                 <LanguageSelector compact />
               </div>
-            </div>
-          </header>
-        )}
+            </header>
+          )}
 
-        <section style={styles.content}>{children}</section>
-      </main>
+          {children}
+        </main>
 
-      {footer && <div style={styles.footer}>{footer}</div>}
+        {footer}
+      </div>
     </div>
   );
 }
 
 export default memo(TelegramMiniAppShell);
-
-function createStyles(
-  theme: Record<string, string>,
-  footer: ReactNode,
-  noPadding: boolean
-): Record<string, CSSProperties> {
-  const bg = theme.bg_color ?? "#f6f7fb";
-  const text = theme.text_color ?? "#111827";
-  const hint = theme.hint_color ?? "#6b7280";
-  const cardBg = theme.secondary_bg_color ?? "#ffffff";
-  const border = theme.hint_color ? `${theme.hint_color}33` : "#e5e7eb";
-
-  return {
-    root: {
-      minHeight: "100vh",
-      background: bg,
-      color: text,
-      fontFamily:
-        "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
-    },
-
-    shell: {
-      minHeight: "100vh",
-      boxSizing: "border-box",
-      padding: noPadding ? 0 : 16,
-      paddingBottom: footer ? 112 : noPadding ? 0 : 16,
-    },
-
-    header: {
-      marginBottom: 16,
-      padding: "14px 14px",
-      borderRadius: 22,
-      background: cardBg,
-      border: `1px solid ${border}`,
-      boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
-    },
-
-    headerTop: {
-      display: "flex",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-      gap: 12,
-    },
-
-    headerText: {
-      minWidth: 0,
-    },
-
-    title: {
-      margin: 0,
-      fontSize: 22,
-      lineHeight: 1.15,
-      fontWeight: 900,
-      color: text,
-    },
-
-    subtitle: {
-      margin: "6px 0 0",
-      color: hint,
-      fontSize: 14,
-      lineHeight: 1.4,
-      fontWeight: 600,
-    },
-
-    content: {
-      minWidth: 0,
-    },
-
-    footer: {
-      position: "fixed",
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 50,
-      background: cardBg,
-      borderTop: `1px solid ${border}`,
-      boxShadow: "0 -12px 26px rgba(15, 23, 42, 0.08)",
-      paddingBottom: "env(safe-area-inset-bottom)",
-    },
-  };
-}

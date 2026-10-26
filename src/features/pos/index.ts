@@ -7,3 +7,5 @@ export * from "./types/posTypes";
 export * from "./pages/PosTipSettingsPage";
 export * from "./pages/PosTipsReportPage";
 export * from "./pages/PosOpenOrdersPage";
+export * from "./pages/KitchenDisplayPage";
+export * from "./pages/PosDevicesPage";

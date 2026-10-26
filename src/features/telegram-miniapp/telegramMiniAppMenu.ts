@@ -1,3 +1,5 @@
+import { ClipboardCheck, ClipboardList, Package, QrCode, UserRound } from "lucide-react";
+
 import type { TelegramTabKey } from "./TelegramTabBar";
 import type { TelegramMenuItem, TelegramPageMeta } from "./telegramMiniApp.types";
 
@@ -5,79 +7,54 @@ export const TELEGRAM_MENU_ITEMS: TelegramMenuItem[] = [
   {
     tab: "attendance",
     module: "hr",
-    icon: "",
+    icon: QrCode,
     title: "Attendance",
     description: "Clock in or clock out using your branch QR code.",
   },
   {
     tab: "inventory",
     module: "inventory",
-    icon: "",
-    title: "Inventory",
-    description: "Submit store requests and check stock tools.",
+    icon: Package,
+    title: "Stock request",
+    description: "Request items from the store for your location.",
   },
   {
     tab: "requests",
     module: "approval",
-    icon: "",
+    icon: ClipboardList,
     title: "My Requests",
-    description: "Track submitted SIVs and operational requests.",
+    description: "Track stock, leave and overtime requests.",
   },
   {
     tab: "approvals",
     module: "approval",
-    icon: "",
+    icon: ClipboardCheck,
     title: "Approvals",
-    description: "Review approvals assigned to you.",
-    badge: "Soon",
-    disabled: true,
+    description: "Approve or reject stock requests waiting for you.",
   },
   {
     tab: "profile",
     module: "profile",
-    icon: "",
+    icon: UserRound,
     title: "My Profile",
-    description: "View employee, branch, and Telegram link status.",
+    description: "Your employee, branch and Telegram link details.",
   },
 ];
 
-export function getTelegramPageMeta(tab: TelegramTabKey): TelegramPageMeta {
+export function getTelegramPageMeta(tab: TelegramTabKey, companyName?: string | null): TelegramPageMeta {
   switch (tab) {
     case "attendance":
-      return {
-        title: "Attendance",
-        subtitle: "Scan your branch QR code.",
-      };
-
+      return { title: "Attendance", subtitle: "Scan your branch QR code." };
     case "inventory":
-      return {
-        title: "Inventory",
-        subtitle: "Store requests and stock operations.",
-      };
-
+      return { title: "Stock request", subtitle: "Request items from the store." };
     case "requests":
-      return {
-        title: "My Requests",
-        subtitle: "Track submitted requests.",
-      };
-
+      return { title: "My Requests", subtitle: "Track submitted requests." };
     case "approvals":
-      return {
-        title: "Approvals",
-        subtitle: "Review assigned approvals.",
-      };
-
+      return { title: "Approvals", subtitle: "Requests waiting for your decision." };
     case "profile":
-      return {
-        title: "My Profile",
-        subtitle: "Employee and Telegram link status.",
-      };
-
+      return { title: "My Profile", subtitle: "Employee and Telegram link status." };
     case "workspace":
     default:
-      return {
-        title: "Workspace",
-        subtitle: "Hotel Nova mobile workspace",
-      };
+      return { title: "Workspace", subtitle: companyName?.trim() || "Mobile workspace" };
   }
 }

@@ -92,6 +92,9 @@ export interface SaleLineRequest {
   menuItemId: Guid;
   quantity: number;
   unitPrice: number;
+  /** A price other than the menu price; needs pos.price.override and a reason. */
+  priceOverride?: number | null;
+  priceOverrideReason?: string | null;
 }
 
 export interface SalePaymentRequest {
@@ -190,6 +193,9 @@ export interface CartItem {
   name: string;
   categoryName?: string | null;
   price: number;
+  /** Menu price when the price was changed (an override). */
+  listPrice?: number;
+  overrideReason?: string | null;
   qty: number;
   lineTotal: number;
   hasRecipe?: boolean;

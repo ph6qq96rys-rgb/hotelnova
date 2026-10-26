@@ -1,11 +1,9 @@
-import { memo, useCallback } from "react";
+import { memo } from "react";
+import { Building2, ChevronRight } from "lucide-react";
 
 import { useI18n } from "../../i18n";
 import type { TelegramTabKey } from "./TelegramTabBar";
-import type {
-  TelegramMenuItem,
-  TelegramMiniAppAuthResult,
-} from "./telegramMiniApp.types";
+import type { TelegramMenuItem, TelegramMiniAppAuthResult } from "./telegramMiniApp.types";
 import type { TelegramRuntimeState } from "./telegramWebApp";
 import { TELEGRAM_MENU_ITEMS } from "./telegramMiniAppMenu";
 
@@ -17,12 +15,18 @@ type Props = {
 
 function TelegramMiniAppHome({ onOpenTab, auth, runtime }: Props) {
   const { tx } = useI18n();
+  const telegramName = auth.telegramUserName
+    ? `@${auth.telegramUserName}`
+    : runtime.user?.username
+      ? `@${runtime.user.username}`
+      : tx("Verified");
+
   return (
-    <section className="tg-mini-home">
+    <section className="tg-mini-page">
       <section className="tg-mini-hero">
         <div className="tg-mini-hero__top">
           <div>
-            <div className="tg-mini-eyebrow">Hotel Nova</div>
+            {auth.companyName ? <div className="tg-mini-eyebrow">{auth.companyName}</div> : null}
             <h2 className="tg-mini-hero__title">
               {auth.employeeName
                 ? tx("Welcome, {name}", { name: auth.employeeName })
@@ -30,37 +34,26 @@ function TelegramMiniAppHome({ onOpenTab, auth, runtime }: Props) {
             </h2>
           </div>
 
-          <div className="tg-mini-hero__icon"></div>
+          <div className="tg-mini-hero__icon" aria-hidden="true">
+            <Building2 size={24} />
+          </div>
         </div>
 
         <p className="tg-mini-hero__text">
-          {tx("Attendance, inventory requests, approvals, and employee self-service from Telegram.")}
+          {tx("Attendance, stock requests, approvals and employee self-service from Telegram.")}
         </p>
       </section>
 
       <section className="tg-mini-stats">
-        <InfoPill label={tx("Access")} value={tx("Linked Employee")} />
-        <InfoPill
-          label="Telegram"
-          value={
-            auth.telegramUserName
-              ? `@${auth.telegramUserName}`
-              : runtime.user?.username
-                ? `@${runtime.user.username}`
-                : tx("Verified")
-          }
-        />
         <InfoPill label={tx("Employee")} value={auth.employeeCode ?? "-"} />
-        <InfoPill
-          label={tx("Branch")}
-          value={auth.branchId ? tx("Assigned") : tx("Not assigned")}
-        />
+        <InfoPill label={tx("Branch")} value={auth.branchName ?? tx("Not assigned")} />
+        <InfoPill label="Telegram" value={telegramName} />
+        <InfoPill label={tx("Access")} value={auth.userId ? tx("ERP user linked") : tx("Employee only")} />
       </section>
 
       <section className="tg-mini-section">
         <div className="tg-mini-section__header">
-          <h3>{tx("ERP modules")}</h3>
-          <span>{tx("Tap to continue")}</span>
+          <h3>{tx("What do you need?")}</h3>
         </div>
 
         <div className="tg-mini-menu">
@@ -79,7 +72,7 @@ function InfoPill({ label, value }: { label: string; value: string }) {
   return (
     <div className="tg-mini-pill">
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong title={value}>{value}</strong>
     </div>
   );
 }
@@ -93,33 +86,19 @@ function MenuCard({
   onOpenTab: (tab: TelegramTabKey) => void;
   translate: (text: string) => string;
 }) {
-  const handleClick = useCallback(() => {
-    if (!item.disabled) {
-      onOpenTab(item.tab);
-    }
-  }, [item.disabled, item.tab, onOpenTab]);
-
+  const Icon = item.icon;
   return (
-    <button
-      type="button"
-      className={`tg-mini-menu-card ${
-        item.disabled ? "tg-mini-menu-card--disabled" : ""
-      }`}
-      onClick={handleClick}
-      disabled={item.disabled}
-    >
-      <span className="tg-mini-menu-card__icon">{item.icon}</span>
+    <button type="button" className="tg-mini-menu-card" onClick={() => onOpenTab(item.tab)}>
+      <span className="tg-mini-menu-card__icon" aria-hidden="true">
+        <Icon size={22} />
+      </span>
 
       <span className="tg-mini-menu-card__body">
-        <span className="tg-mini-menu-card__title-row">
-          <strong>{translate(item.title)}</strong>
-          {item.badge ? <span>{translate(item.badge)}</span> : null}
-        </span>
-
+        <strong>{translate(item.title)}</strong>
         <small>{translate(item.description)}</small>
       </span>
 
-      <span className="tg-mini-menu-card__chevron"></span>
+      <ChevronRight className="tg-mini-menu-card__chevron" size={20} aria-hidden="true" />
     </button>
   );
 }

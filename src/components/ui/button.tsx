@@ -1,7 +1,12 @@
 import "../../styles/design-system.css";
 import * as React from "react";
 
-type ButtonVariant = "default" | "secondary" | "outline" | "destructive" | "ghost" | "link";
+/**
+ * "bare" is for a button whose look belongs to a composite pattern (tabs, segmented toggles, menu items, clickable
+ * cards): it keeps native semantics and the shared focus ring and disabled behaviour, with zero-specificity resets
+ * so the pattern's own styles apply.
+ */
+type ButtonVariant = "default" | "secondary" | "outline" | "destructive" | "ghost" | "link" | "bare";
 type ButtonSize = "default" | "sm" | "lg" | "icon";
 
 function cn(...classes: Array<string | false | null | undefined>) {
@@ -20,6 +25,7 @@ const variants: Record<ButtonVariant, string> = {
   destructive: "bg-destructive text-destructive-foreground hover:opacity-90",
   ghost: "hover:bg-muted",
   link: "underline-offset-4 hover:underline text-primary",
+  bare: "",
 };
 
 const sizes: Record<ButtonSize, string> = {
@@ -37,6 +43,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = "default", size = "default", asChild, ...props }, ref) => {
+    if (variant === "bare") return <button ref={ref} className={cn("ui-button-bare", className)} {...props} />;
     // If you want true shadcn behavior, add @radix-ui/react-slot and use <Slot /> here.
     // This lightweight version supports normal <button> usage (and most projects are fine with it).
     if (asChild) {

@@ -148,6 +148,10 @@ export interface CompanySettingsDto {
   vatOnServiceCharge?: boolean;
   /** Cash differences at drawer close beyond this amount need a supervisor's approval. */
   cashVarianceApprovalThreshold?: number;
+  /** Most a named guest may owe across unpaid POS sales; 0 means no limit. */
+  posCreditLimitPerGuest?: number;
+  /** Printed at the foot of every receipt. */
+  receiptFooter?: string | null;
 
   invoicePrefix: string;
   receiptPrefix: string;

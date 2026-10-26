@@ -1,6 +1,10 @@
+import { Button } from "../../../components/ui/button";
+import { Checkbox } from "../../../components/ui/checkbox";
 // src/features/eventmanagment/sales/EventsScreen.tsx
 
 import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { cateringPath } from "../components/CateringLayout";
 import { RefreshCw } from "lucide-react";
 import { useAuth } from "../../../auth/AuthProvider";
 import { formatCurrency } from "../../../shared/currency/currencyFormat";
@@ -106,6 +110,8 @@ export function EventsScreen({
   onSelect,
   confirmQuotationId,
   onConfirmConsumed,
+  embedded = false,
+  onChanged,
 }: {
   companyId: string;
   branchId: string;
@@ -114,6 +120,9 @@ export function EventsScreen({
   /** Set when the operator clicked "Confirm event" on an accepted quotation. */
   confirmQuotationId: string | null;
   onConfirmConsumed: () => void;
+  /** Shown inside the event workspace: no Back button, and the workspace hears about changes. */
+  embedded?: boolean;
+  onChanged?: () => void;
 }) {
   const [rows, setRows] = useState<CateringEventRecordDto[]>([]);
   const [acceptedQuotes, setAcceptedQuotes] = useState<CateringQuotationDto[]>([]);
@@ -134,6 +143,7 @@ export function EventsScreen({
   const [reversing, setReversing] = useState<{ payment: CateringEventPaymentDto; reason: string } | null>(null);
   const mutation = useMutation();
   const { hasPermission } = useAuth();
+  const { pathname } = useLocation();
   const canTakePayments = hasPermission("catering.payments.manage");
   const canReversePayments = hasPermission("catering.billing.approve");
   const canManageEvents = hasPermission("catering.events.manage");
@@ -224,7 +234,12 @@ export function EventsScreen({
         <DetailHeader
           actions={
             <>
-              <button
+              {!embedded ? (
+                <Link className="cat-btn" to={cateringPath(pathname, "event?event=" + selected.id + "&tab=overview")}>
+                  Open event workspace
+                </Link>
+              ) : null}
+              <Button variant="outline"
                 className="cat-btn cat-btn--primary"
                 disabled={!canTakePayments || selected.status === "cancelled"}
                 title={canTakePayments ? undefined : "Requires catering.payments.manage"}
@@ -235,9 +250,9 @@ export function EventsScreen({
                 type="button"
               >
                 Record payment
-              </button>
+              </Button>
               {selected.status !== "cancelled" && selected.status !== "completed" ? (
-                <button
+                <Button variant="outline"
                   className="cat-btn cat-btn--danger"
                   disabled={!canManageEvents}
                   title={canManageEvents ? undefined : "Requires catering.events.manage"}
@@ -248,7 +263,7 @@ export function EventsScreen({
                   type="button"
                 >
                   Cancel event
-                </button>
+                </Button>
               ) : null}
             </>
           }
@@ -259,7 +274,7 @@ export function EventsScreen({
               <span>{selected.customerName}</span>
             </>
           }
-          onBack={() => onSelect(null)}
+          onBack={embedded ? undefined : () => onSelect(null)}
           title={`${selected.eventNo} · ${selected.venueName}`}
         />
 
@@ -356,7 +371,7 @@ export function EventsScreen({
                     </td>
                     <td className="is-end">
                       {entry.status !== "reversed" && canReversePayments ? (
-                        <button
+                        <Button variant="outline"
                           className="cat-btn"
                           onClick={() => {
                             mutation.setError(null);
@@ -365,7 +380,7 @@ export function EventsScreen({
                           type="button"
                         >
                           Reverse
-                        </button>
+                        </Button>
                       ) : null}
                     </td>
                   </tr>
@@ -390,7 +405,10 @@ export function EventsScreen({
                   () => recordEventPayment(companyId, selected.id, paymentPayload(payment)),
                   () => setPayment(null),
                 );
-                if (ok) void load();
+                if (ok) {
+                  void load();
+                  onChanged?.();
+                }
               })()
             }
             submitLabel="Record payment"
@@ -417,7 +435,10 @@ export function EventsScreen({
                     }),
                   () => setReversing(null),
                 );
-                if (ok) void load();
+                if (ok) {
+                  void load();
+                  onChanged?.();
+                }
               })()
             }
             submitLabel="Reverse payment"
@@ -446,7 +467,10 @@ export function EventsScreen({
                   () => cancelEvent(companyId, selected.id, { reason: cancelling.reason.trim() }),
                   () => setCancelling(null),
                 );
-                if (ok) void load();
+                if (ok) {
+                  void load();
+                  onChanged?.();
+                }
               })()
             }
             submitLabel="Cancel event"
@@ -474,10 +498,10 @@ export function EventsScreen({
           placeholder="All statuses"
           value={status}
         />
-        <button className="cat-btn" onClick={() => void load()} type="button">
+        <Button variant="outline" className="cat-btn" onClick={() => void load()} type="button">
           <RefreshCw className={loading ? "cat-spin" : ""} size={15} /> Refresh
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           className="cat-btn cat-btn--primary"
           disabled={!acceptedQuotes.length || !canManageEvents}
           onClick={() => {
@@ -496,7 +520,7 @@ export function EventsScreen({
           type="button"
         >
           Confirm event from quotation
-        </button>
+        </Button>
       </Toolbar>
 
       {loadError ? <ErrorBanner message={loadError} /> : null}
@@ -591,10 +615,10 @@ export function EventsScreen({
           />
 
           <label className="cat-check">
-            <input
+            <Checkbox
               checked={confirming.withDeposit}
               onChange={(event) => setConfirming({ ...confirming, withDeposit: event.target.checked })}
-              type="checkbox"
+              
             />
             Record an initial deposit now
           </label>

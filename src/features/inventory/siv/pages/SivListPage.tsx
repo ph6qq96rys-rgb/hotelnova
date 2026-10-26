@@ -10,6 +10,7 @@ import { useI18n } from "../../../../i18n";
 import { sivApi }                                      from "../api/sivApi";
 import type { SivDetailsDto, SivLookupOptionDto }      from "../api/sivApi";
 import {
+  replenishmentRulesPath,
   sivApprovalPath,
   sivCreatePath,
   sivDraftPath,
@@ -22,6 +23,9 @@ import {
 }                                                      from "../types/sivTypes";
 import "./siv-draft.css";
 import { OverrideReasonTooltip } from "./OverrideReasonTooltip";
+import { Button } from "../../../../components/ui/button";
+import { useHasPermission } from "../../../../auth/usePermissions";
+import { SivLowStockDialog } from "../components/SivLowStockDialog";
 
 // '-' Helpers '-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-''-'
 
@@ -87,6 +91,8 @@ export default function SivListPage() {
   const nav = useErpNavigate();
   const { companyId, branchId } = useAppScope();
   const { tx } = useI18n();
+  const canCreateSiv = useHasPermission("siv.create");
+  const [lowStockOpen, setLowStockOpen] = useState(false);
 
   const [filters,  setFilters]  = useState<FilterState>(DEFAULT_FILTERS);
   const [page,     setPage]     = useState(1);
@@ -369,14 +375,44 @@ export default function SivListPage() {
             {tx("Warehouse requisitions from consuming locations")}
           </div>
         </div>
-        <button
-          className="btn btn-primary"
-          disabled={!companyId}
-          onClick={openCreatePage}
-        >
-          {tx("+ New SIV")}
-        </button>
+        <div className="ui-page-actions">
+          {canCreateSiv && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!companyId || !branchId}
+              title={branchId ? undefined : tx("Select a branch before creating an SIV.")}
+              onClick={() => setLowStockOpen(true)}
+            >
+              {tx("Generate from low stock")}
+            </Button>
+          )}
+          <button
+            className="btn btn-primary"
+            disabled={!companyId}
+            onClick={openCreatePage}
+          >
+            {tx("+ New SIV")}
+          </button>
+        </div>
       </div>
+
+      {lowStockOpen && companyId && branchId && (
+        <SivLowStockDialog
+          open={lowStockOpen}
+          companyId={companyId}
+          branchId={branchId}
+          onClose={() => setLowStockOpen(false)}
+          onCreated={(sivId) => {
+            setLowStockOpen(false);
+            nav(sivDraftPath(companyId, branchId, sivId));
+          }}
+          onManageRules={() => {
+            setLowStockOpen(false);
+            nav(replenishmentRulesPath(companyId));
+          }}
+        />
+      )}
 
       {/* '-' KPI strip '-' */}
       <div

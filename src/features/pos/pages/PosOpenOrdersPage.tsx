@@ -12,6 +12,7 @@ import { useAppScope } from "../../../app/useAppScope";
 import { useHasPermission } from "../../../auth/usePermissions";
 import { useI18n } from "../../../i18n";
 import { formatAppDateTime } from "../../../shared/datetime/dateFormat";
+import { posDrawerApi, type DrawerDto } from "../api/posDrawerApi";
 import { posOpenOrdersApi, type HeldOrderDto, type OpenOrdersDto, type UncollectedSaleDto } from "../api/posOpenOrdersApi";
 import type { PosTicketDto } from "../api/posServiceApi";
 import { PosDialog } from "../components/PosDialog";
@@ -61,6 +62,9 @@ export function PosOpenOrdersPage() {
   const [menu, setMenu] = useState<MenuItemDto[]>([]);
   const [menuQuery, setMenuQuery] = useState("");
   const [collect, setCollect] = useState<{ sale: UncollectedSaleDto; method: PaymentMethod; amount: string; reference: string } | null>(null);
+  /** The caller's own open drawer: collected money goes into it, so collecting needs one. */
+  const [drawer, setDrawer] = useState<{ state: "checking" | "open" | "none" | "error"; session?: DrawerDto | null; error?: string }>({ state: "checking" });
+  const [collectError, setCollectError] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
   const load = useCallback(async (quiet = false) => {
@@ -146,8 +150,27 @@ export function PosOpenOrdersPage() {
     }
   };
 
+  const checkDrawer = useCallback(async () => {
+    if (!scope.companyId || !scope.branchId) return;
+    setDrawer({ state: "checking" });
+    try {
+      const session = await posDrawerApi.current(scope);
+      setDrawer(session ? { state: "open", session } : { state: "none" });
+    } catch (err) {
+      setDrawer({ state: "error", error: extractApiError(err, tx("Your cash drawer could not be checked.")) });
+    }
+  }, [scope, tx]);
+
+  const startCollect = (sale: UncollectedSaleDto) => {
+    setCollectError(null);
+    setCollect({ sale, method: "CASH", amount: sale.balance.toFixed(2), reference: "" });
+    void checkDrawer();
+  };
+
   const collectAmount = Number(collect?.amount);
   const collectProblem = !collect ? null
+    : drawer.state === "none" ? "Open your cash drawer before collecting a payment."
+    : drawer.state === "checking" ? "Checking your cash drawer..."
     : !(collectAmount > 0) ? "Enter the amount collected."
     : collectAmount > collect.sale.balance + 0.001 ? "The payment is more than the balance due."
     : collect.method !== "CASH" && !collect.reference.trim() ? "Payment reference is required for card, mobile, and transfer payments."
@@ -155,7 +178,7 @@ export function PosOpenOrdersPage() {
 
   const saveCollect = async () => {
     if (!collect || collectProblem) return;
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setCollectError(null);
     try {
       const result = await posOpenOrdersApi.collect(scope, collect.sale.id, [{
         method: collect.method, amount: round2(collectAmount), referenceCode: collect.reference.trim() || null,
@@ -166,7 +189,11 @@ export function PosOpenOrdersPage() {
         : tx("{sale} is fully paid.", { sale: result.saleNo }));
       await load(true);
     } catch (err) {
-      setError(extractApiError(err, tx("The payment could not be recorded.")));
+      // Shown inside the dialog: an error on the page would be hidden behind it.
+      setCollectError(extractApiError(err, tx("The payment could not be recorded.")));
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 400) void checkDrawer();
+      if (status === 409) void load(true);
     } finally {
       setBusy(false);
     }
@@ -269,6 +296,9 @@ export function PosOpenOrdersPage() {
 
           <section className="rpos-setup-area" aria-label={tx("Uncollected payments")}>
             <h2>{tx("Uncollected payments")} <span className="rpos-muted">· {uncollected.length}</span></h2>
+            {!canSell && uncollected.length > 0 ? (
+              <StateMessage tone="info">{tx("Collecting a payment needs the POS sell permission and your own open cash drawer. Ask a cashier, or your Company Administrator to update your role.")}</StateMessage>
+            ) : null}
             {uncollected.length === 0 ? <p className="rpos-muted">{tx("Every confirmed sale is fully paid.")}</p> : (
               <Table>
                 <TableHeader>
@@ -298,7 +328,7 @@ export function PosOpenOrdersPage() {
                       <TableCell className="rpos-row-actions">
                         {canSell ? (
                           <Button type="button" size="sm" variant="outline" disabled={busy}
-                            onClick={() => setCollect({ sale, method: "CASH", amount: sale.balance.toFixed(2), reference: "" })}>
+                            onClick={() => startCollect(sale)}>
                             <HandCoins size={14} aria-hidden="true" /> {tx("Collect")}
                           </Button>
                         ) : null}
@@ -369,9 +399,25 @@ export function PosOpenOrdersPage() {
 
       <PosDialog open={!!collect} title={`${tx("Collect payment")} · ${collect?.sale.saleNo ?? ""}`} busy={busy}
         description={collect ? tx("Balance due: {amount}. The money goes into your open cashier drawer.", { amount: money(collect.sale.balance) }) : undefined}
-        confirmText={tx("Record payment")} confirmDisabled={!!collectProblem} onConfirm={() => void saveCollect()} onClose={() => setCollect(null)}>
+        confirmText={tx("Record payment")} confirmDisabled={!!collectProblem} onConfirm={() => void saveCollect()}
+        onClose={() => { setCollect(null); setCollectError(null); }}>
         {collect ? (
           <div className="rpos-form-grid">
+            {drawer.state === "none" ? (
+              <div className="rpos-span-all">
+                <StateMessage tone="warning"
+                  action={<Button type="button" size="sm" variant="outline" onClick={() => navigate(`/companies/${companyId}/sales/pos/session`)}>{tx("Open cash drawer")}</Button>}>
+                  {tx("You have no open cash drawer. Collected money is recorded in your own drawer, so open one first, then come back.")}
+                </StateMessage>
+              </div>
+            ) : null}
+            {drawer.state === "open" && drawer.session ? (
+              <p className="rpos-muted rpos-span-all">
+                {tx("Into drawer: {cashier}{terminal}", { cashier: drawer.session.cashierName, terminal: drawer.session.terminal ? ` · ${drawer.session.terminal}` : "" })}
+              </p>
+            ) : null}
+            {drawer.state === "error" ? <div className="rpos-span-all"><StateMessage tone="warning">{drawer.error}</StateMessage></div> : null}
+            {collectError ? <div className="rpos-span-all"><StateMessage tone="error">{collectError}</StateMessage></div> : null}
             <div className="rpos-chip-row rpos-span-all" role="radiogroup" aria-label={tx("Payment method")}>
               {METHODS.map((method) => (
                 <Button key={method} type="button" size="sm" role="radio" aria-checked={collect.method === method}

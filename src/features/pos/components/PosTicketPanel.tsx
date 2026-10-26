@@ -1,4 +1,4 @@
-import { ArrowLeft, Ban, Minus, PauseCircle, Plus, Printer, ReceiptText, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Ban, Minus, PauseCircle, Pencil, Plus, Printer, ReceiptText, Scissors, Send, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/button";
 import { Select } from "../../../components/ui/select";
@@ -21,6 +21,8 @@ type Props = {
   floor: PosFloorDto | null;
   busy: boolean;
   canPay: boolean;
+  /** Waiter mode: payment is taken by a cashier, so say so instead of hiding it silently. */
+  waiterMode?: boolean;
   payBlockedReason?: string | null;
   onDraftChange: (action: { type: "INCREMENT" | "DECREMENT" | "REMOVE"; id: string }) => void;
   onClearDraft: () => void;
@@ -28,6 +30,15 @@ type Props = {
   onPay: () => void;
   /** Prints the guest check (bill with suggested tips) before payment. */
   onPrintCheck?: () => void;
+  /** Sends the guest check to the till's receipt printer. */
+  onSendCheck?: () => void;
+  /** Split check: choose the items one guest pays for. */
+  onSplitItems?: () => void;
+  /** Change the price of a counter-sale item (price override permission). */
+  onEditPrice?: (item: CartItem) => void;
+  /** Paying only selected items of the ticket. */
+  splitActive?: boolean;
+  onClearSplit?: () => void;
   /** Puts a counter order on hold as an open ticket. */
   onHold?: () => void;
   onBack: () => void;
@@ -138,15 +149,16 @@ export function PosTicketPanel(props: Props) {
           <section key={round} className="rpos-round" aria-label={tx("Round {round}", { round })}>
             <h3>{tx("Round {round}", { round })} · {formatAppDateTime(lines[0].addedAtUtc)} · {lines[0].addedByName}</h3>
             {lines.map((line) => (
-              <div key={line.id} className={line.isVoided ? "rpos-line is-voided" : "rpos-line"}>
+              <div key={line.id} className={line.isVoided ? "rpos-line is-voided" : line.saleId ? "rpos-line is-paid" : "rpos-line"}>
                 <span className="rpos-line-qty">{line.quantity}×</span>
                 <span className="rpos-line-name">
                   {line.itemName}
                   {line.note ? <small>{line.note}</small> : null}
                   {line.isVoided ? <small>{tx("Voided")}: {line.voidReason}</small> : null}
+                  {line.saleId ? <small>{tx("Paid separately")}</small> : null}
                 </span>
                 <strong>{money(line.lineTotal)}</strong>
-                {ticket?.canManage && !line.isVoided ? (
+                {ticket?.canManage && !line.isVoided && !line.saleId ? (
                   <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => props.onVoidLine(line)}
                     aria-label={`${tx("Void")} ${line.itemName}`} title={tx("Void")}>
                     <Ban size={15} aria-hidden="true" />
@@ -162,7 +174,13 @@ export function PosTicketPanel(props: Props) {
             <h3>{counter ? tx("Items") : tx("Not sent yet")}</h3>
             {draft.map((item) => (
               <div key={item.id} className="rpos-line">
-                <span className="rpos-line-name">{item.name}<small>{money(item.price)}</small></span>
+                <span className="rpos-line-name">
+                  {item.name}
+                  <small>
+                    {item.listPrice !== undefined ? <s>{money(item.listPrice)}</s> : null} {money(item.price)}
+                    {item.overrideReason ? ` · ${item.overrideReason}` : ""}
+                  </small>
+                </span>
                 <span className="rpos-qty">
                   <Button type="button" size="sm" variant="outline" disabled={busy} aria-label={`${tx("Decrease quantity")} ${item.name}`}
                     onClick={() => props.onDraftChange({ type: "DECREMENT", id: item.id })}><Minus size={14} aria-hidden="true" /></Button>
@@ -171,6 +189,10 @@ export function PosTicketPanel(props: Props) {
                     onClick={() => props.onDraftChange({ type: "INCREMENT", id: item.id })}><Plus size={14} aria-hidden="true" /></Button>
                 </span>
                 <strong>{money(item.lineTotal)}</strong>
+                {props.onEditPrice ? (
+                  <Button type="button" size="sm" variant="ghost" disabled={busy} aria-label={`${tx("Change price")} ${item.name}`} title={tx("Change price")}
+                    onClick={() => props.onEditPrice!(item)}><Pencil size={15} aria-hidden="true" /></Button>
+                ) : null}
                 <Button type="button" size="sm" variant="ghost" disabled={busy} aria-label={`${tx("Remove")} ${item.name}`}
                   onClick={() => props.onDraftChange({ type: "REMOVE", id: item.id })}><Trash2 size={15} aria-hidden="true" /></Button>
               </div>
@@ -183,8 +205,16 @@ export function PosTicketPanel(props: Props) {
         ) : null}
       </div>
 
+      {props.splitActive ? (
+        <p className="rpos-held-banner" role="status">
+          <Scissors size={14} aria-hidden="true" /> {tx("Paying the selected items only.")}
+          {props.onClearSplit ? <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={props.onClearSplit}>{tx("Pay everything")}</Button> : null}
+        </p>
+      ) : null}
+
       <dl className="rpos-totals">
         <div><dt>{tx("Subtotal")}</dt><dd>{money(totals.subtotal)}</dd></div>
+        {totals.discount ? <div><dt>{tx("Discount")}</dt><dd>-{money(totals.discount)}</dd></div> : null}
         <div><dt>{tx("Service Charge")}</dt><dd>{money(totals.serviceCharge)}</dd></div>
         <div><dt>{tx("Tax")}</dt><dd>{money(totals.tax)}</dd></div>
         <div className="rpos-grand"><dt>{tx(counter ? "Total" : "Ticket total")}</dt><dd>{money(totals.total)}</dd></div>
@@ -210,16 +240,29 @@ export function PosTicketPanel(props: Props) {
             <Printer size={16} aria-hidden="true" /> {tx("Print guest check")}
           </Button>
         ) : null}
+        {props.onSendCheck ? (
+          <Button type="button" variant="outline" disabled={busy} onClick={props.onSendCheck}>
+            <Printer size={16} aria-hidden="true" /> {tx("Send check to printer")}
+          </Button>
+        ) : null}
+        {props.onSplitItems ? (
+          <Button type="button" variant="outline" disabled={busy} onClick={props.onSplitItems}>
+            <Scissors size={16} aria-hidden="true" /> {tx("Split by items")}
+          </Button>
+        ) : null}
         {props.canPay ? (
           <Button type="button" disabled={busy || !!props.payBlockedReason} onClick={props.onPay} title={props.payBlockedReason ? tx(props.payBlockedReason) : undefined}>
             <ReceiptText size={16} aria-hidden="true" /> {tx("Take payment")}
           </Button>
         ) : null}
-        {ticket && (ticket.canManage || (ticket.canEdit && !ticket.lines.some((line) => !line.isVoided))) ? (
+        {ticket && !ticket.lines.some((line) => line.saleId) && (ticket.canManage || (ticket.canEdit && !ticket.lines.some((line) => !line.isVoided))) ? (
           <Button type="button" variant="ghost" disabled={busy} onClick={props.onCancelTicket}>{tx("Cancel ticket")}</Button>
         ) : null}
       </div>
       {props.canPay && props.payBlockedReason ? <p className="rpos-muted">{tx(props.payBlockedReason)}</p> : null}
+      {props.waiterMode && ticket ? (
+        <p className="rpos-muted">{tx("A cashier takes payment for this ticket. To take payment yourself, your role needs the Manage tickets permission (pos.tickets.manage).")}</p>
+      ) : null}
     </aside>
   );
 }

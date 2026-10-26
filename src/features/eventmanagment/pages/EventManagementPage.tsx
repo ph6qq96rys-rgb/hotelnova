@@ -4,12 +4,14 @@ import { CateringLayout } from "../components/CateringLayout";
 import SalesWorkbenchPage from "../sales/SalesWorkbenchPage";
 import { ButcherySetup } from "../screens/ButcherySetup";
 import { ButcheryWorkbench } from "../screens/ButcheryWorkbench";
+import { ButcheryBoard } from "../screens/ButcheryBoard";
 import { CutStock } from "../screens/CutStock";
 import { EventOperations } from "../screens/EventOperations";
 import { OrderPipeline } from "../screens/OrderPipeline";
 import { PackagesScreen } from "../screens/PackagesScreen";
 import { ProductionPlanning } from "../screens/ProductionPlanning";
 import { ReportsScreen } from "../screens/ReportsScreen";
+import { WorkflowBoard } from "../screens/WorkflowBoard";
 import "./event-management.css";
 import "./catering-workspace.css";
 
@@ -21,7 +23,8 @@ export default function EventManagementPage() {
   const { pathname, search } = useLocation();
   const { companyId, branchId } = useAppScope();
   const module = pathname.split("/").pop();
-  const view = new URLSearchParams(search).get("view");
+  const query = new URLSearchParams(search);
+  const view = query.get("view");
   const scope = companyId + branchId;
 
   if (module === "portal") return <SalesWorkbenchPage />;
@@ -31,11 +34,17 @@ export default function EventManagementPage() {
     content =
       view === "packages" ? (
         <PackagesScreen key={scope} companyId={companyId} branchId={branchId} />
-      ) : (
+      ) : view === "list" || view === "calendar" ? (
         <OrderPipeline companyId={companyId} branchId={branchId} calendar={view === "calendar"} />
+      ) : (
+        <WorkflowBoard key={scope} companyId={companyId} branchId={branchId} />
       );
   } else if (module === "butchery") {
-    content =
+    // The board is the butchery home; links that open an order, a GRN or a new order go to the workbench.
+    const onBoard = !view && !query.get("batch") && !query.get("source") && !query.get("new");
+    content = onBoard ? (
+      <ButcheryBoard key={scope} companyId={companyId} branchId={branchId} />
+    ) :
       view === "production" ? (
         <ProductionPlanning key={scope} companyId={companyId} branchId={branchId} />
       ) : view === "stock" ? (
@@ -54,7 +63,7 @@ export default function EventManagementPage() {
       </section>
     );
   } else {
-    content = <OrderPipeline companyId={companyId} branchId={branchId} calendar={false} />;
+    content = <WorkflowBoard key={scope} companyId={companyId} branchId={branchId} />;
   }
   return <CateringLayout>{content}</CateringLayout>;
 }

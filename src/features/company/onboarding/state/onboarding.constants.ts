@@ -77,12 +77,12 @@ export const DEFAULT_COMPANY_FORM = {
 /**
  * Default company settings applied when creating a new company.
  *
- * vatRate is stored as a decimal fraction (0.15 = 15%).
- * Display layers should multiply by 100 for the % UI field.
+ * Rates are percentages, as everywhere in the API (15 = 15%).
+ * Only these fields are sent; the API keeps every field a request omits.
  */
 export const DEFAULT_SETTINGS: CompanySettingsDto = {
   vatEnabled:           true,
-  vatRate:              0.15,   // 15% - decimal fraction, NOT a percentage integer
+  vatRate:              15,     // percent
   pricesIncludeVat:     false,
   fiscalYearStartMonth: 1,
   defaultLanguage:       "en",
@@ -116,7 +116,10 @@ export const LOCATION_TYPES: { value: string; label: string }[] = [
   { value: "Bar",        label: "Bar"        },
   { value: "Store",      label: "Store"      },
   { value: "Production", label: "Production" },
-  { value: "WIP",        label: "WIP"        },
+    { value: "Retail",     label: "Retail"     },
+    { value: "Waste",      label: "Waste"      },
+    { value: "POS",        label: "POS"        },
+    { value: "Consumtion", label: "Consumption" },
   { value: "Transit",    label: "Transit"    },
 ];
 

@@ -32,6 +32,10 @@ export function sivListPath(
   return `${base}/siv`;
 }
 
+export function replenishmentRulesPath(companyId: string): string {
+  return `${companyRouteBase(companyId)}/siv/replenishment-rules`;
+}
+
 export function sivCreatePath(
   companyId: string,
   branchId: string,

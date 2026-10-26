@@ -804,7 +804,7 @@ export default function EmployeeDetailPage() {
     if (!telegramToken) return;
 
     const message = [
-      "Open Hotel Nova Mini App:",
+      "Open Process360 Mini App:",
       `https://t.me/hotelnova_bot/erp?startapp=${getTelegramStartParam()}`,
       "",
       "Your HR link code:",

@@ -13,6 +13,7 @@ import { http } from "../../../../api/http";
 import { useAppScope } from "../../../../app/useAppScope";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
 import { fmtDateTime } from "../../utils/hrUtils";
+import AttendanceGeofencePanel from "./AttendanceGeofencePanel";
 
 type AttendanceQrCodeType = "ClockIn" | "ClockOut" | "Both";
 
@@ -460,6 +461,8 @@ export default function BranchAttendanceQrGeneratorPage({
           )}
         </section>
       </section>
+
+      <AttendanceGeofencePanel companyId={companyId} branchId={branchId} />
     </main>
   );
 }

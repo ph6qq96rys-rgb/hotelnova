@@ -1,3 +1,4 @@
+import { BrandLogo } from "../../components/BrandLogo";
 // src/pages/auth/SystemAdminLoginPage.tsx
 
 import { useEffect, useState } from "react";
@@ -111,25 +112,6 @@ function hasSystemAdminRole(
       normalized === "SYSADMIN"
     );
   });
-}
-
-function IconGrid() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M3 3h18M3 9h18M3 15h18M9 15v6M15 15v6"
-      />
-    </svg>
-  );
 }
 
 function IconEye({ off }: { off?: boolean }) {
@@ -337,16 +319,7 @@ export default function SystemAdminLoginPage() {
     <div className="auth-page">
       <div className="auth-box">
         <div className="auth-logo">
-          <div
-            className="auth-logo__icon"
-            aria-hidden="true"
-          >
-            <IconGrid />
-          </div>
-
-          <span className="auth-logo__name">
-            Hotel Nova Platform
-          </span>
+          <BrandLogo />
         </div>
 
         <div className="auth-card">

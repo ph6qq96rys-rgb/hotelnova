@@ -8,6 +8,8 @@ import { useAppScope } from "../../../../app/useAppScope";
 import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import { inventoryItemsApi } from "../api/inventoryItemsApi";
 import { itemTypeLabel } from "../constants/itemTypes";
+import { Button } from "../../../../components/ui/button";
+import { downloadXlsx, type XlsxCell } from "../../../reports/fnb/utils/xlsxWriter";
 import type { InventoryItemDto, UomDto } from "../types";
 
 import "./inventory-items.css";
@@ -32,6 +34,8 @@ const inventoryItemsAmharicPhrases: Record<string, string> = {
   "Showing": "በማሳየት ላይ",
   "New item": "አዲስ እቃ",
   "Import from Excel": "ከExcel አስመጣ",
+  "Export to Excel": "ወደ Excel ላክ",
+  "Exporting...": "በመላክ ላይ...",
   "Retry": "እንደገና ሞክር",
   "Warning": "ማስጠንቀቂያ",
   "UOM columns may show IDs.": "የመለኪያ አምዶች ID ሊያሳዩ ይችላሉ።",
@@ -450,6 +454,39 @@ export default function InventoryItemsPage() {
     navigate(paths.new);
   }, [navigate, paths]);
 
+  const [exporting, setExporting] = useState(false);
+  /** Downloads the items the list currently shows (filter and search applied) as an Excel workbook. */
+  const handleExport = useCallback(async () => {
+    if (!companyId || exporting) return;
+    setExporting(true);
+    try {
+      const categories = await inventoryItemsApi.getCategories(companyId).catch(() => []);
+      const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+      const uomCode = new Map(uomsRaw.map((u) => [u.id, ((u as { code?: string }).code ?? u.symbol ?? u.name) as string]));
+      const rows: XlsxCell[][] = [[
+        "Name", "Local name", "SKU", "Barcode", "Type", "Category", "Sub-category", "Base UOM", "Issue UOM",
+        "Track inventory", "Reorder level", "Costing method", "Default cost", "Default price", "Status",
+      ]];
+      for (const item of filteredItems) {
+        const type = item.type ?? item.itemType;
+        rows.push([
+          item.name, item.localName ?? "", item.sku ?? "", item.barcode ?? "",
+          type ? itemTypeLabel(type as never) : "",
+          item.categoryId ? categoryName.get(item.categoryId) ?? "" : "",
+          item.subCategoryId ? categoryName.get(item.subCategoryId) ?? "" : "",
+          uomCode.get(item.baseUomId) ?? "", item.issueUomId ? uomCode.get(item.issueUomId) ?? "" : "",
+          item.trackInventory ? "Yes" : "No", item.reorderLevel ?? 0, item.costingMethod ?? "",
+          item.defaultCost ?? null, item.defaultPrice ?? null, isItemActive(item) ? "Active" : "Inactive",
+        ]);
+      }
+      const today = new Date();
+      const stamp = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      downloadXlsx(`inventory-items-${stamp}.xlsx`, rows, "Inventory items", [0]);
+    } finally {
+      setExporting(false);
+    }
+  }, [companyId, exporting, filteredItems, uomsRaw]);
+
   const handleImport = useCallback(() => {
     if (!paths) return;
     navigate(paths.import);
@@ -532,6 +569,12 @@ export default function InventoryItemsPage() {
           <button type="button" className="inv-btn inv-btn--outline" onClick={handleImport}>
             {tx("Import from Excel")}
           </button>
+
+          <Button type="button" variant="bare" className="inv-btn inv-btn--outline" onClick={() => void handleExport()}
+            disabled={loading || exporting || filteredCount === 0}
+            title={searchQuery || activeFilter !== "all" ? "Exports the filtered items shown in the list" : undefined}>
+            {exporting ? tx("Exporting...") : tx("Export to Excel")}
+          </Button>
         </div>
       </div>
 

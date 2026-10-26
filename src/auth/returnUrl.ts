@@ -1,6 +1,6 @@
 // src/auth/returnUrl.ts
 
-const BLOCKED_PREFIXES = ["/login", "/register", "/forgot-password", "/reset-password"];
+const BLOCKED_PREFIXES = ["/login", "/register", "/forgot-password", "/reset-password", "/change-password"];
 const MAX_LENGTH = 2048;
 
 export function safeReturnUrl(raw: string | null | undefined, fallback = "/dashboard"): string {

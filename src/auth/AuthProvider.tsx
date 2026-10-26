@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { http, refreshAccessToken } from "../api/http";
 import {
@@ -70,6 +70,11 @@ export interface AuthContextValue {
   hasPermission: (permission: string) => boolean;
   hasAnyPermission: (permissions: string[]) => boolean;
   hasAllPermissions: (permissions: string[]) => boolean;
+
+  /** The account must choose its own password before using the application. */
+  mustChangePassword: boolean;
+  /** Changes the password; resolves true when a fresh session was issued, false when the user must sign in again. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
 
   login: (input: LoginRequest, remember?: boolean) => Promise<AuthState>;
   register: (input: RegisterRequest, remember?: boolean) => Promise<void>;
@@ -450,7 +455,21 @@ function buildAuthState(
     ),
 
     sessionOnly,
+
+    mustChangePassword:
+      firstBoolean((response as any).mustChangePassword) ||
+      String((claims as any)?.pwd_change_required ?? "").toLowerCase() === "true",
   };
+}
+
+const CHANGE_PASSWORD_PATH = "/change-password";
+
+/** True while the session may only change its password (flag on the session or claim on the token). */
+function requiresPasswordChange(auth: AuthState | null): boolean {
+  if (!auth?.accessToken) return false;
+  if (auth.mustChangePassword) return true;
+  const claims = decodeJwt(auth.accessToken) as Record<string, unknown> | null;
+  return String(claims?.pwd_change_required ?? "").toLowerCase() === "true";
 }
 
 function getDefaultReturnUrl(current: string): string {
@@ -591,6 +610,7 @@ function clearAppScopeCompat(): void {
 }
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [auth, setAuth] = useState<AuthState | null>(() => loadAuth());
   const [isReady, setIsReady] = useState(false);
@@ -862,6 +882,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuth(loadAuth());
   }, []);
 
+  const mustChangePassword = useMemo(() => requiresPasswordChange(auth), [auth]);
+
+  // The API refuses everything but the auth endpoints until the password is changed.
+  useEffect(() => {
+    if (!isReady || !mustChangePassword) return;
+    if (location.pathname.startsWith(CHANGE_PASSWORD_PATH)) return;
+    if (AUTH_PATHS.some((path) => location.pathname.startsWith(path))) return;
+
+    const returnUrl = encodeURIComponent(location.pathname + location.search);
+    navigate(`${CHANGE_PASSWORD_PATH}?returnUrl=${returnUrl}`, { replace: true });
+  }, [isReady, mustChangePassword, location.pathname, location.search, navigate]);
+
+  useEffect(() => {
+    const onRequired = () => {
+      if (!window.location.pathname.startsWith(CHANGE_PASSWORD_PATH)) {
+        navigate(CHANGE_PASSWORD_PATH, { replace: true });
+      }
+    };
+    window.addEventListener("auth:password-change-required", onRequired);
+    return () => window.removeEventListener("auth:password-change-required", onRequired);
+  }, [navigate]);
+
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      const result = await authApi.changePassword(currentPassword, newPassword);
+
+      if (!result.tokens) {
+        // Other sessions were revoked and no session could be issued for this scope.
+        void authApi.logout();
+        clearAuth();
+        clearAppScopeCompat();
+        setAuth(null);
+        return false;
+      }
+
+      const next = buildAuthState(result.tokens, auth?.sessionOnly ?? false);
+      saveAuth(next);
+      syncAppScopeFromAuth(next);
+      syncWorkspaceAuthFromAuth(next);
+      writeLastActivityAt();
+      setAuth(next);
+      return true;
+    },
+    [auth?.sessionOnly]
+  );
+
   const permissions = useMemo(
     () => auth?.permissions ?? [],
     [auth?.permissions]
@@ -918,6 +984,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasAllPermissions: (required) =>
         hasAllErpPermissions({ roles, permissions }, required),
 
+      mustChangePassword,
+      changePassword,
+
       login,
       register,
       logout,
@@ -933,6 +1002,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       roles,
       permissionSet,
       isSystemAdmin,
+      mustChangePassword,
+      changePassword,
       login,
       register,
       logout,

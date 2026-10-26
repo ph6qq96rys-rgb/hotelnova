@@ -1,3 +1,4 @@
+import { Button } from "../../../components/ui/button";
 import { CateringLayout } from "../components/CateringLayout";
 // src/features/eventmanagment/sales/SalesWorkbenchPage.tsx
 //
@@ -69,7 +70,7 @@ export default function SalesWorkbenchPage() {
 
       <nav aria-label="Sales documents" className="cat-tabs">
         {tabs.map((tab) => (
-          <button
+          <Button variant="bare"
             aria-current={tab.key === doc ? "page" : undefined}
             className={`cat-tab${tab.key === doc ? " is-active" : ""}`}
             key={tab.key}
@@ -78,7 +79,7 @@ export default function SalesWorkbenchPage() {
           >
             {tab.icon}
             {tab.label}
-          </button>
+          </Button>
         ))}
       </nav>
 

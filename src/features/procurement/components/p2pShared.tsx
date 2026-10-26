@@ -180,6 +180,7 @@ export function ActionDialog({
   commentLabel,
   commentRequired,
   busy,
+  confirmDisabled,
   children,
   onConfirm,
   onClose,
@@ -192,6 +193,8 @@ export function ActionDialog({
   commentLabel?: string;
   commentRequired?: boolean;
   busy?: boolean;
+  /** Keeps the confirm button disabled until the dialog's own fields are complete. */
+  confirmDisabled?: boolean;
   children?: ReactNode;
   onConfirm: (comment: string) => void;
   onClose: () => void;
@@ -204,7 +207,7 @@ export function ActionDialog({
     if (open) setComment("");
   }, [open]);
   if (!open) return null;
-  const blocked = !!commentRequired && !comment.trim();
+  const blocked = (!!commentRequired && !comment.trim()) || !!confirmDisabled;
   return (
     <div className="ui-dialog-backdrop">
       <div className="ui-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>

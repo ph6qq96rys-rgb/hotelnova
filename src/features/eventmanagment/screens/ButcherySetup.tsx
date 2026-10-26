@@ -1,3 +1,7 @@
+import { Button } from "../../../components/ui/button";
+import { Checkbox } from "../../../components/ui/checkbox";
+import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { http } from "../../../api/http";
 import { useAuth } from "../../../auth/AuthProvider";
@@ -190,10 +194,12 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
     if (
       template &&
       (!template.lines.length ||
-        Math.abs(template.lines.reduce((s, l) => s + l.expectedYieldPercent, 0) - 100) > 0.0001 ||
+        template.lines.some(l => l.expectedYieldPercent < 0 || l.expectedYieldPercent > 100) ||
+        template.lines.reduce((s, l) => s + l.expectedYieldPercent, 0) > 100 ||
+        (template.isActive && (template.lines.some(l => l.expectedYieldPercent <= 0) || Math.abs(template.lines.reduce((s, l) => s + l.expectedYieldPercent, 0) - 100) > 0.0001)) ||
         new Set(template.lines.map((l) => l.outputItemId)).size !== template.lines.length)
     ) {
-      setError("Add distinct output cuts with a total expected yield of exactly 100%.");
+      setError("Add distinct cuts. Active templates need positive yields totaling 100%; inactive templates may use zero for pending yields.");
       return;
     }
     lock.current = true;
@@ -222,7 +228,7 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
     return (
       <label>
         {name}
-        <select aria-label={name} required value={value} onChange={(e) => onChange(e.target.value)}>
+        <Select aria-label={name} required value={value} onChange={(e) => onChange(e.target.value)}>
           <option value="">Choose an inventory item</option>
           {value && !items.some((i) => i.id === value) && (
             <option value={value}>{existingName || "Current item"}</option>
@@ -232,7 +238,7 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
               {i.name} {i.sku ? "· " + i.sku : ""}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
     );
   }
@@ -245,12 +251,12 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
           <p>Set up branch locations, expected yields and output costing.</p>
         </div>
         <div className="co-actions">
-          <button disabled={!canManage || !branchId || loading} onClick={() => openOperation()}>
+          <Button variant="outline" disabled={!canManage || !branchId || loading} onClick={() => openOperation()}>
             + Operation
-          </button>
-          <button className="co-primary" disabled={!canManage || loading} onClick={() => openTemplate()}>
+          </Button>
+          <Button variant="default" className="co-primary" disabled={!canManage || loading} onClick={() => openTemplate()}>
             + Cut template
-          </button>
+          </Button>
         </div>
       </header>
       {!canManage && (
@@ -286,13 +292,13 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                   .map((l) => l.stockLocationName)
                   .join(", ")}
               </p>
-              <button
+              <Button variant="outline"
                 disabled={!canManage || !branchId}
                 title={!branchId ? "Select the operation branch to edit" : undefined}
                 onClick={() => openOperation(o)}
               >
                 Edit operation
-              </button>
+              </Button>
             </article>
           ))}
           {!operations.length && <p className="co-empty">{loading ? "Loading..." : "No operations configured."}</p>}
@@ -308,9 +314,9 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                 {t.sourceItemName} · {t.lines.length} cuts · {t.totalExpectedYieldPercent}% yield ·{" "}
                 {t.isActive ? "Active" : "Inactive"}
               </p>
-              <button disabled={!canManage} onClick={() => openTemplate(t)}>
+              <Button variant="outline" disabled={!canManage} onClick={() => openTemplate(t)}>
                 Edit template
-              </button>
+              </Button>
             </article>
           ))}
           {!templates.length && <p className="co-empty">{loading ? "Loading..." : "No cut templates configured."}</p>}
@@ -327,15 +333,15 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
             <form onSubmit={save}>
               <header className="co-toolbar">
                 <h2>{operation ? "Operation setup" : "Cut template setup"}</h2>
-                <button type="button" disabled={busy} onClick={close}>
+                <Button variant="outline" type="button" disabled={busy} onClick={close}>
                   Close
-                </button>
+                </Button>
               </header>
               <fieldset disabled={busy}>
                 <div className="co-form-grid">
                   <label>
                     Code
-                    <input
+                    <Input
                       required
                       maxLength={40}
                       value={(operation || template)!.code}
@@ -348,7 +354,7 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                   </label>
                   <label>
                     Name
-                    <input
+                    <Input
                       required
                       maxLength={160}
                       value={(operation || template)!.name}
@@ -365,7 +371,7 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                     <div className="co-form-grid">
                       <label>
                         Yield variance tolerance %
-                        <input
+                        <Input
                           required
                           type="number"
                           min="0"
@@ -378,8 +384,7 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                         />
                       </label>
                       <label className="co-check">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           disabled={!operation.id}
                           checked={operation.isEnabled}
                           onChange={(e) => setOperation({ ...operation, isEnabled: e.target.checked })}
@@ -392,7 +397,7 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                       <div className="co-menu-line" key={i}>
                         <label>
                           Assigned location
-                          <select
+                          <Select
                             aria-label={"Assigned location " + (i + 1)}
                             required
                             value={l.branchStockLocationId}
@@ -411,11 +416,11 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                                 {v.name}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                         </label>
                         <label>
                           Role
-                          <select
+                          <Select
                             aria-label={"Location role " + (i + 1)}
                             value={l.role}
                             onChange={(e) =>
@@ -432,19 +437,19 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                                 {label(r)}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                         </label>
-                        <button
+                        <Button variant="outline"
                           type="button"
                           onClick={() =>
                             setOperation({ ...operation, locations: operation.locations.filter((_, j) => i !== j) })
                           }
                         >
                           Remove
-                        </button>
+                        </Button>
                       </div>
                     ))}
-                    <button
+                    <Button variant="outline"
                       type="button"
                       onClick={() =>
                         setOperation({
@@ -457,14 +462,14 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                       }
                     >
                       + Location
-                    </button>
+                    </Button>
                   </>
                 ) : (
                   template && (
                     <>
                       <label>
                         Search inventory items
-                        <input
+                        <Input
                           value={itemSearch}
                           onChange={(e) => setItemSearch(e.target.value)}
                           placeholder="Name or SKU"
@@ -477,9 +482,8 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                         templates.find((t) => t.id === template.id)?.sourceItemName,
                       )}
                       <label className="co-check">
-                        <input
-                          type="checkbox"
-                          disabled={!template.id}
+                        <Checkbox
+                          disabled={busy}
                           checked={template.isActive}
                           onChange={(e) => setTemplate({ ...template, isActive: e.target.checked })}
                         />
@@ -502,10 +506,10 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                               )}
                               <label>
                                 Expected yield %
-                                <input
+                                <Input
                                   required
                                   type="number"
-                                  min="0.01"
+                                  min={template.isActive ? "0.01" : "0"}
                                   max="100"
                                   step="0.01"
                                   value={l.expectedYieldPercent}
@@ -514,7 +518,7 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                               </label>
                               <label>
                                 Classification
-                                <select
+                                <Select
                                   aria-label={"Classification " + (i + 1)}
                                   value={l.classification}
                                   onChange={(e) => change({ classification: e.target.value })}
@@ -524,11 +528,11 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                                       {label(v)}
                                     </option>
                                   ))}
-                                </select>
+                                </Select>
                               </label>
                               <label>
                                 Cost allocation
-                                <select
+                                <Select
                                   aria-label={"Cost allocation " + (i + 1)}
                                   value={l.costAllocationMethod}
                                   onChange={(e) => change({ costAllocationMethod: e.target.value })}
@@ -538,12 +542,12 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                                       {label(v)}
                                     </option>
                                   ))}
-                                </select>
+                                </Select>
                               </label>
                               {l.costAllocationMethod === "relativeValue" && (
                                 <label>
                                   Relative value weight
-                                  <input
+                                  <Input
                                     required
                                     type="number"
                                     min="0.001"
@@ -556,7 +560,7 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                               {l.costAllocationMethod === "standardCost" && (
                                 <label>
                                   Standard cost / base unit
-                                  <input
+                                  <Input
                                     required
                                     type="number"
                                     min="0"
@@ -567,19 +571,19 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                                 </label>
                               )}
                             </div>
-                            <button
+                            <Button variant="outline"
                               type="button"
                               onClick={() =>
                                 setTemplate({ ...template, lines: template.lines.filter((_, j) => i !== j) })
                               }
                             >
                               Remove cut
-                            </button>
+                            </Button>
                           </section>
                         );
                       })}
                       <div className="co-toolbar">
-                        <button
+                        <Button variant="outline"
                           type="button"
                           onClick={() =>
                             setTemplate({
@@ -598,7 +602,7 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
                           }
                         >
                           + Output cut
-                        </button>
+                        </Button>
                         <strong>
                           Total yield {template.lines.reduce((s, l) => s + l.expectedYieldPercent, 0).toFixed(2)}%
                         </strong>
@@ -614,9 +618,9 @@ export function ButcherySetup({ companyId, branchId }: { companyId: string; bran
               )}
               <footer className="co-toolbar">
                 <span>{dirty ? "Unsaved changes" : "No changes"}</span>
-                <button className="co-primary" disabled={busy || !dirty}>
+                <Button variant="default" className="co-primary" disabled={busy || !dirty}>
                   {busy ? "Saving..." : "Save setup"}
-                </button>
+                </Button>
               </footer>
             </form>
           </section>

@@ -13,6 +13,12 @@ import {
   linkTelegramEmployee,
 } from "./telegramMiniAppApi";
 
+import {
+  clearMiniAppSession,
+  setMiniAppSession,
+  setMiniAppSessionRenewer,
+} from "./telegramMiniAppClient";
+
 import type {
   TelegramMiniAppAuthResult,
   TelegramMiniAppSession,
@@ -74,7 +80,7 @@ export function useTelegramMiniAppSession(options?: Options) {
         setSession({
           state: "error",
           message:
-            "Tenant context is missing. Open the Mini App from the tenant bot link, for example ?startapp=ambassador.",
+            "Workspace is missing. Open the Mini App from your company's Telegram bot.",
         });
         return;
       }
@@ -90,6 +96,7 @@ export function useTelegramMiniAppSession(options?: Options) {
         signal,
       });
 
+      storeSession(result, tenantKey);
       setSession(resolveAuthState(result));
     },
     [options?.tenantKey],
@@ -127,6 +134,26 @@ export function useTelegramMiniAppSession(options?: Options) {
     };
   }, [authenticate]);
 
+  // Sessions are short-lived; renew them silently from the signed Telegram login data.
+  useEffect(() => {
+    setMiniAppSessionRenewer(async () => {
+      const tenantKey = resolveTenantKey(options);
+      const currentInitData = getTelegramInitData();
+      if (!tenantKey || !currentInitData) {
+        clearMiniAppSession();
+        return;
+      }
+
+      const result = await authenticateTelegramMiniApp({ initData: currentInitData, tenantKey });
+      storeSession(result, tenantKey);
+      if (!result.success || result.requiresEmployeeLink) {
+        setSession(resolveAuthState(result));
+      }
+    });
+
+    return () => setMiniAppSessionRenewer(null);
+  }, [options?.tenantKey]);
+
   const linkEmployee = useCallback(
     async (linkToken: string) => {
       const token = linkToken.trim();
@@ -161,6 +188,7 @@ export function useTelegramMiniAppSession(options?: Options) {
         tenantKey,
       });
 
+      storeSession(result, tenantKey);
       setSession(resolveAuthState(result));
     },
     [options?.tenantKey],
@@ -185,6 +213,19 @@ export function useTelegramMiniAppSession(options?: Options) {
     refresh,
     linkEmployee,
   };
+}
+
+function storeSession(result: TelegramMiniAppAuthResult, tenantKey: string): void {
+  if (result.success && !result.requiresEmployeeLink && result.sessionToken) {
+    setMiniAppSession({
+      token: result.sessionToken,
+      expiresAtUtc: result.sessionExpiresAtUtc,
+      tenantKey: result.tenantSlug ?? tenantKey,
+      companyId: result.companyId,
+    });
+  } else {
+    clearMiniAppSession();
+  }
 }
 
 function resolveAuthState(

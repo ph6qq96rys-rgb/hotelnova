@@ -7,15 +7,15 @@
  */
 
 .cat-shell {
-  --cat-bg: #f4f7f6;
-  --cat-surface: #ffffff;
-  --cat-border: #dbe4e0;
-  --cat-border-strong: #cdd8d4;
-  --cat-text: #172522;
-  --cat-muted: #64736f;
-  --cat-accent: #0e766e;
-  --cat-accent-soft: #eef7f6;
-  --cat-danger: #b4451c;
+  --cat-bg: var(--surface-2);
+  --cat-surface: var(--surface);
+  --cat-border: var(--border-soft);
+  --cat-border-strong: var(--border);
+  --cat-text: var(--text);
+  --cat-muted: var(--text-muted);
+  --cat-accent: var(--accent-dark);
+  --cat-accent-soft: var(--accent-light);
+  --cat-danger: var(--danger);
 
   min-height: calc(100vh - 112px);
   padding: 18px;
@@ -23,7 +23,7 @@
   gap: 14px;
   align-content: start;
   background: var(--cat-bg);
-  border: 1px solid #d7dfdc;
+  border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--cat-text);
 }
@@ -72,19 +72,19 @@
   border: 1px solid var(--cat-border-strong);
   border-radius: 8px;
   background: var(--cat-surface);
-  color: #19302c;
+  color: var(--text);
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
 }
 
-.cat-btn:hover:not(:disabled) { border-color: #7ab8ac; color: var(--cat-accent); }
+.cat-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--cat-accent); }
 .cat-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.cat-btn--primary { background: var(--cat-accent); border-color: var(--cat-accent); color: #fff; }
-.cat-btn--primary:hover:not(:disabled) { background: #0b625b; border-color: #0b625b; color: #fff; }
-.cat-btn--danger { border-color: #d8a08a; color: #8a3612; }
+.cat-btn--primary { background: var(--cat-accent); border-color: var(--cat-accent); color: var(--surface); }
+.cat-btn--primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); color: var(--surface); }
+.cat-btn--danger { border-color: var(--danger-border); color: var(--danger); }
 .cat-btn--danger:hover:not(:disabled) { border-color: var(--cat-danger); color: var(--cat-danger); }
-.cat-btn--primary.cat-btn--danger { background: var(--cat-danger); border-color: var(--cat-danger); color: #fff; }
+.cat-btn--primary.cat-btn--danger { background: var(--cat-danger); border-color: var(--cat-danger); color: var(--surface); }
 .cat-btn--ghost { border-color: transparent; background: transparent; }
 .cat-spin { animation: cat-spin 1s linear infinite; }
 @keyframes cat-spin { to { transform: rotate(360deg); } }
@@ -107,7 +107,7 @@
   outline: 0;
 }
 
-.cat-search:focus { border-color: var(--cat-accent); box-shadow: 0 0 0 2px #d5eae7; }
+.cat-search:focus { border-color: var(--cat-accent); box-shadow: 0 0 0 2px var(--accent-light); }
 
 .cat-check {
   display: inline-flex;
@@ -142,7 +142,7 @@
   border-bottom: 1px solid var(--cat-border);
   white-space: nowrap;
 }
-.cat-table tbody tr { border-bottom: 1px solid #eef2f1; }
+.cat-table tbody tr { border-bottom: 1px solid var(--border-soft); }
 .cat-table tbody tr:last-child { border-bottom: 0; }
 .cat-table tbody tr[tabindex] { cursor: pointer; }
 .cat-table tbody tr[tabindex]:hover, .cat-table tbody tr[tabindex]:focus-visible { background: var(--cat-accent-soft); outline: 0; }
@@ -177,7 +177,7 @@
 .cat-empty span { color: var(--cat-muted); font-size: 13px; }
 
 .cat-alert { display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
-.cat-alert--error { border: 1px solid #e0a49a; background: #fdf1ef; color: #8f2f1e; }
+.cat-alert--error { border: 1px solid var(--danger-border); background: var(--danger-bg); color: var(--danger); }
 
 /* --- Detail header --- */
 
@@ -191,10 +191,10 @@
 /* --- Pills --- */
 
 .cat-pill { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; }
-.cat-pill--good { background: #e6f6ef; color: #1d6b4f; }
-.cat-pill--warn { background: #fdf3e3; color: #85560d; }
-.cat-pill--danger { background: #fdecea; color: #8f2f1e; }
-.cat-pill--info { background: #eaf1fb; color: #24547f; }
+.cat-pill--good { background: var(--success-bg); color: var(--success); }
+.cat-pill--warn { background: var(--warn-bg); color: var(--warn); }
+.cat-pill--danger { background: var(--danger-bg); color: var(--danger); }
+.cat-pill--info { background: var(--info-bg); color: var(--info); }
 
 /* --- Fields --- */
 
@@ -202,7 +202,7 @@
 .cat-field__label { font-size: 12.5px; font-weight: 700; }
 .cat-field__label em { color: var(--cat-danger); font-style: normal; }
 .cat-field__help { color: var(--cat-muted); font-size: 11.5px; line-height: 1.35; }
-.cat-field__error { color: #8f2f1e; font-size: 11.5px; }
+.cat-field__error { color: var(--danger); font-size: 11.5px; }
 
 .cat-field input, .cat-field select, .cat-field textarea {
   width: 100%;
@@ -216,8 +216,8 @@
 }
 
 .cat-field textarea { resize: vertical; }
-.cat-field input:focus, .cat-field select:focus, .cat-field textarea:focus { border-color: var(--cat-accent); box-shadow: 0 0 0 2px #d5eae7; }
-.cat-field.has-error input, .cat-field.has-error select, .cat-field.has-error textarea { border-color: #e0a49a; }
+.cat-field input:focus, .cat-field select:focus, .cat-field textarea:focus { border-color: var(--cat-accent); box-shadow: 0 0 0 2px var(--accent-light); }
+.cat-field.has-error input, .cat-field.has-error select, .cat-field.has-error textarea { border-color: var(--danger-border); }
 .cat-field__number { position: relative; display: flex; align-items: center; }
 .cat-field__number em { position: absolute; right: 10px; color: var(--cat-muted); font-style: normal; font-size: 12px; }
 .cat-field__number input { padding-right: 30px; }
@@ -274,7 +274,7 @@
 .cat-estimate li { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; }
 .cat-estimate li span { color: var(--cat-muted); }
 .cat-estimate li em { font-style: normal; font-weight: 700; }
-.cat-estimate li.is-total { padding-top: 5px; border-top: 1px solid #cfe3e0; font-weight: 800; }
+.cat-estimate li.is-total { padding-top: 5px; border-top: 1px solid var(--accent-light); font-weight: 800; }
 .cat-estimate li.is-total span { color: var(--cat-text); }
 .cat-estimate small { color: var(--cat-muted); font-size: 11px; }
 

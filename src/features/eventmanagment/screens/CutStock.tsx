@@ -1,3 +1,6 @@
+import { Button } from "../../../components/ui/button";
+import { Checkbox } from "../../../components/ui/checkbox";
+import { Input } from "../../../components/ui/input";
 import { useEffect, useState } from "react";
 import { http } from "../../../api/http";
 import { readApiError } from "../sales/ui";
@@ -53,16 +56,16 @@ export function CutStock({ companyId, branchId }: { companyId: string; branchId:
           <p>Remaining produced lots from posted butchery batches.</p>
         </div>
         <div className="co-actions">
-          <button disabled={loading} onClick={() => setRevision((r) => r + 1)}>
+          <Button variant="outline" disabled={loading} onClick={() => setRevision((r) => r + 1)}>
             Refresh
-          </button>
-          <button
+          </Button>
+          <Button variant="default"
             className="co-primary"
             disabled={loading || !selected.length}
             onClick={() => printCutLabels(rows.filter((r) => selected.includes(r.lotId)))}
           >
             Print selected labels ({selected.length})
-          </button>
+          </Button>
         </div>
       </header>
       {error && (
@@ -72,7 +75,7 @@ export function CutStock({ companyId, branchId }: { companyId: string; branchId:
       )}
       <section className="co-card">
         <div className="co-toolbar">
-          <input
+          <Input
             aria-label="Search produced cuts"
             placeholder="Search cut, batch or lot..."
             value={q}
@@ -85,9 +88,8 @@ export function CutStock({ companyId, branchId }: { companyId: string; branchId:
             <thead>
               <tr>
                 <th>
-                  <input
+                  <Checkbox
                     aria-label="Select all labels on this page"
-                    type="checkbox"
                     checked={rows.length > 0 && selected.length === rows.length}
                     onChange={(e) => setSelected(e.target.checked ? rows.map((r) => r.lotId) : [])}
                   />
@@ -103,9 +105,8 @@ export function CutStock({ companyId, branchId }: { companyId: string; branchId:
               {rows.map((r) => (
                 <tr key={r.lotId}>
                   <td>
-                    <input
+                    <Checkbox
                       aria-label={"Select label " + r.lot}
-                      type="checkbox"
                       checked={selected.includes(r.lotId)}
                       onChange={(e) =>
                         setSelected((ids) =>
@@ -136,12 +137,12 @@ export function CutStock({ companyId, branchId }: { companyId: string; branchId:
             Page {page} of {Math.max(1, Math.ceil(total / 25))}
           </span>
           <div className="co-actions">
-            <button disabled={loading || page <= 1} onClick={() => setPage((p) => p - 1)}>
+            <Button variant="outline" disabled={loading || page <= 1} onClick={() => setPage((p) => p - 1)}>
               Previous
-            </button>
-            <button disabled={loading || page * 25 >= total} onClick={() => setPage((p) => p + 1)}>
+            </Button>
+            <Button variant="outline" disabled={loading || page * 25 >= total} onClick={() => setPage((p) => p + 1)}>
               Next
-            </button>
+            </Button>
           </div>
         </footer>
       </section>

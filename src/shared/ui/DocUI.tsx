@@ -1,4 +1,5 @@
 import React from "react";
+import "./doc-ui.css";
 
 export function DocHeader({
   title,
@@ -10,12 +11,12 @@ export function DocHeader({
   right?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+    <div className="doc-header">
       <div>
-        <div className="text-xl font-bold text-slate-900">{title}</div>
-        {subtitle && <div className="text-sm text-slate-500">{subtitle}</div>}
+        <div className="doc-title">{title}</div>
+        {subtitle && <div className="doc-subtitle">{subtitle}</div>}
       </div>
-      {right && <div className="flex items-center gap-2">{right}</div>}
+      {right && <div className="doc-actions">{right}</div>}
     </div>
   );
 }
@@ -38,21 +39,21 @@ export function StatusPill<T extends string | number>({
     typeof text === "string" ? text : labelOf ? labelOf(text) : String(text);
 
   return (
-    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${tone}`}>
+    <span className={`doc-status ${tone}`}>
       {label}
     </span>
   );
 }
 
 export function KpiRow({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-2 md:grid-cols-5 gap-3">{children}</div>;
+  return <div className="doc-kpis">{children}</div>;
 }
 
 export function Kpi({ label, value }: { label: string; value: any }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-lg font-bold text-slate-900">{value}</div>
+    <div className="doc-kpi">
+      <div className="doc-label">{label}</div>
+      <div className="doc-kpi-value">{value}</div>
     </div>
   );
 }
@@ -69,28 +70,28 @@ export function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className="card">
-      <div className="p-4 md:p-5 border-b border-slate-100 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+    <div className="doc-card">
+      <div className="doc-card-header">
         <div>
-          <div className="text-sm font-semibold text-slate-900">{title}</div>
-          {subtitle && <div className="text-xs text-slate-500">{subtitle}</div>}
+          <div className="doc-value">{title}</div>
+          {subtitle && <div className="doc-label">{subtitle}</div>}
         </div>
-        {right && <div className="flex items-center gap-2">{right}</div>}
+        {right && <div className="doc-actions">{right}</div>}
       </div>
-      <div className="p-4 md:p-5">{children}</div>
+      <div className="doc-card-body">{children}</div>
     </div>
   );
 }
 
 export function InfoGrid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 md:grid-cols-4 gap-4">{children}</div>;
+  return <div className="doc-info-grid">{children}</div>;
 }
 
 export function Info({ label, value }: { label: string; value: any }) {
   return (
     <div>
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-sm font-semibold text-slate-900">{value ?? "-"}</div>
+      <div className="doc-label">{label}</div>
+      <div className="doc-value">{value ?? "-"}</div>
     </div>
   );
 }

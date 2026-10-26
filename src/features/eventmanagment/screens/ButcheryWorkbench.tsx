@@ -1,8 +1,14 @@
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Textarea } from "../../../components/ui/textarea";
+import { Select } from "../../../components/ui/select";
 import { useUnsavedChanges } from "../components/useUnsavedChanges";
 import { RemovePlannedBatch } from "../../../components/RemovePlannedBatch";
 import { useDialogFocus } from "../components/useDialogFocus";
 import { useAuth } from "../../../auth/AuthProvider";
 import { useEffect, useRef, useState } from "react";
+import "./event-workspace.css";
+import { ButcheryJourneyPanel } from "./ButcheryJourneyPanel";
 import { useSearchParams } from "react-router-dom";
 import { http } from "../../../api/http";
 import {
@@ -11,6 +17,7 @@ import {
   type ButcheryOperationDto,
   type MeatCutTemplateDto,
   type ButcheryBatchTraceDto as Trace,
+  type ButcherySourceLotDto,
 } from "../api/butcheryManagementApi";
 import { grnApi } from "../../inventory/grn/api/grnApi";
 import type { GrnListDto, GrnDetailDto } from "../../inventory/grn/types/grn.types";
@@ -81,13 +88,18 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
     [selected, setSelected] = useState(params.get("batch") ?? "");
   const [operations, setOperations] = useState<ButcheryOperationDto[]>([]),
     [templates, setTemplates] = useState<MeatCutTemplateDto[]>([]);
+  const [sourceMode, setSourceMode] = useState<"grn" | "lot">("grn");
+  const [sourceLots, setSourceLots] = useState<ButcherySourceLotDto[]>([]);
+  const [lotKey, setLotKey] = useState("");
+  const [lotWeight, setLotWeight] = useState("");
+  const sourceLot = sourceLots.find(l => `${l.id}:${l.operationId}` === lotKey);
   const [receipts, setReceipts] = useState<GrnListDto[]>([]),
     [receipt, setReceipt] = useState<GrnDetailDto | null>(null);
   const [grnId, setGrnId] = useState(params.get("grnId") ?? ""),
     [lineId, setLineId] = useState(""),
     [operationId, setOperationId] = useState(""),
     [templateId, setTemplateId] = useState("");
-  const [creating, setCreating] = useState(params.get("source") === "grn"),
+  const [creating, setCreating] = useState(params.get("source") === "grn" || params.get("new") === "1"),
     [revision, setRevision] = useState(0),
     [loading, setLoading] = useState(false);
   const [error, setError] = useState(""),
@@ -99,38 +111,67 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
     [traces, setTraces] = useState<Trace[]>([]),
     [traceLoading, setTraceLoading] = useState(false);
   const [varianceReason, setVarianceReason] = useState(""),
-    [confirm, setConfirm] = useState<"variance" | "post" | "cancel" | "reverse" | null>(null);
+    [confirm, setConfirm] = useState<"variance" | "post" | "completePost" | "cancel" | "reverse" | null>(null);
+  // The server query waits for a pause in typing; the visible list filters instantly.
+  const [serverSearch, setServerSearch] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setServerSearch(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
   useDialogFocus(creating, busy, () => {
     if (guard.confirmDiscard()) setCreating(false);
   });
   const batch = batches.find((b) => b.id === selected) ?? null;
   const status = batch ? state(batch.status) : "";
   const line = receipt?.lines.find((l) => l.id === lineId);
-  const matching = templates.filter((t) => t.sourceItemId === line?.itemId);
-  const editable = canProcess && ["draft", "submitted", "approved", "inProcessing"].includes(status);
+  const matching = templates.filter((t) => t.isActive && t.sourceItemId === (sourceMode === "lot" ? sourceLot?.itemId : line?.itemId));
+  const editable = canProcess && ["draft", "inProcessing"].includes(status);
   const dirty =
     JSON.stringify(cuts) !== JSON.stringify(batch?.outputs ?? []) ||
-    (creating && !!(grnId || lineId || operationId || templateId));
+    (creating && !!(grnId || lineId || operationId || templateId || lotKey));
   const guard = useUnsavedChanges(dirty);
 
+  useEffect(() => {
+    let alive = true;
+    setSourceLots([]); setLotKey(""); setLotWeight("");
+    if (creating && sourceMode === "lot" && companyId && branchId && canProcess) {
+      api.listSourceLots(companyId, branchId).then(lots => { if (alive) setSourceLots(lots); })
+        .catch(e => { if (alive) setError(readApiError(e, "Unable to load available stock lots.")); });
+    }
+    return () => { alive = false; };
+  }, [companyId, branchId, creating, sourceMode, revision, canProcess]);
+
+  useEffect(() => {
+    let alive = true;
+    setOperations([]);
+    setTemplates([]);
+    if (!companyId) return;
+    Promise.all([api.listOperations(companyId, branchId), api.listCutTemplates(companyId)])
+      .then(([o, t]) => {
+        if (alive) {
+          setOperations(o.filter((x) => x.isEnabled));
+          setTemplates(t);
+        }
+      })
+      .catch((e) => {
+        if (alive) setError(readApiError(e, "Unable to load butchery setup."));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [companyId, branchId, revision]);
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setError("");
     setMessage("");
     setBatches([]);
-    setOperations([]);
-    setTemplates([]);
     if (!companyId) {
       setLoading(false);
       return;
     }
-    Promise.all([
-      api.searchBatches(companyId, { branchId, q: search, page }),
-      api.listOperations(companyId, branchId),
-      api.listCutTemplates(companyId),
-    ])
-      .then(async ([b, o, t]) => {
+    Promise.all([api.searchBatches(companyId, { branchId, q: serverSearch, page })])
+      .then(async ([b]) => {
         const linked = initialBatch.current;
         initialBatch.current = null;
         if (linked && !b.items.some((x) => x.id === linked)) {
@@ -141,8 +182,6 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
           setBatches(b.items);
           setTotal(b.total);
           setOpenCount(b.openCount);
-          setOperations(o.filter((x) => x.isEnabled));
-          setTemplates(t);
           setSelected((id) => (b.items.some((x) => x.id === id) ? id : (b.items[0]?.id ?? "")));
         }
       })
@@ -155,22 +194,26 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
     return () => {
       alive = false;
     };
-  }, [companyId, branchId, revision, search, page]);
+  }, [companyId, branchId, revision, serverSearch, page]);
   useEffect(() => {
     setCuts(batch?.outputs ?? []);
     setConfirm(null);
     setVarianceReason("");
   }, [batch]);
+  // Traces are fetched again only when the set of batches to trace (or the open batch's status) changes,
+  // not after every save on the page.
+  const traceIds =
+    view === "stock"
+      ? batches.filter((b) => state(b.status) === "posted").map((b) => b.id)
+      : selected
+        ? [selected]
+        : [];
+  const traceKey = traceIds.join(",") + "|" + status;
   useEffect(() => {
     let alive = true;
     setTraces([]);
     setTraceLoading(true);
-    const ids =
-      view === "stock"
-        ? batches.filter((b) => state(b.status) === "posted").map((b) => b.id)
-        : selected
-          ? [selected]
-          : [];
+    const ids = traceKey.split("|")[0].split(",").filter(Boolean);
     (async () => {
       const all: Trace[] = [];
       for (let i = 0; i < ids.length; i += 8) {
@@ -188,11 +231,11 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
     return () => {
       alive = false;
     };
-  }, [companyId, batches, selected, view]);
+  }, [companyId, traceKey]);
   useEffect(() => {
     let alive = true;
     setReceipts([]);
-    if (creating && companyId)
+    if (creating && companyId && sourceMode === "grn")
       grnApi
         .list({ companyId, branchId }, { status: "POSTED" })
         .then((r) => {
@@ -204,13 +247,13 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
     return () => {
       alive = false;
     };
-  }, [creating, companyId, branchId]);
+  }, [creating, companyId, branchId, sourceMode]);
   useEffect(() => {
     let alive = true;
     setReceipt(null);
     setLineId("");
     setTemplateId("");
-    if (grnId && companyId)
+    if (grnId && companyId && sourceMode === "grn")
       grnApi
         .getById({ companyId, branchId }, grnId)
         .then((r) => {
@@ -225,7 +268,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
     return () => {
       alive = false;
     };
-  }, [grnId, companyId, branchId]);
+  }, [grnId, companyId, branchId, sourceMode]);
   useEffect(() => {
     setTemplateId("");
   }, [lineId]);
@@ -263,6 +306,13 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
   }
   async function create(e: React.FormEvent) {
     e.preventDefault();
+    if (sourceMode === "lot") {
+      const weight = Number(lotWeight);
+      if (!sourceLot || !matching.some(t => t.id === templateId) || !Number.isFinite(weight) || weight <= 0 || weight > sourceLot.availableWeightBase) return;
+      const result = await run(() => api.createBatchFromLot(companyId, sourceLot, templateId, weight, new Date(processingDate).toISOString()), "Cutting order created.");
+      if (result) { setCreating(false); setParams({ view: "yield", batch: result.id }); }
+      return;
+    }
     if (!receipt || !line || !templateId || !operationId) return;
     const result = await run(
       () =>
@@ -307,6 +357,34 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
   const transition = (action: "submit" | "start" | "complete") => {
     if (batch && !dirty) void run(() => api[action](companyId, batch.id), humanize(action) + " saved.");
   };
+  /** Why the next step is unavailable, said once under the buttons instead of leaving them silently greyed. */
+  const nextStepHint = !batch
+    ? ""
+    : dirty
+      ? "Save or discard the weight changes first."
+      : status === "draft"
+        ? canProcess
+          ? ""
+          : "Submitting needs the butchery.process permission."
+        : status === "submitted"
+          ? canApprove
+            ? "Approval must come from someone other than the person who created the batch."
+            : "Waiting for a user with butchery.approve (not the batch's creator)."
+          : status === "approved"
+            ? canProcess
+              ? ""
+              : "Starting the breakdown needs the butchery.process permission."
+            : status === "inProcessing"
+              ? !batch.isVarianceWithinTolerance
+                ? "The unexplained weight is above tolerance: correct the weights or have the variance approved (by someone other than the weigher)."
+                : canProcess
+                  ? ""
+                  : "Completing needs the butchery.process permission."
+              : status === "completed"
+                ? canPost
+                  ? "Posting must come from someone other than the person who created the batch."
+                  : "Posting needs the butchery.post permission."
+                : "";
   const accounted = cuts.reduce((s, c) => s + c.actualWeightBase, 0);
   const waste = cuts.filter((c) => isWaste(c.classification)).reduce((s, c) => s + c.actualWeightBase, 0);
   const changeView = (next: string) => {
@@ -337,16 +415,16 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
           <p>Receive, weigh, review and post with full lot traceability.</p>
         </div>
         <div className="co-actions">
-          <button disabled={busy || loading || dirty} onClick={() => setRevision((r) => r + 1)}>
+          <Button variant="outline" disabled={busy || loading || dirty} onClick={() => setRevision((r) => r + 1)}>
             Refresh
-          </button>
-          <button
+          </Button>
+          <Button
             className="co-primary"
             disabled={!branchId || busy || dirty || !canProcess}
             onClick={() => setCreating(true)}
           >
             + Cutting order
-          </button>
+          </Button>
         </div>
       </header>
       {error && (
@@ -390,11 +468,16 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
           <small>{dirty ? "Unsaved weights" : "After approved variance"}</small>
         </article>
       </div>
+      {batch ? (
+        <section className="co-card" aria-label={`Workflow for ${batch.batchNo}`}>
+          <ButcheryJourneyPanel companyId={companyId} batchId={batch.id} revision={`${revision}|${batch.status}`} />
+        </section>
+      ) : null}
       <section className="co-card">
         <div className="co-toolbar">
           <div className="co-view">
             {["batches", "yield", "stock", "labels", "waste"].map((v) => (
-              <button key={v} disabled={busy} aria-pressed={view === v} onClick={() => changeView(v)}>
+              <Button variant="outline" key={v} disabled={busy} aria-pressed={view === v} onClick={() => changeView(v)}>
                 {
                   (
                     { batches: "Orders", yield: "Yield", stock: "Stock", labels: "Labels", waste: "Waste" } as Record<
@@ -403,10 +486,10 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                     >
                   )[v]
                 }
-              </button>
+              </Button>
             ))}
           </div>
-          <input
+          <Input
             aria-label="Search batches or cuts"
             placeholder="Search batches or cuts..."
             disabled={dirty || busy}
@@ -455,7 +538,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                           <td>{t.batch.batchNo}</td>
                           <td>{fixed(o.producedQtyRemainingBase)}</td>
                           <td>
-                            <button onClick={() => printLabel(t, o)}>Print label</button>
+                            <Button variant="outline" onClick={() => printLabel(t, o)}>Print label</Button>
                           </td>
                         </tr>
                       ))}
@@ -472,7 +555,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
               {batches
                 .filter((b) => (b.batchNo + " " + b.sourceItemName).toLowerCase().includes(search.toLowerCase()))
                 .map((b) => (
-                  <button
+                  <Button variant="outline"
                     key={b.id}
                     disabled={busy || dirty}
                     className={selected === b.id ? "is-active" : ""}
@@ -490,15 +573,15 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                     <small>
                       {humanize(state(b.status))} · {fixed(b.startingWeightBase)} kg
                     </small>
-                  </button>
+                  </Button>
                 ))}
               <div className="co-actions">
-                <button disabled={busy || dirty || page <= 1} onClick={() => setPage((p) => p - 1)}>
+                <Button variant="outline" disabled={busy || dirty || page <= 1} onClick={() => setPage((p) => p - 1)}>
                   Previous
-                </button>
-                <button disabled={busy || dirty || page * 25 >= total} onClick={() => setPage((p) => p + 1)}>
+                </Button>
+                <Button variant="outline" disabled={busy || dirty || page * 25 >= total} onClick={() => setPage((p) => p + 1)}>
                   Next
-                </button>
+                </Button>
               </div>
               <small>
                 {total} batches · Page {page}
@@ -540,9 +623,9 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                                   {o.producedBatchNo} · {fixed(o.actualWeightBase)} kg
                                 </p>
                               </div>
-                              <button disabled={trace.hasReversal} onClick={() => printLabel(trace, o)}>
+                              <Button variant="outline" disabled={trace.hasReversal} onClick={() => printLabel(trace, o)}>
                                 Print label
-                              </button>
+                              </Button>
                             </div>
                           ))
                       )}
@@ -584,7 +667,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                                   </td>
                                   <td>{fixed(c.expectedWeightBase)}</td>
                                   <td>
-                                    <input
+                                    <Input
                                       aria-label={c.outputItemName + " actual kg"}
                                       type="number"
                                       min="0"
@@ -609,7 +692,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                                     </td>
                                   )}
                                   <td>
-                                    <input
+                                    <Input
                                       aria-label={c.outputItemName + " reason"}
                                       disabled={busy || !editable}
                                       placeholder={isWaste(c.classification) ? "Waste reason" : "Optional notes"}
@@ -638,12 +721,12 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                           {dirty ? "Unsaved changes" : "Weights saved"} · Accounted {fixed(accounted)} kg
                         </span>
                         <div className="co-actions">
-                          <button disabled={!dirty || busy} onClick={() => setCuts(batch.outputs)}>
+                          <Button variant="outline" disabled={!dirty || busy} onClick={() => setCuts(batch.outputs)}>
                             Discard changes
-                          </button>
-                          <button className="co-primary" disabled={!editable || busy || !dirty} onClick={save}>
+                          </Button>
+                          <Button className="co-primary" disabled={!editable || busy || !dirty} onClick={save}>
                             {busy ? "Saving..." : "Save weights"}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </>
@@ -653,12 +736,12 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                     <p>Draft → Submit → Approve → Start → Complete → Post stock</p>
                     <div className="co-actions">
                       {status === "draft" && (
-                        <button
+                        <Button variant="outline"
                           disabled={busy || dirty || !cuts.length || !canProcess}
                           onClick={() => transition("submit")}
                         >
                           Submit for approval
-                        </button>
+                        </Button>
                       )}
                       {status === "draft" && (
                         <RemovePlannedBatch
@@ -675,7 +758,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                         />
                       )}
                       {status === "submitted" && (
-                        <button
+                        <Button variant="outline"
                           disabled={busy || dirty || !canApprove}
                           onClick={() =>
                             void run(
@@ -690,43 +773,66 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                           }
                         >
                           Approve batch
-                        </button>
+                        </Button>
+                      )}
+                      {status === "submitted" && canApprove && canProcess && (
+                        <Button
+                          className="co-primary"
+                          disabled={busy || dirty}
+                          onClick={() =>
+                            void run(async () => {
+                              await http.post<Batch>("/companies/" + companyId + "/butchery/batches/" + batch.id + "/approve");
+                              return await api.start(companyId, batch.id);
+                            }, "Batch approved and breakdown started.")
+                          }
+                        >
+                          Approve & start
+                        </Button>
                       )}
                       {status === "approved" && (
-                        <button disabled={busy || dirty || !canProcess} onClick={() => transition("start")}>
+                        <Button variant="outline" disabled={busy || dirty || !canProcess} onClick={() => transition("start")}>
                           Start breakdown
-                        </button>
+                        </Button>
                       )}
                       {status === "inProcessing" && (
                         <>
-                          <button
+                          <Button variant="outline"
                             disabled={busy || dirty || !canApprove || batch.unaccountedVarianceWeightBase <= 0}
                             onClick={() => setConfirm("variance")}
                           >
                             Review variance
-                          </button>
-                          <button
+                          </Button>
+                          <Button variant="outline"
                             disabled={busy || dirty || !canProcess || !batch.isVarianceWithinTolerance}
                             onClick={() => transition("complete")}
                           >
                             Complete batch
-                          </button>
+                          </Button>
+                          {canPost && (
+                            <Button
+                              className="co-primary"
+                              disabled={busy || dirty || !canProcess || !batch.isVarianceWithinTolerance}
+                              onClick={() => setConfirm("completePost")}
+                            >
+                              Complete & post
+                            </Button>
+                          )}
                         </>
                       )}
                       {status === "completed" && (
-                        <button
+                        <Button
                           className="co-primary"
                           disabled={busy || dirty || !canPost}
                           onClick={() => setConfirm("post")}
                         >
                           Post stock
-                        </button>
+                        </Button>
                       )}
                       {status === "posted" && (
-                        <button onClick={() => changeView("labels")}>Open labels & tracing</button>
+                        <Button variant="outline" onClick={() => changeView("labels")}>Open labels & tracing</Button>
                       )}
                       {["submitted", "approved", "inProcessing", "completed"].includes(status) && (
-                        <button
+                        <Button variant="outline"
                           disabled={busy || dirty || !hasPermission("butchery.remove")}
                           onClick={() => {
                             setVarianceReason("");
@@ -734,10 +840,10 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                           }}
                         >
                           Cancel batch
-                        </button>
+                        </Button>
                       )}
                       {status === "posted" && (
-                        <button
+                        <Button variant="outline"
                           disabled={busy || !canPost}
                           onClick={() => {
                             setVarianceReason("");
@@ -745,9 +851,14 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                           }}
                         >
                           Reverse posting
-                        </button>
+                        </Button>
                       )}
                     </div>
+                    {nextStepHint && (
+                      <small className="ci-why" role="note">
+                        {nextStepHint}
+                      </small>
+                    )}
                   </div>
                   {confirm && (
                     <form
@@ -756,6 +867,17 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                         e.preventDefault();
                         if (confirm === "post")
                           void run(() => api.post(companyId, batch.id), "Stock posted and trace labels generated.");
+                        else if (confirm === "completePost")
+                          void run(async () => {
+                            const done = await api.complete(companyId, batch.id);
+                            try {
+                              return await api.post(companyId, batch.id);
+                            } catch (e) {
+                              // Completed but not posted (e.g. the poster must be someone else): show the real state.
+                              setBatches((rows) => [done, ...rows.filter((r) => r.id !== done.id)]);
+                              throw e;
+                            }
+                          }, "Batch completed, stock posted and trace labels generated.");
                         else
                           void run(
                             () =>
@@ -773,7 +895,9 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                       }}
                     >
                       <h3>
-                        {confirm === "post"
+                        {confirm === "completePost"
+                          ? "Complete this batch and post it to inventory?"
+                          : confirm === "post"
                           ? "Post this batch to inventory?"
                           : confirm === "cancel"
                             ? "Cancel this batch?"
@@ -782,7 +906,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                               : "Approve unexplained weight variance"}
                       </h3>
                       <p>
-                        {confirm === "post"
+                        {confirm === "post" || confirm === "completePost"
                           ? "This consumes the source lot and creates the output stock lots. Joint cost is shared by relative market value; by-products carry their fixed value."
                           : confirm === "cancel"
                             ? "The carcass lot is released for another batch. Cancelled batches stay on record."
@@ -791,10 +915,10 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                               : fixed(batch.unaccountedVarianceWeightBase) +
                                 " kg is unexplained. Approving accepts it as processing loss; you cannot approve a batch you weighed unless your company allows it."}
                       </p>
-                      {confirm !== "post" && (
+                      {confirm !== "post" && confirm !== "completePost" && (
                         <label>
                           {confirm === "variance" ? "Approval reason" : "Reason"}
-                          <textarea
+                          <Textarea
                             required
                             minLength={3}
                             maxLength={500}
@@ -804,13 +928,13 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                         </label>
                       )}
                       <div className="co-actions">
-                        <button disabled={busy} className="co-primary">
+                        <Button disabled={busy} className="co-primary">
                           Confirm{" "}
-                          {confirm === "post" ? "posting" : confirm === "variance" ? "variance approval" : confirm}
-                        </button>
-                        <button disabled={busy} type="button" onClick={() => setConfirm(null)}>
+                          {confirm === "post" || confirm === "completePost" ? "posting" : confirm === "variance" ? "variance approval" : confirm}
+                        </Button>
+                        <Button variant="outline" disabled={busy} type="button" onClick={() => setConfirm(null)}>
                           Cancel
-                        </button>
+                        </Button>
                       </div>
                     </form>
                   )}
@@ -826,7 +950,7 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
             <form onSubmit={create}>
               <header className="co-toolbar">
                 <h2>New cutting order</h2>
-                <button
+                <Button variant="outline"
                   type="button"
                   disabled={busy}
                   onClick={() => {
@@ -834,17 +958,42 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                   }}
                 >
                   Close
-                </button>
+                </Button>
               </header>
               <fieldset disabled={busy}>
                 <p>
-                  Choose a posted receipt and its source line. The backend resolves the available stock lot and base
-                  weight.
+                  Choose a posted receipt, or stock already received into this branch through a transfer.
                 </p>
                 <div className="co-form-grid">
                   <label>
+                    Stock source
+                    <Select value={sourceMode} onChange={e => { setSourceMode(e.target.value as "grn" | "lot"); setTemplateId(""); setOperationId(""); }}>
+                      <option value="grn">Posted goods receipt</option>
+                      <option value="lot">Available branch stock (including transfers)</option>
+                    </Select>
+                  </label>
+                  {sourceMode === "lot" && <>
+                    <label>Available stock lot
+                      <Select required value={lotKey} onChange={e => {
+                        setLotKey(e.target.value); setTemplateId("");
+                        const lot = sourceLots.find(l => `${l.id}:${l.operationId}` === e.target.value);
+                        setLotWeight(lot ? String(lot.availableWeightBase) : "");
+                      }}>
+                        <option value="">Select stock lot</option>
+                        {sourceLots.map(l => <option key={`${l.id}:${l.operationId}`} value={`${l.id}:${l.operationId}`}>
+                          {l.itemName} · {l.locationName} · {l.sourceNo || l.batchNo || l.id} · {l.availableWeightBase} {l.uomCode} · {operations.find(o => o.id === l.operationId)?.name}
+                        </option>)}
+                      </Select>
+                    </label>
+                    <label>Starting weight {sourceLot?.uomCode}
+                      <Input required type="number" min="0.000001" step="any" max={sourceLot?.availableWeightBase} value={lotWeight} onChange={e => setLotWeight(e.target.value)} />
+                    </label>
+                    {!sourceLots.length && <p className="co-notice">No available lots in this branch's configured source locations. Complete the stock transfer and configure an enabled operation with a receiving, raw-meat, or processing location.</p>}
+                  </>}
+                  {sourceMode === "grn" && <>
+                  <label>
                     Posted goods receipt
-                    <select required value={grnId} onChange={(e) => setGrnId(e.target.value)}>
+                    <Select required value={grnId} onChange={(e) => setGrnId(e.target.value)}>
                       <option value="">Select receipt</option>
                       {grnId && !receipts.some((r) => r.id === grnId) && (
                         <option value={grnId}>{receipt?.grnNumber ?? "Selected receipt"}</option>
@@ -854,31 +1003,32 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                           {r.grnNumber ?? r.grnNo} · {r.supplierName}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                   <label>
                     Source line
-                    <select required value={lineId} onChange={(e) => setLineId(e.target.value)}>
+                    <Select required value={lineId} onChange={(e) => setLineId(e.target.value)}>
                       <option value="">Select received item</option>
                       {receipt?.lines.map((l) => (
                         <option key={l.id} value={l.id}>
                           {l.itemName} · {l.quantity} {l.uomCode ?? l.uomName}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
+                  </>}
                   <label>
                     Processing date
-                    <input
+                    <Input
                       required
                       type="datetime-local"
                       value={processingDate}
                       onChange={(e) => setProcessingDate(e.target.value)}
                     />
                   </label>
-                  <label>
+                  {sourceMode === "grn" && <label>
                     Operation
-                    <select required value={operationId} onChange={(e) => setOperationId(e.target.value)}>
+                    <Select required value={operationId} onChange={(e) => setOperationId(e.target.value)}>
                       <option value="">Select operation</option>
                       {operations
                         .filter((o) => !receipt?.branchId || o.branchId === receipt.branchId)
@@ -887,21 +1037,23 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                             {o.name}
                           </option>
                         ))}
-                    </select>
-                  </label>
+                    </Select>
+                  </label>}
                   <label>
                     Cut template
-                    <select required value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+                    <Select required value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
                       <option value="">Select matching template</option>
                       {matching.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.name} · {t.totalExpectedYieldPercent}%
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                 </div>
-                {line && !matching.length && (
+                {sourceMode === "grn" && receipt && !operations.some(o => !receipt.branchId || o.branchId === receipt.branchId) &&
+                  <p role="alert" className="co-notice">No operation matches this receipt's branch. To process at another branch, transfer the stock there first, then select Available branch stock. The original receipt remains in its receiving branch.</p>}
+                {(sourceMode === "lot" ? sourceLot : line) && !matching.length && (
                   <p className="co-notice">
                     No active cut template matches this received item. Open Operations & templates in the navigation to
                     configure one before creating the order.
@@ -914,10 +1066,10 @@ export function ButcheryWorkbench({ companyId, branchId }: { companyId: string; 
                 </p>
               )}
               <footer className="co-toolbar">
-                <span>One source line per cutting order.</span>
-                <button className="co-primary" disabled={busy || !receipt || !lineId || !operationId || !templateId}>
+                <span>One source lot per cutting order.</span>
+                <Button className="co-primary" disabled={busy || !matching.some(t => t.id === templateId) || (sourceMode === "lot" ? !sourceLot || !Number.isFinite(Number(lotWeight)) || Number(lotWeight) <= 0 || Number(lotWeight) > sourceLot.availableWeightBase : !receipt || !lineId || !operations.some(o => o.id === operationId && (!receipt.branchId || o.branchId === receipt.branchId)))}>
                   {busy ? "Creating..." : "Create cutting order"}
-                </button>
+                </Button>
               </footer>
             </form>
           </section>

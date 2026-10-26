@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { LayoutGrid, Printer, UserRound } from "lucide-react";
+import { Inbox, LayoutGrid, Percent, Printer, UserRound } from "lucide-react";
 
 import ConfirmModal from "../../../components/ConfirmModal";
 import { Button } from "../../../components/ui/button";
@@ -10,6 +10,7 @@ import { Textarea } from "../../../components/ui/textarea";
 import { useAppScope } from "../../../app/useAppScope";
 import { useI18n } from "../../../i18n";
 import { useUnsavedChanges } from "../../eventmanagment/components/useUnsavedChanges";
+import { useHasPermission } from "../../../auth/usePermissions";
 import { posApi, setActiveStore, tryGetStoreId } from "../api/posApi";
 import {
   holdRequires,
@@ -32,13 +33,15 @@ import { PosTableStateDialog } from "../components/PosTableStateDialog";
 import { PosMenuPanel } from "../components/PosMenuPanel";
 import { PosPaymentPanel } from "../components/PosPaymentPanel";
 import { PosTicketPanel } from "../components/PosTicketPanel";
+import { money } from "../components/posUi";
 import { SessionBanner, SessionGate } from "../components/SessionGate";
 import { usePosSession } from "../hooks/usePosSession";
 import { usePosWorkspace } from "../hooks/usePosWorkspace";
 import type { MenuItemDto } from "../types/posTypes";
 import { buildTotals } from "../utils/checkoutPolicy";
-import { cartReducer, itemBlockReason, ticketChargeLines } from "../utils/posCart";
-import { guestCheckHtml, printHtml, receiptHtml, type Receipt } from "../utils/posPrint";
+import { cartReducer, itemBlockReason, owedLines, round2, selectedChargeLines, ticketChargeLines } from "../utils/posCart";
+import { documentHtml, printHtml, tipSuggestionsHtml } from "../utils/posPrint";
+import type { CartItem } from "../types/posTypes";
 import { buildPayments, newPayer, paymentProblem, splitEvenly, type PayerDraft, type TipContext } from "../utils/posTips";
 import { extractApiError } from "../utils/posUtils";
 import { TABLE_STATUS_TEXT } from "../utils/posTables";
@@ -101,7 +104,16 @@ export function PosSalesPage() {
 
   const [storeId, setStoreId] = useState(tryGetStoreId() ?? "");
   const [payers, setPayers] = useState<PayerDraft[]>([]);
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  /** The sale just paid: its receipt is printed from the server's record (legal fields, COPY on reprint). */
+  const [lastSaleId, setLastSaleId] = useState<string | null>(null);
+  const canDiscount = useHasPermission("sales.discount.approve");
+  const canOverridePrice = useHasPermission("pos.price.override");
+  /** Split check: ticket line id → quantity this guest pays. Null pays everything still owed. */
+  const [splitSel, setSplitSel] = useState<Record<string, number> | null>(null);
+  const [splitDraft, setSplitDraft] = useState<Record<string, number> | null>(null);
+  const [discount, setDiscount] = useState<{ amount: number; reason: string } | null>(null);
+  const [discountDraft, setDiscountDraft] = useState<{ mode: "amount" | "percent"; value: string; reason: string } | null>(null);
+  const [priceEdit, setPriceEdit] = useState<{ item: CartItem; price: string; reason: string } | null>(null);
   const submitLock = useRef(false);
   // Same id for every retry of one payment, so a lost response never charges the guest twice.
   const attemptKey = useRef<string | null>(null);
@@ -136,8 +148,10 @@ export function PosSalesPage() {
     if (sessionState.session?.storeId) setStoreId(sessionState.session.storeId);
   }, [sessionState.session?.id, sessionState.session?.storeId]);
 
-  const chargeLines = useMemo(() => (counter ? draft : ticketChargeLines(ticket, ws.menu)), [counter, draft, ticket, ws.menu]);
-  const totals = useMemo(() => buildTotals(chargeLines), [chargeLines]);
+  const chargeLines = useMemo(() => (counter ? draft : splitSel ? selectedChargeLines(ticket, ws.menu, splitSel) : ticketChargeLines(ticket, ws.menu)),
+    [counter, draft, splitSel, ticket, ws.menu]);
+  const totals = useMemo(() => buildTotals(chargeLines, discount?.amount ?? 0), [chargeLines, discount?.amount]);
+  const owedQty = useMemo(() => owedLines(ticket).reduce((sum, line) => sum + line.quantity, 0), [ticket]);
 
   // Tips belong to the server of the ticket, so they are offered only when tips are on for
   // this branch and service type and a server is assigned.
@@ -155,6 +169,13 @@ export function PosSalesPage() {
     setPayers(next.length === 1 ? [{ ...next[0], amount: totals.total.toFixed(2) }] : next);
   }, [totals.total]);
 
+  // A discount changes the bill: a single payer follows it, several payers start again.
+  useEffect(() => {
+    if (view !== "PAY") return;
+    setPayers((current) => current.length <= 1 ? [current[0] ? { ...current[0], amount: totals.total.toFixed(2) } : newPayer(totals.total)] : [newPayer(totals.total)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totals.total]);
+
   const startPayment = () => { setPayers([newPayer(totals.total)]); setView("PAY"); };
 
   const addPayer = () => {
@@ -166,17 +187,6 @@ export function PosSalesPage() {
   const splitPayers = (count: number) => {
     const shares = splitEvenly(totals.total, count);
     changePayers(shares.map((share, i) => (payers[i] ? { ...payers[i], amount: share.toFixed(2), tendered: "" } : newPayer(share))));
-  };
-
-  const printLines = () => chargeLines.map((line) => ({ quantity: line.qty, name: line.name, amount: line.lineTotal }));
-
-  const printGuestCheck = () => {
-    if (!ticket) return;
-    printHtml(guestCheckHtml({
-      ticketNo: ticket.ticketNo, tableLabel: ticket.tableLabel, guestCount: ticket.guestCount, waiterName: ticket.waiterName,
-      lines: printLines(), subtotal: totals.subtotal, serviceCharge: totals.serviceCharge, tax: totals.tax, total: totals.total,
-      printedAt: new Date(),
-    }, ws.tipSettings, tipCtx.offered, tx));
   };
 
   const fail = useCallback((err: unknown, fallback: string) => {
@@ -210,9 +220,73 @@ export function PosSalesPage() {
     }
   }, [fail, reloadTicket, ticket, tx, ws]);
 
+  /** Guest check from the server: the same prices, VAT and header the receipt will carry. */
+  const printGuestCheck = async (channel: "browser" | "printer") => {
+    if (!ticket) return;
+    setBusy(true);
+    try {
+      const doc = await posServiceApi.guestCheck(scope, ticket.id, storeId || null, channel);
+      if (channel === "browser") printHtml(documentHtml(doc, tx, tipSuggestionsHtml(doc.total, doc.taxTotal, ws.tipSettings, tipCtx.offered, tx)));
+      else setNotice({ tone: "ok", text: tx("Guest check sent to the receipt printer.") });
+    } catch (err) {
+      fail(err, "The guest check could not be printed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const printReceipt = async (channel: "browser" | "printer") => {
+    if (!lastSaleId) return;
+    try {
+      const doc = await posServiceApi.receipt(scope, lastSaleId, channel);
+      if (channel === "browser") printHtml(documentHtml(doc, tx));
+      else setNotice({ tone: "ok", text: tx(doc.copyNo > 1 ? "Receipt copy sent to the printer." : "Receipt sent to the printer."), sale: true });
+    } catch (err) {
+      fail(err, "The receipt could not be printed.");
+    }
+  };
+
+  const openCashDrawer = async () => {
+    if (!storeId) return;
+    try {
+      await posServiceApi.openDrawer(scope, storeId);
+      setNotice({ tone: "ok", text: tx("The cash drawer opens in a moment.") });
+    } catch (err) {
+      fail(err, "The cash drawer could not be opened.");
+    }
+  };
+
+  const applyDiscount = () => {
+    if (!discountDraft) return;
+    const value = Number(discountDraft.value);
+    const gross = chargeLines.reduce((sum, line) => sum + line.lineTotal, 0);
+    const amount = round2(discountDraft.mode === "percent" ? gross * value / 100 : value);
+    setDiscount(amount > 0 ? { amount: Math.min(amount, round2(gross)), reason: discountDraft.reason.trim() } : null);
+    setDiscountDraft(null);
+  };
+
+  const savePrice = () => {
+    if (!priceEdit) return;
+    dispatchDraft({ type: "SET_PRICE", id: priceEdit.item.id, price: Number(priceEdit.price), reason: priceEdit.reason });
+    setPriceEdit(null);
+  };
+
+  const startSplit = () => {
+    setSplitDraft(Object.fromEntries(owedLines(ticket).map((line) => [line.id, 0])));
+  };
+
+  const confirmSplit = () => {
+    if (!splitDraft) return;
+    const chosen = Object.fromEntries(Object.entries(splitDraft).filter(([, qty]) => qty > 0));
+    setSplitDraft(null);
+    if (Object.keys(chosen).length === 0) return;
+    setSplitSel(chosen);
+    setDiscount(null);
+  };
+
   const backToFloor = () => {
     setTicket(null); setCounter(false); dispatchDraft({ type: "CLEAR" }); setView("FLOOR"); setLeaveOpen(false);
-    setPayers([]);
+    setPayers([]); setSplitSel(null); setDiscount(null);
     void ws.refreshFloor();
   };
 
@@ -224,6 +298,7 @@ export function PosSalesPage() {
     try {
       const loaded = await posServiceApi.ticket(scope, summary.id);
       dispatchDraft({ type: "CLEAR" });
+      setSplitSel(null); setDiscount(null);
       setCounter(false);
       setTicket(loaded);
       setView("ORDER");
@@ -403,6 +478,7 @@ export function PosSalesPage() {
   const paymentDisabledReason = (() => {
     if (payBlockedReason) return payBlockedReason;
     if (!storeId) return "Select a POS location before processing the sale.";
+    if (discount && discount.reason.length < 3) return "Give a reason for the discount.";
     return paymentProblem(payers, tipCtx);
   })();
 
@@ -414,31 +490,39 @@ export function PosSalesPage() {
     const payments = buildPayments(payers, tipCtx);
     attemptKey.current ??= crypto.randomUUID();
     const clientRequestId = attemptKey.current;
-    const snapshot: Omit<Receipt, "saleNo"> = {
-      ticketNo: counter ? "-" : ticket!.ticketNo, tableLabel: counter ? null : ticket!.tableLabel,
-      guestCount: counter ? null : ticket!.guestCount, waiterName: counter ? null : ticket!.waiterName,
-      lines: printLines(), subtotal: totals.subtotal, serviceCharge: totals.serviceCharge, tax: totals.tax, total: totals.total,
-      printedAt: new Date(),
-      payments: payments.map((x) => ({ method: x.method, amount: x.amount, tip: x.tipAmount, reference: x.referenceCode })),
-    };
+    const discountReason = discount ? discount.reason : null;
+    const splitLines = !counter && splitSel
+      ? Object.entries(splitSel).filter(([, quantity]) => quantity > 0).map(([lineId, quantity]) => ({ lineId, quantity }))
+      : undefined;
     try {
       const sale = counter
         ? await posApi.createSale(scope, {
             companyId: scope.companyId, branchId: scope.branchId, storeId,
-            discountAmount: totals.discount, taxAmount: totals.tax, serviceChargeAmount: totals.serviceCharge, clientRequestId,
-            lines: draft.map((item) => ({ menuItemId: item.id, quantity: item.qty, unitPrice: item.price })),
+            discountAmount: totals.discount, taxAmount: totals.tax, serviceChargeAmount: totals.serviceCharge, clientRequestId, discountReason,
+            lines: draft.map((item) => ({
+              menuItemId: item.id, quantity: item.qty, unitPrice: item.price,
+              priceOverride: item.listPrice !== undefined ? item.price : null, priceOverrideReason: item.listPrice !== undefined ? item.overrideReason : null,
+            })),
             payments,
             service: { orderType: "takeAway" },
           })
         : await posServiceApi.settle(scope, ticket!.id, {
             version: ticket!.version, storeId,
-            discountAmount: totals.discount, taxAmount: totals.tax, serviceChargeAmount: totals.serviceCharge, clientRequestId, payments,
+            discountAmount: totals.discount, taxAmount: totals.tax, serviceChargeAmount: totals.serviceCharge, clientRequestId, discountReason, payments,
+            lines: splitLines,
           });
       attemptKey.current = null;
       const label = counter ? "" : ` · ${tx("Ticket")} ${ticket!.ticketNo}`;
       const tipTotal = payments.reduce((sum, x) => sum + x.tipAmount, 0);
-      backToFloor();
-      setReceipt({ ...snapshot, saleNo: sale.saleNo ?? sale.id, printedAt: new Date() });
+      setLastSaleId(sale.id);
+      // After a split check the rest of the ticket stays open for the next guest.
+      const rest = splitLines ? await posServiceApi.ticket(scope, ticket!.id).catch(() => null) : null;
+      if (rest && rest.status === "open") {
+        setTicket(rest); setSplitSel(null); setDiscount(null); setPayers([]); setView("ORDER");
+        void ws.refreshFloor();
+      } else {
+        backToFloor();
+      }
       setNotice({
         tone: "ok",
         sale: true,
@@ -496,6 +580,11 @@ export function PosSalesPage() {
         <div className="rpos-chip-row">
           <span className={online ? "rpos-badge rpos-badge--ok" : "rpos-badge rpos-badge--bad"}>{tx(online ? "Online" : "Offline · checkout unavailable")}</span>
           <span className="rpos-badge"><UserRound size={14} aria-hidden="true" /> {ws.actor?.name ?? "…"}</span>
+          {cashierMode && storeId ? (
+            <Button type="button" size="sm" variant="outline" onClick={() => void openCashDrawer()} disabled={busy} title={tx("Open the cash drawer without a sale")}>
+              <Inbox size={15} aria-hidden="true" /> {tx("Open drawer")}
+            </Button>
+          ) : null}
           {view !== "FLOOR" ? (
             <Button type="button" size="sm" variant="outline" onClick={requestBack} disabled={busy}>
               <LayoutGrid size={15} aria-hidden="true" /> {tx("Floor")}
@@ -512,10 +601,15 @@ export function PosSalesPage() {
       {notice ? (
         <div className={notice.tone === "ok" ? "rpos-notice rpos-notice--ok" : "rpos-notice rpos-notice--bad"} role="status" aria-live="polite">
           <span>{notice.text}</span>
-          {notice.sale && receipt ? (
-            <Button type="button" size="sm" variant="outline" onClick={() => printHtml(receiptHtml(receipt, tx))}>
-              <Printer size={14} aria-hidden="true" /> {tx("Print receipt")}
-            </Button>
+          {notice.sale && lastSaleId ? (
+            <>
+              <Button type="button" size="sm" variant="outline" onClick={() => void printReceipt("browser")}>
+                <Printer size={14} aria-hidden="true" /> {tx("Print receipt")}
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => void printReceipt("printer")}>
+                <Printer size={14} aria-hidden="true" /> {tx("Send to printer")}
+              </Button>
+            </>
           ) : null}
           {notice.sale ? (
             <Button type="button" size="sm" variant="outline" onClick={() => navigate(`/companies/${companyId}/sales/list`)}>{tx("Sales register")}</Button>
@@ -541,7 +635,21 @@ export function PosSalesPage() {
         <main className="rpos-order">
           {view === "PAY" ? (
             <PosPaymentPanel
-              title={counter ? tx("Counter sale payment") : `${tx("Payment")} · ${tx("Ticket")} ${ticket?.ticketNo ?? ""}`}
+              title={counter ? tx("Counter sale payment") : `${tx("Payment")} · ${tx("Ticket")} ${ticket?.ticketNo ?? ""}${splitSel ? ` · ${tx("selected items")}` : ""}`}
+              adjustments={canDiscount || discount ? (
+                <div className="rpos-chip-row">
+                  {discount ? (
+                    <span className="rpos-badge">{tx("Discount")} -{discount.amount.toFixed(2)} · {discount.reason}</span>
+                  ) : null}
+                  {canDiscount ? (
+                    <Button type="button" size="sm" variant="outline" disabled={busy}
+                      onClick={() => setDiscountDraft({ mode: "amount", value: discount ? String(discount.amount) : "", reason: discount?.reason ?? "" })}>
+                      <Percent size={14} aria-hidden="true" /> {tx(discount ? "Change discount" : "Add discount")}
+                    </Button>
+                  ) : null}
+                  {discount ? <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setDiscount(null)}>{tx("Remove discount")}</Button> : null}
+                </div>
+              ) : null}
               total={totals.total}
               payers={payers}
               tips={tipCtx}
@@ -552,7 +660,7 @@ export function PosSalesPage() {
               onAddPayer={addPayer}
               onSplitEvenly={splitPayers}
               onConfirm={() => void confirmPayment()}
-              onBack={() => setView("ORDER")}
+              onBack={() => { setView("ORDER"); setDiscount(null); }}
             />
           ) : (
             <PosMenuPanel items={ws.menu} loading={ws.loading && ws.menu.length === 0} error={ws.menuError}
@@ -567,6 +675,7 @@ export function PosSalesPage() {
             floor={ws.floor}
             busy={busy}
             canPay={cashierMode && view !== "PAY"}
+            waiterMode={!cashierMode}
             payBlockedReason={payBlockedReason}
             onDraftChange={dispatchDraft}
             onClearDraft={() => dispatchDraft({ type: "CLEAR" })}
@@ -575,7 +684,12 @@ export function PosSalesPage() {
             onHold={counter
               ? draft.length > 0 ? () => setHoldOpen(true) : undefined
               : ticket?.canEdit && (draft.length > 0 || ticket.lines.some((line) => !line.isVoided)) ? () => setHoldTicket({ reason: "" }) : undefined}
-            onPrintCheck={ticket && chargeLines.length > 0 && draft.length === 0 ? printGuestCheck : undefined}
+            onPrintCheck={ticket && chargeLines.length > 0 && draft.length === 0 ? () => void printGuestCheck("browser") : undefined}
+            onSendCheck={ticket && cashierMode && chargeLines.length > 0 && draft.length === 0 ? () => void printGuestCheck("printer") : undefined}
+            onSplitItems={ticket && cashierMode && view !== "PAY" && draft.length === 0 && owedQty > 1 ? startSplit : undefined}
+            splitActive={!!splitSel}
+            onClearSplit={view !== "PAY" ? () => setSplitSel(null) : undefined}
+            onEditPrice={counter && canOverridePrice ? (item) => setPriceEdit({ item, price: item.price.toFixed(2), reason: item.overrideReason ?? "" }) : undefined}
             onBack={requestBack}
             onAssignWaiter={(waiter) => void assignWaiter(waiter)}
             onMoveTable={moveTable}
@@ -695,6 +809,69 @@ export function PosSalesPage() {
       <PosTableStateDialog table={tableState} busy={busy} canManage={cashierMode} onClose={() => setTableState(null)}
         onSave={(state, note) => void saveTableState(state, note)}
         onSeat={tableState ? () => { const t = tableState; setTableState(null); startTicket("dineIn", t, t.area); } : undefined} />
+
+      <PosDialog open={!!splitDraft} title={tx("Split by items")} confirmText={tx("Pay selected items")} busy={busy}
+        description={tx("Choose what this guest pays for. The rest of the ticket stays open for the next payment.")}
+        confirmDisabled={!splitDraft || !Object.values(splitDraft).some((qty) => qty > 0)}
+        onConfirm={() => { confirmSplit(); startPayment(); }} onClose={() => setSplitDraft(null)}>
+        <div className="rpos-ticket-lines">
+          {owedLines(ticket).map((line) => (
+            <div key={line.id} className="rpos-line">
+              <span className="rpos-line-name">{line.itemName}<small>{tx("{count} on the ticket", { count: line.quantity })} · {money(line.unitPrice)}</small></span>
+              <Input type="number" inputMode="decimal" min={0} max={line.quantity} step={1} aria-label={`${tx("Quantity to pay")} ${line.itemName}`}
+                value={String(splitDraft?.[line.id] ?? 0)}
+                onChange={(e) => setSplitDraft((current) => ({ ...(current ?? {}), [line.id]: Math.max(0, Math.min(line.quantity, Number(e.target.value) || 0)) }))} />
+              <Button type="button" size="sm" variant="outline" onClick={() => setSplitDraft((current) => ({ ...(current ?? {}), [line.id]: line.quantity }))}>{tx("All")}</Button>
+            </div>
+          ))}
+        </div>
+      </PosDialog>
+
+      <PosDialog open={!!discountDraft} title={tx("Discount")} confirmText={tx("Apply discount")}
+        description={tx("A discount needs your discount approval right and a reason; both are recorded on the sale.")}
+        confirmDisabled={!discountDraft || !(Number(discountDraft.value) > 0) || (discountDraft.mode === "percent" && Number(discountDraft.value) > 100) || discountDraft.reason.trim().length < 3}
+        onConfirm={applyDiscount} onClose={() => setDiscountDraft(null)}>
+        {discountDraft ? (
+          <div className="rpos-form-grid">
+            <label className="rpos-field">
+              <span>{tx("Discount type")}</span>
+              <Select value={discountDraft.mode} onChange={(e) => setDiscountDraft({ ...discountDraft, mode: e.target.value as "amount" | "percent" })}>
+                <option value="amount">{tx("Amount")}</option>
+                <option value="percent">{tx("Percent of the bill")}</option>
+              </Select>
+            </label>
+            <label className="rpos-field">
+              <span>{tx(discountDraft.mode === "percent" ? "Percent" : "Amount")}</span>
+              <Input type="number" inputMode="decimal" min={0} step="0.01" value={discountDraft.value} autoFocus
+                onChange={(e) => setDiscountDraft({ ...discountDraft, value: e.target.value })} />
+            </label>
+            <label className="rpos-field rpos-span-all">
+              <span>{tx("Reason")}</span>
+              <Textarea rows={2} maxLength={300} value={discountDraft.reason} onChange={(e) => setDiscountDraft({ ...discountDraft, reason: e.target.value })} required />
+            </label>
+          </div>
+        ) : null}
+      </PosDialog>
+
+      <PosDialog open={!!priceEdit} title={`${tx("Change price")} ${priceEdit?.item.name ?? ""}`} confirmText={tx("Change price")}
+        description={tx("The new price and the reason are recorded on the sale as a price override.")}
+        confirmDisabled={!priceEdit || !(Number(priceEdit.price) >= 0) || priceEdit.price === "" || priceEdit.reason.trim().length < 3}
+        onConfirm={savePrice} onClose={() => setPriceEdit(null)}>
+        {priceEdit ? (
+          <div className="rpos-form-grid">
+            <label className="rpos-field">
+              <span>{tx("Unit price")}</span>
+              <Input type="number" inputMode="decimal" min={0} step="0.01" value={priceEdit.price} autoFocus
+                onChange={(e) => setPriceEdit({ ...priceEdit, price: e.target.value })} />
+            </label>
+            <p className="rpos-muted">{tx("Menu price")}: {money(priceEdit.item.listPrice ?? priceEdit.item.price)}</p>
+            <label className="rpos-field rpos-span-all">
+              <span>{tx("Reason")}</span>
+              <Textarea rows={2} maxLength={300} value={priceEdit.reason} onChange={(e) => setPriceEdit({ ...priceEdit, reason: e.target.value })} required />
+            </label>
+          </div>
+        ) : null}
+      </PosDialog>
 
       <ConfirmModal open={leaveOpen} title={tx("Leave without sending?")}
         message={tx("Items you picked have not been sent to the ticket and will be discarded.")}

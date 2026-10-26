@@ -14,6 +14,7 @@ import {
   type UpsertBranchInventoryConfigurationDto,
 } from "../../api/stockLocationsApi";
 import { LOCATION_TYPES } from "../state/onboarding.constants";
+import { normalizeLocationType } from "../utils/locationType";
 import type { FieldErrors, OnboardingAction } from "../state/onboarding.types";
 import { extractApiError } from "../utils/onboarding.utils";
 import {
@@ -86,21 +87,21 @@ type BranchAssignmentOption = {
 };
 
 const PAGE_SIZE = 500;
-const DEFAULT_TYPE = "Warehouse" as unknown as StockLocationType;
+const DEFAULT_TYPE = "" as unknown as StockLocationType;
 
 const DEFAULT_FORM: LocationForm = {
   name: "",
   code: "",
   locationType: DEFAULT_TYPE,
   isActive: true,
-  canReceive: true,
-  canIssue: true,
+  canReceive: false,
+  canIssue: false,
   canSell: false,
   canProduce: false,
-  canAdjust: true,
+  canAdjust: false,
   isConsumptionLocation: false,
-  isMainWarehouse: true,
-  canReceiveGrn: true,
+  isMainWarehouse: false,
+  canReceiveGrn: false,
   isProductionCenter: false,
 };
 
@@ -194,7 +195,7 @@ function boolOf(value: any, keys: string[], fallback = false): boolean {
 }
 
 function typeOf(value: any): StockLocationType {
-  return String(value?.locationType ?? value?.LocationType ?? value?.type ?? value?.Type ?? DEFAULT_TYPE) as any;
+  return normalizeLocationType(value?.locationType ?? value?.LocationType ?? value?.type ?? value?.Type) as unknown as StockLocationType;
 }
 
 function norm(value: unknown): string {
@@ -214,8 +215,7 @@ function isProduction(type: unknown): boolean {
 }
 
 function isWarehouse(type: unknown): boolean {
-  const t = norm(type);
-  return t.includes("warehouse") || t.includes("mainstore") || t.includes("store");
+  return norm(type) === "warehouse";
 }
 
 function isKitchenBarOrPos(type: unknown): boolean {
@@ -247,7 +247,7 @@ function defaultCaps(type: StockLocationType): Partial<LocationForm> {
       canSell: false,
       canProduce: true,
       canAdjust: true,
-      isConsumptionLocation: false,
+      isConsumptionLocation: true,
       isMainWarehouse: false,
       canReceiveGrn: false,
       isProductionCenter: true,
@@ -323,13 +323,13 @@ function formFromLocation(location: StockLocation): LocationForm {
     ),
     isMainWarehouse: boolOf(
       x,
-      ["isMainWarehouse", "isMainWarehouseForProduction", "isDefaultIssueSource"],
-      caps.isMainWarehouse ?? false,
+      ["isMainWarehouse", "isMainWarehouseForProduction"],
+      false,
     ),
     canReceiveGrn: boolOf(
       x,
-      ["canReceiveGrn", "isDefaultReceiving", "isDefaultReceivingTarget"],
-      caps.canReceiveGrn ?? false,
+      ["canReceiveGrn"],
+      false,
     ),
     isProductionCenter: boolOf(
       x,
@@ -352,7 +352,19 @@ function validateLocation(form: LocationForm, setErrors: (e: FieldErrors) => voi
 
   if (!form.name.trim()) errors.name = "Location name is required.";
   if (!form.code.trim()) errors.code = "Location code is required.";
-  if (!String(form.locationType).trim()) errors.locationType = "Location type is required.";
+  if (!TYPE_OPTIONS.some(option => option.value === String(form.locationType))) errors.locationType = "Select a supported location type.";
+  if ((form.isMainWarehouse || form.canReceiveGrn) && !isWarehouse(form.locationType))
+    errors.locationType = "Main warehouse and GRN receiving roles require Warehouse. Clear those roles or choose Warehouse.";
+  if (form.isProductionCenter && !isProduction(form.locationType))
+    errors.locationType = "Production center requires Production. Clear that role or choose Production.";
+  if (form.isConsumptionLocation && (isWarehouse(form.locationType) || isTransit(form.locationType) || isWaste(form.locationType)))
+    errors.locationType = "Warehouse, Transit and Waste cannot be consumption locations.";
+  if (isProduction(form.locationType) && !form.canProduce)
+    errors.capabilities = "Production locations must be able to produce.";
+  if (form.isMainWarehouse && !form.canReceiveGrn)
+    errors.capabilities = "Main warehouse must be enabled for GRN receiving.";
+  if (form.isProductionCenter && (!form.canReceive || !form.canIssue || !form.canProduce))
+    errors.capabilities = "Production centers must be able to receive, issue and produce.";
 
   if (!form.canReceive && !form.canIssue && !form.canSell && !form.canProduce && !form.canAdjust) {
     errors.capabilities = "At least one capability is required.";
@@ -427,7 +439,7 @@ function unique<T>(items: T[], key: (x: T) => string): T[] {
 
 function toAssignmentOption(location: StockLocation): BranchAssignmentOption {
   const x = location as any;
-  const locationType = String(x.locationType ?? x.LocationType ?? x.type ?? x.Type ?? "");
+  const locationType = String(typeOf(x));
 
   const caps = defaultCaps(locationType as any);
 
@@ -646,7 +658,12 @@ const LocationFormView = memo(function LocationFormView(props: {
           <SelectInput
             value={String(f.locationType)}
             onChange={(v) => props.onChange((current) => applyTypeDefaults(current, v as any))}
-            options={TYPE_OPTIONS as any}
+            options={[
+              { value: "", label: "Select location type" },
+              ...(!TYPE_OPTIONS.some(option => option.value === String(f.locationType)) && String(f.locationType)
+                ? [{ value: String(f.locationType), label: `Unsupported type: ${f.locationType} — select a valid type` }] : []),
+              ...TYPE_OPTIONS,
+            ]}
           />
         </Field>
       </div>
@@ -682,7 +699,7 @@ const LocationFormView = memo(function LocationFormView(props: {
         <Check
           label="Main warehouse / issue source"
           checked={f.isMainWarehouse}
-          disabled={!f.canReceive || !f.canIssue}
+          disabled={!f.isMainWarehouse && (!f.canReceive || !f.canIssue || !isWarehouse(f.locationType))}
           help="Primary receiving and issue source. Used as Default Issue."
           onChange={(v) =>
             set({
@@ -699,7 +716,7 @@ const LocationFormView = memo(function LocationFormView(props: {
         <Check
           label="GRN receiving target"
           checked={f.canReceiveGrn}
-          disabled={!f.canReceive}
+          disabled={!f.canReceiveGrn && (!f.canReceive || !isWarehouse(f.locationType))}
           help="Allowed as default receiving location for supplier receipts."
           onChange={(v) => set({ canReceiveGrn: v, canReceive: v ? true : f.canReceive })}
         />
@@ -707,14 +724,14 @@ const LocationFormView = memo(function LocationFormView(props: {
         <Check
           label="Production center"
           checked={f.isProductionCenter}
-          disabled={!f.canProduce}
-          help="Used for production output, not normal consumption."
+          disabled={!f.isProductionCenter && (!f.canProduce || !isProduction(f.locationType))}
+          help="Consumes ingredients and issues semi-finished or finished products."
           onChange={(v) =>
             set({
               isProductionCenter: v,
               canProduce: v ? true : f.canProduce,
               isMainWarehouse: v ? false : f.isMainWarehouse,
-              isConsumptionLocation: v ? false : f.isConsumptionLocation,
+              isConsumptionLocation: v ? true : f.isConsumptionLocation,
             })
           }
         />
@@ -722,14 +739,13 @@ const LocationFormView = memo(function LocationFormView(props: {
         <Check
           label="Consumption location"
           checked={f.isConsumptionLocation}
-          disabled={!f.canIssue || f.isMainWarehouse || f.isProductionCenter}
-          help="Kitchen, Bar, or POS consumption destination."
+          disabled={!f.isConsumptionLocation && (!f.canIssue || f.isMainWarehouse || isWarehouse(f.locationType) || isTransit(f.locationType) || isWaste(f.locationType))}
+          help="Kitchen, Bar, POS, or Production consumption destination."
           onChange={(v) =>
             set({
               isConsumptionLocation: v,
               canIssue: v ? true : f.canIssue,
               isMainWarehouse: v ? false : f.isMainWarehouse,
-              isProductionCenter: v ? false : f.isProductionCenter,
               canReceiveGrn: v ? false : f.canReceiveGrn,
             })
           }

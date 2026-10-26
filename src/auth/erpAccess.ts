@@ -16,6 +16,7 @@ const COMPANY_ADMIN_RESTRICTED_PERMISSIONS = new Set(
     "inventory.adjustments.post",
     "stockcounts.post",
     "stocktransfers.post",
+    "stocktransfers.receive",
     "production.post",
     "pos.sell",
     "pos.void",

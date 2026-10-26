@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "../../../components/PageHeader";
@@ -97,6 +97,7 @@ export default function PurchaseOrderEditorPage() {
   const [lines, setLines] = useState<LineForm[]>([newLine()]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const creationRequest = useRef<{ fingerprint: string; id: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const root = `/companies/${companyId}/procurement/purchase-orders`;
@@ -244,6 +245,10 @@ export default function PurchaseOrderEditorPage() {
     try {
       let saved: PurchaseOrder;
       if (isNew) {
+        const fingerprint = JSON.stringify({ companyId, input, submit });
+        if (creationRequest.current?.fingerprint !== fingerprint)
+          creationRequest.current = { fingerprint, id: crypto.randomUUID() };
+        input.clientRequestId = creationRequest.current.id;
         saved = await purchaseOrdersApi.create(companyId, input, submit);
       } else {
         saved = await purchaseOrdersApi.update(companyId, order!.id, order!.version, input);

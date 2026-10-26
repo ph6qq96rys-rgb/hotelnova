@@ -117,3 +117,64 @@ export function printHtml(html: string) {
     window.setTimeout(() => frame.remove(), 1000);
   }, 50);
 }
+
+/**
+ * A receipt or guest check exactly as the server recorded it: legal header (TIN, VAT registration, fiscal
+ * machine code), invoice number, VAT by rate and, once registered, the authority's IRN. Reprints say COPY.
+ */
+export function documentHtml(doc: import("../api/posServiceApi").ReceiptDocumentDto, tx: Translate, extraHtml = "") {
+  const h = doc.header;
+  const row = (left: string, right: string, cls = "") => `<div class="row ${cls}"><span>${left}</span><span>${right}</span></div>`;
+  const title = doc.kind === "GuestCheck" ? tx("Guest check") : doc.isFiscal ? tx("Cash sales invoice") : tx("Sales receipt");
+  return `<title>${escape(title)} ${escape(doc.invoiceNumber ?? doc.documentNo)}</title><style>${STYLE}</style>` +
+    `<h1>${escape(h.businessName)}</h1>` +
+    (h.legalName && h.legalName !== h.businessName ? `<p class="c">${escape(h.legalName)}</p>` : "") +
+    (h.address ? `<p class="c muted">${escape(h.address)}</p>` : "") +
+    (h.phone ? `<p class="c muted">${escape(tx("Tel"))}: ${escape(h.phone)}</p>` : "") +
+    (h.tin ? `<p class="c">${escape(tx("TIN"))}: ${escape(h.tin)}</p>` : "") +
+    (h.vatNumber ? `<p class="c">${escape(tx("VAT Reg No"))}: ${escape(h.vatNumber)}</p>` : "") +
+    (h.fiscalMachineCode ? `<p class="c">MRC: ${escape(h.fiscalMachineCode)}</p>` : "") +
+    `<div class="rule"></div><p class="c big">${escape(title)}</p>` +
+    (doc.kind === "GuestCheck" ? `<p class="c muted">${escape(tx("This is not a receipt."))}</p>`
+      : !doc.isFiscal ? `<p class="c muted">${escape(tx("Not registered with the tax authority"))}</p>` : "") +
+    (doc.copyNo > 1 ? `<p class="c big">*** ${escape(tx("COPY"))} ${doc.copyNo - 1} ***</p>` : "") +
+    `<div class="rule"></div>` +
+    (doc.invoiceNumber ? row(escape(tx("Invoice No")), escape(doc.invoiceNumber)) : "") +
+    row(escape(tx(doc.kind === "GuestCheck" ? "Ticket" : "Receipt")), escape(doc.documentNo)) +
+    row(escape(tx("Date")), escape(doc.localTime)) +
+    row(escape(tx("Till")), escape(h.tillName)) +
+    (doc.cashier ? row(escape(tx("Cashier")), escape(doc.cashier)) : "") +
+    (doc.table ? row(escape(tx("Table")), escape(doc.table) + (doc.guests ? ` · ${escape(tx("{count} guests", { count: doc.guests }))}` : "")) : "") +
+    (doc.waiter ? row(escape(tx("Server")), escape(doc.waiter)) : "") +
+    `<div class="rule"></div>` +
+    doc.lines.map((line) => row(`${line.quantity} × ${escape(line.name)}<br><span class="muted">&nbsp;&nbsp;@ ${amount(line.unitPrice)}</span>`, amount(line.lineTotal))).join("") +
+    `<div class="rule"></div>` +
+    row(escape(tx("Subtotal")), amount(doc.subTotal)) +
+    (doc.discount ? row(escape(tx("Discount")), `-${amount(doc.discount)}`) : "") +
+    (doc.serviceCharge ? row(escape(tx("Service Charge")), amount(doc.serviceCharge)) : "") +
+    (doc.taxes.length
+      ? doc.taxes.map((t) => row(`${escape(tx("VAT"))} ${t.rate}% ${escape(tx("on"))} ${amount(t.taxable)}`, amount(t.tax))).join("")
+      : doc.taxTotal ? row(escape(tx("VAT")), amount(doc.taxTotal)) : "") +
+    row(`${escape(tx("Total"))} ${escape(doc.currencyCode)}`, amount(doc.total), "big") +
+    (doc.payments.length ? `<div class="rule"></div>` + doc.payments.map((p) =>
+      row(`${escape(tx(p.method))}${p.reference ? ` (${escape(p.reference)})` : ""}`, amount(p.amount))).join("") : "") +
+    (doc.tips ? row(escape(tx("Tips (not part of the bill)")), amount(doc.tips)) : "") +
+    (doc.returned ? row(escape(tx("Returned (credit notes)")), `-${amount(doc.returned)}`) : "") +
+    (doc.kind === "Receipt" && doc.balance > 0.004 ? row(escape(tx("Balance due")), amount(doc.balance), "big") : "") +
+    extraHtml +
+    `<div class="rule"></div>` +
+    (doc.isFiscal ? (doc.irn ? `<p class="c muted">IRN: ${escape(doc.irn)}</p>` : "") + (doc.rrn ? `<p class="c muted">RRN: ${escape(doc.rrn)}</p>` : "") : "") +
+    (doc.footer ? `<p class="c">${escape(doc.footer)}</p>` : "") +
+    `<p class="c">${escape(tx("Thank you"))}</p>`;
+}
+
+/** Suggested tips for a guest check (information only; nothing is added to the bill). */
+export function tipSuggestionsHtml(total: number, tax: number, settings: TipSettingsDto | null, tipsOffered: boolean, tx: Translate) {
+  if (!tipsOffered || !settings?.suggestedPercents.length) return "";
+  const basis = tipBasis(total, total, tax, settings.basis);
+  return [
+    `<div class="rule"></div>`,
+    `<p class="c">${escape(tx("Gratuity is not included. Suggested tips:"))}</p>`,
+    ...settings.suggestedPercents.map((percent) => `<div class="row"><span>${percent}%</span><span>${amount(tipFromPercent(basis, percent))}</span></div>`),
+  ].join("");
+}

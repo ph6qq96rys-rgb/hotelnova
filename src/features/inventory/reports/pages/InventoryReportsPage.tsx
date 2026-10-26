@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, BarChart3, Boxes, ClipboardList, Download, FileText, PackageSearch, RefreshCw, Search, ShieldCheck } from "lucide-react";
 
 import { useAppScope } from "../../../../app/useAppScope";
-import { inventoryLedgerApi, type InventoryLedgerMovementType, type InventoryLedgerQuery, type InventoryLedgerSummaryRowDto, type InventoryReconciliationResultDto, type InventoryValuationReportDto } from "../../ledger/api/inventoryLedgerApi";
+import { Button } from "../../../../components/ui/button";
+import { downloadXlsx, type XlsxCell } from "../../../reports/fnb/utils/xlsxWriter";
+import { inventoryLedgerApi, type InventoryLedgerMovementType, type InventoryLedgerQuery, type InventoryLedgerSummaryRowDto, type InventoryReconciliationResultDto, type InventoryValuationReportDto, type InventoryValuationRowDto } from "../../ledger/api/inventoryLedgerApi";
 import type { InventoryLedgerDto } from "../../ledger/types";
 import { grnApi } from "../../grn/api/grnApi";
 import type { GrnDetailDto } from "../../grn/types/grn.types";
@@ -47,6 +49,9 @@ type DocumentSummary = {
 };
 
 const PAGE_SIZE = 100;
+const TABLE_PAGE_SIZE = 50;
+const REGISTER_PAGE_SIZE = 500;
+const REGISTER_MAX_PAGES = 10;
 const FILTER_KEY_PREFIX = "hotelnova.inventory-reports.v1";
 
 const EMPTY_FILTERS: Filters = {
@@ -88,6 +93,9 @@ export default function InventoryReportsPage() {
   const [filters, setFilters] = useState<Filters>(() => readFilters(companyId, branchId));
   const [page, setPage] = useState(1);
   const [selectedDocumentKey, setSelectedDocumentKey] = useState<string | null>(null);
+  const [tablePage, setTablePage] = useState(1);
+  const [register, setRegister] = useState<{ tab: ReportTab | null; lines: InventoryLedgerDto[]; truncated: boolean; loading: boolean; error: string | null }>(
+    { tab: null, lines: [], truncated: false, loading: false, error: null });
   const [state, setState] = useState<LoadState>({
     ledger: [],
     totalCount: 0,
@@ -156,9 +164,39 @@ export default function InventoryReportsPage() {
     return () => controller.abort();
   }, [branchId, companyId, filters.item, query]);
 
+  useEffect(() => setTablePage(1), [activeTab, filters]);
+
+  // Registers read every posted document line in the filtered period (not just the ledger page on screen).
+  useEffect(() => {
+    if (!companyId || !branchId || (activeTab !== "grn" && activeTab !== "siv")) return;
+    const controller = new AbortController();
+    const movementType = activeTab === "grn" ? "GRN" : "SIV_TRANSFER_OUT";
+    setRegister({ tab: activeTab, lines: [], truncated: false, loading: true, error: null });
+
+    (async () => {
+      const lines: InventoryLedgerDto[] = [];
+      let total = 0;
+      for (let current = 1; current <= REGISTER_MAX_PAGES; current += 1) {
+        const result = await inventoryLedgerApi.list(companyId, branchId, {
+          ...query, movementType, page: current, pageSize: REGISTER_PAGE_SIZE,
+        }, controller.signal);
+        lines.push(...(result.items ?? []));
+        total = result.totalCount ?? lines.length;
+        if (lines.length >= total || (result.items ?? []).length < REGISTER_PAGE_SIZE) break;
+      }
+      if (!controller.signal.aborted)
+        setRegister({ tab: activeTab, lines, truncated: lines.length < total, loading: false, error: null });
+    })().catch((error: unknown) => {
+      if (!controller.signal.aborted) setRegister({ tab: activeTab, lines: [], truncated: false, loading: false, error: getError(error) });
+    });
+
+    return () => controller.abort();
+  }, [activeTab, branchId, companyId, query]);
+
   const documents = useMemo(() => groupDocuments(state.ledger), [state.ledger]);
-  const grnDocuments = documents.filter((doc) => isGrn(doc.sourceType, doc.sourceNo));
-  const sivDocuments = documents.filter((doc) => isSiv(doc.sourceType, doc.sourceNo));
+  const registerDocuments = useMemo(() => groupDocuments(register.lines), [register.lines]);
+  const grnDocuments = register.tab === "grn" ? registerDocuments : documents.filter((doc) => isGrn(doc.sourceType, doc.sourceNo));
+  const sivDocuments = register.tab === "siv" ? registerDocuments : documents.filter((doc) => isSiv(doc.sourceType, doc.sourceNo));
   const selectedDocument = documents.find((doc) => doc.key === selectedDocumentKey) ?? grnDocuments[0] ?? sivDocuments[0] ?? documents[0] ?? null;
   const exceptions = useMemo(() => buildExceptions(state), [state]);
   const totalPages = Math.max(1, Math.ceil(state.totalCount / PAGE_SIZE));
@@ -166,6 +204,58 @@ export default function InventoryReportsPage() {
   function patchFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
+  }
+
+  // The ledger tab shows one page; its export reads every posted line in the filtered period.
+  async function loadAllLedgerLines(): Promise<{ lines: InventoryLedgerDto[]; truncated: boolean }> {
+    const lines: InventoryLedgerDto[] = [];
+    let total = 0;
+    for (let current = 1; current <= REGISTER_MAX_PAGES; current += 1) {
+      const result = await inventoryLedgerApi.list(companyId!, branchId!, { ...query, page: current, pageSize: REGISTER_PAGE_SIZE });
+      lines.push(...(result.items ?? []));
+      total = result.totalCount ?? lines.length;
+      if (lines.length >= total || (result.items ?? []).length < REGISTER_PAGE_SIZE) break;
+    }
+    return { lines, truncated: lines.length < total };
+  }
+
+  async function exportActiveTab() {
+    const ledgerExport = activeTab === "ledger" ? await loadAllLedgerLines() : null;
+    const tab = TABS.find((x) => x.id === activeTab)?.label ?? "Inventory report";
+    const context: XlsxCell[][] = [
+      ["Report", tab],
+      ["Branch", branchName || ""],
+      ["Period", [filters.fromDate || "start", filters.toDate || "today"].join(" to ")],
+      ["Item filter", filters.item],
+      ["Location filter", filters.location],
+      ["Generated", new Date().toISOString()],
+      [],
+    ];
+    let header: string[] = [];
+    let rows: XlsxCell[][] = [];
+    if (activeTab === "stock") {
+      header = ["Item", "Location", "UOM", "On hand", "Avg cost", "Value"];
+      rows = state.summary.map((r) => [r.itemName, r.locationName, r.baseUom, number(r.onHandBase), r.avgCost ?? null, r.stockValue ?? null]);
+    } else if (activeTab === "valuation") {
+      header = ["Item", "Location", "UOM", "Available", "FIFO value", "Ledger value", "Balance value", "Lots", "Status"];
+      rows = (state.valuation?.rows ?? []).map((r) => [r.itemName, r.locationName, r.baseUom, number(r.availableBase), number(r.fifoValue), number(r.ledgerValue), number(r.stockBalanceValue), number(r.activeLotCount), r.isBalanced ? "Balanced" : "Variance"]);
+    } else if (activeTab === "ledger") {
+      header = ["Posted", "Movement", "Reference", "Item", "Location", "In", "Out", "Value", "Balance"];
+      rows = (ledgerExport?.lines ?? state.ledger).map((r) => [postedAt(r), movementOf(r), refNo(r), itemName(r), locationName(r), qtyIn(r), qtyOut(r), valueChange(r), balanceQty(r)]);
+      if (ledgerExport?.truncated) context.splice(context.length - 1, 0, ["Note", `First ${REGISTER_PAGE_SIZE * REGISTER_MAX_PAGES} movements only. Narrow the date range for the rest.`]);
+    } else if (activeTab === "grn" || activeTab === "siv") {
+      header = ["Reference", "Posted", "Lines", "Qty in", "Qty out", "Value", "Status"];
+      rows = (activeTab === "grn" ? grnDocuments : sivDocuments).map((d) => [d.sourceNo, d.postedAtUtc, d.itemCount, d.qtyIn, d.qtyOut, d.valueIn || d.valueOut, d.isReversal ? "Reversal" : "Posted"]);
+    } else if (activeTab === "exceptions") {
+      header = ["Exception"];
+      rows = exceptions.map((x) => [x]);
+    } else {
+      const r = state.reconciliation;
+      header = ["Measure", "Value"];
+      rows = [["Ledger qty", number(r?.ledgerQty)], ["FIFO qty", number(r?.fifoQty)], ["Stock balance qty", number(r?.stockBalanceQty)],
+        ["Ledger value", number(r?.ledgerValue)], ["FIFO value", number(r?.fifoValue)], ["Status", r?.isBalanced ? "Balanced" : "Review"]];
+    }
+    downloadXlsx(`inventory-${activeTab}-${new Date().toISOString().slice(0, 10)}.xlsx`, [...context, header, ...rows], tab, [context.length]);
   }
 
   function resetFilters() {
@@ -187,7 +277,7 @@ export default function InventoryReportsPage() {
         </div>
         <div className="ir-header-actions">
           <button className="ir-btn" type="button" onClick={() => window.print()}><FileText size={16} /> Print</button>
-          <button className="ir-btn" type="button" disabled><Download size={16} /> Export queued</button>
+          <Button type="button" variant="outline" size="sm" disabled={state.loading || register.loading} onClick={() => { void exportActiveTab().catch((error: unknown) => setState((current) => ({ ...current, error: getError(error) }))); }}><Download size={16} /> Export Excel</Button>
         </div>
       </header>
 
@@ -218,21 +308,31 @@ export default function InventoryReportsPage() {
 
       <section className="ir-workspace">
         <div className="ir-main-panel">
-          {activeTab === "stock" && <StockOnHand rows={state.summary} />}
-          {activeTab === "valuation" && <Valuation report={state.valuation} />}
+          {activeTab === "stock" && <StockOnHand rows={pageOf(state.summary, tablePage)} />}
+          {activeTab === "valuation" && <Valuation report={state.valuation} rows={pageOf(state.valuation?.rows ?? [], tablePage)} />}
+          {activeTab === "stock" || activeTab === "valuation" ? (
+            <TablePager
+              page={tablePage}
+              total={activeTab === "stock" ? state.summary.length : state.valuation?.rows.length ?? 0}
+              onChange={setTablePage}
+            />
+          ) : null}
+          {(activeTab === "grn" || activeTab === "siv") && register.loading ? <div className="ir-alert ir-alert-info"><Search size={16} /> Loading every posted document in the period...</div> : null}
+          {(activeTab === "grn" || activeTab === "siv") && register.error ? <div className="ir-alert"><AlertTriangle size={16} /> {register.error}</div> : null}
+          {(activeTab === "grn" || activeTab === "siv") && register.truncated ? <div className="ir-alert"><AlertTriangle size={16} /> Showing the first {int(REGISTER_PAGE_SIZE * REGISTER_MAX_PAGES)} document lines. Narrow the date range to see the full register.</div> : null}
           {activeTab === "ledger" && <Ledger rows={state.ledger} onSelect={setSelectedDocumentKey} />}
           {activeTab === "grn" && <DocumentRegister title="GRN register" docs={grnDocuments} companyId={companyId} branchId={branchId} onSelect={setSelectedDocumentKey} />}
           {activeTab === "siv" && <DocumentRegister title="SIV register" docs={sivDocuments} companyId={companyId} branchId={branchId} onSelect={setSelectedDocumentKey} />}
           {activeTab === "exceptions" && <Exceptions rows={exceptions} />}
           {activeTab === "reconciliation" && <Reconciliation result={state.reconciliation} />}
 
-          <footer className="ir-pager">
+          {activeTab === "ledger" ? <footer className="ir-pager">
             <span>{int(state.totalCount)} posted movements / page {page} of {totalPages}</span>
             <div>
               <button className="ir-btn" type="button" disabled={page <= 1 || state.loading} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button>
               <button className="ir-btn" type="button" disabled={page >= totalPages || state.loading} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</button>
             </div>
-          </footer>
+          </footer> : null}
         </div>
 
         <aside className="ir-preview" aria-label="Transaction preview">
@@ -243,13 +343,32 @@ export default function InventoryReportsPage() {
   );
 }
 
-function StockOnHand({ rows }: { rows: InventoryLedgerSummaryRowDto[] }) {
-  return <ReportTable title="Stock on hand" columns={["Item", "Location", "UOM", "On hand", "Avg cost", "Value"]} empty="No stock balances found.">{rows.slice(0, 100).map((row, index) => <tr key={index}><td>{row.itemName}</td><td>{row.locationName}</td><td>{row.baseUom}</td><td className="num">{qty(row.onHandBase)}</td><td className="num">{money(row.avgCost)}</td><td className="num">{money(row.stockValue)}</td></tr>)}</ReportTable>;
+function pageOf<T>(rows: T[], page: number): T[] {
+  return rows.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE);
 }
 
-function Valuation({ report }: { report: InventoryValuationReportDto | null }) {
-  const rows = report?.rows ?? [];
-  return <ReportTable title="Inventory valuation" columns={["Item", "Location", "Available", "FIFO value", "Ledger value", "Balance value", "Lots", "Status"]} empty="No valuation rows found.">{rows.slice(0, 100).map((row) => <tr key={row.locationId + row.itemId}><td>{row.itemName}</td><td>{row.locationName}</td><td className="num">{qty(row.availableBase)} {row.baseUom}</td><td className="num">{money(row.fifoValue)}</td><td className="num">{money(row.ledgerValue)}</td><td className="num">{money(row.stockBalanceValue)}</td><td className="num">{int(row.activeLotCount)}</td><td><Badge tone={row.isBalanced ? "ok" : "warn"}>{row.isBalanced ? "Balanced" : "Variance"}</Badge></td></tr>)}</ReportTable>;
+function TablePager({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE));
+  const from = total === 0 ? 0 : (page - 1) * TABLE_PAGE_SIZE + 1;
+  const to = Math.min(total, page * TABLE_PAGE_SIZE);
+  return (
+    <footer className="ir-pager">
+      <span>Rows {int(from)}–{int(to)} of {int(total)} / page {page} of {pages}</span>
+      <div>
+        <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => onChange(Math.max(1, page - 1))}>Previous</Button>
+        <Button type="button" variant="outline" size="sm" disabled={page >= pages} onClick={() => onChange(Math.min(pages, page + 1))}>Next</Button>
+      </div>
+    </footer>
+  );
+}
+
+function StockOnHand({ rows }: { rows: InventoryLedgerSummaryRowDto[] }) {
+  return <ReportTable title="Stock on hand" columns={["Item", "Location", "UOM", "On hand", "Avg cost", "Value"]} empty="No stock balances found.">{rows.map((row, index) => <tr key={index}><td>{row.itemName}</td><td>{row.locationName}</td><td>{row.baseUom}</td><td className="num">{qty(row.onHandBase)}</td><td className="num">{money(row.avgCost)}</td><td className="num">{money(row.stockValue)}</td></tr>)}</ReportTable>;
+}
+
+function Valuation({ report, rows }: { report: InventoryValuationReportDto | null; rows: InventoryValuationRowDto[] }) {
+  void report;
+  return <ReportTable title="Inventory valuation" columns={["Item", "Location", "Available", "FIFO value", "Ledger value", "Balance value", "Lots", "Status"]} empty="No valuation rows found.">{rows.map((row) => <tr key={row.locationId + row.itemId}><td>{row.itemName}</td><td>{row.locationName}</td><td className="num">{qty(row.availableBase)} {row.baseUom}</td><td className="num">{money(row.fifoValue)}</td><td className="num">{money(row.ledgerValue)}</td><td className="num">{money(row.stockBalanceValue)}</td><td className="num">{int(row.activeLotCount)}</td><td><Badge tone={row.isBalanced ? "ok" : "warn"}>{row.isBalanced ? "Balanced" : "Variance"}</Badge></td></tr>)}</ReportTable>;
 }
 
 function Ledger({ rows, onSelect }: { rows: InventoryLedgerDto[]; onSelect: (key: string) => void }) {

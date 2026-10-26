@@ -146,6 +146,7 @@ export default function PurchaseOrderDetailPage() {
         actions={
           <>
             <BackButton to={root} label={tx("Purchase Orders")} />
+            <Button variant="outline" onClick={() => navigate(`/companies/${companyId}/procurement/workflow/order/${po.id}`)}>{tx("Track in workflow")}</Button>
             {allowed.has("Edit") && <Button variant="outline" onClick={() => navigate(`${root}/${po.id}/edit`)}>{tx("Edit")}</Button>}
             {allowed.has("Invoice") && (
               <Button variant="outline" onClick={() => navigate(`/companies/${companyId}/procurement/supplier-invoices/new?purchaseOrderId=${po.id}`)}>{tx("Record invoice")}</Button>

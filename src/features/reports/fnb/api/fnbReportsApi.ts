@@ -21,8 +21,16 @@ export type FnbReportCatalogItemDto = {
   supportsCategory: boolean;
   supportsDays: boolean;
   supportsCostCenter?: boolean;
+  /** Can also run for all branches of the company. */
+  supportsCompanyScope?: boolean;
+  /** Only runs for all branches (compares branches). */
+  requiresCompanyScope?: boolean;
+  /** Label of the Days input (inactivity, look-back, expiry window). */
+  daysLabel?: string | null;
   description: string;
 };
+
+export type FnbReportScope = "branch" | "company";
 
 export type FnbReportCatalogDto = {
   reports: FnbReportCatalogItemDto[];
@@ -44,6 +52,7 @@ export type FnbReportQuery = {
   supplierId?: string | null;
   days?: number | null;
   consumptionType?: string | null;
+  scope?: FnbReportScope | null;
 };
 
 export type FnbReportKpiDto = {
@@ -107,6 +116,9 @@ export type FnbReportDto = {
   }>;
   rows: FnbReportRow[];
   summary: FnbReportSummaryDto;
+  scope?: FnbReportScope;
+  /** Cost and value fields were removed: the user lacks reports.inventory.cost. */
+  costsHidden?: boolean;
 };
 
 export type FnbReportDrilldownDto = {
@@ -121,6 +133,7 @@ export type FnbReportDrilldownDto = {
   ledger: Array<Record<string, unknown>>;
   summary: FnbReportSummaryDto;
   pagination: { page: number; pageSize: number; totalRows: number };
+  costsHidden?: boolean;
 };
 
 function reportParams(query: FnbReportQuery) {
@@ -135,6 +148,7 @@ function reportParams(query: FnbReportQuery) {
     supplierId: query.supplierId || undefined,
     days: query.days ?? undefined,
     consumptionType: query.consumptionType || undefined,
+    scope: query.scope === "company" ? "company" : undefined,
   };
 }
 

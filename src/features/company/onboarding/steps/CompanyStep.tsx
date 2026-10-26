@@ -302,7 +302,14 @@ export function CompanyStep(props: Props) {
       const companyId = idOf(created);
       if (!companyId) throw new Error("Company was created but the API did not return a company id.");
 
-      const savedSettings = await onboardingApi.upsertCompanySettings(companyId, createSettings).catch(() => null);
+      // The company exists from here on, so a settings failure is reported without losing it.
+      let settingsError: string | null = null;
+      const savedSettings = await onboardingApi
+        .upsertCompanySettings(companyId, createSettings)
+        .catch((err) => {
+          settingsError = extractApiError(err, "Company settings could not be saved.");
+          return null;
+        });
 
       props.onSelected(companyId);
       if (savedSettings) props.onSaved(savedSettings);
@@ -312,7 +319,15 @@ export function CompanyStep(props: Props) {
       setCreateSettings({ ...DEFAULT_SETTINGS });
       setCreateErrors({});
       setShowCreate(false);
-      props.dispatch({ type: "SAVE_SUCCESS", notice: "Company registered. Continue with branch setup." });
+
+      if (settingsError) {
+        props.dispatch({
+          type: "SAVE_ERROR",
+          error: `Company registered, but its settings were not saved: ${settingsError} Review them in Company settings.`,
+        });
+      } else {
+        props.dispatch({ type: "SAVE_SUCCESS", notice: "Company registered. Continue with branch setup." });
+      }
     } catch (err) {
       props.dispatch({ type: "SAVE_ERROR", error: extractApiError(err, "Failed to create company.") });
     } finally {

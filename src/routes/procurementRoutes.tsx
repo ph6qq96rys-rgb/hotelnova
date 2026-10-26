@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { RouteObject } from "react-router-dom";
-import { ClipboardCheck, FileText, LayoutDashboard, PackageX, Settings2, ShoppingCart, Truck } from "lucide-react";
+import { ClipboardCheck, FileText, LayoutDashboard, PackageX, Settings2, ShoppingCart, Truck, Workflow } from "lucide-react";
 
 import PurchaseRequisitionListPage from "../features/procurement/pages/PurchaseRequisitionListPage";
 import PurchaseRequisitionCreatePage from "../features/procurement/pages/PurchaseRequisitionCreatePage";
@@ -31,6 +31,8 @@ import ProcurementConsolidationPage from "../features/procurement/pages/Procurem
 import MobileReceivingPage from "../features/procurement/pages/MobileReceivingPage";
 import SupplierPortalPage from "../features/procurement/pages/SupplierPortalPage";
 import SupplierSubmissionsPage from "../features/procurement/pages/SupplierSubmissionsPage";
+import ProcurementWorkflowPage from "../features/procurement/pages/ProcurementWorkflowPage";
+import ProcurementCasePage from "../features/procurement/pages/ProcurementCasePage";
 
 export type AppRoute = RouteObject & {
   label?: string;
@@ -44,6 +46,9 @@ export type AppRoute = RouteObject & {
 const PROCUREMENT_SECTION = "Procurement";
 
 export const procurementRoutes: AppRoute[] = [
+  // The purchase workflow is the entry point: request → approval → purchase order → goods receipt.
+  {path:"procurement/workflow",label:"Purchase Workflow",element:<ProcurementWorkflowPage/>,icon:<Workflow size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:1,permissions:["purchasing.view"]},
+  {path:"procurement/workflow/:kind/:id",element:<ProcurementCasePage/>,nav:false,permissions:["purchasing.view"]},
   {path:"procurement/supplier-portal",label:"Supplier Workspace",element:<SupplierPortalPage/>,icon:<Truck size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:95},
   {path:"procurement/supplier-submissions",label:"Supplier Submissions",element:<SupplierSubmissionsPage/>,icon:<FileText size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:55,permissions:["purchasing.view"]},
   {path:"procurement/receiving",label:"Receive Deliveries",element:<MobileReceivingPage/>,icon:<Truck size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:25,permissions:["purchasing.receiveinspect"]},

@@ -22,6 +22,7 @@ import SystemAdminLoginPage from "../pages/system-admin/SystemAdminLoginPage";
 import RegisterPage from "../pages/RegisterPage";
 import ForgotPasswordPage from "../pages/ForgotPasswordPage";
 import ResetPasswordPage from "../pages/ResetPasswordPage";
+import ChangePasswordPage from "../pages/ChangePasswordPage";
 import DashboardPage from "../pages/DashboardPage";
 
 import CompanyOnboardingModule from "../features/company/onboarding/CompanyOnboardingModule";
@@ -37,6 +38,7 @@ import { getHrRoutes } from "./hrRoutes";
 import { getPostRoutes } from "./posRoutes";
 import { organizationRoutes } from "./organizationRoutes";
 import { procurementRoutes } from "./procurementRoutes";
+import { financeRoutes } from "./financeRoutes";
 
 import type { AppRouteLike } from "./routeDefConfig";
 import TelegramMiniAppDashboard from "../features/telegram-miniapp/TelegramMiniAppDashboard";
@@ -95,6 +97,7 @@ export default function AppRoutes() {
     ...(hrRoutes as AppRouteLike[]),
     ...(posRoutes as AppRouteLike[]),
     ...(procurementRoutes as AppRouteLike[]),
+    ...(financeRoutes as AppRouteLike[]),
   ]);
 
   if (localStorage.getItem("attendance.kioskMode") === "true" && kioskLocation.pathname !== "/attendance-kiosk") return <Navigate to="/attendance-kiosk" replace />;
@@ -105,6 +108,7 @@ export default function AppRoutes() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/change-password" element={<ChangePasswordPage />} />
       <Route path="/telegram-miniapp" element={<TelegramMiniAppDashboard />} />
       <Route path={SYSTEM_ADMIN_LOGIN_PATH} element={<SystemAdminLoginPage />} />
       <Route path="/telegram" element={<Navigate to="/telegram-miniapp" replace />} />

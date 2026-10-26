@@ -5,7 +5,7 @@ import { Button } from "../../../../components/ui/button";
 import { useI18n } from "../../../../i18n";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
 
-import type { FnbReportQuery, FnbReportRow } from "../api/fnbReportsApi";
+import type { FnbReportQuery, FnbReportRow, FnbReportScope } from "../api/fnbReportsApi";
 import { FnbMovementDrilldown } from "../components/FnbMovementDrilldown";
 import { FnbReportContext } from "../components/FnbReportContext";
 import { FnbReportFilters } from "../components/FnbReportFilters";
@@ -19,10 +19,11 @@ import { useFnbDrilldown } from "../hooks/useFnbDrilldown";
 import { useFnbReport } from "../hooks/useFnbReport";
 import { useFnbReportCatalog } from "../hooks/useFnbReportCatalog";
 import { useFnbReportDates } from "../hooks/useFnbReportDates";
+import { useReportLookups } from "../hooks/useReportLookups";
 import { useStockLocations } from "../hooks/useStockLocations";
-import { exportRowsToCsv } from "../utils/fnbReportExport";
+import { exportRowsToCsv, exportRowsToXlsx } from "../utils/fnbReportExport";
 import { reportPeriodLabel } from "../utils/fnbReportFormatting";
-import { filterReportRows, REPORT_METHODS, reportFocus, type ReportFamily } from "../utils/fnbReportMeta";
+import { DEFAULT_DAYS, filterReportRows, REPORT_METHODS, reportFocus, type ReportFamily } from "../utils/fnbReportMeta";
 
 import "./fnb-reports.css";
 
@@ -38,6 +39,9 @@ export default function FnbControlCenterPage() {
   const [reportKey, setReportKey] = useState(DEFAULT_REPORT_KEY);
   const [locationId, setLocationId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
+  const [itemId, setItemId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [scopeChoice, setScopeChoice] = useState<FnbReportScope>("branch");
   const [days, setDays] = useState(DEFAULT_INACTIVE_DAYS);
   const [search, setSearch] = useState("");
   const [showReportMap, setShowReportMap] = useState(false);
@@ -45,6 +49,7 @@ export default function FnbControlCenterPage() {
   const catalog = useFnbReportCatalog(companyId, selectedBranchId);
   const dates = useFnbReportDates(companyId, selectedBranchId, catalog.defaultDate);
   const locations = useStockLocations(companyId, selectedBranchId);
+  const lookups = useReportLookups(companyId);
 
   // Fall back to the first report when the catalog does not offer the selected key.
   const selectedReport = catalog.items.find((report) => report.key === reportKey) ?? catalog.items[0];
@@ -52,6 +57,9 @@ export default function FnbControlCenterPage() {
   const costCenters = useCostCenters(companyId, selectedBranchId, !!selectedReport?.supportsCostCenter);
   // A department that is no longer active in this branch is not a valid filter.
   const costCenterId = costCenters.items.some((department) => department.id === departmentId) ? departmentId : "";
+  const scope: FnbReportScope = selectedReport?.requiresCompanyScope
+    ? "company"
+    : selectedReport?.supportsCompanyScope === false ? "branch" : scopeChoice;
 
   const reportQuery = useMemo<FnbReportQuery>(() => ({
     companyId: companyId ?? "",
@@ -63,7 +71,11 @@ export default function FnbControlCenterPage() {
     locationId: locationId || null,
     costCenterId: selectedReport?.supportsCostCenter ? costCenterId || null : null,
     days: selectedReport?.supportsDays ? days : null,
+    itemId: selectedReport?.supportsItem !== false ? itemId || null : null,
+    categoryId: selectedReport?.supportsCategory !== false ? categoryId || null : null,
+    scope,
   }), [activeReportKey, companyId, costCenterId, dates.asOfDate, dates.from, dates.to, days, locationId, selectedBranchId,
+    itemId, categoryId, scope, selectedReport?.supportsItem, selectedReport?.supportsCategory,
     selectedReport?.supportsAsOfDate, selectedReport?.supportsCostCenter, selectedReport?.supportsDateRange, selectedReport?.supportsDays]);
 
   const report = useFnbReport(reportQuery);
@@ -74,6 +86,8 @@ export default function FnbControlCenterPage() {
   useEffect(() => {
     setLocationId("");
     setDepartmentId("");
+    setItemId("");
+    setCategoryId("");
     setSearch("");
     clearReport();
   }, [companyId, selectedBranchId, clearReport]);
@@ -83,6 +97,7 @@ export default function FnbControlCenterPage() {
 
   const selectReport = (key: string) => {
     setReportKey(key);
+    setDays(DEFAULT_DAYS[key] ?? DEFAULT_INACTIVE_DAYS);
     setSearch("");
     clearReport();
   };
@@ -117,6 +132,23 @@ export default function FnbControlCenterPage() {
     });
   };
 
+  const handleExportExcel = () => {
+    if (!result || !report.appliedQuery) return;
+    const dateLabel = result.asOfDate
+      ? `as-of-${result.asOfDate}`
+      : selectedReport?.supportsDateRange
+        ? `${result.from}-to-${result.to}`
+        : "current-snapshot";
+
+    exportRowsToXlsx({
+      filename: `${result.reportKey || activeReportKey}-${dateLabel}.xlsx`,
+      report: { ...result, methodology: result.methodology || REPORT_METHODS[result.reportKey] },
+      columns: result.columns,
+      rows: filteredRows,
+      search,
+    });
+  };
+
   const handlePrint = () => {
     const originalTitle = document.title;
     if (result) {
@@ -144,7 +176,7 @@ export default function FnbControlCenterPage() {
     : tx("Current snapshot");
   const methodology = result?.methodology || REPORT_METHODS[activeReportKey];
   const liveCategories = new Set(catalog.items.map((item) => item.category).filter(Boolean)).size;
-  const errors = [catalog.error, locations.error, costCenters.error, report.error].filter(Boolean) as string[];
+  const errors = [catalog.error, locations.error, costCenters.error, lookups.error, report.error].filter(Boolean) as string[];
 
   return (
     <div className="fnb-page">
@@ -152,7 +184,7 @@ export default function FnbControlCenterPage() {
         <div>
           <p className="fnb-kicker">{tx("ERP Reports")}</p>
           <h1 className="fnb-title">{tx("F&B Control Center")}</h1>
-          <p className="fnb-subtitle">{tx("Consumption, valuation, FIFO aging, dead-stock, and stock turnover reports.")}</p>
+          <p className="fnb-subtitle">{tx("Stock movement, valuation, reorder, expiry, transit, loss and usage reports, by branch or company-wide.")}</p>
         </div>
         <div className="fnb-header-actions">
           <Button type="button" variant="outline" size="sm" onClick={() => openPath("inventory-master/reports")}>
@@ -199,6 +231,15 @@ export default function FnbControlCenterPage() {
                 days={days}
                 search={search}
                 locations={locations.items}
+                itemId={itemId}
+                categoryId={categoryId}
+                scope={scope}
+                items={lookups.items}
+                categories={lookups.categories}
+                onItemChange={setItemId}
+                onCategoryChange={setCategoryId}
+                onScopeChange={setScopeChoice}
+                onExportExcel={handleExportExcel}
                 departments={costCenters.items}
                 loadingDepartments={costCenters.loading}
                 loadingLocations={locations.loading}
@@ -226,6 +267,12 @@ export default function FnbControlCenterPage() {
               ) : null}
 
               <FnbReportContext report={result} methodology={methodology} periodLabel={periodLabel} />
+
+              {result?.costsHidden ? (
+                <div className="fnb-alert" role="status">
+                  {tx("Costs and values are hidden. Ask an administrator for the 'View inventory costs and values in reports' permission to see them.")}
+                </div>
+              ) : null}
 
               <FnbReportKpis kpis={result?.kpis ?? []} rowsShown={filteredRows.length} currencyCode={result?.currencyCode} />
 

@@ -1,3 +1,4 @@
+import { BrandLogo } from "../components/BrandLogo";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
@@ -132,14 +133,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function IconGrid() {
-  return (
-    <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h18M3 9h18M3 15h18M9 15v6M15 15v6" />
-    </svg>
-  );
-}
-
 function IconEye({ off }: { off?: boolean }) {
   return off ? (
     <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
@@ -266,11 +259,8 @@ export default function LoginPage() {
       <div className="auth-box">
         <div className="auth-logo-row">
           <div className="auth-logo">
-            <div className="auth-logo__icon" aria-hidden="true">
-              <IconGrid />
-            </div>
-            <span className="auth-logo__name">{t("app.name")}</span>
-          </div>
+          <BrandLogo />
+        </div>
           <LanguageSelector />
         </div>
 

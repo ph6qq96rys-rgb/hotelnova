@@ -8,6 +8,7 @@ import { loadWorkspaceAuth } from "./workspace-auth.storage";
 import { loadPlatformAuth } from "./platform-auth.storage";
 import type {
   AuthUser,
+  ChangePasswordResponse,
   ForgotPasswordRequest,
   LoginRequest,
   LoginResponse,
@@ -243,6 +244,18 @@ export const authApi = {
       await http.post("/auth/forgot-password", {
         email,
       });
+    } catch (error) {
+      normalizeError(error);
+    }
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<ChangePasswordResponse> {
+    try {
+      const response = await http.post<ChangePasswordResponse>("/auth/change-password", {
+        currentPassword,
+        newPassword,
+      });
+      return response.data ?? {};
     } catch (error) {
       normalizeError(error);
     }

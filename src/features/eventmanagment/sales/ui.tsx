@@ -1,3 +1,7 @@
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
+import { Textarea } from "../../../components/ui/textarea";
 import { StateMessage, EmptyState as SharedEmptyState } from "../../../components/ui/Feedback";
 import { useDialogFocus } from "../../../components/ui/useDialogFocus";
 // src/features/eventmanagment/sales/ui.tsx
@@ -46,7 +50,7 @@ export function readApiError(cause: unknown, fallback = "The request failed."): 
    Dates
 ========================= */
 
-/** ISO string -> value for <input type="datetime-local">. */
+/** ISO string -> value for a datetime-local input. */
 export function toDateTimeInput(iso: string | null | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);
@@ -55,7 +59,7 @@ export function toDateTimeInput(iso: string | null | undefined): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-/** <input type="datetime-local"> value -> ISO string for the API. */
+/** Datetime-local input value -> ISO string for the API. */
 export function fromDateTimeInput(value: string): string | null {
   if (!value) return null;
   const date = new Date(value);
@@ -109,7 +113,7 @@ export function TextField({
 }) {
   return (
     <FieldFrame {...frame}>
-      <input onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type={type} value={value} />
+      <Input onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type={type} value={value} />
     </FieldFrame>
   );
 }
@@ -122,7 +126,7 @@ export function TextAreaField({
 }: BaseFieldProps & { value: string; onChange: (value: string) => void; rows?: number }) {
   return (
     <FieldFrame {...frame}>
-      <textarea onChange={(event) => onChange(event.target.value)} rows={rows} value={value} />
+      <Textarea onChange={(event) => onChange(event.target.value)} rows={rows} value={value} />
     </FieldFrame>
   );
 }
@@ -146,7 +150,7 @@ export function NumberField({
   return (
     <FieldFrame {...frame}>
       <span className="cat-field__number">
-        <input
+        <Input
           max={max}
           min={min}
           onChange={(event) => onChange(event.target.value === "" ? "" : Number(event.target.value))}
@@ -174,14 +178,14 @@ export function SelectField<T extends string>({
 }) {
   return (
     <FieldFrame {...frame}>
-      <select onChange={(event) => onChange(event.target.value as T)} value={value}>
+      <Select onChange={(event) => onChange(event.target.value as T)} value={value}>
         {placeholder ? <option value="">{placeholder}</option> : null}
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </FieldFrame>
   );
 }
@@ -193,7 +197,7 @@ export function DateTimeField({
 }: BaseFieldProps & { value: string; onChange: (value: string) => void }) {
   return (
     <FieldFrame {...frame}>
-      <input onChange={(event) => onChange(event.target.value)} type="datetime-local" value={value} />
+      <Input onChange={(event) => onChange(event.target.value)} type="datetime-local" value={value} />
     </FieldFrame>
   );
 }
@@ -240,9 +244,9 @@ export function FormDialog({
             <h3>{title}</h3>
             {description ? <p>{description}</p> : null}
           </div>
-          <button aria-label="Close" disabled={busy} onClick={onClose} type="button">
+          <Button variant="ghost" size="icon" aria-label="Close" disabled={busy} onClick={onClose} type="button">
             <X size={16} />
-          </button>
+          </Button>
         </header>
 
         <div className="cat-modal__body">{children}</div>
@@ -254,17 +258,16 @@ export function FormDialog({
         ) : null}
 
         <footer className="cat-modal__foot">
-          <button className="cat-btn" disabled={busy} onClick={onClose} type="button">
+          <Button variant="outline" disabled={busy} onClick={onClose} type="button">
             Cancel
-          </button>
-          <button
-            className={`cat-btn cat-btn--primary${destructive ? " cat-btn--danger" : ""}`}
+          </Button>
+          <Button variant={destructive ? "destructive" : "default"}
             disabled={busy || disabled}
             type="submit"
           >
             {busy ? <Loader2 className="cat-spin" size={15} /> : null}
             {busy ? "Saving" : submitLabel}
-          </button>
+          </Button>
         </footer>
       </form>
     </div>
@@ -289,7 +292,7 @@ export function SearchInput({
   placeholder: string;
 }) {
   return (
-    <input
+    <Input
       className="cat-search"
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
@@ -306,7 +309,7 @@ export function DetailHeader({
   meta,
   actions,
 }: {
-  onBack: () => void;
+  onBack?: () => void;
   eyebrow: string;
   title: string;
   meta?: ReactNode;
@@ -314,9 +317,11 @@ export function DetailHeader({
 }) {
   return (
     <header className="cat-detail-head">
-      <button className="cat-btn cat-btn--ghost" onClick={onBack} type="button">
-        <ArrowLeft size={15} /> Back
-      </button>
+      {onBack ? (
+        <Button variant="ghost" onClick={onBack} type="button">
+          <ArrowLeft size={15} /> Back
+        </Button>
+      ) : null}
       <div className="cat-detail-head__title">
         <span>{eyebrow}</span>
         <h2>{title}</h2>

@@ -63,6 +63,17 @@ export const operationsApi = {
     return http.get<BackOfficeEfficiencySnapshotDto>(`${base(companyId, branchId)}/back-office-efficiency?${q}`);
   },
 
+  /** The end-of-day report for a business date, or null when it has not been generated. */
+  async endOfDay(companyId: Guid, branchId: Guid, businessDate: string) {
+    const res = await http.get<EndOfDayReportDto | "">(`${base(companyId, branchId)}/end-of-day`, { params: { businessDate } });
+    return res.status === 204 || !res.data ? null : (res.data as EndOfDayReportDto);
+  },
+
+  /** Cashier shifts opened in a UTC window (used to find shifts still open in the branch). */
+  shifts(companyId: Guid, branchId: Guid, fromUtc: string, toUtc: string) {
+    return http.get<CashierShiftDto[]>(`${base(companyId, branchId)}/cashier-shifts`, { params: { fromUtc, toUtc } });
+  },
+
   generateEndOfDay(companyId: Guid, branchId: Guid, payload: { businessDate: string; varianceReasonCodeId?: Guid | null; varianceComment?: string | null }) {
     return http.post<EndOfDayReportDto>(`${base(companyId, branchId)}/end-of-day`, payload);
   },

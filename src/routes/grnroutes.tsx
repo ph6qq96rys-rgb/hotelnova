@@ -11,6 +11,7 @@ import SivDetailsPage from "../features/inventory/siv/pages/SivDetailsPage";
 import SivApprovalPage from "../features/inventory/siv/pages/SivApprovalPage";
 import SivOpenRedirectPage from "../features/inventory/siv/pages/SivOpenRedirectPage";
 import SivIssuedPrintPage from "../features/inventory/siv/pages/SivIssuedPrintPage";
+import ReplenishmentRulesPage from "../features/inventory/siv/pages/ReplenishmentRulesPage";
 
 export type AppRoute = RouteObject & {
   path?: string;
@@ -120,6 +121,20 @@ function companySivRoutes(
           listPath,
           <SivListPage />,
           "Stock Issue Vouchers",
+        ),
+
+    visible
+      ? visibleRoute(
+          `${prefix}/siv/replenishment-rules`,
+          "Replenishment Rules",
+          <ReplenishmentRulesPage />,
+          81,
+          ["inventory.replenishment.manage", "siv.create"],
+        )
+      : hiddenRoute(
+          `${prefix}/siv/replenishment-rules`,
+          <ReplenishmentRulesPage />,
+          "Replenishment Rules",
         ),
 
     hiddenRoute(

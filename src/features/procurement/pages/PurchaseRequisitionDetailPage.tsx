@@ -28,6 +28,7 @@ import "./procurement.css";
 import RequisitionDocuments from "../components/RequisitionDocuments";
 import RequisitionAmendmentPanel from "../components/RequisitionAmendmentPanel";
 import RequisitionApprovalRoute from "../components/RequisitionApprovalRoute";
+import PurchaseRequestEvaluation from "../components/PurchaseRequestEvaluation";
 import { approvalsApi, type ApprovalRoute } from "../api/procurementApprovalsApi";
 
 const CANCELLABLE = new Set(["Draft", "Returned", "Submitted", "PendingApproval", "PendingFnbApproval", "PendingFinanceApproval"]);
@@ -266,7 +267,9 @@ export default function PurchaseRequisitionDetailPage() {
         </div>
         <div className="prq-actions">
           <button className="prq-btn" type="button" onClick={() => navigate(-1)}>{tx("Back")}</button>
+          {row && <Button variant="outline" onClick={() => navigate(`/companies/${companyId}/procurement/workflow/requisition/${id}`)}>{tx("Track in workflow")}</Button>}
           {canCreatePurchaseRequisition && row && ["Draft","Returned"].includes(row.status) && <Button variant="outline" onClick={()=>navigate(`/companies/${companyId}/procurement/requisitions/${id}/edit`)}>{tx("Edit")}</Button>}
+          {canManagePurchasing && row && row.canBeRevised !== false && !["Draft","Returned"].includes(row.status) && <Button variant="outline" onClick={()=>navigate(`/companies/${companyId}/procurement/requisitions/${id}/edit`)}>{tx("Revise")}</Button>}
           {canCreatePurchaseRequisition && (row?.status === "Draft" || row?.status === "Returned") ? (
             <button className="prq-btn prq-btn--primary" type="button" onClick={submit} disabled={actionBusy}>{tx("Submit")}</button>
           ) : null}
@@ -283,6 +286,7 @@ export default function PurchaseRequisitionDetailPage() {
             <div><span>{tx("Priority")}</span><strong>{tx(row.priority)}</strong></div>
             <div><span>{tx("Required by")}</span><strong>{formatDateTime(row.requiredByDateUtc)}</strong></div>
             <div><span>{tx("Estimated total")}</span><strong>{money.format(row.estimatedTotal || 0)}</strong></div>
+            {!!row.revisionNo && <div><span>{tx("Revision")}</span><strong>{row.revisionNo}</strong><small>{[row.lastRevisedByName, row.lastRevisedAtUtc ? formatDateTime(row.lastRevisedAtUtc) : null].filter(Boolean).join(", ")}</small></div>}
           </section>
 
           <section className="prq-panel prq-detail-grid">
@@ -353,6 +357,7 @@ export default function PurchaseRequisitionDetailPage() {
             {quantityReduced && <p className="p2p-muted">* {tx("Approved quantity was reduced by the approver.")}</p>}
           </section>
 
+          <PurchaseRequestEvaluation companyId={companyId} id={id} version={row.version}/>
           <RequisitionDocuments companyId={companyId} id={id} editable={canCreatePurchaseRequisition && ["Draft","Returned"].includes(row.status)} onChanged={()=>void load()}/>
           {canCreatePurchaseRequisition&&["Approved","Sourcing","Ordered","Completed"].includes(row.status)&&<RequisitionAmendmentPanel companyId={companyId} id={id} lines={row.lines}/>}
 

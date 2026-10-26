@@ -1,8 +1,7 @@
 // src/features/production/api/recipesApi.ts
 //
-// Three distinct recipe endpoint groups, kept in one file because they share types:
+// Active recipe endpoint groups share their request and response types:
 //
-//   recipesApi          - legacy /companies/{id}/recipes (activate flow)
 //   productionRecipesApi- /companies/{id}/production/recipes (get/upsert by menu item)
 //   recipeEditorApi     - /companies/{id}/branches/{id}/menu/items/{id}/recipe-editor
 
@@ -13,35 +12,6 @@ import type {
   MenuItemRecipeEditorDto,
   SaveMenuItemRecipeEditorRequest,
 } from "../types";
-
-//  Legacy recipe endpoints 
-
-export const recipesApi = {
-  getActive(companyId: string, menuItemId: string): Promise<RecipeDto> {
-    return http
-      .get<RecipeDto>(`/companies/${companyId}/recipes`, { params: { menuItemId } })
-      .then((r) => r.data);
-  },
-
-  create(companyId: string, req: UpsertRecipeRequest): Promise<string> {
-    return http
-      .post<string>(`/companies/${companyId}/recipes`, req)
-      .then((r) => r.data);
-  },
-
-  update(companyId: string, recipeId: string, req: UpsertRecipeRequest): Promise<void> {
-    return http
-      .put(`/companies/${companyId}/recipes/${recipeId}`, req)
-      .then(() => undefined);
-  },
-
-  /** No request body - omit it so ASP.NET Core doesn't require Content-Type. */
-  activate(companyId: string, recipeId: string): Promise<void> {
-    return http
-      .post(`/companies/${companyId}/recipes/${recipeId}/activate`)
-      .then(() => undefined);
-  },
-};
 
 //  Production recipe endpoints 
 

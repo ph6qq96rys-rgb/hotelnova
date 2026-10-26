@@ -84,7 +84,7 @@ export function FnbReportContext({ report, methodology, periodLabel }: Props) {
             {tx("Inventory reconciliation")}:{" "}
             {report.reconciliation.isReconciled ? tx("Reconciled") : tx("Difference requires review")}
           </strong>
-          <p>{tx("Current stock balances compared with the posted inventory ledger at report generation.")}</p>
+          <p>{tx("Each stock card's current balance (location, item and unit) compared with every posted ledger movement on that card at report generation.")}</p>
           <ContextPills
             items={[
               [tx("Stock balance value"), formatReportMoney(report.reconciliation.inventoryValue, report.currencyCode)],

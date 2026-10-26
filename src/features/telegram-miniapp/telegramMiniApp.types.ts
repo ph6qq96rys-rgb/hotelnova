@@ -1,3 +1,5 @@
+import type { LucideIcon } from "lucide-react";
+
 import type { TelegramTabKey } from "./TelegramTabBar";
 
 export type TelegramMiniAppModule =
@@ -10,7 +12,7 @@ export type TelegramMiniAppModule =
 export type TelegramMenuItem = {
   tab: TelegramTabKey;
   module: TelegramMiniAppModule;
-  icon: string;
+  icon: LucideIcon;
   title: string;
   description: string;
   badge?: string;
@@ -33,6 +35,12 @@ export type TelegramMiniAppAuthResult = {
   userId?: string | null;
   branchId?: string | null;
   tenantSlug?: string | null;
+  companyName?: string | null;
+  branchName?: string | null;
+
+  /** Short-lived Mini App session issued at sign-in (sent as X-Telegram-Session). */
+  sessionToken?: string | null;
+  sessionExpiresAtUtc?: string | null;
 
   employeeName?: string | null;
   employeeCode?: string | null;

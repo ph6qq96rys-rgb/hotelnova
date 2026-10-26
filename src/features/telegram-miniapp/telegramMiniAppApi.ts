@@ -1,16 +1,5 @@
 import type { TelegramMiniAppAuthResult } from "./telegramMiniApp.types";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
-
-function apiUrl(path: string): string {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const base = API_BASE.trim().replace(/\/+$/, "");
-
-  if (!base) return `/api${normalizedPath}`;
-  if (base.endsWith("/api")) return `${base}${normalizedPath}`;
-
-  return `${base}/api${normalizedPath}`;
-}
+import { apiUrl, miniAppRequest } from "./telegramMiniAppClient";
 
 function normalizeTenantKey(value?: string | null): string | null {
   const tenantKey = value?.trim();
@@ -111,12 +100,6 @@ export async function linkTelegramEmployee(args: {
   return normalizeAuthResult(result);
 }
 
-export type TelegramMiniAppScope = {
-  initData: string;
-  tenantKey?: string | null;
-  companyId?: string | null;
-};
-
 export type TelegramLeaveTypeDto = {
   id: string;
   code: string;
@@ -146,71 +129,91 @@ export type TelegramLeaveRequestDto = {
   createdAt: string;
 };
 
-export async function getTelegramLeaveTypes(
-  scope: TelegramMiniAppScope,
-): Promise<TelegramLeaveTypeDto[]> {
-  return telegramPost<TelegramLeaveTypeDto[]>("/telegram/miniapp/leave/types", scope);
+/*
+ * Employee self-service calls. The Mini App session identifies the employee, so the bodies carry only
+ * the request itself (see telegramMiniAppClient).
+ */
+export function getTelegramLeaveTypes(): Promise<TelegramLeaveTypeDto[]> {
+  return miniAppRequest<TelegramLeaveTypeDto[]>("/telegram/miniapp/leave/types", { body: {} });
 }
 
-export async function getTelegramLeaveBalances(
-  scope: TelegramMiniAppScope,
-  year: number,
-): Promise<TelegramLeaveBalanceDto[]> {
-  return telegramPost<TelegramLeaveBalanceDto[]>("/telegram/miniapp/leave/balances", {
-    ...scope,
-    year,
-  });
+export function getTelegramLeaveBalances(year: number): Promise<TelegramLeaveBalanceDto[]> {
+  return miniAppRequest<TelegramLeaveBalanceDto[]>("/telegram/miniapp/leave/balances", { body: { year } });
 }
 
-export async function getTelegramLeaveRequests(
-  scope: TelegramMiniAppScope,
-  year?: number,
-): Promise<TelegramLeaveRequestDto[]> {
-  return telegramPost<TelegramLeaveRequestDto[]>("/telegram/miniapp/leave/requests/list", {
-    ...scope,
-    year,
-  });
+export function getTelegramLeaveRequests(year?: number): Promise<TelegramLeaveRequestDto[]> {
+  return miniAppRequest<TelegramLeaveRequestDto[]>("/telegram/miniapp/leave/requests/list", { body: { year } });
 }
 
-export async function submitTelegramLeaveRequest(
-  scope: TelegramMiniAppScope,
-  body: {
-    leaveTypeId: string;
-    startDate: string;
-    endDate: string;
-    isHalfDay: boolean;
-    halfDayPeriod?: "Morning" | "Afternoon" | null;
-    reason: string;
-    documentUrl?: string | null;
-  },
-): Promise<{ success: boolean; id?: string; message?: string }> {
-  return telegramPost("/telegram/miniapp/leave/requests", {
-    ...scope,
-    ...body,
-  });
+export function submitTelegramLeaveRequest(body: {
+  leaveTypeId: string;
+  startDate: string;
+  endDate: string;
+  isHalfDay: boolean;
+  halfDayPeriod?: "Morning" | "Afternoon" | null;
+  reason: string;
+  documentUrl?: string | null;
+}): Promise<{ success: boolean; id?: string; message?: string }> {
+  return miniAppRequest("/telegram/miniapp/leave/requests", { body });
 }
 
-export async function submitTelegramOvertimeRequest(
-  scope: TelegramMiniAppScope,
-  body: {
-    date: string;
-    plannedStartUtc?: string | null;
-    plannedEndUtc?: string | null;
-    hours: number;
-    businessReason: string;
-    workAssignment: string;
-    kpiDescription: string;
-    kpiTarget: string;
-    kpiMeasurementMethod: string;
-    requiredEvidence?: string | null;
-    completionDeadlineUtc?: string | null;
-    relatedActivity?: string | null;
-  },
-): Promise<{ success: boolean; id?: string; message?: string }> {
-  return telegramPost("/telegram/miniapp/overtime/requests", {
-    ...scope,
-    ...body,
-  });
+export function submitTelegramOvertimeRequest(body: {
+  date: string;
+  plannedStartUtc?: string | null;
+  plannedEndUtc?: string | null;
+  hours: number;
+  businessReason: string;
+  workAssignment: string;
+  kpiDescription: string;
+  kpiTarget: string;
+  kpiMeasurementMethod: string;
+  requiredEvidence?: string | null;
+  completionDeadlineUtc?: string | null;
+  relatedActivity?: string | null;
+}): Promise<{ success: boolean; id?: string; message?: string }> {
+  return miniAppRequest("/telegram/miniapp/overtime/requests", { body });
+}
+
+/* Stock issue requests (SIVs). */
+export type TelegramSivLineSummaryDto = {
+  itemName: string;
+  requestedQty: number;
+  approvedQty?: number | null;
+  issuedQty?: number | null;
+  uomCode?: string | null;
+};
+
+export type TelegramSivSummaryDto = {
+  id: string;
+  sivNo: string;
+  status: string;
+  createdOrIssueDateUtc: string;
+  submittedAtUtc?: string | null;
+  decidedAtUtc?: string | null;
+  fromLocationName?: string | null;
+  toLocationName?: string | null;
+  requesterName?: string | null;
+  remarks?: string | null;
+  lineCount: number;
+  lines: TelegramSivLineSummaryDto[];
+};
+
+export function getMyTelegramSivs(days = 60, signal?: AbortSignal): Promise<TelegramSivSummaryDto[]> {
+  return miniAppRequest<TelegramSivSummaryDto[]>("/telegram/miniapp/siv/mine", { query: { days }, signal });
+}
+
+export function getTelegramSivApprovals(signal?: AbortSignal): Promise<TelegramSivSummaryDto[]> {
+  return miniAppRequest<TelegramSivSummaryDto[]>("/telegram/miniapp/siv/approvals", { signal });
+}
+
+export function approveTelegramSiv(sivId: string, body: { remarks?: string | null; overrideReason?: string | null }) {
+  return miniAppRequest<{ success?: boolean; message?: string }>(
+    `/telegram/miniapp/siv/approvals/${encodeURIComponent(sivId)}/approve`, { body });
+}
+
+export function rejectTelegramSiv(sivId: string, remarks: string) {
+  return miniAppRequest<{ success?: boolean; message?: string }>(
+    `/telegram/miniapp/siv/approvals/${encodeURIComponent(sivId)}/reject`, { body: { remarks } });
 }
 
 function normalizeAuthResult(
@@ -221,35 +224,6 @@ function normalizeAuthResult(
     success: Boolean(result.success),
     requiresEmployeeLink: Boolean(result.requiresEmployeeLink),
   };
-}
-
-async function telegramPost<T>(
-  path: string,
-  body: TelegramMiniAppScope & Record<string, unknown>,
-): Promise<T> {
-  const response = await fetch(apiUrl(path), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      ...body,
-      tenantKey: normalizeTenantKey(body.tenantKey as string | null | undefined),
-      startParam: normalizeTenantKey(body.tenantKey as string | null | undefined),
-    }),
-  });
-
-  const result = await parseJson<T & { success?: boolean; message?: string }>(response);
-
-  if (!response.ok || result.success === false) {
-    const message =
-      typeof result.message === "string" && result.message.trim()
-        ? result.message
-        : `Telegram request failed. (HTTP ${response.status})`;
-    throw new Error(message);
-  }
-
-  return result;
 }
 
 function formatTelegramApiError(

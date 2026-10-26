@@ -1,7 +1,8 @@
-import React, { memo, useMemo } from "react";
+import { memo } from "react";
+import type { LucideIcon } from "lucide-react";
+import { ClipboardCheck, ClipboardList, Home, Package, QrCode } from "lucide-react";
 
 import { useI18n } from "../../i18n";
-import { getTelegramTheme } from "./telegramWebApp";
 
 export type TelegramTabKey =
   | "workspace"
@@ -14,192 +15,51 @@ export type TelegramTabKey =
 export interface TelegramTabItem {
   key: TelegramTabKey;
   label: string;
-  icon: React.ReactNode;
-  disabled?: boolean;
+  icon: LucideIcon;
 }
 
 interface TelegramTabBarProps {
   activeTab: TelegramTabKey;
   onChange: (tab: TelegramTabKey) => void;
   items?: TelegramTabItem[];
+  /** Number shown on a tab (for example approvals waiting). */
+  badges?: Partial<Record<TelegramTabKey, number>>;
 }
 
 const defaultTabs: TelegramTabItem[] = [
-  { key: "workspace", label: "Home", icon: "" },
-  { key: "attendance", label: "Scan", icon: "" },
-  { key: "inventory", label: "Inventory", icon: "" },
-  { key: "requests", label: "Requests", icon: "" },
-  { key: "profile", label: "Me", icon: "" },
+  { key: "workspace", label: "Home", icon: Home },
+  { key: "attendance", label: "Scan", icon: QrCode },
+  { key: "inventory", label: "Stock", icon: Package },
+  { key: "requests", label: "Requests", icon: ClipboardList },
+  { key: "approvals", label: "Approvals", icon: ClipboardCheck },
 ];
 
-export default function TelegramTabBar({
-  activeTab,
-  onChange,
-  items = defaultTabs,
-}: TelegramTabBarProps) {
+function TelegramTabBar({ activeTab, onChange, items = defaultTabs, badges }: TelegramTabBarProps) {
   const { tx } = useI18n();
-  const theme = getTelegramTheme();
-  const styles = useMemo(
-    () => createStyles(theme, items.length),
-    [theme, items.length]
-  );
+  // Profile is opened from Home, so Home stays highlighted there.
+  const current = activeTab === "profile" ? "workspace" : activeTab;
 
   return (
-    <nav style={styles.nav} aria-label={tx("Telegram Mini App navigation")}>
-      {items.map((tab) => (
-        <TabButton
-          key={tab.key}
-          tab={tab}
-          active={tab.key === activeTab}
-          onChange={onChange}
-          styles={styles}
-          translate={tx}
-        />
-      ))}
+    <nav className="tg-mini-tabbar" aria-label={tx("Telegram Mini App navigation")}>
+      {items.map((tab) => {
+        const Icon = tab.icon;
+        const badge = badges?.[tab.key] ?? 0;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            className="tg-mini-tab"
+            aria-current={tab.key === current ? "page" : undefined}
+            onClick={() => onChange(tab.key)}
+          >
+            <Icon size={21} aria-hidden="true" />
+            {badge > 0 ? <span className="tg-mini-tab__badge">{badge > 99 ? "99+" : badge}</span> : null}
+            <span className="tg-mini-tab__label">{tx(tab.label)}</span>
+          </button>
+        );
+      })}
     </nav>
   );
 }
 
-const TabButton = memo(function TabButton({
-  tab,
-  active,
-  onChange,
-  styles,
-  translate,
-}: {
-  tab: TelegramTabItem;
-  active: boolean;
-  onChange: (tab: TelegramTabKey) => void;
-  styles: ReturnType<typeof createStyles>;
-  translate: (text: string) => string;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={tab.disabled}
-      onClick={() => {
-        if (!tab.disabled) onChange(tab.key);
-      }}
-      aria-current={active ? "page" : undefined}
-      style={{
-        ...styles.button,
-        ...(active ? styles.buttonActive : null),
-        ...(tab.disabled ? styles.buttonDisabled : null),
-      }}
-    >
-      <span
-        style={{
-          ...styles.activeIndicator,
-          ...(active ? styles.activeIndicatorVisible : null),
-        }}
-      />
-
-      <span
-        style={{
-          ...styles.icon,
-          ...(active ? styles.iconActive : null),
-        }}
-      >
-        {tab.icon}
-      </span>
-
-      <span
-        style={{
-          ...styles.label,
-          ...(active ? styles.labelActive : null),
-        }}
-      >
-        {translate(tab.label)}
-      </span>
-    </button>
-  );
-});
-
-function createStyles(theme: Record<string, string>, itemCount: number) {
-  const cardBg = theme.secondary_bg_color ?? "#ffffff";
-  const hint = theme.hint_color ?? "#6b7280";
-  const button = theme.button_color ?? "#2481cc";
-  const border = theme.hint_color ? `${theme.hint_color}33` : "#e5e7eb";
-
-  return {
-    nav: {
-      height: 68,
-      display: "grid",
-      gridTemplateColumns: `repeat(${itemCount}, minmax(0, 1fr))`,
-      background: cardBg,
-      borderTop: `1px solid ${border}`,
-      boxShadow: "0 -12px 26px rgba(15, 23, 42, 0.08)",
-      padding: "4px 8px calc(4px + env(safe-area-inset-bottom))",
-      boxSizing: "content-box",
-    },
-
-    button: {
-      position: "relative",
-      border: "none",
-      background: "transparent",
-      minWidth: 0,
-      minHeight: 60,
-      padding: "8px 4px 6px",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 3,
-      cursor: "pointer",
-      color: hint,
-      WebkitTapHighlightColor: "transparent",
-      borderRadius: 16,
-    },
-
-    buttonActive: {
-      color: button,
-      background: `${button}12`,
-    },
-
-    buttonDisabled: {
-      opacity: 0.42,
-      cursor: "not-allowed",
-    },
-
-    activeIndicator: {
-      position: "absolute",
-      top: 4,
-      width: 20,
-      height: 3,
-      borderRadius: 999,
-      background: button,
-      opacity: 0,
-    },
-
-    activeIndicatorVisible: {
-      opacity: 1,
-    },
-
-    icon: {
-      fontSize: 21,
-      lineHeight: 1,
-      filter: "grayscale(0.15)",
-    },
-
-    iconActive: {
-      filter: "none",
-      transform: "translateY(-1px)",
-    },
-
-    label: {
-      maxWidth: "100%",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap",
-      fontSize: 11,
-      lineHeight: 1,
-      fontWeight: 700,
-      color: hint,
-    },
-
-    labelActive: {
-      color: button,
-      fontWeight: 900,
-    },
-  } satisfies Record<string, React.CSSProperties>;
-}
+export default memo(TelegramTabBar);

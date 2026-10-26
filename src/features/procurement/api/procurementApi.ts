@@ -60,6 +60,12 @@ export type PurchaseRequisition = {
   submittedAtUtc?: string | null;
   approvedAtUtc?: string | null;
   closedAtUtc?: string | null;
+  /** Times a purchasing manager revised it after submission. */
+  revisionNo?: number;
+  lastRevisedAtUtc?: string | null;
+  lastRevisedByName?: string | null;
+  /** False once rejected, cancelled or closed. */
+  canBeRevised?: boolean;
   version?: string | null;
   estimatedTotal: number;
   lineCount: number;
@@ -242,6 +248,38 @@ export async function updatePurchaseRequisition(
   payload: UpdatePurchaseRequisitionPayload,
 ): Promise<CommandResult> {
   const response = await http.put<CommandResult>(`${root(companyId)}/${id}`, payload);
+  return response.data;
+}
+
+/** A purchasing-manager revision: lines keep their id; a line without one is new, a missing line is removed. */
+export type PurchaseRequisitionRevisionPayload = Omit<CreatePurchaseRequisitionPayload, "branchId" | "submit" | "lines" | "clientRequestId"> & {
+  version?: string | null;
+  reason: string;
+  sendForApproval: boolean;
+  preview: boolean;
+  lines: { id?: string | null; line: PurchaseRequisitionLineInput }[];
+};
+
+export type PurchaseRequisitionRevisionResult = {
+  saved: boolean;
+  id: string;
+  requisitionNo: string;
+  status: string;
+  version: string;
+  requiresReapproval: boolean;
+  changes: string[];
+  approvalReasons: string[];
+  warnings: string[];
+  revisionNo?: number | null;
+};
+
+/** Revise at any stage before the requisition is final (purchasing.manage). With preview, nothing is saved. */
+export async function revisePurchaseRequisition(
+  companyId: string,
+  id: string,
+  payload: PurchaseRequisitionRevisionPayload,
+): Promise<PurchaseRequisitionRevisionResult> {
+  const response = await http.post<PurchaseRequisitionRevisionResult>(`${root(companyId)}/${id}/revise`, payload);
   return response.data;
 }
 

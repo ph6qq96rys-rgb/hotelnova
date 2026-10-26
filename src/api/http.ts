@@ -1,6 +1,6 @@
 // src/api/http.ts
 //
-// Central Axios instance for Hotel Nova.
+// Central Axios instance for Process360.
 //
 // ERP-grade behavior:
 // - Uses VITE_API_BASE_URL when provided.
@@ -638,6 +638,16 @@ const refreshPromises: Record<
   workspace: null,
 };
 
+/**
+ * Set when the last refresh of a scope failed because the server could not be
+ * reached (network error, timeout, 5xx). That does not prove the session is
+ * invalid, so a 401 in that state is reported without signing the user out.
+ */
+const refreshUnreachable: Record<AuthScope, boolean> = {
+  platform: false,
+  workspace: false,
+};
+
 export async function refreshAccessToken(
   scope: AuthScope,
 ): Promise<string | null> {
@@ -648,6 +658,7 @@ export async function refreshAccessToken(
   }
 
   const promise = (async (): Promise<string | null> => {
+    refreshUnreachable[scope] = false;
     const auth =
       scope === "platform"
         ? getPlatformAuth()
@@ -725,6 +736,8 @@ export async function refreshAccessToken(
       if(axios.isAxiosError(error)&&[400,401,403].includes(error.response?.status??0)){
         clearScopeAuth(scope);
         dispatchUnauthenticated(scope);
+      } else {
+        refreshUnreachable[scope] = true;
       }
       return null;
     } finally {
@@ -799,6 +812,24 @@ type RetryConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
 };
 
+/** The bearer token a request was sent with, if any. */
+function bearerToken(config: InternalAxiosRequestConfig): string | null {
+  const headers = asHeaders(config);
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === "authorization") {
+      const value = String(headers[key] ?? "");
+      return clean(value.replace(/^Bearer\s+/i, ""));
+    }
+  }
+  return null;
+}
+
+/** The session is no longer valid: clear it and send the user to sign in. */
+function signOutExpiredSession(scope: AuthScope): void {
+  clearScopeAuth(scope);
+  dispatchUnauthenticated(scope);
+}
+
 http.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -808,11 +839,15 @@ http.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    if (error.response?.status !== 401) {
+    if (
+      error.response?.status === 403 &&
+      (error.response.data as { code?: string } | undefined)?.code === "PASSWORD_CHANGE_REQUIRED"
+    ) {
+      window.dispatchEvent(new CustomEvent("auth:password-change-required"));
       return Promise.reject(error);
     }
 
-    if (original._retry) {
+    if (error.response?.status !== 401) {
       return Promise.reject(error);
     }
 
@@ -820,12 +855,38 @@ http.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    const scope = resolveRequestScope(original.url);
+
+    // Already retried with a current token and still rejected: the server no
+    // longer accepts this session (expired, revoked or user deactivated).
+    if (original._retry) {
+      signOutExpiredSession(scope);
+      return Promise.reject(error);
+    }
+
     original._retry = true;
 
-    const scope = resolveRequestScope(original.url);
+    const sentToken = bearerToken(original);
     const accessToken = await refreshAccessToken(scope);
 
     if (!accessToken) {
+      // Another tab may have refreshed or signed in again meanwhile: use that token.
+      const current = scope === "platform" ? getPlatformAuth() : getWorkspaceAuth();
+      const currentToken = clean(current?.accessToken);
+
+      if (currentToken && currentToken !== sentToken) {
+        const headers = asHeaders(original);
+        setAuthorization(headers, currentToken);
+        if (scope === "platform") removeTenantHeaders(headers);
+        else attachTenantHeaders(headers, true);
+        return http.request(original);
+      }
+
+      // A server that cannot be reached does not prove the session is over.
+      if (!refreshUnreachable[scope]) {
+        signOutExpiredSession(scope);
+      }
+
       return Promise.reject(error);
     }
 

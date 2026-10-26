@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ArrowLeft, Plus, Trash2, Users } from "lucide-react";
 
 import { Button } from "../../../components/ui/button";
@@ -32,6 +33,8 @@ type Props = {
   onSplitEvenly: (count: number) => void;
   onConfirm: () => void;
   onBack: () => void;
+  /** Bill adjustments shown under the amount payable (discount). */
+  adjustments?: ReactNode;
 };
 
 const METHODS: PaymentMethod[] = ["CASH", "CARD", "MOBILE", "TRANSFER"];
@@ -185,6 +188,7 @@ export function PosPaymentPanel(props: Props) {
         <span>{tx("Amount Payable")}</span>
         <strong>{money(props.total)}</strong>
       </div>
+      {props.adjustments}
       {props.tipNote ? <p className="rpos-muted">{tx(props.tipNote)}</p> : null}
 
       <div className="rpos-chip-row">

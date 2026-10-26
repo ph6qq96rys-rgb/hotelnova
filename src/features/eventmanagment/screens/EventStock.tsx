@@ -1,3 +1,8 @@
+import { Button } from "../../../components/ui/button";
+import { Textarea } from "../../../components/ui/textarea";
+import { Checkbox } from "../../../components/ui/checkbox";
+import { Select } from "../../../components/ui/select";
+import { Input } from "../../../components/ui/input";
 // src/features/eventmanagment/screens/EventStock.tsx
 //
 // Event-scoped lifecycle, stock and profitability screens. Quantities and costs shown here come
@@ -91,9 +96,9 @@ function Dialog({
         >
           <header className="co-toolbar">
             <h2>{title}</h2>
-            <button type="button" disabled={busy} onClick={onClose}>
+            <Button variant="outline" type="button" disabled={busy} onClick={onClose}>
               Close
-            </button>
+            </Button>
           </header>
           <fieldset disabled={busy}>{children}</fieldset>
           {error && (
@@ -103,9 +108,9 @@ function Dialog({
           )}
           <footer className="co-toolbar">
             <span />
-            <button className="co-primary" disabled={busy || disabled}>
+            <Button className="co-primary" disabled={busy || disabled}>
               {busy ? "Saving..." : submitLabel}
-            </button>
+            </Button>
           </footer>
         </form>
       </section>
@@ -142,7 +147,7 @@ function ReasonField({
   return (
     <label>
       {label}
-      <textarea required maxLength={500} value={value} onChange={(e) => onChange(e.target.value)} />
+      <Textarea required maxLength={500} value={value} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }
@@ -185,22 +190,22 @@ export function EventLifecycleCard({ event, onChanged }: { event: CateringEventD
         <span className="co-pill">{humanize(status)}</span>
         <div className="co-actions">
           {canStart && (
-            <button disabled={action.busy} onClick={() => setDialog("start")}>
+            <Button variant="outline" disabled={action.busy} onClick={() => setDialog("start")}>
               Start event
-            </button>
+            </Button>
           )}
           {canComplete && (
-            <button
+            <Button
               className="co-primary"
               disabled={action.busy || !readiness?.canComplete}
               title={readiness?.canComplete ? undefined : "Every closing check must be met first"}
               onClick={() => setDialog("complete")}
             >
               Complete event
-            </button>
+            </Button>
           )}
           {canReopen && (
-            <button
+            <Button variant="outline"
               disabled={action.busy}
               onClick={() => {
                 setReason("");
@@ -208,7 +213,7 @@ export function EventLifecycleCard({ event, onChanged }: { event: CateringEventD
               }}
             >
               Reopen
-            </button>
+            </Button>
           )}
         </div>
       </header>
@@ -426,14 +431,14 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
       <header className="co-toolbar">
         <div className="co-view co-stock-tabs">
           {tabs.map(([key, label]) => (
-            <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>
+            <Button variant="outline" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>
               {label}
-            </button>
+            </Button>
           ))}
         </div>
-        <button disabled={loading} onClick={() => setRevision((v) => v + 1)}>
+        <Button variant="outline" disabled={loading} onClick={() => setRevision((v) => v + 1)}>
           Refresh
-        </button>
+        </Button>
       </header>
       {closed && (
         <p className="co-notice">
@@ -455,33 +460,33 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
               {data.requirements?.hasShortages ? "Stock is short for some ingredients." : ""}
             </span>
             <div className="co-actions">
-              <button
+              <Button variant="outline"
                 disabled={closed || action.busy || !hasPermission("catering.reservations.manage") || !toIssue}
                 onClick={() => setDialog({ kind: "reserve", notes: "" })}
               >
                 Reserve stock
-              </button>
-              <button
+              </Button>
+              <Button
                 className="co-primary"
                 disabled={closed || action.busy || !hasPermission("catering.siv.manage") || !toIssue}
                 onClick={() => setDialog({ kind: "siv", notes: "", submit: true })}
               >
                 Create issue voucher
-              </button>
-              <button
+              </Button>
+              <Button variant="outline"
                 disabled={
                   closed || action.busy || !hasPermission("purchasing.create") || !data.requirements?.hasShortages
                 }
                 onClick={() => setDialog({ kind: "requisition", notes: "" })}
               >
                 Requisition shortages
-              </button>
-              <button
+              </Button>
+              <Button variant="outline"
                 disabled={closed || action.busy || !hasPermission("butchery.demand.manage")}
                 onClick={() => setDialog({ kind: "demand", notes: "" })}
               >
                 Butchery demand
-              </button>
+              </Button>
             </div>
           </div>
           <div className="co-table-wrap">
@@ -561,12 +566,12 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                   </td>
                   <td>
                     {r.status === "active" && (
-                      <button
+                      <Button variant="outline"
                         disabled={action.busy || !hasPermission("catering.reservations.manage")}
                         onClick={() => setDialog({ kind: "release", id: r.id, reason: "" })}
                       >
                         Release
-                      </button>
+                      </Button>
                     )}
                   </td>
                 </tr>
@@ -582,7 +587,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
         <>
           <div className="co-toolbar">
             <span>Returns go back into stock at the event's issue cost.</span>
-            <button
+            <Button
               className="co-primary"
               disabled={
                 closed || action.busy || !hasPermission("catering.returns.manage") || !items.some((i) => i.atEvent > 0)
@@ -590,7 +595,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
               onClick={() => setDialog({ kind: "return", notes: "", locationId: "", quantities: {} })}
             >
               Record return
-            </button>
+            </Button>
           </div>
           <div className="co-table-wrap">
             <table className="co-table">
@@ -623,12 +628,12 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                     <td>{formatCurrency(r.totalReturnedCost)}</td>
                     <td>
                       {r.status === "recorded" && (
-                        <button
+                        <Button variant="outline"
                           disabled={closed || action.busy || !hasPermission("catering.returns.manage")}
                           onClick={() => setDialog({ kind: "cancel-return", id: r.id, reason: "" })}
                         >
                           Cancel
-                        </button>
+                        </Button>
                       )}
                     </td>
                   </tr>
@@ -644,7 +649,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
         <>
           <div className="co-toolbar">
             <span>Waste is valued at issue cost and counts against food cost only once approved.</span>
-            <button
+            <Button
               className="co-primary"
               disabled={
                 closed || action.busy || !hasPermission("catering.waste.manage") || !items.some((i) => i.atEvent > 0)
@@ -652,7 +657,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
               onClick={() => setDialog({ kind: "waste", notes: "", rows: {} })}
             >
               Record waste
-            </button>
+            </Button>
           </div>
           <div className="co-table-wrap">
             <table className="co-table">
@@ -688,21 +693,21 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                     <td>
                       <div className="co-actions">
                         {w.status === "recorded" && (
-                          <button
+                          <Button variant="outline"
                             disabled={closed || action.busy || !hasPermission("catering.waste.approve")}
                             title="You cannot approve waste you recorded unless your company allows it."
                             onClick={() => setDialog({ kind: "approve-waste", id: w.id })}
                           >
                             Approve
-                          </button>
+                          </Button>
                         )}
                         {w.status !== "cancelled" && (
-                          <button
+                          <Button variant="outline"
                             disabled={closed || action.busy || !hasPermission("catering.waste.manage")}
                             onClick={() => setDialog({ kind: "cancel-waste", id: w.id, reason: "" })}
                           >
                             Cancel
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </td>
@@ -723,7 +728,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                 ? `${pendingWaste.length} waste record(s) still need approval before reconciling.`
                 : "Issued, returned, standard and waste quantities are computed on the server."}
             </span>
-            <button
+            <Button
               className="co-primary"
               disabled={
                 closed ||
@@ -737,7 +742,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
               onClick={() => setDialog({ kind: "reconcile", tolerance: 0, notes: "", reviews: {} })}
             >
               Reconcile consumption
-            </button>
+            </Button>
           </div>
           {latestRecon ? (
             <>
@@ -746,21 +751,21 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                 <span className="co-pill">{humanize(latestRecon.status)}</span>
                 <div className="co-actions">
                   {(latestRecon.status === "draft" || latestRecon.status === "requiresReview") && (
-                    <button
+                    <Button variant="outline"
                       disabled={closed || action.busy || !hasPermission("catering.reconciliation.approve")}
                       title="You cannot approve a reconciliation you prepared unless your company allows it."
                       onClick={() => setDialog({ kind: "approve-reconciliation", id: latestRecon.id })}
                     >
                       Approve
-                    </button>
+                    </Button>
                   )}
                   {latestRecon.status !== "closed" && (
-                    <button
+                    <Button variant="outline"
                       disabled={closed || action.busy || !hasPermission("catering.reconciliation.manage")}
                       onClick={() => setDialog({ kind: "cancel-reconciliation", id: latestRecon.id, reason: "" })}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -865,8 +870,8 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
             <p>{meta[1]}</p>
             {dialog.kind === "siv" && (
               <label className="co-check">
-                <input
-                  type="checkbox"
+                <Checkbox
+                  
                   checked={!!dialog.submit}
                   onChange={(ev) => setDialog({ ...dialog, submit: ev.target.checked })}
                 />
@@ -875,8 +880,8 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
             )}
             <label>
               Notes
-              <textarea
-                maxLength={1000}
+              <Textarea
+                maxLength={500}
                 value={dialog.notes}
                 onChange={(ev) => setDialog({ ...dialog, notes: ev.target.value })}
               />
@@ -983,7 +988,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
           >
             <label>
               Return to location
-              <select
+              <Select
                 value={dialog.locationId}
                 onChange={(ev) => setDialog({ ...dialog, locationId: ev.target.value })}
               >
@@ -993,7 +998,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                     {l.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <table className="co-table">
               <thead>
@@ -1011,7 +1016,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                       {qty(i.atEvent)} {i.uom}
                     </td>
                     <td>
-                      <input
+                      <Input
                         type="number"
                         min={0}
                         max={i.atEvent}
@@ -1037,7 +1042,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
             {over && <p className="co-notice">More {over.item.itemName} than is out at the event.</p>}
             <label>
               Notes
-              <textarea
+              <Textarea
                 maxLength={1000}
                 value={dialog.notes}
                 onChange={(ev) => setDialog({ ...dialog, notes: ev.target.value })}
@@ -1103,7 +1108,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                         {qty(limit)} {i.uom}
                       </td>
                       <td>
-                        <input
+                        <Input
                           type="number"
                           min={0}
                           max={limit}
@@ -1115,7 +1120,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                         />
                       </td>
                       <td>
-                        <select
+                        <Select
                           aria-label={"Waste type " + i.itemName}
                           value={row.type}
                           onChange={(ev) => set({ type: ev.target.value as WasteType })}
@@ -1125,10 +1130,10 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                               {humanize(t)}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                       </td>
                       <td>
-                        <input
+                        <Input
                           aria-label={"Waste reason " + i.itemName}
                           maxLength={300}
                           value={row.reason}
@@ -1144,7 +1149,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
             {missingReason && <p className="co-notice">Give a reason for every wasted item.</p>}
             <label>
               Notes
-              <textarea
+              <Textarea
                 maxLength={1000}
                 value={dialog.notes}
                 onChange={(ev) => setDialog({ ...dialog, notes: ev.target.value })}
@@ -1187,7 +1192,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
             </p>
             <label>
               Variance tolerance (base units)
-              <input
+              <Input
                 type="number"
                 min={0}
                 step="0.001"
@@ -1218,7 +1223,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                       </td>
                       <td>{qty(i.returned)}</td>
                       <td>
-                        <input
+                        <Input
                           type="number"
                           step="0.001"
                           aria-label={"Accepted variance " + i.itemName}
@@ -1227,7 +1232,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
                         />
                       </td>
                       <td>
-                        <input
+                        <Input
                           aria-label={"Variance note " + i.itemName}
                           maxLength={300}
                           value={review.note}
@@ -1242,7 +1247,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
             {noNote && <p className="co-notice">Explain every accepted variance.</p>}
             <label>
               Notes
-              <textarea
+              <Textarea
                 maxLength={1000}
                 value={dialog.notes}
                 onChange={(ev) => setDialog({ ...dialog, notes: ev.target.value })}
@@ -1315,7 +1320,7 @@ export function EventProfitabilityCard({ event }: { event: CateringEventDto }) {
     <section className="co-card">
       <header className="co-toolbar">
         <h2>Profitability</h2>
-        <button
+        <Button
           className="co-primary"
           disabled={
             action.busy || !hasPermission("catering.profitability.manage") || String(event.status) === "cancelled"
@@ -1326,7 +1331,7 @@ export function EventProfitabilityCard({ event }: { event: CateringEventDto }) {
           }}
         >
           Calculate
-        </button>
+        </Button>
       </header>
       <Notices error={form || dialog ? "" : action.error || loadError} message={action.message} />
       <div className="co-table-wrap">
@@ -1360,20 +1365,20 @@ export function EventProfitabilityCard({ event }: { event: CateringEventDto }) {
                 <td>
                   <div className="co-actions">
                     {p.status === "draft" && (
-                      <button
+                      <Button variant="outline"
                         disabled={action.busy || !hasPermission("catering.profitability.approve")}
                         onClick={() => setDialog({ kind: "approve", id: p.id, reason: "" })}
                       >
                         Approve
-                      </button>
+                      </Button>
                     )}
                     {p.status !== "cancelled" && (
-                      <button
+                      <Button variant="outline"
                         disabled={action.busy || !hasPermission("catering.profitability.manage")}
                         onClick={() => setDialog({ kind: "cancel", id: p.id, reason: "" })}
                       >
                         Cancel
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </td>
@@ -1420,7 +1425,7 @@ export function EventProfitabilityCard({ event }: { event: CateringEventDto }) {
             ).map(([key, label]) => (
               <label key={key}>
                 {label}
-                <input
+                <Input
                   type="number"
                   min={0}
                   step="0.01"
@@ -1435,7 +1440,7 @@ export function EventProfitabilityCard({ event }: { event: CateringEventDto }) {
           </div>
           <label>
             Notes
-            <textarea
+            <Textarea
               maxLength={1000}
               value={form.notes ?? ""}
               onChange={(ev) => setForm({ ...form, notes: ev.target.value })}

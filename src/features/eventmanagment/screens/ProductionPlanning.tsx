@@ -1,3 +1,5 @@
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import { useEffect, useState } from "react";
 import { formatAppDateTime } from "../../../shared/datetime/dateFormat";
 import { Link, useLocation } from "react-router-dom";
@@ -89,15 +91,15 @@ export function ProductionPlanning({ companyId, branchId }: { companyId: string;
           <h1>Production plan</h1>
           <p>Seven-day cutting workload and catering demand shortages.</p>
         </div>
-        <button disabled={loading} onClick={() => setRevision((r) => r + 1)}>
+        <Button variant="outline" disabled={loading} onClick={() => setRevision((r) => r + 1)}>
           Refresh
-        </button>
+        </Button>
       </header>
       <section className="co-card">
         <div className="co-toolbar">
           <label>
             Week starting
-            <input
+            <Input
               type="date"
               value={start}
               onChange={(e) => {

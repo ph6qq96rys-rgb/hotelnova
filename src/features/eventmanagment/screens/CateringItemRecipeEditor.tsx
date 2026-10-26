@@ -1,3 +1,4 @@
+import { Checkbox } from "../../../components/ui/checkbox";
 import "./catering-recipe-editor.css";
 import { Table } from "../../../components/ui/table";
 import { CateringItemCostPreview } from "./CateringItemCostPreview";
@@ -11,9 +12,10 @@ import { StateMessage } from "../../../components/ui/Feedback";
 import { useDialogFocus } from "../../../components/ui/useDialogFocus";
 import { useUnsavedChanges } from "../components/useUnsavedChanges";
 import { readApiError } from "../sales/ui";
-type Resource = { id: string; name: string; baseUomId?: string; units?: string[] };
+type Resource = { id: string; name: string; baseUomId?: string; itemType?: string; units?: string[] };
 type Line = { itemId: string; uomId: string; quantity: number; wastePercent: number; notes: string | null };
 type Recipe = {
+  serving: { recipeYield: number; yieldUomId: string; numberOfServings: number; servingSize: number; servingUomId: string; wasteAllowancePercent: number; wholeBatches: boolean };
   consumptionLocationId?: string | null;
   expectedUpdatedAt: string | null;
   expectedRecipeId: string | null;
@@ -72,6 +74,7 @@ export function CateringItemRecipeEditor({
         if (!c.signal.aborted)
           setRecipe({
             ...r.data,
+            serving: r.data.serving ?? { recipeYield: 1, yieldUomId: "", numberOfServings: 1, servingSize: 1, servingUomId: "", wasteAllowancePercent: 0, wholeBatches: true },
             consumptionLocationId: r.data.consumptionLocationId ?? item.consumptionLocationId ?? "",
           });
       })
@@ -112,7 +115,7 @@ export function CateringItemRecipeEditor({
           <header className="cr-header">
             <div>
               <h2>Recipe for {item.name}</h2>
-              <p>Set the consumption location and ingredients for one catering unit or portion.</p>
+              <p>Set the consumption location and ingredients for one recipe batch.</p>
             </div>
             <Button type="button" variant="outline" disabled={busy} onClick={close}>
               Close
@@ -147,8 +150,8 @@ export function CateringItemRecipeEditor({
                     </Select>
                   </label>
                   <p>
-                    This location is used for stock issuance. Ingredient costs come from the latest posted main
-                    warehouse GRN. Saving a recipe does not consume stock.
+                    This is where the stock will be issued from once a package is sold. Costs use stock on hand here,
+                    or the last received cost when there is none. Saving does not consume stock.
                   </p>
                 </div>
                 {!resources.consumptionLocations?.length && (
@@ -157,11 +160,17 @@ export function CateringItemRecipeEditor({
                     consumption access in branch settings.
                   </StateMessage>
                 )}
+                <div className="co-form-grid">
+                  {([['recipeYield','Recipe yield'],['numberOfServings','Servings per batch'],['servingSize','Serving size'],['wasteAllowancePercent','Preparation loss %']] as const).map(([key,label])=><label key={key}>{label}<Input required type="number" step="any" min={key==='wasteAllowancePercent'?0:0.000001} max={key==='wasteAllowancePercent'?99.999:undefined} value={recipe.serving[key]} onChange={e=>change({...recipe,serving:{...recipe.serving,[key]:Number(e.target.value)}})}/></label>)}
+                  {([['yieldUomId','Yield unit'],['servingUomId','Serving unit']] as const).map(([key,label])=><label key={key}>{label}<Select required value={recipe.serving[key]} onChange={e=>change({...recipe,serving:{...recipe.serving,[key]:e.target.value}})}><option value="">Select unit</option>{resources.units?.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</Select></label>)}
+                  <label><Checkbox checked={recipe.serving.wholeBatches} onChange={e=>change({...recipe,serving:{...recipe.serving,wholeBatches:e.target.checked}})}/> Produce whole batches</label>
+                  <p>Net yield after preparation loss must equal servings × serving size. Ingredient waste is applied separately to ingredient quantities.</p>
+                </div>
                 <div className="cr-section-heading">
                   <h3>
                     Ingredients <span>({recipe.lines.length})</span>
                   </h3>
-                  <span>Quantities per portion</span>
+                  <span>Quantities per batch</span>
                 </div>
                 <Table className="cr-ingredients" aria-label="Recipe ingredients">
                   <thead>
@@ -200,7 +209,7 @@ export function CateringItemRecipeEditor({
                               )}
                               {inventory.map((r) => (
                                 <option key={r.id} value={r.id}>
-                                  {r.name}
+                                  {r.name}{r.itemType === "SemiFinished" ? " — Semi-finished" : r.itemType === "FinishedGood" ? " — Finished good" : ""}
                                 </option>
                               ))}
                             </Select>
@@ -298,7 +307,7 @@ export function CateringItemRecipeEditor({
                 <div className="cr-cost">
                   <CateringItemCostPreview
                     companyId={companyId}
-                    request={{ branchId, consumptionLocationId: recipe.consumptionLocationId, lines: recipe.lines }}
+                    request={{ branchId, consumptionLocationId: recipe.consumptionLocationId, lines: recipe.lines, serving: recipe.serving }}
                   />
                 </div>
               </fieldset>

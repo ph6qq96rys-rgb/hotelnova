@@ -4,7 +4,7 @@ const uiPhrasesAm: Record<string, string> = {
   "Show on QR menu": "በQR ምናሌ ላይ አሳይ",
   "Items below 1 birr and Management (MGT) items are always hidden from the QR menu.": "ከ1 ብር በታች የሆኑ እና የማኔጅመንት (MGT) ምርቶች ሁልጊዜ ከQR ምናሌ ይደበቃሉ።",
   "Dashboard": "ዳሽቦርድ",
-  "Hotel Nova workspace": "የሆቴል ኖቫ የስራ ቦታ",
+  "Process360 workspace": "የProcess360 የስራ ቦታ",
   "Search...": "ፈልግ...",
   "Sign out": "ውጣ",
   "Refresh": "አድስ",

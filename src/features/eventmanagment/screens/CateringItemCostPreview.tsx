@@ -7,6 +7,7 @@ type Cost = {
   source: string;
   complete: boolean;
   totalCost: number | null;
+  costPerServing?: number | null;
   lines: {
     itemId: string;
     name: string;
@@ -29,6 +30,7 @@ export function CateringItemCostPreview({
     inventoryItemId?: string | null;
     uomId?: string | null;
     lines?: unknown[];
+    serving?: unknown;
   };
 }) {
   const key = JSON.stringify(request),
@@ -64,12 +66,13 @@ export function CateringItemCostPreview({
   );
   return (
     <section aria-label="Catering item cost preview" aria-live="polite">
-      <h3>Cost per catering unit / portion</h3>
+      <h3>{request.serving ? "Cost per recipe batch" : "Ingredient cost"}</h3>
       <strong>{cost.complete ? money(cost.totalCost!) : "Cost incomplete"}</strong>
+      {cost.costPerServing != null && <p>Cost per serving: {money(cost.costPerServing)}</p>}
       {!cost.complete && (
         <StateMessage tone="warning">
           {cost.lines.length
-            ? "Main warehouse GRN costs are missing or need unit reconciliation. Resolve the highlighted ingredients before relying on package margins."
+            ? "Some ingredients have no cost: they have never been received and have no default cost. Receive them once, or set a default cost on the inventory item."
             : "Link an inventory item or configure recipe ingredients to calculate cost."}
         </StateMessage>
       )}
@@ -77,8 +80,8 @@ export function CateringItemCostPreview({
         {cost.source === "Recipe"
           ? "Calculated from recipe ingredients, conversions and waste. The recipe takes precedence over a direct inventory link."
           : "Calculated for one selected inventory unit."}{" "}
-        Costs use the latest posted main warehouse GRN, regardless of remaining stock or consumption location. No stock
-        is consumed by this preview.
+        Costs use stock on hand at the consumption location when there is enough; otherwise the last
+        received cost, then the item's default cost. Stock is only consumed when it is issued to a sold event.
       </p>
       <div className="co-table-wrap">
         <table>

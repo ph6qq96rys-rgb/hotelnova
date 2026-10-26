@@ -1,3 +1,4 @@
+import { BrandLogo } from "./BrandLogo";
 import { cateringNavigation, isCateringNavigationActive } from "../features/eventmanagment/components/cateringNavigation";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -11,22 +12,20 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  Settings,
   ShieldCheck,
   X,
 } from "lucide-react";
 
 import { useAuth } from "../auth/useAuth";
+import { canAccessNavigationRoute, canAccessCateringShortcut } from "../auth/navigationAccess";
 import { branchesApi } from "../features/company/api/branchesApi";
 import {
-  canAccessRoute as canAccessErpRoute,
   hasCompanyAdminRole,
   hasSystemAdminRole,
-  normalizePermission,
 } from "../auth/erpAccess";
 import { useAppContext } from "../app/AppContext";
 import { useAppScope } from "../app/useAppScope";
-import { useAppRoutes } from "../routes/routeDefConfig";
+import { useAppRoutes, type AppRouteLike } from "../routes/routeDefConfig";
 import { useI18n, type TranslationKey } from "../i18n";
 import type { AppRoute } from "../routes/routeConfig";
 
@@ -37,6 +36,8 @@ type SidebarProps = {
 };
 
 type SidebarRoute = AppRoute & {
+  hidden?: boolean;
+  accessParents?: AppRouteLike[];
   menu?: {
     label?: string;
     section?: string;
@@ -61,7 +62,7 @@ type BranchOption = {
   name: string;
 };
 
-const SIDEBAR_COLLAPSED_KEY = "hotelnova.sidebar.collapsed.v1";
+
 
 
 const NAV_LABEL_KEYS: Record<string, TranslationKey> = {
@@ -78,6 +79,7 @@ const NAV_LABEL_KEYS: Record<string, TranslationKey> = {
   "Adjustments": "nav.adjustments",
   "Goods Receipts": "nav.goodsReceipts",
   "Stock Issue Vouchers": "nav.stockIssueVouchers",
+  "Replenishment Rules": "nav.replenishmentRules",
   "Purchase Requisitions": "nav.purchaseRequisitions",
   "Menu Categories": "nav.menuCategories",
   "Create Menu Item": "nav.createMenuItem",
@@ -137,12 +139,8 @@ const SECTION_ORDER = [
   "Settings",
 ];
 
-function readCollapsedPreference(): boolean {
-  return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
-}
-
 function isVisibleRoute(route: SidebarRoute): boolean {
-  return Boolean(route.nav || route.menu);
+  return !route.hidden && Boolean(route.nav || route.menu);
 }
 
 function getRouteLabel(route: SidebarRoute): string {
@@ -202,7 +200,8 @@ function resolveSidebarPath(
 function buildSidebarItems(
   routes: SidebarRoute[],
   companyId: string | null,
-  canAccessRoute: (route: SidebarRoute) => boolean
+  canAccessRoute: (route: SidebarRoute) => boolean,
+  canAccessShortcut: (target: string) => boolean
 ): SidebarItem[] {
   const items = new Map<string, SidebarItem>();
 
@@ -221,7 +220,7 @@ function buildSidebarItems(
       const module=to.slice(marker+"/eventmanagment/".length);
       for(const group of cateringNavigation){
         group.links.forEach(([label,target],index)=>{
-          if(target.split("?")[0]!==module)return;
+          if(target.split("?")[0]!==module || !canAccessShortcut(target))return;
           const href=to.slice(0,marker)+"/eventmanagment/"+target;
           const key=group.title+":"+href;
           items.set(key,{key,label,section:group.title,to:href,order:index,icon:route.icon});
@@ -344,12 +343,12 @@ export default function Sidebar({
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(readCollapsedPreference);
+  const [collapsed, setCollapsed] = useState(true);
+  const railCollapsed = collapsed && !open;
   const [branches, setBranches] = useState<BranchOption[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
     document.documentElement.style.setProperty(
       "--hnav-current-width",
       collapsed ? "84px" : "292px"
@@ -380,39 +379,12 @@ export default function Sidebar({
     auth.user?.email ??
     "Admin User";
 
-  const roleNames = useMemo(
-    () =>
-      [
-        ...(((auth as any).roles ?? []) as string[]),
-        ...(((auth.user as any)?.roles ?? []) as string[]),
-        ...(((auth.user as any)?.roleNames ?? []) as string[]),
-      ]
-        .filter(Boolean)
-        .map(String),
-    [auth, auth.user]
-  );
-
-  const isSystemAdmin =
-    Boolean(auth.isSystemAdmin) || hasSystemAdminRole(roleNames);
-
+  // Use the current authenticated identity, not stale copies embedded in user data.
+  const roleNames = auth.roles;
+  const permissionNames = auth.permissions;
+  const isSystemAdmin = hasSystemAdminRole(roleNames);
   const isCompanyAdmin = hasCompanyAdminRole(roleNames);
-
-  const permissionNames = useMemo(
-    () =>
-      [
-        ...(((auth as any).permissions ?? []) as string[]),
-        ...(((auth.user as any)?.permissions ?? []) as string[]),
-      ]
-        .filter(Boolean)
-        .map((permission) => normalizePermission(String(permission))),
-    [auth, auth.user]
-  );
-
-  const permissionSet = useMemo(
-    () => new Set(permissionNames),
-    [permissionNames]
-  );
-
+  const identity = { roles: roleNames, permissions: permissionNames };
   useEffect(() => {
     if (!companyId || (isSystemAdmin && !appScope.companyId)) {
       setBranches([]);
@@ -460,13 +432,7 @@ export default function Sidebar({
   }, [companyId, isSystemAdmin, appScope.companyId]);
 
   function canAccessRoute(route: SidebarRoute): boolean {
-    return canAccessErpRoute(
-      {
-        roles: roleNames,
-        permissions: [...permissionSet],
-      },
-      route
-    );
+    return auth.isReady && auth.isAuthenticated && canAccessNavigationRoute(identity, route);
   }
 
   const dashboardPath = companyId
@@ -479,10 +445,11 @@ export default function Sidebar({
     const items = buildSidebarItems(
       routes as SidebarRoute[],
       companyId,
-      canAccessRoute
+      canAccessRoute,
+      (target) => canAccessCateringShortcut(identity, target)
     );
 
-    if (isSystemAdmin) {
+    if (auth.isReady && auth.isAuthenticated && isSystemAdmin) {
       items.unshift({
         key: "System:/platform/tenants",
         label: "Tenant Workspaces",
@@ -503,7 +470,7 @@ export default function Sidebar({
     }
 
     return groupSidebarItems(items);
-  }, [routes, companyId, isSystemAdmin, roleNames, permissionNames]);
+  }, [routes, companyId, isSystemAdmin, roleNames, permissionNames, auth.isReady, auth.isAuthenticated]);
 
   const sectionEntries = Object.entries(groupedRoutes);
   const initials = getInitials(userName);
@@ -533,7 +500,7 @@ export default function Sidebar({
   function toggleSection(section: string) {
     setCollapsedSections((prev) => ({
       ...prev,
-      [section]: !prev[section],
+      [section]: !(prev[section] ?? true),
     }));
   }
 
@@ -594,7 +561,7 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`hnav-root${open ? " hnav-open" : ""}${collapsed ? " hnav-collapsed" : ""}`}
+        className={`hnav-root${open ? " hnav-open" : ""}${railCollapsed ? " hnav-collapsed" : ""}`}
         aria-label={tx("Main navigation")}
       >
         <div className="hnav-brand">
@@ -605,12 +572,10 @@ export default function Sidebar({
             aria-label={tx("Go to dashboard")}
             title={tx("Go to dashboard")}
           >
-            <div className="hnav-brand-mark" aria-hidden="true">
-              HN
-            </div>
+            <BrandLogo compact />
 
             <div className="hnav-brand-text">
-              <span className="hnav-brand-name">Hotel Nova</span>
+              <span className="hnav-brand-name">Process360</span>
               <span className="hnav-brand-env">ERP Console</span>
             </div>
           </button>
@@ -682,7 +647,7 @@ export default function Sidebar({
             </div>
           ) : (
             sectionEntries.map(([section, items]) => {
-              const collapsedSection = Boolean(collapsedSections[section]);
+              const collapsedSection = !railCollapsed && (collapsedSections[section] ?? true);
 
               return (
                 <section className="hnav-section" key={section}>
@@ -691,6 +656,7 @@ export default function Sidebar({
                     className="hnav-section-head"
                     onClick={() => toggleSection(section)}
                     aria-expanded={!collapsedSection}
+                    aria-label={translateNavSection(section)}
                     title={translateNavSection(section)}
                   >
                     <span className="hnav-section-label">{translateNavSection(section)}</span>
@@ -719,7 +685,7 @@ export default function Sidebar({
 
                             <span className="hnav-item-label">{translateNavLabel(item.label)}</span>
                           </NavLink>
-                          {!collapsed && item.children?.length ? (
+                          {!railCollapsed && item.children?.length ? (
                             <ul className="hnav-subitems" role="list">
                               {item.children.map((child) => (
                                 <li key={child.key} role="listitem">
@@ -776,18 +742,6 @@ export default function Sidebar({
 
           {userMenuOpen && (
             <ul className="hnav-user-menu" role="menu">
-              <li role="none">
-                <button
-                  type="button"
-                  className="hnav-user-menu-item"
-                  role="menuitem"
-                  onClick={() => handleNavigate("/settings/account")}
-                >
-                  <Settings size={13} strokeWidth={2} aria-hidden="true" />
-                  Account settings
-                </button>
-              </li>
-
               {isSystemAdmin && (
                 <li role="none">
                   <button

@@ -208,6 +208,153 @@ export interface FifoIssueCandidateDto {
   expiryDate: string | null;
 }
 
+/** A proposed line from the low-stock check (quantities in the item's base unit unless noted). */
+export interface SivLowStockLineDto {
+  itemId: string;
+  itemCode: string | null;
+  itemName: string;
+  baseUomCode: string;
+  /** Unit proposed for the SIV line (issue unit when configured, else base unit). */
+  uomId: string;
+  uomCode: string;
+  toBaseFactor: number;
+  onHandBaseQty: number;
+  inboundBaseQty: number;
+  /** Usage used for the target: the larger of ledger usage and the recipe estimate (never the sum). */
+  netConsumedBaseQty: number;
+  ledgerUsageBaseQty?: number;
+  recipeEstimateBaseQty?: number;
+  /** "Ledger" | "Recipe" | "None" */
+  usageBasis?: string;
+  /** "Ingredient" | "SemiFinished" | "NestedIngredient" when linked through recipes. */
+  linkKind?: string | null;
+  /** Menu items (and semi-finished chains) that use this item. */
+  linkedVia?: string[];
+  reservedBaseQty?: number;
+  /** Days the branch was open in the window. */
+  openDays?: number;
+  /** Open days on which the location had none of this item (left out of recorded usage). */
+  stockoutDays?: number;
+  /** Open, stocked days used to average recorded usage. */
+  observedDays?: number;
+  coverageDays?: number;
+  leadTimeDays?: number;
+  safetyStockBaseQty?: number;
+  minStockBaseQty?: number | null;
+  maxStockBaseQty?: number | null;
+  cappedByMax?: boolean;
+  /** Parameter → scope of the rule that set it. */
+  ruleSources?: Record<string, string>;
+  ruleVersions?: string[];
+  dailyUsageBaseQty: number;
+  daysOfCover: number | null;
+  reorderLevelBaseQty: number;
+  targetBaseQty: number;
+  suggestedBaseQty: number;
+  /** Suggested quantity in `uomCode`. */
+  suggestedQty: number;
+  sourceFreeBaseQty: number;
+  /** Stores that can supply the item, in FIFO order (earliest expiry, then oldest receipt). */
+  sourceOptions?: SivSourceOption[];
+  /** Where the suggested quantity would be requested from, store by store. */
+  sourceAllocations?: SivSourceAllocation[];
+  /** Part of the inbound quantity coming on approved stock transfers. */
+  inboundTransferBaseQty?: number;
+  /** Destination stock expiring within the days to cover. */
+  expiringBaseQty?: number;
+  status: "OutOfStock" | "Low" | string;
+  warnings: string[];
+}
+
+export interface SivSourceOption {
+  locationId: string;
+  locationName: string;
+  freeBaseQty: number;
+  oldestReceivedAtUtc?: string | null;
+  earliestExpiry?: string | null;
+}
+
+export interface SivSourceAllocation {
+  locationId: string;
+  locationName: string;
+  /** Quantity in the line's unit. */
+  qty: number;
+  baseQty: number;
+  /** The store holds less than its part. */
+  short?: boolean;
+}
+
+/** Empty GUID: let the server pick stores per line in FIFO order. */
+export const FIFO_SOURCE_ID = "00000000-0000-0000-0000-000000000000";
+
+export interface SivLowStockResultDto {
+  fromLocationId: string;
+  fromLocationName: string;
+  /** "Fifo" | "Fixed" */
+  sourceMode?: string;
+  sources?: { locationId: string; locationName: string }[];
+  toLocationId: string;
+  toLocationName: string;
+  lookbackDays: number;
+  coverageDays: number;
+  windowStartUtc: string;
+  windowEndUtc: string;
+  itemsEvaluated: number;
+  /** Items whose stock plus open SIVs already covers the target. */
+  itemsCovered: number;
+  /** Items in stock with no recent usage and no reorder level (no target can be set). */
+  itemsWithoutDemand: number;
+  menuItemsConsidered?: number;
+  /** Days without any recorded sale at the branch (treated as closed). */
+  closedDays?: number;
+  itemsExcludedByRule?: number;
+  rulesConsidered?: number;
+  itemsProducedHere?: number;
+  issues?: { code: string; message: string }[];
+  openSivCount: number;
+  truncated: boolean;
+  lines: SivLowStockLineDto[];
+}
+
+export interface SivLowStockGenerateRequest {
+  /** New per reviewed proposal; reuse it to retry the same request safely. */
+  clientRequestId: string;
+  /** A store id, or FIFO_SOURCE_ID to source each line from stores in FIFO order. */
+  fromLocationId: string;
+  lookbackDays: number;
+  coverageDays: number;
+  destinations: { toLocationId: string; lines: { itemId: string; qty: number }[] }[];
+}
+
+export interface SivLowStockGeneratedDraft {
+  toLocationId: string;
+  toLocationName: string;
+  fromLocationId?: string;
+  fromLocationName?: string | null;
+  sivId: string | null;
+  sivNo: string | null;
+  lineCount: number;
+  error: string | null;
+}
+
+export interface SivLowStockGenerateResult {
+  generationId: string;
+  number: string;
+  /** "Completed" | "Failed" | "InProgress" */
+  status: string;
+  /** True when an earlier identical request's drafts were returned. */
+  replayed: boolean;
+  drafts: SivLowStockGeneratedDraft[];
+}
+
+export interface SivLowStockParams {
+  /** Omit for FIFO sourcing across the branch's stores. */
+  fromLocationId?: string;
+  toLocationId: string;
+  lookbackDays?: number;
+  coverageDays?: number;
+}
+
 /* =========================
    Requests
 ========================= */
@@ -457,6 +604,33 @@ async function createDraft(
   );
 
   return normalizeSivActionResult(response);
+}
+
+async function getLowStock(
+  companyId: string,
+  branchId: string,
+  params: SivLowStockParams,
+): Promise<SivLowStockResultDto> {
+  const response = await http.get<SivLowStockResultDto>(
+    `${branchSivBase(companyId, branchId)}/low-stock`,
+    { params: cleanParams(params) },
+  );
+
+  const data = unwrap<SivLowStockResultDto>(response);
+  return { ...data, lines: Array.isArray(data?.lines) ? data.lines : [] };
+}
+
+async function generateFromLowStock(
+  companyId: string,
+  branchId: string,
+  body: SivLowStockGenerateRequest,
+): Promise<SivLowStockGenerateResult> {
+  const response = await http.post<SivLowStockGenerateResult>(
+    `${branchSivBase(companyId, branchId)}/low-stock/generate`,
+    body,
+  );
+  const data = unwrap<SivLowStockGenerateResult>(response);
+  return { ...data, drafts: Array.isArray(data?.drafts) ? data.drafts : [] };
 }
 
 async function updateDraft(
@@ -741,6 +915,8 @@ export const sivApi = {
 
   createDraft,
   updateDraft,
+  getLowStock,
+  generateFromLowStock,
 
   submit,
   approve,

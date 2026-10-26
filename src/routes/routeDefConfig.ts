@@ -12,6 +12,7 @@ import { getHrRoutes } from "./hrRoutes";
 import { getPostRoutes } from "./posRoutes";
 import { inventoryMasterRoutes } from "./inventoryMasterRoutes";
 import { procurementRoutes } from "./procurementRoutes";
+import { financeRoutes } from "./financeRoutes";
 import { useAppScope } from "../app/useAppScope";
 
 export type AppRouteLike = RouteObject & {
@@ -25,6 +26,7 @@ export type AppRouteLike = RouteObject & {
   permissions?: string[];
   order?: number;
   hidden?: boolean;
+  accessParents?: AppRouteLike[];
   menu?: {
     label?: string;
     section?: string;
@@ -107,7 +109,7 @@ function normalizeRoute(
 
   const normalized: RouteWithHref = {
     ...route,
-    path: ownPath,
+    path: fullPath,
     getHref: (companyId: string) => companyHref(companyId, fullPath),
   };
 
@@ -122,12 +124,17 @@ function normalizeRoute(
   return normalized;
 }
 
-function flattenRoutes(routes: AppRouteLike[]): RouteWithHref[] {
+export function flattenRoutes(routes: AppRouteLike[]): RouteWithHref[] {
   const result: RouteWithHref[] = [];
 
-  function walk(items: AppRouteLike[], parentPath?: string) {
+  function walk(items: AppRouteLike[], parentPath?: string, parents: AppRouteLike[] = []) {
+    const seen = new Set<string>();
     for (const route of items) {
+      const key = route.index ? "index" : stripCompanyPrefix(route.path);
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
       const normalized = normalizeRoute(route, parentPath);
+      normalized.accessParents = parents;
       result.push(normalized);
 
       const children = getChildren(route);
@@ -138,7 +145,7 @@ function flattenRoutes(routes: AppRouteLike[]): RouteWithHref[] {
           stripCompanyPrefix(route.path)
         );
 
-        walk(children, childParent);
+        walk(children, childParent, [...parents, route]);
       }
     }
   }
@@ -180,6 +187,7 @@ export function useAppRoutes(): RouteWithHref[] {
       ...(hrRoutes as AppRouteLike[]),
       ...(posRoutes as AppRouteLike[]),
       ...(procurementRoutes as AppRouteLike[]),
+      ...(financeRoutes as AppRouteLike[]),
     ],
     [grnRoutes, salesRoutes, hrRoutes, posRoutes]
   );

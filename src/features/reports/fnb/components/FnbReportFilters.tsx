@@ -3,7 +3,7 @@ import { Input } from "../../../../components/ui/input";
 import { Select } from "../../../../components/ui/select";
 import { useI18n } from "../../../../i18n";
 import type { DepartmentDto } from "../../../hr/types";
-import type { FnbReportCatalogItemDto } from "../api/fnbReportsApi";
+import type { FnbReportCatalogItemDto, FnbReportScope } from "../api/fnbReportsApi";
 import type { StockLocationOption } from "../hooks/useStockLocations";
 
 type Props = {
@@ -17,6 +17,15 @@ type Props = {
   days: number;
   search: string;
   locations: StockLocationOption[];
+  itemId: string;
+  categoryId: string;
+  scope: FnbReportScope;
+  items: Array<{ id: string; label: string }>;
+  categories: Array<{ id: string; label: string }>;
+  onItemChange: (v: string) => void;
+  onCategoryChange: (v: string) => void;
+  onScopeChange: (v: FnbReportScope) => void;
+  onExportExcel: () => void;
   departments: DepartmentDto[];
   loadingDepartments: boolean;
   loadingLocations: boolean;
@@ -67,6 +76,9 @@ export function FnbReportFilters(props: Props) {
           <Button type="button" size="sm" onClick={props.onRun} disabled={busy || invalidDate || invalidDays} title={tx("Run report")}>
             {busy ? tx("Running...") : tx("Run")}
           </Button>
+          <Button type="button" size="sm" variant="outline" onClick={props.onExportExcel} disabled={busy || !props.hasResult} title={tx("Export Excel")}>
+            Excel
+          </Button>
           <Button type="button" size="sm" variant="outline" onClick={props.onExport} disabled={busy || !props.hasResult} title={tx("Export CSV")}>
             CSV
           </Button>
@@ -77,6 +89,23 @@ export function FnbReportFilters(props: Props) {
       </div>
 
       <div className="fnb-filter-grid">
+        {props.report.requiresCompanyScope ? (
+          <label>
+            <span>{tx("Scope")}</span>
+            <Select value="company" disabled>
+              <option value="company">{tx("All branches")}</option>
+            </Select>
+          </label>
+        ) : props.report.supportsCompanyScope !== false ? (
+          <label>
+            <span>{tx("Scope")}</span>
+            <Select value={props.scope} onChange={(e) => props.onScopeChange(e.target.value as FnbReportScope)} disabled={busy}>
+              <option value="branch">{tx("This branch")}</option>
+              <option value="company">{tx("All branches")}</option>
+            </Select>
+          </label>
+        ) : null}
+
         {props.report.supportsCostCenter ? (
           <label>
             <span>{tx("Department / cost center")}</span>
@@ -129,9 +158,33 @@ export function FnbReportFilters(props: Props) {
           </label>
         ) : null}
 
+        {props.report.supportsItem !== false ? (
+          <label>
+            <span>{tx("Item")}</span>
+            <Select value={props.itemId} onChange={(e) => props.onItemChange(e.target.value)} disabled={busy}>
+              <option value="">{tx("All items")}</option>
+              {props.items.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </Select>
+          </label>
+        ) : null}
+
+        {props.report.supportsCategory !== false ? (
+          <label>
+            <span>{tx("Category")}</span>
+            <Select value={props.categoryId} onChange={(e) => props.onCategoryChange(e.target.value)} disabled={busy}>
+              <option value="">{tx("All categories")}</option>
+              {props.categories.map((category) => (
+                <option key={category.id} value={category.id}>{category.label}</option>
+              ))}
+            </Select>
+          </label>
+        ) : null}
+
         {props.report.supportsDays ? (
           <label>
-            <span>{tx("Inactive days")}</span>
+            <span>{tx(props.report.daysLabel || "Days")}</span>
             <Input
               type="number"
               min={1}
@@ -154,7 +207,7 @@ export function FnbReportFilters(props: Props) {
         </label>
       </div>
       {invalidDate ? <p className="fnb-alert" role="alert">{tx("Enter a valid report date or a date range ending on or after the start date.")}</p> : null}
-      {invalidDays ? <p className="fnb-alert" role="alert">{tx("Inactive days must be a whole number greater than zero.")}</p> : null}
+      {invalidDays ? <p className="fnb-alert" role="alert">{tx("Days must be a whole number greater than zero.")}</p> : null}
     </div>
   );
 }

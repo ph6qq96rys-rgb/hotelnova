@@ -147,7 +147,7 @@ function itemBlockReason(item: MenuItemDto): string {
 }
 
 export default function RestaurantMenuPage({
-  restaurantName = "HOTELNOVA",
+  restaurantName = "Process360",
   menuQrSrc = "/assets/menu-qr.png",
   currency,
   onAddItem,

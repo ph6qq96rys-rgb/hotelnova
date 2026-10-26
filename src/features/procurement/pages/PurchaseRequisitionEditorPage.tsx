@@ -1,6 +1,9 @@
 import { Textarea } from "../../../components/ui/textarea";
 import { Select } from "../../../components/ui/select";
 import { Input } from "../../../components/ui/input";
+import { Checkbox } from "../../../components/ui/checkbox";
+import { StateMessage } from "../../../components/ui/Feedback";
+import { useHasPermission } from "../../../auth/usePermissions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { http } from "../../../api/http";
@@ -11,7 +14,7 @@ import { inventoryItemsApi } from "../../inventoryMaster/items/api/inventoryItem
 import type { InventoryItemDto } from "../../inventoryMaster/items/types";
 import { stockLocationsApi } from "../../inventory/stock-locations/api/stockLocationsApi";
 import type { StockLocationDto } from "../../inventory/stock-locations/types";
-import { createPurchaseRequisition, updatePurchaseRequisition, getPurchaseRequisition, submitPurchaseRequisition, listReorderSuggestions, type CreatePurchaseRequisitionPayload, type PurchaseRequisition } from "../api/procurementApi";
+import { createPurchaseRequisition, updatePurchaseRequisition, getPurchaseRequisition, submitPurchaseRequisition, listReorderSuggestions, revisePurchaseRequisition, type CreatePurchaseRequisitionPayload, type PurchaseRequisition, type PurchaseRequisitionRevisionResult } from "../api/procurementApi";
 import { procurementDocumentsApi } from "../api/procurementDocumentsApi";
 import { apiError, money, todayIso } from "../components/p2pShared";
 import RequisitionDocuments from "../components/RequisitionDocuments";
@@ -21,6 +24,9 @@ import "./procurement.css";
 const blankLine=()=>({lineType:"InventoryItem",inventoryItemId:null as string|null,itemName:"",uomId:null as string|null,uomName:"Unit",quantity:1,estimatedUnitPrice:0,specification:""});
 const blank=():CreatePurchaseRequisitionPayload=>({branchId:null,requiredStockLocationId:null,deliveryLocationId:null,priority:"Normal",purchaseCategory:"",businessJustification:"",requiredByDateUtc:todayIso(1),submit:false,lines:[blankLine()]});
 const unwrap=<T,>(data:T[]|{items?:T[]})=>Array.isArray(data)?data:data.items??[];
+/** Lines loaded from a saved requisition keep their id and procurement progress. */
+type FormLine=CreatePurchaseRequisitionPayload["lines"][number]&{id?:string;orderedQuantity?:number;receivedQuantity?:number};
+const isLocked=(l:FormLine)=>(l.orderedQuantity??0)>0||(l.receivedQuantity??0)>0;
 
 export default function PurchaseRequisitionEditorPage() {
   const {companyId,id}=useParams<{companyId:string;id:string}>(),navigate=useNavigate(),{tx}=useI18n();
@@ -31,9 +37,13 @@ export default function PurchaseRequisitionEditorPage() {
   const [files,setFiles]=useState<File[]>([]),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState("");
   const requestId=useRef(crypto.randomUUID()),saved=useRef<PurchaseRequisition|null>(null);
   const itemMap=useMemo(()=>new Map(items.map(i=>[i.id,i])),[items]);
-  const editable=!document||["Draft","Returned"].includes(document.status);
-  const patch=(change:Partial<CreatePurchaseRequisitionPayload>)=>setForm(f=>({...f,...change}));
-  const patchLine=(index:number,change:Partial<CreatePurchaseRequisitionPayload["lines"][number]>)=>setForm(f=>({...f,lines:f.lines.map((l,i)=>i===index?{...l,...change}:l)}));
+  const canManage=useHasPermission("purchasing.manage");
+  // A purchasing manager can revise a submitted, approved or ordered requisition until it is final.
+  const revising=!!document&&!["Draft","Returned"].includes(document.status)&&canManage&&document.canBeRevised!==false;
+  const editable=!document||["Draft","Returned"].includes(document.status)||revising;
+  const [reason,setReason]=useState(""),[sendForApproval,setSendForApproval]=useState(false),[review,setReview]=useState<PurchaseRequisitionRevisionResult|null>(null);
+  const patch=(change:Partial<CreatePurchaseRequisitionPayload>)=>{setReview(null);setForm(f=>({...f,...change}));};
+  const patchLine=(index:number,change:Partial<CreatePurchaseRequisitionPayload["lines"][number]>)=>{setReview(null);setForm(f=>({...f,lines:f.lines.map((l,i)=>i===index?{...l,...change}:l)}));};
   useEffect(()=>{if(!id&&!form.branchId&&scope.branchId)setForm(f=>f.branchId?f:{...f,branchId:scope.branchId});},[id,scope.branchId]);
   useEffect(()=>{
     if(!companyId)return;let active=true;setLoading(true);
@@ -44,10 +54,31 @@ export default function PurchaseRequisitionEditorPage() {
   },[companyId,id]);
   useEffect(()=>{if(!companyId)return;let active=true;stockLocationsApi.list(companyId,form.branchId).then(l=>active&&setLocations(l.filter(x=>x.isActive).map(x=>({...x,id:(x as {stockLocationId?:string}).stockLocationId??x.id})))).catch(e=>active&&setError(apiError(e,"Unable to load authorized locations.")));return()=>{active=false;};},[companyId,form.branchId]);
   async function loadReorder(){if(!companyId)return;setBusy(true);setError("");try{const rows=await listReorderSuggestions(companyId,{branchId:form.branchId,stockLocationId:form.requiredStockLocationId});if(!rows.length){setError(tx("No items require replenishment at this location."));return;}patch({lines:rows.map(r=>({lineType:"InventoryItem",inventoryItemId:r.inventoryItemId,itemName:r.itemName,uomId:r.uomId,uomName:r.uomName,quantity:r.suggestedPurchaseQty,estimatedUnitPrice:r.estimatedUnitPrice,specification:r.recommendation}))});}catch(e){setError(apiError(e,"Unable to load reorder suggestions."));}finally{setBusy(false);}}
+  function validate(){
+    if(!form.businessJustification.trim()||!form.purchaseCategory.trim()||!form.requiredByDateUtc){setError(tx("Purpose, category and required date are required."));return false;}
+    if(form.lines.some(l=>!l.itemName.trim()||l.quantity<=0||!Number.isFinite(l.quantity)||l.estimatedUnitPrice<0||!Number.isFinite(l.estimatedUnitPrice)||(l.lineType==="InventoryItem"&&(!l.inventoryItemId||!l.uomId)))){setError(tx("Complete each item, purchase unit, positive quantity and estimated price."));return false;}
+    const short=(form.lines as FormLine[]).find(l=>l.quantity<(l.orderedQuantity??0));
+    if(short){setError(`${short.itemName}: ${tx("the quantity cannot go below what is already ordered")} (${short.orderedQuantity}).`);return false;}
+    return true;
+  }
+  /** Asks the server what the revision changes and whether it goes back for approval, then saves on confirmation. */
+  async function revise(confirm:boolean){
+    if(!companyId||!document||busy||!validate())return;
+    if(!reason.trim()){setError(tx("Explain why the requisition is being revised."));return;}
+    setBusy(true);setError("");
+    try{
+      const {submit:_submit,lines,...header}=form;
+      const result=await revisePurchaseRequisition(companyId,document.id,{...header,requiredByDateUtc:`${form.requiredByDateUtc?.slice(0,10)}T00:00:00Z`,version:document.version,reason:reason.trim(),sendForApproval,preview:!confirm,
+        lines:(lines as FormLine[]).map(({id,orderedQuantity:_o,receivedQuantity:_r,...line})=>({id:id??null,line:{lineType:line.lineType,inventoryItemId:line.inventoryItemId??null,itemName:line.itemName,uomId:line.uomId??null,uomName:line.uomName,quantity:line.quantity,estimatedUnitPrice:line.estimatedUnitPrice,specification:line.specification??null,availableStockNote:line.availableStockNote??null}}))});
+      if(!confirm){setReview(result);return;}
+      navigate(`/companies/${companyId}/procurement/requisitions/${document.id}`);
+    }catch(e){setReview(null);setError(apiError(e,"Unable to revise the requisition. Your changes have been kept."));}
+    finally{setBusy(false);}
+  }
   async function save(submit:boolean){
     if(!companyId||busy||!editable)return;
-    if(!form.businessJustification.trim()||!form.purchaseCategory.trim()||!form.requiredByDateUtc){setError(tx("Purpose, category and required date are required."));return;}
-    if(form.lines.some(l=>!l.itemName.trim()||l.quantity<=0||!Number.isFinite(l.quantity)||l.estimatedUnitPrice<0||!Number.isFinite(l.estimatedUnitPrice)||(l.lineType==="InventoryItem"&&(!l.inventoryItemId||!l.uomId)))){setError(tx("Complete each item, purchase unit, positive quantity and estimated price."));return;}
+    if(revising){await revise(false);return;}
+    if(!validate())return;
     if(files.length>20||files.some(f=>f.size>5*1024*1024)){setError(tx("Use up to 20 attachments, no larger than 5 MB each."));return;}
     setBusy(true);setError("");
     try{
@@ -64,9 +95,10 @@ export default function PurchaseRequisitionEditorPage() {
   }
   if(loading)return <main className="prq-page" aria-busy="true">{tx("Loading requisition...")}</main>;
   return <main className="prq-page">
-    <header className="prq-page-header"><div><div className="prq-kicker">{tx("Procurement")}</div><h1>{document?`${tx("Edit requisition")} · ${document.requisitionNo}`:tx("New purchase requisition")}</h1><p>{tx("Capture goods, services or equipment and the destination that needs them.")}</p></div><Button variant="outline" onClick={()=>navigate(-1)} disabled={busy}>{tx("Back")}</Button></header>
+    <header className="prq-page-header"><div><div className="prq-kicker">{tx("Procurement")}</div><h1>{document?`${tx(revising?"Revise requisition":"Edit requisition")} · ${document.requisitionNo}`:tx("New purchase requisition")}</h1><p>{tx(revising?"Correct the requisition at any stage. Spending more, adding or changing items, or changing the category, priority, department or cost center sends it back for approval.":"Capture goods, services or equipment and the destination that needs them.")}</p></div><Button variant="outline" onClick={()=>navigate(-1)} disabled={busy}>{tx("Back")}</Button></header>
     {error&&<div role="alert" className="prq-alert">{tx(error)}</div>}
-    {!editable&&<p role="alert">{tx("Only drafts and changes-requested requisitions can be edited.")}</p>}
+    {!editable&&<StateMessage tone="warning">{tx(document?.canBeRevised===false?"This requisition is final and can no longer be changed.":"Only drafts and changes-requested requisitions can be edited. A purchasing manager can revise it.")}</StateMessage>}
+    {revising&&document&&<StateMessage tone="info">{`${tx("Currently")} ${tx(document.status)}. ${tx("Lines already on a purchase order keep their item and unit and cannot go below the ordered quantity.")}`}</StateMessage>}
     <fieldset disabled={busy||!editable} style={{border:0,padding:0,margin:0}}>
       <section className="prq-panel prq-form-grid">
         <label>{tx("Requester")}<Input readOnly value={document?.requestedByName??tx("Current signed-in user")}/></label>
@@ -79,24 +111,36 @@ export default function PurchaseRequisitionEditorPage() {
         <label>{tx("Cost center")}<Input value={form.costCenterCode??""} onChange={e=>patch({costCenterCode:e.target.value})}/></label>
         <label>{tx("Related reference")}<Input value={form.relatedReference??""} onChange={e=>patch({relatedReference:e.target.value})}/></label>
       </section>
-      <section className="prq-panel"><div className="prq-section-title"><h2>{tx("Requested lines")}</h2><div className="prq-actions"><Button variant="outline" onClick={()=>void loadReorder()}>{tx("Load below reorder")}</Button><Button variant="outline" onClick={()=>patch({lines:[...form.lines,blankLine()]})}>{tx("Add line")}</Button></div></div>
-        <div className="prq-lines">{form.lines.map((line,index)=>{
+      <section className="prq-panel"><div className="prq-section-title"><h2>{tx("Requested lines")}</h2><div className="prq-actions">{!revising&&<Button variant="outline" onClick={()=>void loadReorder()}>{tx("Load below reorder")}</Button>}<Button variant="outline" onClick={()=>patch({lines:[...form.lines,blankLine()]})}>{tx("Add line")}</Button></div></div>
+        <div className="prq-lines">{(form.lines as FormLine[]).map((line,index)=>{
           const item=line.inventoryItemId?itemMap.get(line.inventoryItemId):undefined;
+          const locked=isLocked(line);
           const uoms=(item?.uoms??item?.allowedUoms??[]).filter(u=>u.isActive&&u.isPurchase);
           return <section className="prq-panel prq-form-grid" key={index} aria-label={`${tx("Line")} ${index+1}`}>
-            <label>{tx("Type")}<Select value={line.lineType} onChange={e=>patchLine(index,{lineType:e.target.value,inventoryItemId:null,uomId:null,itemName:"",uomName:"Unit"})}>{["InventoryItem","NonInventoryGood","Service","Expense","FixedAsset"].map(t=><option key={t}>{t}</option>)}</Select></label>
-            <label>{tx("Item or service")}{line.lineType==="InventoryItem"?<Select value={line.inventoryItemId??""} onChange={e=>{const i=itemMap.get(e.target.value);const u=(i?.uoms??i?.allowedUoms??[]).find(x=>x.isActive&&x.isPurchase);patchLine(index,{inventoryItemId:i?.id??null,itemName:i?.name??"",uomId:u?.uomId??null,uomName:u?.code??""});}}><option value="">{tx("Select item")}</option>{items.map(i=><option key={i.id} value={i.id}>{i.sku} · {i.name}</option>)}</Select>:<Input value={line.itemName} onChange={e=>patchLine(index,{itemName:e.target.value})}/>}</label>
-            <label>{tx("Purchase unit")}{line.lineType==="InventoryItem"?<Select value={line.uomId??""} onChange={e=>patchLine(index,{uomId:e.target.value,uomName:uoms.find(u=>u.uomId===e.target.value)?.code??""})}><option value="">{tx("Select unit")}</option>{uoms.map(u=><option key={u.uomId} value={u.uomId}>{u.code}</option>)}</Select>:<Input value={line.uomName} onChange={e=>patchLine(index,{uomName:e.target.value})}/>}</label>
-            <label>{tx("Quantity")}<Input type="number" min="0.0001" step="0.0001" value={line.quantity} onChange={e=>patchLine(index,{quantity:Number(e.target.value)})}/></label>
+            {locked&&<p className="prq-span-2 prq-line-note">{`${tx("Already ordered")}: ${line.orderedQuantity??0} ${line.uomName}${line.receivedQuantity?`, ${tx("received")} ${line.receivedQuantity}`:""}`}</p>}
+            <label>{tx("Type")}<Select disabled={locked} value={line.lineType} onChange={e=>patchLine(index,{lineType:e.target.value,inventoryItemId:null,uomId:null,itemName:"",uomName:"Unit"})}>{["InventoryItem","NonInventoryGood","Service","Expense","FixedAsset"].map(t=><option key={t}>{t}</option>)}</Select></label>
+            <label>{tx("Item or service")}{line.lineType==="InventoryItem"?<Select disabled={locked} value={line.inventoryItemId??""} onChange={e=>{const i=itemMap.get(e.target.value);const u=(i?.uoms??i?.allowedUoms??[]).find(x=>x.isActive&&x.isPurchase);patchLine(index,{inventoryItemId:i?.id??null,itemName:i?.name??"",uomId:u?.uomId??null,uomName:u?.code??""});}}><option value="">{tx("Select item")}</option>{items.map(i=><option key={i.id} value={i.id}>{i.sku} · {i.name}</option>)}</Select>:<Input disabled={locked} value={line.itemName} onChange={e=>patchLine(index,{itemName:e.target.value})}/>}</label>
+            <label>{tx("Purchase unit")}{line.lineType==="InventoryItem"?<Select disabled={locked} value={line.uomId??""} onChange={e=>patchLine(index,{uomId:e.target.value,uomName:uoms.find(u=>u.uomId===e.target.value)?.code??""})}><option value="">{tx("Select unit")}</option>{uoms.map(u=><option key={u.uomId} value={u.uomId}>{u.code}</option>)}</Select>:<Input disabled={locked} value={line.uomName} onChange={e=>patchLine(index,{uomName:e.target.value})}/>}</label>
+            <label>{tx("Quantity")}<Input type="number" min={locked?line.orderedQuantity:0.0001} step="0.0001" value={line.quantity} onChange={e=>patchLine(index,{quantity:Number(e.target.value)})}/></label>
             <label>{tx("Estimated unit price")}<Input type="number" min="0" step="0.0001" value={line.estimatedUnitPrice} onChange={e=>patchLine(index,{estimatedUnitPrice:Number(e.target.value)})}/></label>
             <label>{tx("Specification")}<Input value={line.specification??""} onChange={e=>patchLine(index,{specification:e.target.value})}/></label>
-            <div>{money(line.quantity*line.estimatedUnitPrice)}</div><Button variant="outline" disabled={form.lines.length===1} onClick={()=>patch({lines:form.lines.filter((_,i)=>i!==index)})}>{tx("Remove line")}</Button>
+            <div>{money(line.quantity*line.estimatedUnitPrice)}</div><Button variant="outline" disabled={form.lines.length===1||locked} title={locked?tx("Already ordered lines cannot be removed"):undefined} onClick={()=>patch({lines:form.lines.filter((_,i)=>i!==index)})}>{tx("Remove line")}</Button>
             {companyId&&line.lineType==="InventoryItem"&&<ProcurementStockCheck companyId={companyId} branchId={form.branchId} locationId={form.requiredStockLocationId} itemId={line.inventoryItemId} uomId={line.uomId} quantity={line.quantity} requiredDate={form.requiredByDateUtc??""} requisitionId={document?.id}/>}
           </section>;
         })}</div>
       </section>
-      <section className="prq-panel"><label>{tx("Attachments (PDF, PNG or JPEG; 5 MB each)")}<Input type="file" accept=".pdf,.png,.jpg,.jpeg" multiple onChange={e=>setFiles(Array.from(e.target.files??[]))}/></label><p>{files.map(f=>f.name).join(", ")}</p></section>
-      <footer className="prq-actions"><strong>{tx("Estimated total")}: {money(form.lines.reduce((s,l)=>s+l.quantity*l.estimatedUnitPrice,0))}</strong><Button variant="outline" onClick={()=>void save(false)}>{busy?tx("Saving..."):tx("Save draft")}</Button><Button onClick={()=>void save(true)}>{tx("Save and submit")}</Button></footer>
+      {revising?<section className="prq-panel prq-revise">
+        <label>{tx("Reason for the revision")}<Textarea maxLength={1000} required value={reason} onChange={e=>{setReview(null);setReason(e.target.value);}} placeholder={tx("For example: supplier only sells by the case")}/></label>
+        <label className="prq-check"><Checkbox checked={sendForApproval} onChange={e=>{setReview(null);setSendForApproval(e.target.checked);}}/>{tx("Send it back for approval even if the changes do not require it")}</label>
+        {review&&<div className="prq-review" aria-live="polite">
+          <StateMessage tone={review.requiresReapproval?"warning":"success"}>{tx(review.requiresReapproval?"Saving sends this requisition back to the start of approval. Ordering stops until it is approved again; what is already ordered stays.":"The approval stays in place. The change is recorded on the requisition.")}</StateMessage>
+          {review.approvalReasons.length>0&&<><h3>{tx("Why it needs approval")}</h3><ul>{review.approvalReasons.map(r=><li key={r}>{r}</li>)}</ul></>}
+          <h3>{tx("Changes")}</h3>{review.changes.length?<ul>{review.changes.map(c=><li key={c}>{c}</li>)}</ul>:<p>{tx("No changes to the content.")}</p>}
+          {review.warnings.map(w=><StateMessage key={w} tone="warning">{w}</StateMessage>)}
+        </div>}
+      </section>:<section className="prq-panel"><label>{tx("Attachments (PDF, PNG or JPEG; 5 MB each)")}<Input type="file" accept=".pdf,.png,.jpg,.jpeg" multiple onChange={e=>setFiles(Array.from(e.target.files??[]))}/></label><p>{files.map(f=>f.name).join(", ")}</p></section>}
+      <footer className="prq-actions"><strong>{tx("Estimated total")}: {money(form.lines.reduce((s,l)=>s+l.quantity*l.estimatedUnitPrice,0))}</strong>{revising?(review?<><Button variant="outline" onClick={()=>setReview(null)}>{tx("Keep editing")}</Button><Button onClick={()=>void revise(true)}>{busy?tx("Saving..."):tx(review.requiresReapproval?"Save and send for approval":"Save revision")}</Button></>:<Button onClick={()=>void revise(false)}>{busy?tx("Checking..."):tx("Review changes")}</Button>)
+        :<><Button variant="outline" onClick={()=>void save(false)}>{busy?tx("Saving..."):tx("Save draft")}</Button><Button onClick={()=>void save(true)}>{tx("Save and submit")}</Button></>}</footer>
     </fieldset>
     {document&&companyId&&<RequisitionDocuments companyId={companyId} id={document.id} editable={false}/>}
   </main>;

@@ -1,5 +1,7 @@
 // src/features/eventmanagment/sales/CustomersScreen.tsx
 
+import { Button } from "../../../components/ui/button";
+import { Checkbox } from "../../../components/ui/checkbox";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import {
@@ -144,13 +146,13 @@ export function CustomersScreen({
       <div className="cat-stack">
         <DetailHeader
           actions={
-            <button
-              className="cat-btn"
+            <Button variant="outline"
+              
               onClick={() => setEditing({ mode: "edit", form: toForm(selected) })}
               type="button"
             >
               Edit customer
-            </button>
+            </Button>
           }
           eyebrow="Customer"
           meta={<Pill value={selected.isActive ? "Active" : "Inactive"} />}
@@ -193,18 +195,17 @@ export function CustomersScreen({
       <Toolbar>
         <SearchInput onChange={setSearch} placeholder="Search customers" value={search} />
         <label className="cat-check">
-          <input
+          <Checkbox
             checked={includeInactive}
             onChange={(event) => setIncludeInactive(event.target.checked)}
-            type="checkbox"
           />
           Include inactive
         </label>
-        <button className="cat-btn" onClick={() => void load()} type="button">
+        <Button variant="outline" onClick={() => void load()} type="button">
           <RefreshCw className={loading ? "cat-spin" : ""} size={15} /> Refresh
-        </button>
-        <button
-          className="cat-btn cat-btn--primary"
+        </Button>
+        <Button variant="default"
+          
           onClick={() => {
             mutation.setError(null);
             setEditing({ mode: "create", form: emptyForm });
@@ -212,7 +213,7 @@ export function CustomersScreen({
           type="button"
         >
           <Plus size={15} /> New customer
-        </button>
+        </Button>
       </Toolbar>
 
       {loadError ? <ErrorBanner message={loadError} /> : null}
@@ -348,10 +349,9 @@ function CustomerForm({
       <TextAreaField label="Notes" onChange={(value) => set("notes", value)} value={form.notes} />
       {mode === "edit" ? (
         <label className="cat-check">
-          <input
+          <Checkbox
             checked={form.isActive}
             onChange={(event) => set("isActive", event.target.checked)}
-            type="checkbox"
           />
           Customer is active
         </label>

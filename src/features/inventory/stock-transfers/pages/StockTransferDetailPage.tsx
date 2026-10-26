@@ -1,654 +1,341 @@
-// src/features/inventory/stockTransfers/pages/StockTransferDetailPage.tsx
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
 import { useAppScope } from "../../../../app/useAppScope";
+import { Button } from "../../../../components/ui/button";
+import { Input } from "../../../../components/ui/input";
+import { Textarea } from "../../../../components/ui/textarea";
+import { StateMessage } from "../../../../components/ui/Feedback";
+import { Card, DocHeader, Info, InfoGrid, Kpi, KpiRow, StatusPill } from "../../../../shared/ui/DocUI";
+import { tableStyle, tdStyle, thStyle } from "../../../../shared/inventoryStyles";
 import { stockTransfersApi } from "../api/stockTransfersApi";
 import { buildStockTransferPaths } from "../routing/stockTransferRoutes";
-import { getApiError } from "../utils/apiUtils";
-import { normalizeStockTransferStatus, canEditTransfer, canSubmitTransfer, canApproveTransfer, canPostTransfer, canCancelTransfer } from "../utils/stockTransferStatus";
+import { STOCK_TRANSFER_TYPE, type StockTransferAction, type StockTransferDocumentDto } from "../types";
+import { fmtDateTime, getApiError, money } from "../utils/apiUtils";
 import {
-  STOCK_TRANSFER_STATUS,
-  type StockTransferDetailDto,
-  type StockTransferStatus,
-} from "../types";
+  normalizeTransferType,
+  qty,
+  transferStatusLabel,
+  transferStatusTone,
+  routeParty,
+  transferTypeLabel,
+} from "../utils/stockTransferLabels";
 
-//  Helpers 
+type Pending =
+  | { kind: "reason"; action: "reject" | "cancel" | "reverse" | "recall" }
+  | { kind: "confirm"; action: "post" | "dispatch" | "approve" | "submit" }
+  | { kind: "receive" }
+  | null;
 
-function fmt(iso?: string | null) {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "-" : d.toLocaleDateString("en-US", {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
-}
-
-function money(n?: number | null) {
-  if (n == null || !isFinite(n)) return "-";
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function apiErr(e: unknown): string {
-  return getApiError(e);
-}
-
-//  Status normalisation 
-//
-// FIX: original used `data?.status as StockTransferStatus` - a direct cast
-// that silently produces the wrong value when the API returns lowercase
-// ("submitted") or numeric status codes. canApprove / canReject were always
-// false for Submitted transfers, so the buttons never rendered.
-
-const STATUS_VALUES = new Set<StockTransferStatus>(
-  Object.values(STOCK_TRANSFER_STATUS)
-);
-
-function normalizeStatus(raw: unknown): StockTransferStatus {
-  if (STATUS_VALUES.has(raw as StockTransferStatus))
-    return raw as StockTransferStatus;
-
-  const v = String(raw ?? "").trim().toLowerCase().replace(/[\s_]/g, "");
-  switch (v) {
-    case "0":  case "draft":             return STOCK_TRANSFER_STATUS.Draft;
-    case "1":  case "submitted":         return STOCK_TRANSFER_STATUS.Submitted;
-    case "2":  case "approved":          return STOCK_TRANSFER_STATUS.Approved;
-    case "3":  case "posted":            return STOCK_TRANSFER_STATUS.Posted;
-    case "4":  case "rejected":          return STOCK_TRANSFER_STATUS.Rejected;
-    case "5":  case "reversed":          return STOCK_TRANSFER_STATUS.Reversed;
-    case "6":  case "cancelled":
-               case "canceled":          return STOCK_TRANSFER_STATUS.Cancelled;
-    case "7":  case "failed":            return STOCK_TRANSFER_STATUS.Failed;
-    case "8":  case "issued":            return STOCK_TRANSFER_STATUS.Issued;
-    case "9":  case "changesrequested":  return STOCK_TRANSFER_STATUS.ChangesRequested;
-    default:                             return STOCK_TRANSFER_STATUS.Draft;
-  }
-}
-
-//  Status config 
-
-const STATUS_CONFIG: Record<StockTransferStatus, {
-  label: string; bg: string; color: string; icon: string;
-}> = {
-  Draft:     { label: "Draft",     bg: "#f1f5f9", color: "#475569", icon: ""  },
-  Submitted: { label: "Submitted", bg: "#fef3c7", color: "#92400e", icon: "" },
-  Approved:  { label: "Approved",  bg: "#dbeafe", color: "#1e40af", icon: ""  },
-  Rejected:  { label: "Rejected",  bg: "#fee2e2", color: "#991b1b", icon: ""  },
-  Posted:    { label: "Posted",    bg: "#d1fae5", color: "#065f46", icon: ""  },
-  Reversed:  { label: "Reversed",  bg: "#ede9fe", color: "#5b21b6", icon: ""  },
-  Cancelled: { label: "Cancelled", bg: "#f3f4f6", color: "#374151", icon: ""  },
-  Failed:    { label: "Failed",    bg: "#fee2e2", color: "#991b1b", icon: ""  },
-  Issued:    { label: "Issued",    bg: "#dbeafe", color: "#1e40af", icon: ""  },
-  ChangesRequested: { label: "Changes Requested", bg: "#fef3c7", color: "#92400e", icon: ""  },
+const reasonCopy: Record<"reject" | "cancel" | "reverse" | "recall", { title: string; help: string; button: string }> = {
+  reject: { title: "Return to preparer", help: "Explain what must change. The preparer can edit and resubmit.", button: "Reject" },
+  cancel: { title: "Cancel transfer", help: "No stock has moved. The transfer is closed and cannot be reopened.", button: "Cancel transfer" },
+  reverse: { title: "Reverse posted transfer", help: "Stock goes back to the sending location at the same cost. Fails if the received stock was already used.", button: "Reverse" },
+  recall: { title: "Recall from transit", help: "The stock returns to the sending location. Only possible before the receiving branch receives it.", button: "Recall" },
 };
 
-//  Sub-components 
-
-function StatusBadge({ status }: { status: StockTransferStatus }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.Draft;
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
-      padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600,
-      background: cfg.bg, color: cfg.color,
-    }}>
-      <span>{cfg.icon}</span> {cfg.label}
-    </span>
-  );
-}
-
-function WorkflowStep({ label, done, current, icon }: {
-  label: string; done: boolean; current: boolean; icon: string;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-      <div style={{
-        width: 36, height: 36, borderRadius: "50%",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 14, fontWeight: 700,
-        background: done ? "#059669" : current ? "#3b82f6" : "#e2e8f0",
-        color: done || current ? "#fff" : "#94a3b8",
-        border: current ? "2px solid #93c5fd" : "2px solid transparent",
-        boxShadow: current ? "0 0 0 3px #eff6ff" : "none",
-        transition: "all .2s",
-      }}>
-        {done ? "" : icon}
-      </div>
-      <span style={{
-        fontSize: 11, marginTop: 6,
-        fontWeight: current ? 700 : 400,
-        color: done ? "#059669" : current ? "#3b82f6" : "#94a3b8",
-      }}>
-        {label}
-      </span>
-    </div>
-  );
-}
-
-function Field({ label, value, mono }: {
-  label: string; value: React.ReactNode; mono?: boolean;
-}) {
-  return (
-    <div>
-      <div style={{
-        fontSize: 11, fontWeight: 600, color: "#94a3b8",
-        textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4,
-      }}>
-        {label}
-      </div>
-      <div style={{
-        fontSize: 13, fontWeight: 500, color: "#0f172a",
-        fontFamily: mono ? "monospace" : undefined,
-      }}>
-        {value || "-"}
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{
-      background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0",
-      overflow: "hidden", marginBottom: 16,
-    }}>
-      <div style={{ padding: "14px 20px", borderBottom: "1px solid #f1f5f9" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{title}</div>
-      </div>
-      <div style={{ padding: 20 }}>{children}</div>
-    </div>
-  );
-}
-
-//  RejectModal 
-//
-// FIX: original used browser prompt() - a blocking, unstyled native dialog
-// that can't be customised and is disabled in some iframe / CSP contexts.
-// Replaced with an inline modal consistent with the rest of the codebase.
-
-function RejectModal({
-  working, onConfirm, onCancel,
-}: {
-  working: boolean;
-  onConfirm: (reason: string) => void;
-  onCancel: () => void;
-}) {
-  const [text, setText] = useState("");
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 100,
-      background: "rgba(15,23,42,.45)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }}>
-      <div style={{
-        background: "#fff", borderRadius: 14, padding: 28, width: 440,
-        boxShadow: "0 20px 60px rgba(15,23,42,.2)",
-        border: "1px solid #e2e8f0",
-      }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
-          Reject transfer
-        </div>
-        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>
-          Provide a reason - this will be visible to the submitter.
-        </div>
-        <textarea
-          style={{
-            width: "100%", minHeight: 88, fontSize: 13, padding: "8px 12px",
-            borderRadius: 8, border: "1px solid #e2e8f0", resize: "vertical",
-            background: "#f8fafc", color: "#0f172a", fontFamily: "inherit",
-            boxSizing: "border-box", marginBottom: 16,
-            outline: "none",
-          }}
-          value={text}
-          onChange={e => setText(e.target.value)}
-          placeholder="Rejection reason (required)"
-          autoFocus
-        />
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button
-            disabled={working}
-            onClick={onCancel}
-            style={{
-              padding: "9px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600,
-              border: "1px solid #e2e8f0", background: "#f8fafc",
-              color: "#475569", cursor: "pointer",
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            disabled={working || !text.trim()}
-            onClick={() => onConfirm(text.trim())}
-            style={{
-              padding: "9px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600,
-              border: "1px solid #dc2626", background: "#dc2626",
-              color: "#fff", cursor: working || !text.trim() ? "not-allowed" : "pointer",
-              opacity: working || !text.trim() ? 0.6 : 1,
-            }}
-          >
-            {working ? "Rejecting..." : "Confirm reject"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-//  ActionBtn 
-
-const BTN_STYLES: Record<string, React.CSSProperties> = {
-  primary:   { background: "#2563eb", color: "#fff",     border: "1px solid #2563eb"  },
-  success:   { background: "#059669", color: "#fff",     border: "1px solid #059669"  },
-  danger:    { background: "#dc2626", color: "#fff",     border: "1px solid #dc2626"  },
-  secondary: { background: "#f1f5f9", color: "#334155",  border: "1px solid #cbd5e1"  },
-  ghost:     { background: "transparent", color: "#64748b", border: "1px solid #e2e8f0" },
+const confirmCopy: Record<"post" | "dispatch" | "approve" | "submit", { title: string; help: string; button: string }> = {
+  submit: { title: "Submit for approval", help: "The transfer is locked until it is approved or returned.", button: "Submit" },
+  approve: { title: "Approve transfer", help: "Stock is checked again when it is posted or dispatched.", button: "Approve" },
+  post: { title: "Post transfer", help: "Stock moves now from the sending to the receiving location at FIFO cost.", button: "Post" },
+  dispatch: { title: "Dispatch to the receiving branch", help: "Stock leaves the sending location and sits in transit until the receiving branch receives it.", button: "Dispatch" },
 };
-
-function ActionBtn({ label, busy, name, variant, onClick }: {
-  label: string; busy: string | null; name: string;
-  variant: keyof typeof BTN_STYLES; onClick: () => void;
-}) {
-  const isMe = busy === name;
-  return (
-    <button
-      disabled={!!busy}
-      onClick={onClick}
-      style={{
-        padding: "9px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600,
-        cursor: busy ? "not-allowed" : "pointer",
-        opacity: busy && !isMe ? 0.5 : 1,
-        transition: "opacity .15s",
-        ...BTN_STYLES[variant],
-      }}
-    >
-      {isMe ? "..." : label}
-    </button>
-  );
-}
-
-//  Page 
 
 export default function StockTransferDetailPage() {
-  const nav = useNavigate();
-  const { id } = useParams<{ id: string }>();
-  const { companyId, branchId } = useAppScope();
+  const { id = "" } = useParams();
+  const navigate = useNavigate();
+  const [search] = useSearchParams();
+  const { companyId, branchId: selectedBranchId } = useAppScope();
+  const branchId = search.get("branchId") || selectedBranchId;
   const paths = useMemo(() => buildStockTransferPaths(companyId), [companyId]);
 
-  const [data,         setData]         = useState<StockTransferDetailDto | null>(null);
-  const [loading,      setLoading]      = useState(false);
-  const [busy,         setBusy]         = useState<string | null>(null);
-  const [error,        setError]        = useState<string | null>(null);
-  const [success,      setSuccess]      = useState<string | null>(null);
-  const [showReject,   setShowReject]   = useState(false);
-
-  // Ref guard - prevents double-submit before React re-renders busy state.
-  const inFlight = useRef(false);
+  const [doc, setDoc] = useState<StockTransferDocumentDto | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<Pending>(null);
+  const [reason, setReason] = useState("");
+  const [received, setReceived] = useState<Record<string, string>>({});
+  const [receiptNotes, setReceiptNotes] = useState("");
 
   const load = useCallback(async () => {
-    if (!id || !companyId) return;
-    setLoading(true); setError(null); setSuccess(null);
+    if (!companyId || !branchId || !id) return;
     try {
-      setData(await stockTransfersApi.get(companyId, branchId, id));
+      setLoadError(null);
+      const data = await stockTransfersApi.get(companyId, branchId, id);
+      setDoc(data);
+      setReceived(Object.fromEntries(data.items.map((line) => [line.id, String(line.quantity)])));
     } catch (e) {
-      setError(apiErr(e));
-    } finally {
-      setLoading(false);
+      setLoadError(getApiError(e));
     }
-  }, [id, companyId, branchId]);
+  }, [companyId, branchId, id]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  // FIX: was recreated on every render without useCallback - passed into
-  // multiple button onClick handlers, causing unnecessary re-renders.
-  const act = useCallback(async (
-    name: string,
-    fn: () => Promise<unknown>,
-    successMsg: string
-  ) => {
-    if (!id || inFlight.current) return;
-    inFlight.current = true;
-    setBusy(name); setError(null); setSuccess(null);
+  if (!companyId || !branchId || !paths) return <div style={{ padding: 16 }}>Select a company and branch first.</div>;
+  if (loadError) return <div style={{ padding: 16 }}><StateMessage tone="error">{loadError}</StateMessage></div>;
+  if (!doc) return <div style={{ padding: 16 }}><StateMessage tone="loading">Loading transfer…</StateMessage></div>;
+
+  const type = normalizeTransferType(doc.transferType);
+  const interBranch = type === STOCK_TRANSFER_TYPE.InterBranch;
+  const can = (action: StockTransferAction) => doc.allowedActions.includes(action);
+  const lines = [...doc.items].sort((a, b) => a.lineNo - b.lineNo);
+  const totalQty = lines.reduce((s, l) => s + l.quantity, 0);
+  const totalReceived = lines.reduce((s, l) => s + (l.receivedQty ?? 0), 0);
+  const hasShortage = lines.some((l) => l.shortQty > 0);
+  const showReceived = interBranch && (doc.postedAtUtc || pending?.kind === "receive");
+  const showAvailable = !doc.dispatchedAtUtc && !doc.postedAtUtc && lines.some((l) => l.availableBaseQty != null);
+
+  const run = async (work: () => Promise<void>, done: string) => {
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
     try {
-      await fn();
-      setSuccess(successMsg);
+      await work();
+      setPending(null);
+      setReason("");
+      setNotice(done);
       await load();
     } catch (e) {
-      setError(apiErr(e));
+      setActionError(getApiError(e));
     } finally {
-      inFlight.current = false;
-      setBusy(null);
+      setBusy(false);
     }
-  }, [id, load]);
+  };
 
-  const handleRejectConfirm = useCallback((reason: string) => {
-    void act(
-      "reject",
-      () => stockTransfersApi.reject(companyId, branchId, id!, reason),
-      "Transfer rejected."
-    ).then(() => setShowReject(false));
-  }, [act, companyId, branchId, id]);
+  const doConfirm = (action: "post" | "dispatch" | "approve" | "submit") => {
+    const call = {
+      submit: () => stockTransfersApi.submit(companyId, branchId, id),
+      approve: () => stockTransfersApi.approve(companyId, branchId, id),
+      post: () => stockTransfersApi.post(companyId, branchId, id),
+      dispatch: () => stockTransfersApi.post(companyId, branchId, id),
+    }[action];
+    const done = { submit: "Submitted for approval.", approve: "Approved.", post: "Posted. Stock has moved.", dispatch: "Dispatched. Stock is in transit." }[action];
+    void run(call, done);
+  };
 
-  // FIX: normalizeStatus applied so comparisons work regardless of whether
-  // the API returns "Submitted", "submitted", or a numeric code.
-  const status     = normalizeStockTransferStatus(data?.status);
-  const canEdit    = canEditTransfer(status);
-  const canSubmit  = canSubmitTransfer(status);
-  const canApprove = canApproveTransfer(status);
-  const canPost    = canPostTransfer(status);
-  const canCancel  = canCancelTransfer(status);
+  const doReason = (action: "reject" | "cancel" | "reverse" | "recall") => {
+    if (!reason.trim()) {
+      setActionError("A reason is required.");
+      return;
+    }
+    const call = {
+      reject: () => stockTransfersApi.reject(companyId, branchId, id, reason.trim()),
+      cancel: () => stockTransfersApi.cancel(companyId, branchId, id, reason.trim()),
+      reverse: () => stockTransfersApi.reverse(companyId, branchId, id, reason.trim()),
+      recall: () => stockTransfersApi.reverse(companyId, branchId, id, reason.trim()),
+    }[action];
+    const done = { reject: "Returned to the preparer.", cancel: "Cancelled.", reverse: "Reversed. Stock is back at the sending location.", recall: "Recalled. Stock is back at the sending location." }[action];
+    void run(call, done);
+  };
 
-  const stepIndex  = ["Draft","Submitted","Approved","Posted"].indexOf(status);
-  const totalQty   = data?.items.reduce((s, l) => s + (l.quantity  ?? 0), 0) ?? 0;
-  const totalValue = data?.items.reduce((s, l) => s + (l.lineValue ?? 0), 0) ?? 0;
+  const doReceive = () => {
+    const parsed = lines.map((line) => ({ lineId: line.id, receivedQty: Number(received[line.id]) }));
+    const bad = parsed.find((p, i) => !Number.isFinite(p.receivedQty) || p.receivedQty < 0 || p.receivedQty > lines[i].quantity);
+    if (bad) {
+      setActionError("Each received quantity must be between 0 and the dispatched quantity.");
+      return;
+    }
+    if (parsed.every((p) => p.receivedQty === 0)) {
+      setActionError("Nothing received. Ask the sending branch to recall the transfer instead.");
+      return;
+    }
+    const short = parsed.some((p, i) => p.receivedQty < lines[i].quantity);
+    if (short && !receiptNotes.trim()) {
+      setActionError("Explain the shortage in the receipt notes.");
+      return;
+    }
+    void run(
+      () => stockTransfersApi.receive(companyId, branchId, id, { notes: receiptNotes.trim() || null, lines: parsed }),
+      short ? "Received with a shortage. The missing stock stays in transit for follow-up." : "Received in full."
+    );
+  };
+
+  const actionButtons = (
+    <>
+      {can("edit") ? <Button variant="outline" disabled={busy} onClick={() => navigate(branchId !== selectedBranchId ? `${paths.edit(id)}?branchId=${encodeURIComponent(branchId)}` : paths.edit(id))}>Edit</Button> : null}
+      {can("submit") ? <Button disabled={busy} onClick={() => setPending({ kind: "confirm", action: "submit" })}>Submit</Button> : null}
+      {can("approve") ? <Button disabled={busy} onClick={() => setPending({ kind: "confirm", action: "approve" })}>Approve</Button> : null}
+      {can("post") ? <Button disabled={busy} onClick={() => setPending({ kind: "confirm", action: "post" })}>Post</Button> : null}
+      {can("dispatch") ? <Button disabled={busy} onClick={() => setPending({ kind: "confirm", action: "dispatch" })}>Dispatch</Button> : null}
+      {can("receive") ? <Button disabled={busy} onClick={() => setPending({ kind: "receive" })}>Receive</Button> : null}
+      {can("reject") ? <Button variant="outline" disabled={busy} onClick={() => setPending({ kind: "reason", action: "reject" })}>Reject</Button> : null}
+      {can("recall") ? <Button variant="outline" disabled={busy} onClick={() => setPending({ kind: "reason", action: "recall" })}>Recall</Button> : null}
+      {can("reverse") ? <Button variant="outline" disabled={busy} onClick={() => setPending({ kind: "reason", action: "reverse" })}>Reverse</Button> : null}
+      {can("cancel") ? <Button variant="destructive" disabled={busy} onClick={() => setPending({ kind: "reason", action: "cancel" })}>Cancel</Button> : null}
+    </>
+  );
+
+  const fromParty = routeParty(doc.fromLocationName, doc.fromBranchName);
+  const toParty = routeParty(doc.toLocationName, doc.toBranchName);
 
   return (
-    <div style={{ padding: "20px 24px", maxWidth: 1100, margin: "0 auto" }}>
-
-      {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "flex-start",
-        justifyContent: "space-between", gap: 16, marginBottom: 20,
-      }}>
-        <div>
-          <div style={{
-            fontSize: 11, fontWeight: 700, textTransform: "uppercase",
-            letterSpacing: "0.08em", color: "#94a3b8", marginBottom: 6,
-          }}>
-            Inventory - Stock Transfers
+    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto", display: "grid", gap: 16 }}>
+      <DocHeader
+        title={
+          <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {doc.transferNumber}
+            <StatusPill text={transferStatusLabel(doc.status, type)} tone={transferStatusTone(doc.status)} />
+            {doc.direction === "incoming" ? <StatusPill text="Incoming" tone="bg-indigo-50 text-indigo-700" /> : null}
+          </span>
+        }
+        subtitle={`${transferTypeLabel(type)} · ${fromParty} → ${toParty}`}
+        right={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button variant="ghost" onClick={() => navigate(paths.list)}>Back to list</Button>
+            {actionButtons}
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
-            {loading && !data ? "Loading..." : (data?.transferNumber ?? "Stock Transfer")}
+        }
+      />
+
+      {notice ? <StateMessage tone="success">{notice}</StateMessage> : null}
+      {actionError ? <StateMessage tone="error">{actionError}</StateMessage> : null}
+      {doc.rejectionReason && doc.allowedActions.includes("edit") ? <StateMessage tone="warning">Returned: {doc.rejectionReason}</StateMessage> : null}
+      {hasShortage ? (
+        <StateMessage tone="warning">
+          Short received: {qty(totalQty - totalReceived)} units worth {money(doc.shortValue)} remain in {doc.transitLocationName ?? "transit"} at the sending branch. Investigate and adjust the in-transit stock.
+        </StateMessage>
+      ) : null}
+      {doc.status && String(doc.status).toLowerCase() === "issued" && doc.direction === "outgoing" ? (
+        <StateMessage tone="info">In transit since {fmtDateTime(doc.dispatchedAtUtc)}. Waiting for {doc.toBranchName ?? "the receiving branch"} to receive it.</StateMessage>
+      ) : null}
+
+      {pending?.kind === "confirm" ? (
+        <Card title={confirmCopy[pending.action].title} subtitle={confirmCopy[pending.action].help}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button disabled={busy} onClick={() => doConfirm(pending.action)}>{busy ? "Working…" : confirmCopy[pending.action].button}</Button>
+            <Button variant="outline" disabled={busy} onClick={() => setPending(null)}>Back</Button>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-            {data && <StatusBadge status={status} />}
-            {canEdit && (
-              <button
-                onClick={() => paths && nav(paths.edit(id!))}
-                style={{
-                  fontSize: 12, padding: "4px 12px", borderRadius: 8,
-                  border: "1px solid #e2e8f0", background: "#f8fafc",
-                  cursor: "pointer", color: "#475569", fontWeight: 600,
-                }}
-              >
-                 Edit
-              </button>
-            )}
+        </Card>
+      ) : null}
+
+      {pending?.kind === "reason" ? (
+        <Card title={reasonCopy[pending.action].title} subtitle={reasonCopy[pending.action].help}>
+          <label className="ui-field-help" htmlFor="st-reason">Reason *</label>
+          <Textarea id="st-reason" rows={3} maxLength={500} value={reason} disabled={busy} onChange={(e) => setReason(e.target.value)} />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <Button variant={pending.action === "cancel" ? "destructive" : "default"} disabled={busy} onClick={() => doReason(pending.action)}>
+              {busy ? "Working…" : reasonCopy[pending.action].button}
+            </Button>
+            <Button variant="outline" disabled={busy} onClick={() => setPending(null)}>Back</Button>
           </div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={load} disabled={loading}
-            style={{
-              padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0",
-              background: "#f8fafc", cursor: "pointer", fontSize: 13, color: "#475569",
-            }}>
-            {loading ? "..." : " Refresh"}
-          </button>
-          <button onClick={() => paths && nav(paths.list)}
-            style={{
-              padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0",
-              background: "#f8fafc", cursor: "pointer", fontSize: 13, color: "#475569",
-            }}>
-            Back
-          </button>
-        </div>
-      </div>
+        </Card>
+      ) : null}
 
-      {/* Alerts */}
-      {error && (
-        <div style={{
-          padding: "12px 16px", borderRadius: 10, background: "#fef2f2",
-          border: "1px solid #fecaca", color: "#991b1b", fontSize: 13,
-          marginBottom: 16, display: "flex", gap: 10,
-        }}>
-          <span></span><div>{error}</div>
+      <KpiRow>
+        <Kpi label="Lines" value={lines.length} />
+        <Kpi label="Quantity" value={qty(totalQty)} />
+        {interBranch && doc.postedAtUtc ? <Kpi label="Received" value={qty(totalReceived)} /> : null}
+        <Kpi label="Value at cost" value={doc.totalValue != null ? money(doc.totalValue) : "On posting"} />
+        <Kpi label="Requested" value={fmtDateTime(doc.transferDateUtc)} />
+      </KpiRow>
+
+      <Card title="Route">
+        <InfoGrid>
+          <Info label="From location" value={doc.fromLocationName} />
+          <Info label="From branch" value={doc.fromBranchName} />
+          {doc.fromDepartmentName ? <Info label="From department" value={doc.fromDepartmentName} /> : null}
+          {interBranch ? <Info label="In transit at" value={doc.transitLocationName ?? "Assigned on dispatch"} /> : null}
+          <Info label="To location" value={doc.toLocationName} />
+          <Info label="To branch" value={doc.toBranchName} />
+          {doc.toDepartmentName ? <Info label="To department" value={doc.toDepartmentName} /> : null}
+          <Info label="Notes" value={doc.reference} />
+        </InfoGrid>
+      </Card>
+
+      <Card
+        title={pending?.kind === "receive" ? "Count what arrived" : "Lines"}
+        subtitle={pending?.kind === "receive" ? "Enter the quantity actually received for each line. A shortfall stays in transit at the sending branch." : undefined}
+      >
+        <div style={{ overflowX: "auto" }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>#</th>
+                <th style={thStyle}>Item</th>
+                <th style={thStyle}>Unit</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>{interBranch ? "Dispatched" : "Quantity"}</th>
+                {showReceived ? <th style={{ ...thStyle, textAlign: "right" }}>Received</th> : null}
+                {showReceived && doc.postedAtUtc ? <th style={{ ...thStyle, textAlign: "right" }}>Short</th> : null}
+                {showAvailable ? <th style={{ ...thStyle, textAlign: "right" }}>Available at source</th> : null}
+                <th style={{ ...thStyle, textAlign: "right" }}>Unit cost</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Value</th>
+                <th style={thStyle}>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line) => (
+                <tr key={line.id}>
+                  <td style={tdStyle}>{line.lineNo}</td>
+                  <td style={tdStyle}>
+                    <div style={{ fontWeight: 600 }}>{line.itemName ?? line.itemId}</div>
+                    {line.itemCode ? <div className="ui-field-help">{line.itemCode}</div> : null}
+                  </td>
+                  <td style={tdStyle}>{line.uomCode ?? line.uomName ?? "-"}</td>
+                  <td style={{ ...tdStyle, textAlign: "right" }}>{qty(line.quantity)}</td>
+                  {showReceived ? (
+                    <td style={{ ...tdStyle, textAlign: "right", width: 130 }}>
+                      {pending?.kind === "receive" ? (
+                        <Input
+                          aria-label={`Received quantity for line ${line.lineNo}`}
+                          type="number"
+                          min={0}
+                          max={line.quantity}
+                          step="any"
+                          inputMode="decimal"
+                          style={{ textAlign: "right" }}
+                          value={received[line.id] ?? ""}
+                          disabled={busy}
+                          onChange={(e) => setReceived((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                        />
+                      ) : (
+                        qty(line.receivedQty)
+                      )}
+                    </td>
+                  ) : null}
+                  {showReceived && doc.postedAtUtc ? <td style={{ ...tdStyle, textAlign: "right" }}>{line.shortQty > 0 ? qty(line.shortQty) : "-"}</td> : null}
+                  {showAvailable ? (
+                    <td style={{ ...tdStyle, textAlign: "right" }}>
+                      {line.availableBaseQty != null ? `${qty(line.availableBaseQty)} ${line.baseUomCode ?? ""}` : "-"}
+                    </td>
+                  ) : null}
+                  <td style={{ ...tdStyle, textAlign: "right" }}>{line.avgUnitCost != null ? money(line.avgUnitCost) : "-"}</td>
+                  <td style={{ ...tdStyle, textAlign: "right" }}>{line.lineValue != null ? money(line.lineValue) : "-"}</td>
+                  <td style={tdStyle}>{line.notes ?? ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
-      {success && (
-        <div style={{
-          padding: "12px 16px", borderRadius: 10, background: "#f0fdf4",
-          border: "1px solid #bbf7d0", color: "#166534", fontSize: 13,
-          marginBottom: 16, display: "flex", gap: 10,
-        }}>
-          <span></span><div>{success}</div>
-        </div>
-      )}
-      {status === STOCK_TRANSFER_STATUS.Rejected && data?.rejectionReason && (
-        <div style={{
-          padding: "14px 16px", borderRadius: 10, background: "#fef2f2",
-          border: "1px solid #fecaca", color: "#991b1b", fontSize: 13, marginBottom: 16,
-        }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Rejection reason</div>
-          <div>{data.rejectionReason}</div>
-        </div>
-      )}
 
-      {/* Workflow strip */}
-      {status !== STOCK_TRANSFER_STATUS.Cancelled &&
-       status !== STOCK_TRANSFER_STATUS.Reversed && (
-        <div style={{
-          background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0",
-          padding: "20px 24px", marginBottom: 16,
-        }}>
-          <div style={{
-            fontSize: 11, fontWeight: 700, color: "#94a3b8",
-            textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16,
-          }}>
-            Workflow
-          </div>
-          <div style={{ display: "flex", alignItems: "flex-start", position: "relative" }}>
-            <div style={{
-              position: "absolute", top: 17, left: "10%", right: "10%",
-              height: 2, background: "#e2e8f0", zIndex: 0,
-            }} />
-            <div style={{
-              position: "absolute", top: 17, left: "10%",
-              width: `${Math.max(0, (stepIndex / 3) * 80)}%`,
-              height: 2, background: "#059669", zIndex: 0, transition: "width .4s",
-            }} />
-            {([
-              { label: "Draft",     icon: ""  },
-              { label: "Submitted", icon: "" },
-              { label: "Approved",  icon: ""  },
-              { label: "Posted",    icon: ""  },
-            ] as const).map((s, i) => (
-              <WorkflowStep
-                key={s.label}
-                label={s.label}
-                icon={s.icon}
-                done={i < stepIndex}
-                current={i === stepIndex}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* KPI strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
-        {[
-          { label: "Lines",       value: data?.items.length ?? "-"                            },
-          { label: "Total Qty",   value: totalQty.toLocaleString()                            },
-          { label: "Total Value", value: totalValue > 0 ? money(totalValue) : "-"            },
-          { label: "From to To",   value: data ? `${data.fromLocationName} to ${data.toLocationName}` : "-" },
-        ].map(k => (
-          <div key={k.label} style={{
-            background: "#fff", borderRadius: 12,
-            border: "1px solid #e2e8f0", padding: "14px 16px",
-          }}>
-            <div style={{
-              fontSize: 11, fontWeight: 700, color: "#94a3b8",
-              textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6,
-            }}>
-              {k.label}
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a" }}>{k.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {data && (
-        <>
-          <Section title="Transfer Details">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20, marginBottom: 20 }}>
-              <Field label="Transfer No"   value={data.transferNumber} mono />
-              <Field label="Transfer Date" value={fmt(data.transferDateUtc)} />
-              <Field label="Reference"     value={data.reference} />
-              <Field label="Status"        value={<StatusBadge status={status} />} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20 }}>
-              <Field label="From Location" value={data.fromLocationName} />
-              <Field label="To Location"   value={data.toLocationName} />
-              {data.notes && <Field label="Notes" value={data.notes} />}
-            </div>
-          </Section>
-
-          <Section title="Audit Trail">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20 }}>
-              <Field label="Submitted At" value={fmt(data.submittedAtUtc)} />
-              <Field label="Approved At"  value={fmt(data.approvedAtUtc)} />
-              <Field label="Posted At"    value={fmt(data.postedAtUtc)} />
-              <Field label="Rejected At"  value={fmt(data.rejectedAtUtc)} />
-            </div>
-          </Section>
-
-          {/* Lines */}
-          <div style={{
-            background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0",
-            overflow: "hidden", marginBottom: 80,
-          }}>
-            <div style={{ padding: "14px 20px", borderBottom: "1px solid #f1f5f9" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>Line Items</div>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>
-                {data.items.length} item{data.items.length !== 1 ? "s" : ""} in this transfer
-              </div>
-            </div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    {["#", "Item", "UOM", "Qty", "Unit Cost", "Line Value"].map((h, i) => (
-                      <th key={h} style={{
-                        padding: "10px 16px", fontSize: 11, fontWeight: 700,
-                        textTransform: "uppercase", letterSpacing: "0.05em",
-                        color: "#94a3b8", borderBottom: "1px solid #e2e8f0",
-                        textAlign: i >= 3 ? "right" : "left", whiteSpace: "nowrap",
-                      }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} style={{
-                        padding: "40px 16px", textAlign: "center",
-                        color: "#94a3b8", fontSize: 13,
-                      }}>
-                        No line items.
-                      </td>
-                    </tr>
-                  ) : data.items.map((l, idx) => (
-                    <tr key={l.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "12px 16px", color: "#94a3b8", fontFamily: "monospace", fontSize: 12 }}>
-                        {idx + 1}
-                      </td>
-                      <td style={{ padding: "12px 16px" }}>
-                        <div style={{ fontWeight: 600, color: "#0f172a" }}>{l.itemName || "-"}</div>
-                        {l.itemCode && (
-                          <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace", marginTop: 2 }}>
-                            {l.itemCode}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: "12px 16px", color: "#475569" }}>{l.uom || "-"}</td>
-                      <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, fontFamily: "monospace" }}>
-                        {l.quantity}
-                      </td>
-                      <td style={{ padding: "12px 16px", textAlign: "right", color: "#475569", fontFamily: "monospace" }}>
-                        {money(l.avgUnitCost)}
-                      </td>
-                      <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, fontFamily: "monospace" }}>
-                        {money(l.lineValue)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                {data.items.length > 0 && totalValue > 0 && (
-                  <tfoot>
-                    <tr style={{ borderTop: "2px solid #e2e8f0", background: "#f8fafc" }}>
-                      <td colSpan={3} />
-                      <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, fontFamily: "monospace" }}>
-                        {totalQty}
-                      </td>
-                      <td />
-                      <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 800, fontFamily: "monospace" }}>
-                        {money(totalValue)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
+        {pending?.kind === "receive" ? (
+          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+            <label className="ui-field-help" htmlFor="st-receipt-notes">Receipt notes (required when short)</label>
+            <Textarea id="st-receipt-notes" rows={2} maxLength={500} value={receiptNotes} disabled={busy} onChange={(e) => setReceiptNotes(e.target.value)} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button disabled={busy} onClick={doReceive}>{busy ? "Receiving…" : "Confirm receipt"}</Button>
+              <Button variant="outline" disabled={busy} onClick={() => setPending(null)}>Back</Button>
             </div>
           </div>
-        </>
-      )}
+        ) : null}
+      </Card>
 
-      {/* Sticky action bar */}
-      <div style={{
-        position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)",
-        display: "flex", alignItems: "center", gap: 10,
-        padding: "12px 20px", borderRadius: 16,
-        background: "rgba(255,255,255,0.97)", backdropFilter: "blur(8px)",
-        boxShadow: "0 4px 24px rgba(15,23,42,.12), 0 0 0 1px rgba(15,23,42,.06)",
-        zIndex: 50, flexWrap: "wrap", justifyContent: "center",
-      }}>
-        <span style={{ fontSize: 12, color: "#94a3b8", marginRight: 4 }}>
-          <b style={{ color: "#475569" }}>Workflow:</b> Draft to Submit to Approve to Post
-        </span>
-
-        {canEdit && (
-          <ActionBtn label=" Edit" busy={busy} name="edit" variant="secondary"
-            onClick={() => paths && nav(paths.edit(id!))} />
-        )}
-        {canSubmit && (
-          <ActionBtn label="Submit for Approval" busy={busy} name="submit" variant="primary"
-            onClick={() => act("submit",
-              () => stockTransfersApi.submit(companyId, branchId, id!),
-              "Submitted for approval.")} />
-        )}
-        {canApprove && (
-          <>
-            <ActionBtn label=" Approve" busy={busy} name="approve" variant="success"
-              onClick={() => act("approve",
-                () => stockTransfersApi.approve(companyId, branchId, id!),
-                "Transfer approved.")} />
-            <ActionBtn label=" Reject" busy={busy} name="reject" variant="danger"
-              onClick={() => setShowReject(true)} />
-          </>
-        )}
-        {canPost && (
-          <ActionBtn label=" Post (FIFO + Ledger)" busy={busy} name="post" variant="primary"
-            onClick={() => act("post",
-              () => stockTransfersApi.post(companyId, branchId, id!),
-              "Transfer posted to ledger.")} />
-        )}
-        {canCancel && (
-          <ActionBtn label="Cancel" busy={busy} name="cancel" variant="ghost"
-            onClick={() => act("cancel",
-              () => stockTransfersApi.cancel(companyId, branchId, id!),
-              "Transfer cancelled.")} />
-        )}
-      </div>
-
-      {/* Reject modal */}
-      {showReject && (
-        <RejectModal
-          working={busy === "reject"}
-          onConfirm={handleRejectConfirm}
-          onCancel={() => { setShowReject(false); setError(null); }}
-        />
-      )}
+      <Card title="History">
+        <InfoGrid>
+          <Info label="Created" value={fmtDateTime(doc.createdAtUtc)} />
+          <Info label="Submitted" value={fmtDateTime(doc.submittedAtUtc)} />
+          <Info label="Approved" value={fmtDateTime(doc.approvedAtUtc)} />
+          {interBranch ? <Info label="Dispatched" value={fmtDateTime(doc.dispatchedAtUtc)} /> : null}
+          <Info label={interBranch ? "Received" : "Posted"} value={fmtDateTime(doc.postedAtUtc)} />
+          {doc.receiptNotes ? <Info label="Receipt notes" value={doc.receiptNotes} /> : null}
+          {doc.rejectedAtUtc ? <Info label="Rejected" value={`${fmtDateTime(doc.rejectedAtUtc)} – ${doc.rejectionReason ?? ""}`} /> : null}
+          {doc.cancelledAtUtc ? <Info label="Cancelled" value={`${fmtDateTime(doc.cancelledAtUtc)} – ${doc.cancellationReason ?? ""}`} /> : null}
+          {doc.reversedAtUtc ? <Info label={interBranch ? "Recalled" : "Reversed"} value={`${fmtDateTime(doc.reversedAtUtc)} – ${doc.reversalReason ?? ""}`} /> : null}
+        </InfoGrid>
+      </Card>
     </div>
   );
 }

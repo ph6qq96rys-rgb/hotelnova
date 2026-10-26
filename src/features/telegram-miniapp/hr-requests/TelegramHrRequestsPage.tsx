@@ -1,13 +1,12 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 
+import { Button } from "../../../components/ui/button";
+import { EmptyState, StateMessage } from "../../../components/ui/Feedback";
+import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
+import { Textarea } from "../../../components/ui/textarea";
 import { useI18n } from "../../../i18n";
-import {
-  getTelegramInitData,
-  getTelegramRuntimeState,
-  getTelegramTheme,
-  notifyTelegram,
-} from "../telegramWebApp";
-import type { TelegramMiniAppAuthResult } from "../telegramMiniApp.types";
+import { notifyTelegram } from "../telegramWebApp";
 import {
   getTelegramLeaveBalances,
   getTelegramLeaveRequests,
@@ -17,17 +16,21 @@ import {
   type TelegramLeaveBalanceDto,
   type TelegramLeaveRequestDto,
   type TelegramLeaveTypeDto,
-  type TelegramMiniAppScope,
 } from "../telegramMiniAppApi";
+import { describeError } from "../telegramMiniAppClient";
+import { TgCardHeader, TgField, TgStatus, fmtDate } from "../TelegramUi";
 
 type Mode = "leave" | "overtime";
-type Notice = { type: "info" | "success" | "error"; text: string };
+type Notice = { tone: "info" | "success" | "error"; text: string } | null;
 
 type Props = {
-  auth: TelegramMiniAppAuthResult;
+  mode: Mode;
 };
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+function localIsoDate(date = new Date()): string {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
 
 function toUtcIso(date: string, time: string): string | null {
   if (!date || !time) return null;
@@ -36,47 +39,39 @@ function toUtcIso(date: string, time: string): string | null {
 }
 
 function yearOf(value: string): number {
-  const year = Number((value || todayIso()).slice(0, 4));
+  const year = Number((value || localIsoDate()).slice(0, 4));
   return Number.isFinite(year) && year > 0 ? year : new Date().getFullYear();
 }
 
-function formatDate(value?: string | null): string {
-  if (!value) return "-";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value.slice(0, 10)
-    : date.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
-function TelegramHrRequestsPage({ auth }: Props) {
+/** Leave and overtime self-service for the linked employee. */
+function TelegramHrRequestsPage({ mode }: Props) {
   const { tx } = useI18n();
-  const initData = getTelegramInitData();
-  const runtime = getTelegramRuntimeState();
-  const theme = getTelegramTheme();
-  const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const scope = useMemo<TelegramMiniAppScope>(() => ({
-    initData,
-    tenantKey: auth.tenantSlug ?? runtime.startParam,
-    companyId: auth.companyId,
-  }), [auth.companyId, auth.tenantSlug, initData, runtime.startParam]);
-
-  const [mode, setMode] = useState<Mode>("leave");
-  const [notice, setNotice] = useState<Notice>({ type: "info", text: "Submit requests from your linked employee profile." });
+  const [notice, setNotice] = useState<Notice>(null);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<TelegramLeaveTypeDto[]>([]);
   const [balances, setBalances] = useState<TelegramLeaveBalanceDto[]>([]);
   const [requests, setRequests] = useState<TelegramLeaveRequestDto[]>([]);
 
   const [leaveTypeId, setLeaveTypeId] = useState("");
-  const [startDate, setStartDate] = useState(todayIso());
-  const [endDate, setEndDate] = useState(todayIso());
+  const [startDate, setStartDate] = useState(localIsoDate());
+  const [endDate, setEndDate] = useState(localIsoDate());
   const [isHalfDay, setIsHalfDay] = useState(false);
   const [halfDayPeriod, setHalfDayPeriod] = useState<"Morning" | "Afternoon">("Morning");
   const [leaveReason, setLeaveReason] = useState("");
   const [documentUrl, setDocumentUrl] = useState("");
 
-  const [otDate, setOtDate] = useState(todayIso());
+  const [otDate, setOtDate] = useState(localIsoDate());
   const [otStart, setOtStart] = useState("");
   const [otEnd, setOtEnd] = useState("");
   const [otHours, setOtHours] = useState("1");
@@ -88,91 +83,85 @@ function TelegramHrRequestsPage({ auth }: Props) {
   const [requiredEvidence, setRequiredEvidence] = useState("");
   const [relatedActivity, setRelatedActivity] = useState("");
 
-  const load = useCallback(async () => {
-    if (!scope.initData || !scope.tenantKey) {
-      setNotice({ type: "error", text: "Telegram session is missing. Reopen the Mini App from the bot." });
-      return;
-    }
+  const year = yearOf(startDate);
 
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const year = yearOf(startDate);
       const [types, balanceRows, requestRows] = await Promise.all([
-        getTelegramLeaveTypes(scope),
-        getTelegramLeaveBalances(scope, year),
-        getTelegramLeaveRequests(scope, year),
+        getTelegramLeaveTypes(),
+        getTelegramLeaveBalances(year),
+        getTelegramLeaveRequests(year),
       ]);
-
       setLeaveTypes(types);
       setBalances(balanceRows);
       setRequests(requestRows);
       setLeaveTypeId((current) => current || types[0]?.id || "");
-      setNotice({ type: "info", text: "Ready for leave and overtime self-service." });
     } catch (error) {
-      setNotice({ type: "error", text: error instanceof Error ? error.message : "Unable to load HR requests." });
+      setNotice({ tone: "error", text: describeError(error, tx("Unable to load leave details.")) });
     } finally {
       setLoading(false);
     }
-  }, [scope, startDate]);
+  }, [tx, year]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (mode === "leave") void load();
+  }, [load, mode]);
+
+  useEffect(() => setNotice(null), [mode]);
 
   const selectedBalance = balances.find((row) => row.leaveTypeId === leaveTypeId);
   const selectedType = leaveTypes.find((row) => row.id === leaveTypeId);
 
   async function submitLeave() {
-    if (!leaveTypeId) {
-      setNotice({ type: "error", text: "Select a leave type." });
-      return;
+    if (!leaveTypeId) return setNotice({ tone: "error", text: tx("Select a leave type.") });
+    if (endDate < startDate) return setNotice({ tone: "error", text: tx("The end date cannot be before the start date.") });
+    if (!leaveReason.trim()) return setNotice({ tone: "error", text: tx("Enter the leave reason.") });
+
+    const doc = documentUrl.trim();
+    if (selectedType?.requiresDocument && !doc) {
+      return setNotice({ tone: "error", text: tx("{type} needs a link to the supporting document.", { type: selectedType.name }) });
+    }
+    if (doc && !isHttpUrl(doc)) {
+      return setNotice({ tone: "error", text: tx("The document must be a web link starting with https://") });
     }
 
-    if (!leaveReason.trim()) {
-      setNotice({ type: "error", text: "Enter the leave reason." });
-      return;
-    }
-
-    if (selectedType?.requiresDocument && !documentUrl.trim()) {
-      setNotice({ type: "error", text: `${selectedType.name} requires a supporting document reference.` });
-      return;
-    }
-
-    setLoading(true);
+    setSubmitting(true);
     try {
-      await submitTelegramLeaveRequest(scope, {
+      await submitTelegramLeaveRequest({
         leaveTypeId,
         startDate,
         endDate,
         isHalfDay,
         halfDayPeriod: isHalfDay ? halfDayPeriod : null,
         reason: leaveReason.trim(),
-        documentUrl: documentUrl.trim() || null,
+        documentUrl: doc || null,
       });
-
       notifyTelegram("success");
       setLeaveReason("");
       setDocumentUrl("");
-      setNotice({ type: "success", text: "Leave request submitted for approval." });
+      setNotice({ tone: "success", text: tx("Leave request submitted for approval.") });
       await load();
     } catch (error) {
       notifyTelegram("error");
-      setNotice({ type: "error", text: error instanceof Error ? error.message : "Unable to submit leave request." });
+      setNotice({ tone: "error", text: describeError(error, tx("Unable to submit leave request.")) });
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
   async function submitOvertime() {
     const hours = Number(otHours);
-    if (!Number.isFinite(hours) || hours <= 0) {
-      setNotice({ type: "error", text: "Enter valid overtime hours." });
-      return;
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 16) {
+      return setNotice({ tone: "error", text: tx("Enter overtime hours between 0.25 and 16.") });
+    }
+    if (!businessReason.trim() || !workAssignment.trim() || !kpiDescription.trim() || !kpiTarget.trim() || !kpiMeasurement.trim()) {
+      return setNotice({ tone: "error", text: tx("Fill in the reason, assignment, deliverable, target and measurement.") });
     }
 
-    setLoading(true);
+    setSubmitting(true);
     try {
-      await submitTelegramOvertimeRequest(scope, {
+      await submitTelegramOvertimeRequest({
         date: otDate,
         plannedStartUtc: toUtcIso(otDate, otStart),
         plannedEndUtc: toUtcIso(otDate, otEnd),
@@ -185,7 +174,6 @@ function TelegramHrRequestsPage({ auth }: Props) {
         requiredEvidence: requiredEvidence.trim() || null,
         relatedActivity: relatedActivity.trim() || null,
       });
-
       notifyTelegram("success");
       setBusinessReason("");
       setWorkAssignment("");
@@ -194,183 +182,150 @@ function TelegramHrRequestsPage({ auth }: Props) {
       setKpiMeasurement("");
       setRequiredEvidence("");
       setRelatedActivity("");
-      setNotice({ type: "success", text: "Overtime request submitted for manager pre-approval." });
+      setNotice({ tone: "success", text: tx("Overtime request submitted for manager pre-approval.") });
     } catch (error) {
       notifyTelegram("error");
-      setNotice({ type: "error", text: error instanceof Error ? error.message : "Unable to submit overtime request." });
+      setNotice({ tone: "error", text: describeError(error, tx("Unable to submit overtime request.")) });
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
-  return (
-    <section style={styles.page}>
-      <div style={styles.segment}>
-        <button type="button" style={{ ...styles.segmentButton, ...(mode === "leave" ? styles.segmentButtonActive : null) }} onClick={() => setMode("leave")}>
-          {tx("Leave")}
-        </button>
-        <button type="button" style={{ ...styles.segmentButton, ...(mode === "overtime" ? styles.segmentButtonActive : null) }} onClick={() => setMode("overtime")}>
-          {tx("Overtime")}
-        </button>
-      </div>
+  const noticeBlock = notice ? <StateMessage tone={notice.tone}>{notice.text}</StateMessage> : null;
 
-      <div style={{ ...styles.notice, ...(notice.type === "error" ? styles.noticeError : notice.type === "success" ? styles.noticeSuccess : null) }}>
-        {tx(notice.text)}
-      </div>
-
-      {mode === "leave" ? (
-        <section style={styles.card}>
-          <h3 style={styles.title}>{tx("Leave Request")}</h3>
-          <label style={styles.field}>
-            <span>{tx("Leave type")}</span>
-            <select style={styles.input} value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)}>
-              {leaveTypes.map((type) => (
-                <option key={type.id} value={type.id}>{type.name}</option>
-              ))}
-            </select>
-          </label>
-          {selectedBalance && (
-            <div style={styles.balance}>
-              {tx("Available {available} days. Pending {pending} days.", { available: selectedBalance.available, pending: selectedBalance.pending })}
-            </div>
-          )}
-          <div style={styles.grid2}>
-            <label style={styles.field}>
-              <span>{tx("Start")}</span>
-              <input style={styles.input} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </label>
-            <label style={styles.field}>
-              <span>{tx("End")}</span>
-              <input style={styles.input} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            </label>
+  if (mode === "overtime") {
+    return (
+      <>
+        {noticeBlock}
+        <section className="tg-card">
+          <TgCardHeader title={tx("Overtime Pre-Approval")} hint={tx("Ask your manager before working the extra hours.")} />
+          <TgField label={tx("Date")} required>
+            <Input type="date" value={otDate} onChange={(e) => setOtDate(e.target.value)} />
+          </TgField>
+          <div className="tg-grid-3">
+            <TgField label={tx("Start")}>
+              <Input type="time" value={otStart} onChange={(e) => setOtStart(e.target.value)} />
+            </TgField>
+            <TgField label={tx("End")}>
+              <Input type="time" value={otEnd} onChange={(e) => setOtEnd(e.target.value)} />
+            </TgField>
+            <TgField label={tx("Hours")} required>
+              <Input type="number" inputMode="decimal" min="0.25" max="16" step="0.25" value={otHours} onChange={(e) => setOtHours(e.target.value)} />
+            </TgField>
           </div>
-          <label style={styles.toggle}>
-            <span>{tx("Half day")}</span>
-            <input type="checkbox" checked={isHalfDay} onChange={(e) => setIsHalfDay(e.target.checked)} />
-          </label>
-          {isHalfDay && (
-            <select style={styles.input} value={halfDayPeriod} onChange={(e) => setHalfDayPeriod(e.target.value as "Morning" | "Afternoon")}>
+          <TgField label={tx("Business reason")} required>
+            <Textarea value={businessReason} onChange={(e) => setBusinessReason(e.target.value)} placeholder={tx("Why this cannot wait for regular hours")} maxLength={1000} />
+          </TgField>
+          <TgField label={tx("Work assignment")} required>
+            <Textarea value={workAssignment} onChange={(e) => setWorkAssignment(e.target.value)} placeholder={tx("Specific task or assignment")} maxLength={1000} />
+          </TgField>
+          <TgField label={tx("KPI / deliverable")} required>
+            <Textarea value={kpiDescription} onChange={(e) => setKpiDescription(e.target.value)} placeholder={tx("Measurable output expected")} maxLength={1000} />
+          </TgField>
+          <TgField label={tx("Target")} required>
+            <Input value={kpiTarget} onChange={(e) => setKpiTarget(e.target.value)} placeholder={tx("Target value or completion condition")} maxLength={300} />
+          </TgField>
+          <TgField label={tx("Measurement method")} required>
+            <Input value={kpiMeasurement} onChange={(e) => setKpiMeasurement(e.target.value)} placeholder={tx("How the manager verifies the KPI")} maxLength={300} />
+          </TgField>
+          <TgField label={tx("Evidence expected")}>
+            <Input value={requiredEvidence} onChange={(e) => setRequiredEvidence(e.target.value)} placeholder={tx("Report, checklist, photo, or document")} maxLength={300} />
+          </TgField>
+          <TgField label={tx("Related activity")}>
+            <Input value={relatedActivity} onChange={(e) => setRelatedActivity(e.target.value)} placeholder={tx("Project, department, or operation")} maxLength={300} />
+          </TgField>
+          <Button type="button" className="tg-block" disabled={submitting} onClick={() => void submitOvertime()}>
+            {submitting ? tx("Submitting...") : tx("Submit Overtime")}
+          </Button>
+        </section>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {noticeBlock}
+      <section className="tg-card">
+        <TgCardHeader title={tx("Leave Request")} />
+        <TgField label={tx("Leave type")} required>
+          <Select value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)} disabled={loading}>
+            {leaveTypes.length === 0 ? <option value="">{loading ? tx("Loading...") : tx("No leave types")}</option> : null}
+            {leaveTypes.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.name}
+              </option>
+            ))}
+          </Select>
+        </TgField>
+        {selectedBalance ? (
+          <div className="tg-meta">
+            <div>
+              <span>{tx("Available")}</span>
+              <strong>{tx("{n} days", { n: selectedBalance.available })}</strong>
+            </div>
+            <div>
+              <span>{tx("Pending")}</span>
+              <strong>{tx("{n} days", { n: selectedBalance.pending })}</strong>
+            </div>
+          </div>
+        ) : null}
+        <div className="tg-grid-2">
+          <TgField label={tx("Start")} required>
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </TgField>
+          <TgField label={tx("End")} required>
+            <Input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} />
+          </TgField>
+        </div>
+        <label className="tg-toggle">
+          <span>{tx("Half day")}</span>
+          <input type="checkbox" checked={isHalfDay} onChange={(e) => setIsHalfDay(e.target.checked)} />
+        </label>
+        {isHalfDay ? (
+          <TgField label={tx("Half")}>
+            <Select value={halfDayPeriod} onChange={(e) => setHalfDayPeriod(e.target.value as "Morning" | "Afternoon")}>
               <option value="Morning">{tx("Morning")}</option>
               <option value="Afternoon">{tx("Afternoon")}</option>
-            </select>
-          )}
-          <label style={styles.field}>
-            <span>{tx("Reason")}</span>
-            <textarea style={styles.textarea} value={leaveReason} onChange={(e) => setLeaveReason(e.target.value)} placeholder={tx("Brief reason for leave")} />
-          </label>
-          <label style={styles.field}>
-            <span>{tx("Document reference")}</span>
-            <input style={styles.input} value={documentUrl} onChange={(e) => setDocumentUrl(e.target.value)} placeholder={tx("Required for configured leave types")} />
-          </label>
-          <button type="button" style={styles.primary} disabled={loading} onClick={() => void submitLeave()}>
-            {loading ? tx("Submitting...") : tx("Submit Leave")}
-          </button>
-        </section>
-      ) : (
-        <section style={styles.card}>
-          <h3 style={styles.title}>{tx("Overtime Pre-Approval")}</h3>
-          <label style={styles.field}>
-            <span>{tx("Date")}</span>
-            <input style={styles.input} type="date" value={otDate} onChange={(e) => setOtDate(e.target.value)} />
-          </label>
-          <div style={styles.grid3}>
-            <label style={styles.field}>
-              <span>{tx("Start")}</span>
-              <input style={styles.input} type="time" value={otStart} onChange={(e) => setOtStart(e.target.value)} />
-            </label>
-            <label style={styles.field}>
-              <span>{tx("End")}</span>
-              <input style={styles.input} type="time" value={otEnd} onChange={(e) => setOtEnd(e.target.value)} />
-            </label>
-            <label style={styles.field}>
-              <span>{tx("Hours")}</span>
-              <input style={styles.input} type="number" min="0.25" step="0.25" value={otHours} onChange={(e) => setOtHours(e.target.value)} />
-            </label>
-          </div>
-          <label style={styles.field}>
-            <span>{tx("Business reason")}</span>
-            <textarea style={styles.textarea} value={businessReason} onChange={(e) => setBusinessReason(e.target.value)} placeholder={tx("Why this cannot wait for regular hours")} />
-          </label>
-          <label style={styles.field}>
-            <span>{tx("Work assignment")}</span>
-            <textarea style={styles.textarea} value={workAssignment} onChange={(e) => setWorkAssignment(e.target.value)} placeholder={tx("Specific task or assignment")} />
-          </label>
-          <label style={styles.field}>
-            <span>{tx("KPI / deliverable")}</span>
-            <textarea style={styles.textarea} value={kpiDescription} onChange={(e) => setKpiDescription(e.target.value)} placeholder={tx("Measurable output expected")} />
-          </label>
-          <label style={styles.field}>
-            <span>{tx("Target")}</span>
-            <input style={styles.input} value={kpiTarget} onChange={(e) => setKpiTarget(e.target.value)} placeholder={tx("Target value or completion condition")} />
-          </label>
-          <label style={styles.field}>
-            <span>{tx("Measurement method")}</span>
-            <input style={styles.input} value={kpiMeasurement} onChange={(e) => setKpiMeasurement(e.target.value)} placeholder={tx("How the manager verifies the KPI")} />
-          </label>
-          <label style={styles.field}>
-            <span>{tx("Evidence expected")}</span>
-            <input style={styles.input} value={requiredEvidence} onChange={(e) => setRequiredEvidence(e.target.value)} placeholder={tx("Report, checklist, photo, or document")} />
-          </label>
-          <label style={styles.field}>
-            <span>{tx("Related activity")}</span>
-            <input style={styles.input} value={relatedActivity} onChange={(e) => setRelatedActivity(e.target.value)} placeholder={tx("Project, department, or operation")} />
-          </label>
-          <button type="button" style={styles.primary} disabled={loading} onClick={() => void submitOvertime()}>
-            {loading ? tx("Submitting...") : tx("Submit Overtime")}
-          </button>
-        </section>
-      )}
+            </Select>
+          </TgField>
+        ) : null}
+        <TgField label={tx("Reason")} required>
+          <Textarea value={leaveReason} onChange={(e) => setLeaveReason(e.target.value)} placeholder={tx("Brief reason for leave")} maxLength={1000} />
+        </TgField>
+        <TgField
+          label={tx("Supporting document link")}
+          required={selectedType?.requiresDocument}
+          help={tx("A web link (https://...) to the document, for example a medical certificate in shared storage.")}
+        >
+          <Input type="url" inputMode="url" value={documentUrl} onChange={(e) => setDocumentUrl(e.target.value)} placeholder="https://" maxLength={1000} />
+        </TgField>
+        <Button type="button" className="tg-block" disabled={submitting || loading} onClick={() => void submitLeave()}>
+          {submitting ? tx("Submitting...") : tx("Submit Leave")}
+        </Button>
+      </section>
 
-      <section style={styles.card}>
-        <h3 style={styles.title}>{tx("Recent Leave Requests")}</h3>
+      <section className="tg-card">
+        <TgCardHeader title={tx("Recent Leave Requests")} hint={String(year)} />
         {requests.length === 0 ? (
-          <div style={styles.empty}>{tx("No leave requests yet.")}</div>
+          <EmptyState title={tx("No leave requests yet.")} detail={tx("Requests you submit appear here with their status.")} />
         ) : (
-          <div style={styles.list}>
-            {requests.slice(0, 5).map((request) => (
-              <div key={request.id} style={styles.row}>
-                <div>
+          <div className="tg-list">
+            {requests.slice(0, 10).map((request) => (
+              <div key={request.id} className="tg-row">
+                <div className="tg-row__body">
                   <strong>{request.leaveTypeName}</strong>
-                  <small>{formatDate(request.startDate)} - {formatDate(request.endDate)} | {request.numberOfDays} day(s)</small>
+                  <small>
+                    {fmtDate(request.startDate)} - {fmtDate(request.endDate)} | {tx("{n} days", { n: request.numberOfDays })}
+                  </small>
                 </div>
-                <span style={styles.badge}>{request.status}</span>
+                <TgStatus status={request.status} />
               </div>
             ))}
           </div>
         )}
       </section>
-    </section>
+    </>
   );
 }
 
 export default memo(TelegramHrRequestsPage);
-
-function createStyles(theme: Record<string, string>) {
-  const button = theme.button_color ?? "#2481cc";
-  const text = theme.text_color ?? "#111827";
-  const hint = theme.hint_color ?? "#6b7280";
-
-  return {
-    page: { display: "grid", gap: 14 },
-    segment: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: 4, borderRadius: 18, background: "#eef2ff" },
-    segmentButton: { border: "none", borderRadius: 14, padding: "11px 8px", background: "transparent", color: hint, fontWeight: 900 },
-    segmentButtonActive: { background: "#ffffff", color: button, boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)" },
-    notice: { padding: 12, borderRadius: 16, background: "#eff6ff", color: "#1d4ed8", fontWeight: 800, fontSize: 13, lineHeight: 1.35 },
-    noticeError: { background: "#fef2f2", color: "#991b1b" },
-    noticeSuccess: { background: "#ecfdf5", color: "#047857" },
-    card: { display: "grid", gap: 12, padding: 14, borderRadius: 20, background: "#fff", border: "1px solid #e5e7eb", boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)" },
-    title: { margin: 0, fontSize: 18, fontWeight: 900, color: text },
-    field: { display: "grid", gap: 6, fontSize: 12, color: hint, fontWeight: 800 },
-    input: { width: "100%", minWidth: 0, border: "1px solid #d1d5db", borderRadius: 12, padding: "11px 12px", fontSize: 15, boxSizing: "border-box" },
-    textarea: { width: "100%", minWidth: 0, minHeight: 78, border: "1px solid #d1d5db", borderRadius: 12, padding: "11px 12px", fontSize: 15, boxSizing: "border-box", resize: "vertical" },
-    grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-    grid3: { display: "grid", gridTemplateColumns: "1fr 1fr 0.8fr", gap: 8 },
-    toggle: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: "1px solid #e5e7eb", borderRadius: 14, fontWeight: 900, color: text },
-    balance: { padding: 10, borderRadius: 14, background: "#f8fafc", color: hint, fontSize: 13, fontWeight: 800 },
-    primary: { border: "none", borderRadius: 14, padding: "13px 14px", background: button, color: "#fff", fontWeight: 900, fontSize: 15 },
-    empty: { padding: 16, textAlign: "center", color: hint, fontWeight: 800 },
-    list: { display: "grid", gap: 8 },
-    row: { display: "flex", justifyContent: "space-between", gap: 10, padding: 12, border: "1px solid #e5e7eb", borderRadius: 14 },
-    badge: { alignSelf: "flex-start", borderRadius: 999, padding: "4px 8px", background: "#eef2ff", color: "#3730a3", fontSize: 11, fontWeight: 900 },
-  } satisfies Record<string, React.CSSProperties>;
-}

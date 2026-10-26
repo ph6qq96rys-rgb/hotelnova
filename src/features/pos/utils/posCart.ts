@@ -39,6 +39,8 @@ export type CartAction =
   | { type: "INCREMENT"; id: string }
   | { type: "DECREMENT"; id: string }
   | { type: "REMOVE"; id: string }
+  /** Price override on a counter-sale line (pos.price.override); a reason is required. */
+  | { type: "SET_PRICE"; id: string; price: number; reason: string }
   | { type: "CLEAR" };
 
 /** Items picked on this device that have not been sent to the ticket (or paid) yet. */
@@ -56,6 +58,15 @@ export function cartReducer(state: CartItem[], action: CartAction): CartItem[] {
       return state.map((x) => (x.id === action.id ? withQty(x, x.qty - 1) : x)).filter((x) => x.qty > 0);
     case "REMOVE":
       return state.filter((x) => x.id !== action.id);
+    case "SET_PRICE":
+      return state.map((x) => {
+        if (x.id !== action.id) return x;
+        const listPrice = x.listPrice ?? x.price;
+        const price = round2(action.price);
+        return price === listPrice
+          ? { ...withQty({ ...x, price }, x.qty), listPrice: undefined, overrideReason: null }
+          : { ...withQty({ ...x, price }, x.qty), listPrice, overrideReason: action.reason.trim() };
+      });
     case "CLEAR":
       return [];
     default:
@@ -71,7 +82,8 @@ export function ticketChargeLines(ticket: PosTicketDto | null, menu: MenuItemDto
   if (!ticket) return [];
   const byId = new Map(menu.map((item) => [item.id, item]));
   const grouped = new Map<string, CartItem>();
-  for (const line of ticket.lines.filter((x) => !x.isVoided)) {
+  // Items already paid on a split check are not charged again.
+  for (const line of ticket.lines.filter((x) => !x.isVoided && !x.saleId)) {
     const key = `${line.menuItemId}|${line.unitPrice}`;
     const current = grouped.get(key);
     if (current) {
@@ -87,6 +99,20 @@ export function ticketChargeLines(ticket: PosTicketDto | null, menu: MenuItemDto
         } as CartItem);
   }
   return [...grouped.values()];
+}
+
+/** Lines still owed on a ticket (not voided, not paid on an earlier split check). */
+export function owedLines(ticket: PosTicketDto | null) {
+  return (ticket?.lines ?? []).filter((line) => !line.isVoided && !line.saleId);
+}
+
+/** Split check: what one guest pays for, as cart lines (quantities chosen per ticket line). */
+export function selectedChargeLines(ticket: PosTicketDto | null, menu: MenuItemDto[], selection: Record<string, number>): CartItem[] {
+  if (!ticket) return [];
+  const picked = owedLines(ticket)
+    .filter((line) => (selection[line.id] ?? 0) > 0)
+    .map((line) => ({ ...line, quantity: Math.min(line.quantity, selection[line.id]) }));
+  return ticketChargeLines({ ...ticket, lines: picked }, menu);
 }
 
 export function minutesSince(iso: string, now: number): number {

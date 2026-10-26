@@ -13,7 +13,10 @@ export const TEST_TIP_SETTINGS = {
   updatedAtUtc: "2026-10-04T09:00:00Z", version: "tips-v1",
 };
 
-export type PosMockState = { settleRequests: Array<Record<string, unknown>>; holdRequests: Array<Record<string, unknown>> };
+export type PosMockState = {
+  settleRequests: Array<Record<string, unknown>>; holdRequests: Array<Record<string, unknown>>;
+  saleRequests: Array<Record<string, unknown>>; receiptRequests: string[]; bumps: Array<Record<string, unknown>>; printerSaves: Array<Record<string, unknown>>;
+};
 
 export const TEST_SERVICE_SETTINGS = {
   source: "branch", serviceStyle: "tableService", quickServiceRequiresTable: false, quickServiceRequiresWaiter: false,
@@ -47,7 +50,14 @@ const menuItem = {
  * sending a round and reading the ticket back behave like the real service.
  */
 export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Promise<PosMockState> {
-  const mockState: PosMockState = { settleRequests: [], holdRequests: [] };
+  const mockState: PosMockState = { settleRequests: [], holdRequests: [], saleRequests: [], receiptRequests: [], bumps: [], printerSaves: [] };
+  let saleNo = 1;
+  const kitchenOrder = {
+    id: "ko-1", stationId: "station-hot", stationName: "Hot kitchen", orderNo: "#0001", ticketNo: "TKT-0001", round: 1, tableLabel: "T1",
+    waiterName: "QAE Waiter", orderType: "dineIn", guestCount: 2, note: null, status: "new", sentAtUtc: new Date().toISOString(), sentByName: "QAE Waiter",
+    ageSeconds: 30, version: "ko-v1", lines: [{ id: "kol-1", itemName: "QAE Burger", quantity: 2, note: "no onion", isVoided: false }],
+  };
+  const printers: Array<Record<string, unknown>> = [];
   const openedAtUtc = new Date().toISOString();
   const waiter = { employeeId: "emp-qae-waiter", userId: "qae-user", name: "QAE Waiter", hasLogin: true, openTickets: 0 };
   let ticket: Record<string, unknown> | null = null;
@@ -88,14 +98,62 @@ export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Pr
       return json(route, ticket);
     }
     if (path === "tickets/ticket-1/settle" && ticket) {
-      mockState.settleRequests.push(route.request().postDataJSON());
+      const body = route.request().postDataJSON() as { lines?: Array<{ lineId: string; quantity: number }> };
+      mockState.settleRequests.push(body);
+      const saleId = `sale-qae-split-${saleNo++}`;
+      if (body.lines) {
+        // Split check: paid quantities move to their own paid lines; the ticket stays open while anything is owed.
+        const lines = ticket.lines as Array<Record<string, unknown>>;
+        const next: Array<Record<string, unknown>> = [];
+        for (const line of lines) {
+          const pay = body.lines.find((x) => x.lineId === line.id);
+          if (!pay) { next.push(line); continue; }
+          const qty = line.quantity as number;
+          if (pay.quantity < qty) next.push({ ...line, quantity: qty - pay.quantity, lineTotal: (qty - pay.quantity) * menuItem.sellingPrice });
+          next.push({ ...line, id: `${line.id}-paid`, quantity: pay.quantity, lineTotal: pay.quantity * menuItem.sellingPrice, saleId });
+        }
+        const owed = next.filter((x) => !x.saleId && !x.isVoided);
+        ticket = { ...ticket, lines: next, version: `${ticket.version}-s`, status: owed.length ? "open" : "settled",
+          subtotal: owed.reduce((sum, x) => sum + (x.lineTotal as number), 0) };
+      }
       return json(route, {
-        id: "sale-qae-2", saleNo: "QAE-SALE-002", companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, storeId: TEST_STORE_ID,
+        id: body.lines ? saleId : "sale-qae-2", saleNo: "QAE-SALE-002", companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, storeId: TEST_STORE_ID,
         posSessionId: "session-qae-open", soldAtUtc: new Date().toISOString(), subTotal: ticket.subtotal, discountAmount: 0,
         taxAmount: 0, serviceChargeAmount: 0, totalAmount: ticket.subtotal, totalCogs: 120, grossProfit: 130,
         isInventoryPosted: true, saleItems: [], payments: [],
       });
     }
+    if (/^sales\/[^/]+\/receipt$/.test(path)) {
+      mockState.receiptRequests.push(`${path}?${url.searchParams.get("channel")}`);
+      const copyNo = mockState.receiptRequests.filter((x) => x.startsWith(path)).length;
+      return json(route, {
+        kind: "Receipt", header: { businessName: "Hotel Nova QAE", tin: "0012345678", vatNumber: "VAT-1", branchName: "Main", tillName: "Main POS", fiscalMachineCode: "MRC-1" },
+        invoiceNumber: "INV-HQ-00000001", documentNo: "QAE-SALE-001", atUtc: new Date().toISOString(), localTime: "26/10/2026 10:00", cashier: "QAE Cashier",
+        orderType: "takeAway", lines: [{ name: "QAE Burger", quantity: 1, unitPrice: 250, lineTotal: 250, vatRate: 15 }], subTotal: 250, discount: 0, serviceCharge: 0,
+        taxes: [{ rate: 15, taxable: 250, tax: 37.5 }], taxTotal: 37.5, total: 287.5, payments: [{ method: "CASH", amount: 287.5 }], tips: 0, returned: 0, balance: 0,
+        currencyCode: "ETB", isFiscal: false, copyNo, escPosBase64: "", printJobQueued: url.searchParams.get("channel") === "printer",
+      });
+    }
+    if (path === "kitchen/stations" || path === "devices/stations") return json(route, [{ id: "station-hot", code: "HOT", name: "Hot kitchen", kind: "kitchen",
+      printerId: null, usesDisplay: true, isDefault: true, isActive: true, categoryIds: [], menuItemIds: [], version: "st-v1" }]);
+    if (path === "kitchen/orders") return json(route, [kitchenOrder]);
+    if (path === "kitchen/orders/ko-1/bump" && method === "POST") {
+      const body = route.request().postDataJSON() as { action: string };
+      mockState.bumps.push(body);
+      Object.assign(kitchenOrder, { status: body.action === "start" ? "inprogress" : body.action === "ready" ? "ready" : body.action === "served" ? "served" : "inprogress", version: `ko-${mockState.bumps.length + 1}` });
+      return json(route, kitchenOrder);
+    }
+    if (path === "devices/printers" && method === "GET") return json(route, printers);
+    if (path === "devices/printers" && method === "POST") {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      mockState.printerSaves.push(body);
+      printers.push({ ...body, id: `printer-${printers.length + 1}`, version: "p-v1" });
+      return json(route, printers[printers.length - 1]);
+    }
+    if (path === "devices/tills") return json(route, [{ id: TEST_STORE_ID, code: "POS-QAE", name: "Main POS", receiptPrinterId: null, fiscalMachineCode: null }]);
+    if (path === "devices/agents") return json(route, []);
+    if (path === "devices/jobs") return json(route, []);
+    if (path === "devices/menu") return json(route, { categories: [{ id: "cat-food", name: "Food" }], items: [{ id: menuItem.id, name: menuItem.name, categoryId: "cat-food" }] });
     if (path === "waiters") return json(route, [waiter]);
     if (path === "stores") return json(route, [{ id: TEST_STORE_ID, companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID,
       code: "POS-QAE", name: "Main POS", isActive: true }]);
@@ -135,12 +193,14 @@ export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Pr
     return json(route, { title: "Not mocked", detail: path }, 404);
   });
 
-  await page.route("**/companies/*/branches/*/sales", (route) =>
-    json(route, {
+  await page.route("**/companies/*/branches/*/sales", (route) => {
+    mockState.saleRequests.push(route.request().postDataJSON());
+    return json(route, {
       id: "sale-qae-1", saleNo: "QAE-SALE-001", companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, storeId: TEST_STORE_ID,
       posSessionId: "session-qae-open", soldAtUtc: new Date().toISOString(), subTotal: 250, discountAmount: 0,
       taxAmount: 20, serviceChargeAmount: 0, totalAmount: 270, totalCogs: 120, grossProfit: 150,
       isInventoryPosted: true, saleItems: [], payments: [],
-    }));
+    });
+  });
   return mockState;
 }

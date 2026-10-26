@@ -14,7 +14,7 @@ function base64Url(value: string): string {
     .replace(/\//g, "_");
 }
 
-function createTestJwt(): string {
+function createTestJwt(extra: string[] = []): string {
   const header = base64Url(JSON.stringify({ alg: "none", typ: "JWT" }));
   const payload = base64Url(
     JSON.stringify({
@@ -35,6 +35,7 @@ function createTestJwt(): string {
         "hr.view",
         "hr.attendance.view",
         "hr.overtime.view",
+        ...extra,
       ],
       company_id: TEST_COMPANY_ID,
       branch_id: TEST_BRANCH_ID,
@@ -44,8 +45,8 @@ function createTestJwt(): string {
   return `${header}.${payload}.`;
 }
 
-export async function seedWorkspaceAuth(page: Page): Promise<void> {
-  const accessToken = createTestJwt();
+export async function seedWorkspaceAuth(page: Page, extraPermissions: string[] = []): Promise<void> {
+  const accessToken = createTestJwt(extraPermissions);
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const auth = {
     user: {
@@ -69,6 +70,7 @@ export async function seedWorkspaceAuth(page: Page): Promise<void> {
     "hr.view",
     "hr.attendance.view",
     "hr.overtime.view",
+    ...extraPermissions,
   ],
     roles: ["COMPANYADMIN"],
     companyId: TEST_COMPANY_ID,

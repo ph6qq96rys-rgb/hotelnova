@@ -190,7 +190,25 @@ function companyPath(companyId: string) {
   return `/companies/${encodeURIComponent(companyId)}/butchery/batches`;
 }
 
+export type ButcherySourceLotDto = {
+  id: string; branchId: string; operationId: string; sourceBranchStockLocationId: string;
+  itemId: string; itemName: string; locationName: string; uomCode: string;
+  batchNo?: string | null; sourceNo?: string | null; availableWeightBase: number;
+};
+
 export const butcheryManagementApi = {
+  async listSourceLots(companyId: string, branchId: string) {
+    const { data } = await http.get<ButcherySourceLotDto[]>(`${companyPath(companyId)}/source-lots`, { params: { branchId } });
+    return data;
+  },
+  async createBatchFromLot(companyId: string, lot: ButcherySourceLotDto, templateId: string, weight: number, date: string) {
+    const { data } = await http.post<ButcheryProcessingBatchDto>(companyPath(companyId), {
+      branchId: lot.branchId, butcheryOperationId: lot.operationId, meatCutTemplateId: templateId,
+      sourceBranchStockLocationId: lot.sourceBranchStockLocationId, fifoLotId: lot.id,
+      startingWeightBase: weight, processingDateUtc: date,
+    });
+    return data;
+  },
   async searchBatches(companyId:string, params:{branchId?:string|null;q?:string;page?:number;pageSize?:number;from?:string;to?:string},signal?:AbortSignal){const {data}=await http.get<{items:ButcheryProcessingBatchDto[];total:number;openCount:number}>(companyPath(companyId)+"/search",{params:{...params,branchId:params.branchId||undefined},signal});return data;},
   async listOperations(companyId: string, branchId?: string | null) {
     const { data } = await http.get<ButcheryOperationDto[]>(`/companies/${encodeURIComponent(companyId)}/butchery/operations`, { params: { branchId: branchId || undefined } });
@@ -250,3 +268,59 @@ export const butcheryManagementApi = {
   },
 };
 
+
+// ── Workflow: catering demand → prepare → approval → cut & weigh → post to stock ──────────────────
+
+export type ButcheryWorkflowStage = { key: string; label: string; state: "done" | "current" | "upcoming" | "cancelled" };
+export type ButcheryWorkflowStep = {
+  key: string;
+  stage: string;
+  label: string;
+  state: "done" | "todo";
+  detail?: string | null;
+  action?: string | null;
+};
+export type ButcheryBatchJourney = {
+  batchId: string;
+  batchNo: string;
+  status: string;
+  /** A stage key, or "done" / "cancelled". */
+  stage: string;
+  stages: ButcheryWorkflowStage[];
+  steps: ButcheryWorkflowStep[];
+  next?: ButcheryWorkflowStep | null;
+  alerts: string[];
+};
+export type ButcheryWorkflowCard = {
+  kind: "demand" | "batch";
+  id: string;
+  branchId: string;
+  reference: string;
+  title: string;
+  subtitle?: string | null;
+  dateUtc?: string | null;
+  weightKg: number;
+  status: string;
+  stage: string;
+  nextAction: string;
+  doneSteps: number;
+  totalSteps: number;
+  alerts: string[];
+};
+export type ButcheryWorkflowBoard = { stages: ButcheryWorkflowStage[]; cards: ButcheryWorkflowCard[] };
+
+export async function getButcheryWorkflowBoard(companyId: string, branchId?: string | null, signal?: AbortSignal) {
+  const { data } = await http.get<ButcheryWorkflowBoard>(`/companies/${encodeURIComponent(companyId)}/butchery/workflow`, {
+    params: { branchId: branchId || undefined },
+    signal,
+  });
+  return data;
+}
+
+export async function getButcheryBatchJourney(companyId: string, batchId: string, signal?: AbortSignal) {
+  const { data } = await http.get<ButcheryBatchJourney>(
+    `/companies/${encodeURIComponent(companyId)}/butchery/workflow/batches/${encodeURIComponent(batchId)}`,
+    { signal },
+  );
+  return data;
+}

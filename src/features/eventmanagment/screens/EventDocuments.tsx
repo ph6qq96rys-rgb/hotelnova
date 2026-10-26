@@ -1,3 +1,8 @@
+import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
+import { Button } from "../../../components/ui/button";
+import { Textarea } from "../../../components/ui/textarea";
+import { Checkbox } from "../../../components/ui/checkbox";
 import { printDocument } from "../components/printing";
 import { formatAppDate } from "../../../shared/datetime/dateFormat";
 import { useUnsavedChanges } from "../components/useUnsavedChanges";
@@ -310,7 +315,7 @@ export function EventDocuments({
         {cfg.fields.some((f) => f.type === "employee") && (
           <label>
             Search employees
-            <input
+            <Input
               value={employeeSearch}
               onChange={(e) => setEmployeeSearch(e.target.value)}
               placeholder="Name or employee number"
@@ -325,7 +330,7 @@ export function EventDocuments({
             <label key={f.key}>
               {f.label}
               {f.options || f.type === "employee" ? (
-                <select
+                <Select
                   aria-label={f.label}
                   required={f.required}
                   value={String(line[f.key] ?? "")}
@@ -352,9 +357,9 @@ export function EventDocuments({
                       ))}
                     </>
                   )}
-                </select>
+                </Select>
               ) : (
-                <input
+                <Input
                   required={f.required}
                   type={f.type ?? "text"}
                   min={f.min}
@@ -408,7 +413,7 @@ export function EventDocuments({
         <header className="co-toolbar">
           <div className="co-view">
             {kinds.map((k) => (
-              <button
+              <Button variant="outline"
                 key={k}
                 disabled={busy}
                 aria-pressed={kind === k}
@@ -419,10 +424,10 @@ export function EventDocuments({
                 }}
               >
                 {configs[k].label}
-              </button>
+              </Button>
             ))}
           </div>
-          <button
+          <Button
             className="co-primary"
             disabled={busy || !canManage}
             onClick={() => {
@@ -438,7 +443,7 @@ export function EventDocuments({
             }}
           >
             + {kind === "final-bills" ? "New bill" : kind === "dispatches" ? "New dispatch" : "New plan"}
-          </button>
+          </Button>
         </header>
         {error && (
           <p className="co-notice" role="alert">
@@ -453,7 +458,7 @@ export function EventDocuments({
         <div className="co-toolbar">
           <label>
             Document
-            <select
+            <Select
               aria-label="Operational document"
               disabled={busy}
               value={selected}
@@ -465,11 +470,11 @@ export function EventDocuments({
                   {d.planNo ?? d.billNo ?? d.dispatchNo} · {humanize(d.status)}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
-          <button disabled={busy || loading} onClick={() => setRevision((v) => v + 1)}>
+          <Button variant="outline" disabled={busy || loading} onClick={() => setRevision((v) => v + 1)}>
             Refresh documents
-          </button>
+          </Button>
         </div>
         {doc ? (
           <>
@@ -477,7 +482,7 @@ export function EventDocuments({
               <h2>{doc.planNo ?? doc.billNo ?? doc.dispatchNo}</h2>
               <span className="co-pill">{humanize(doc.status)}</span>
               {kind === "final-bills" && (
-                <button
+                <Button variant="outline"
                   onClick={() =>
                     printDocument(
                       doc.invoiceNo ? "Tax invoice " + doc.invoiceNo : "Draft bill " + doc.billNo,
@@ -516,7 +521,7 @@ export function EventDocuments({
                   }
                 >
                   {doc.invoiceNo ? "Print invoice" : "Print draft"}
-                </button>
+                </Button>
               )}
               {kind === "final-bills" && (
                 <strong>
@@ -604,15 +609,15 @@ export function EventDocuments({
                       <td>
                         <div className="co-actions">
                           {!["final-bills", "dispatches"].includes(kind) && (
-                            <button
+                            <Button variant="outline"
                               disabled={busy || !canManage || ["cancelled", "completed"].includes(doc.status)}
                               onClick={() => setEditLine({ ...l })}
                             >
                               Edit
-                            </button>
+                            </Button>
                           )}
                           {kind === "dispatches" ? (
-                            <select
+                            <Select
                               aria-label={"Move line " + (i + 1)}
                               disabled={busy || !canManage || !dispatchLineMoves(String(l.status), doc.status).length}
                               value=""
@@ -645,10 +650,10 @@ export function EventDocuments({
                                   {humanize(s)}
                                 </option>
                               ))}
-                            </select>
+                            </Select>
                           ) : (
                             cfg.states.length > 0 && (
-                              <select
+                              <Select
                                 aria-label={"Status for line " + (i + 1)}
                                 disabled={busy || !canManage || doc.status === "cancelled"}
                                 value={String(l.status ?? "")}
@@ -665,7 +670,7 @@ export function EventDocuments({
                                     {humanize(s)}
                                   </option>
                                 ))}
-                              </select>
+                              </Select>
                             )
                           )}
                         </div>
@@ -679,23 +684,23 @@ export function EventDocuments({
               <span>{doc.notes}</span>
               <div className="co-actions">
                 {kind === "final-bills" && doc.status === "draft" && (
-                  <button
+                  <Button variant="outline"
                     disabled={busy || !hasPermission("catering.billing.approve")}
                     onClick={() => setConfirm({ action: "approve", label: "Approve bill" })}
                   >
                     Approve bill
-                  </button>
+                  </Button>
                 )}
                 {kind === "final-bills" && doc.status === "approved" && (
-                  <button
+                  <Button variant="outline"
                     disabled={busy || !canManage}
                     onClick={() => setConfirm({ action: "issue", label: "Issue tax invoice" })}
                   >
                     Issue invoice
-                  </button>
+                  </Button>
                 )}
                 {kind === "final-bills" && ["issued", "partiallyPaid", "paid"].includes(doc.status) && (
-                  <button
+                  <Button variant="outline"
                     disabled={busy || !hasPermission("catering.billing.approve")}
                     title="Raises a credit note against the issued invoice"
                     onClick={() => {
@@ -704,23 +709,23 @@ export function EventDocuments({
                     }}
                   >
                     Credit invoice
-                  </button>
+                  </Button>
                 )}
                 {kind === "dispatches" && ["draft", "ready"].includes(doc.status) && (
-                  <button
+                  <Button variant="outline"
                     disabled={busy || !canManage}
                     onClick={() => setConfirm({ action: "dispatch", label: "Dispatch delivery" })}
                   >
                     Dispatch
-                  </button>
+                  </Button>
                 )}
                 {kind === "dispatches" && doc.status === "dispatched" && (
-                  <button
+                  <Button variant="outline"
                     disabled={busy || !canManage}
                     onClick={() => setConfirm({ action: "deliver", label: "Confirm delivery" })}
                   >
                     Mark delivered
-                  </button>
+                  </Button>
                 )}
                 {![
                   "cancelled",
@@ -732,7 +737,7 @@ export function EventDocuments({
                   "dispatched",
                   "completed",
                 ].includes(doc.status) && (
-                  <button
+                  <Button variant="outline"
                     disabled={busy || !canManage}
                     onClick={() => {
                       setReason("");
@@ -740,7 +745,7 @@ export function EventDocuments({
                     }}
                   >
                     Cancel document
-                  </button>
+                  </Button>
                 )}
               </div>
             </footer>
@@ -812,9 +817,9 @@ export function EventDocuments({
             >
               <header className="co-toolbar">
                 <h2>{confirm?.label ?? (editLine ? "Edit line" : "New " + cfg.label.toLowerCase())}</h2>
-                <button type="button" disabled={busy} onClick={closeDraft}>
+                <Button variant="outline" type="button" disabled={busy} onClick={closeDraft}>
                   Close
-                </button>
+                </Button>
               </header>
               <fieldset disabled={busy}>
                 {confirm ? (
@@ -839,7 +844,7 @@ export function EventDocuments({
                     {(confirm.action === "cancel" || confirm.action === "credit") && (
                       <label>
                         {confirm.action === "credit" ? "Credit reason" : "Cancellation reason"}
-                        <textarea required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+                        <Textarea required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
                       </label>
                     )}
                   </>
@@ -850,7 +855,7 @@ export function EventDocuments({
                     {kind === "production-plans" && (
                       <label>
                         Over-production %
-                        <input
+                        <Input
                           type="number"
                           min="0"
                           max="100"
@@ -864,7 +869,7 @@ export function EventDocuments({
                     {kind === "final-bills" && (
                       <label>
                         Actual guests
-                        <input
+                        <Input
                           type="number"
                           min="0"
                           required
@@ -877,7 +882,7 @@ export function EventDocuments({
                       <div className="co-form-grid">
                         <label>
                           Destination
-                          <input
+                          <Input
                             required
                             value={extra.destination ?? ""}
                             onChange={(e) => setExtra({ ...extra, destination: e.target.value })}
@@ -885,14 +890,14 @@ export function EventDocuments({
                         </label>
                         <label>
                           Vehicle registration
-                          <input
+                          <Input
                             value={extra.vehicleNo ?? ""}
                             onChange={(e) => setExtra({ ...extra, vehicleNo: e.target.value })}
                           />
                         </label>
                         <label>
                           Dispatch time
-                          <input
+                          <Input
                             required
                             type="datetime-local"
                             value={toDateTimeInput(String(extra.plannedDispatchAtUtc ?? ""))}
@@ -909,25 +914,25 @@ export function EventDocuments({
                     {draft?.map((l, i) => (
                       <section className="co-editor-section" key={i}>
                         {fields(l, (next) => setDraft((rows) => rows!.map((r, j) => (i === j ? next : r))))}
-                        <button type="button" onClick={() => setDraft((rows) => rows!.filter((_, j) => i !== j))}>
+                        <Button variant="outline" type="button" onClick={() => setDraft((rows) => rows!.filter((_, j) => i !== j))}>
                           Remove line
-                        </button>
+                        </Button>
                       </section>
                     ))}
                     {kind !== "production-plans" && (
-                      <button type="button" onClick={() => setDraft((rows) => [...rows!, freshLine()])}>
+                      <Button variant="outline" type="button" onClick={() => setDraft((rows) => [...rows!, freshLine()])}>
                         + Add {kind === "final-bills" ? "charge" : "line"}
-                      </button>
+                      </Button>
                     )}
                     {kind !== "final-bills" && (
                       <label className="co-check">
-                        <input type="checkbox" checked={activate} onChange={(e) => setActivate(e.target.checked)} />
+                        <Checkbox  checked={activate} onChange={(e) => setActivate(e.target.checked)} />
                         {kind === "dispatches" ? "Mark ready" : "Activate plan"}
                       </label>
                     )}
                     <label>
                       Notes
-                      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+                      <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
                     </label>
                   </>
                 )}
@@ -939,7 +944,7 @@ export function EventDocuments({
               )}
               <footer className="co-toolbar">
                 <span>Changes are saved against {event.eventNo}.</span>
-                <button
+                <Button
                   className="co-primary"
                   disabled={
                     busy ||
@@ -947,7 +952,7 @@ export function EventDocuments({
                   }
                 >
                   {busy ? "Saving..." : confirm ? "Confirm action" : "Save"}
-                </button>
+                </Button>
               </footer>
             </form>
           </section>

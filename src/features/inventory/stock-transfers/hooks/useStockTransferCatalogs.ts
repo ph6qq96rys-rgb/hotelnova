@@ -25,7 +25,7 @@ export function useBranches(companyId?: string | null) {
       if (!companyId) return [];
 
       const response = await http.get(
-        `/onboarding/companies/${companyId}/branches`,
+        `/companies/${companyId}/branches`,
         { signal }
       );
 
@@ -84,7 +84,7 @@ export function useStockTransferCatalogs(
       if (!companyId) return [];
 
       const response = await http.get(
-        `/onboarding/companies/${companyId}/branches`,
+        `/companies/${companyId}/branches`,
         { signal }
       );
 
@@ -113,7 +113,7 @@ export function useStockTransferCatalogs(
       if (!companyId || !branchId) return [];
 
       const branchRows = unwrapArray<BranchOptionDto>(
-        await http.get(`/onboarding/companies/${companyId}/branches`, { signal })
+        await http.get(`/companies/${companyId}/branches`, { signal })
       ).map(normalizeBranch);
 
       const branches = branchRows.length > 0

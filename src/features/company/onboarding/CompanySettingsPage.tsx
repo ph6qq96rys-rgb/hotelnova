@@ -24,6 +24,8 @@ const DEFAULT_SETTINGS: CompanySettingsDto = {
   pricesIncludeVat: false,
   vatOnServiceCharge: true,
   cashVarianceApprovalThreshold: 50,
+  posCreditLimitPerGuest: 0,
+  receiptFooter: null,
   invoicePrefix: "INV",
   receiptPrefix: "RCPT",
   grnPrefix: "GRN",
@@ -133,6 +135,12 @@ export default function CompanySettingsPage() {
           <ToggleRow title="VAT on service charge" subtitle="Charge VAT on the service charge as well as on the items." checked={value.vatOnServiceCharge ?? true} onChange={(v) => set("vatOnServiceCharge", v)} />
           <Field label="Cash difference needing approval (ETB)">
             <Input type="number" value={String(value.cashVarianceApprovalThreshold ?? 50)} onChange={v => set("cashVarianceApprovalThreshold", Math.max(0, Number(v) || 0))} />
+          </Field>
+          <Field label="Credit limit per guest (0 = no limit)">
+            <Input type="number" value={String(value.posCreditLimitPerGuest ?? 0)} onChange={v => set("posCreditLimitPerGuest", Math.max(0, Number(v) || 0))} />
+          </Field>
+          <Field label="Receipt footer">
+            <Input value={value.receiptFooter ?? ""} onChange={v => set("receiptFooter", v.slice(0, 300))} placeholder="Thank you for dining with us" />
           </Field>
           <InfoRow label="Contingency" value="Recipe-cost allowance only" />
           <Btn disabled={!canUpdateSettings || saving} onClick={() => setValue(previous => previous ? ({ ...previous,

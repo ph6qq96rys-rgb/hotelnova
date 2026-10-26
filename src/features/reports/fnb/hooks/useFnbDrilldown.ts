@@ -50,6 +50,7 @@ export function useFnbDrilldown(appliedQuery: FnbReportQuery | null) {
         itemId: target.itemId,
         locationId: typeof target.locationId === "string" ? target.locationId : null,
         consumptionType: target.consumptionType || null,
+        sourceId: typeof target.sourceId === "string" ? target.sourceId : null,
         uomName: typeof target.uomName === "string" ? target.uomName : null,
         page,
         pageSize: MOVEMENT_PAGE_SIZE,

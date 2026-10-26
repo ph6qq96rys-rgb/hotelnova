@@ -1,5 +1,6 @@
 // src/features/eventmanagment/sales/InquiriesScreen.tsx
 
+import { Button } from "../../../components/ui/button";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import {
@@ -230,8 +231,8 @@ export function InquiriesScreen({
         <DetailHeader
           actions={
             <>
-              <button
-                className="cat-btn"
+              <Button variant="outline"
+                
                 onClick={() => {
                   mutation.setError(null);
                   setEditing({ mode: "edit", form: toForm(selected) });
@@ -239,9 +240,9 @@ export function InquiriesScreen({
                 type="button"
               >
                 Edit
-              </button>
-              <button
-                className="cat-btn"
+              </Button>
+              <Button variant="outline"
+                
                 onClick={() => {
                   mutation.setError(null);
                   setStatusChange({ status: selected.status, reason: "" });
@@ -249,14 +250,14 @@ export function InquiriesScreen({
                 type="button"
               >
                 Change status
-              </button>
-              <button
-                className="cat-btn cat-btn--primary"
+              </Button>
+              <Button variant="default"
+                
                 onClick={() => onRaiseQuotation(selected.id)}
                 type="button"
               >
                 Raise quotation
-              </button>
+              </Button>
             </>
           }
           eyebrow="Inquiry"
@@ -346,11 +347,11 @@ export function InquiriesScreen({
           placeholder="All statuses"
           value={status}
         />
-        <button className="cat-btn" onClick={() => void load()} type="button">
+        <Button variant="outline" onClick={() => void load()} type="button">
           <RefreshCw className={loading ? "cat-spin" : ""} size={15} /> Refresh
-        </button>
-        <button
-          className="cat-btn cat-btn--primary"
+        </Button>
+        <Button variant="default"
+          
           disabled={!branchId}
           onClick={() => {
             mutation.setError(null);
@@ -360,7 +361,7 @@ export function InquiriesScreen({
           type="button"
         >
           <Plus size={15} /> New inquiry
-        </button>
+        </Button>
       </Toolbar>
 
       {loadError ? <ErrorBanner message={loadError} /> : null}

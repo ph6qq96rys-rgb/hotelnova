@@ -136,6 +136,8 @@ export type PosTicketLineDto = {
   addedByName: string;
   isVoided: boolean;
   voidReason?: string | null;
+  /** Paid on this sale when the bill was split; null while still owed. */
+  saleId?: Guid | null;
 };
 
 export type PosTicketDto = Omit<PosTicketSummaryDto, "itemCount"> & {
@@ -184,9 +186,46 @@ export type SettleTicketRequest = {
   clientRequestId?: Guid | null;
   discountReason?: string | null;
   payments: Array<{ method: PaymentMethod; amount: number; referenceCode?: string | null }>;
+  /** Split check: pay only these items (a smaller quantity splits the item). Omit to pay everything still owed. */
+  lines?: Array<{ lineId: Guid; quantity: number }>;
 };
 
 export type PosScope = { companyId: Guid; branchId: Guid };
+
+export type ReceiptDocumentDto = {
+  kind: "Receipt" | "GuestCheck";
+  header: { businessName: string; legalName?: string | null; tin?: string | null; vatNumber?: string | null; branchName: string;
+    address?: string | null; phone?: string | null; fiscalMachineCode?: string | null; tillName: string };
+  invoiceNumber?: string | null;
+  documentNo: string;
+  atUtc: string;
+  localTime: string;
+  cashier: string;
+  table?: string | null;
+  waiter?: string | null;
+  guests?: number | null;
+  orderType: string;
+  lines: Array<{ name: string; quantity: number; unitPrice: number; lineTotal: number; vatRate: number }>;
+  subTotal: number;
+  discount: number;
+  serviceCharge: number;
+  taxes: Array<{ rate: number; taxable: number; tax: number }>;
+  taxTotal: number;
+  total: number;
+  payments: Array<{ method: string; amount: number; reference?: string | null }>;
+  tips: number;
+  returned: number;
+  balance: number;
+  currencyCode: string;
+  isFiscal: boolean;
+  irn?: string | null;
+  rrn?: string | null;
+  qrPayload?: string | null;
+  copyNo: number;
+  footer?: string | null;
+  escPosBase64: string;
+  printJobQueued: boolean;
+};
 
 const base = (scope: PosScope) => `/companies/${scope.companyId}/branches/${scope.branchId}/pos`;
 
@@ -230,6 +269,13 @@ export const posServiceApi = {
   cancelTicket: (scope: PosScope, id: Guid, version: Guid, reason: string) =>
     post<PosTicketDto>(scope, `/tickets/${id}/cancel`, { version, reason }),
   settle: (scope: PosScope, id: Guid, body: SettleTicketRequest) => post<SaleDto>(scope, `/tickets/${id}/settle`, body),
+
+  /** Records a customer receipt print (the second and later print as COPY) and returns it; "printer" also queues it for the till's printer. */
+  receipt: async (scope: PosScope, saleId: Guid, channel: "browser" | "printer") =>
+    (await http.post<ReceiptDocumentDto>(`${base(scope)}/sales/${saleId}/receipt`, null, { params: { channel } })).data,
+  guestCheck: async (scope: PosScope, ticketId: Guid, storeId: Guid | null, channel: "browser" | "printer") =>
+    (await http.post<ReceiptDocumentDto>(`${base(scope)}/tickets/${ticketId}/guest-check`, null, { params: { storeId: storeId || undefined, channel } })).data,
+  openDrawer: (scope: PosScope, storeId: Guid) => post<void>(scope, `/stores/${storeId}/open-drawer`, null),
 
   holdOrder: (scope: PosScope, body: HoldOrderRequest) => post<PosTicketDto>(scope, "/orders/hold", body),
   holdTicket: (scope: PosScope, id: Guid, version: Guid, holdReason: string | null, items?: PosTicketItemRequest[]) =>

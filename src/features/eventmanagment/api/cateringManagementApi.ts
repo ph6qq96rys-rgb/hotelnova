@@ -111,3 +111,87 @@ export async function listCateringEvents(
   });
   return data;
 }
+
+// ── Workflow: enquiry → quotation → deposit → planning → delivery → close-out ──────────────────────
+
+export type CateringWorkflowStageKey = "enquiry" | "quotation" | "deposit" | "planning" | "delivery" | "closeout";
+/** Event-workspace tab a step is done on. */
+export type CateringWorkflowTab = "overview" | "logistics" | "kitchen" | "stock" | "billing" | "close";
+
+export type CateringWorkflowStage = { key: string; label: string; state: "done" | "current" | "upcoming" | "cancelled" };
+
+export type CateringWorkflowStep = {
+  key: string;
+  stage: string;
+  label: string;
+  /** done, todo (required and open), optional, or missed (no longer needed). */
+  state: "done" | "todo" | "optional" | "missed";
+  required: boolean;
+  detail?: string | null;
+  tab?: CateringWorkflowTab | null;
+  action?: string | null;
+};
+
+export type CateringEventJourney = {
+  eventId: string;
+  eventNo: string;
+  status: string;
+  /** A stage key, or "done" / "cancelled". */
+  stage: string;
+  stages: CateringWorkflowStage[];
+  steps: CateringWorkflowStep[];
+  next?: CateringWorkflowStep | null;
+  alerts: string[];
+};
+
+export type CateringWorkflowCard = {
+  kind: "inquiry" | "quotation" | "event";
+  id: string;
+  branchId: string;
+  reference: string;
+  customer: string;
+  eventDateUtc?: string | null;
+  guests: number;
+  value: number;
+  status: string;
+  stage: CateringWorkflowStageKey;
+  nextAction: string;
+  nextTab?: CateringWorkflowTab | null;
+  doneSteps: number;
+  totalSteps: number;
+  alerts: string[];
+};
+
+export type CateringWorkflowBoard = { stages: CateringWorkflowStage[]; cards: CateringWorkflowCard[]; page: number; pageSize: number; totalCount: number };
+
+export async function getCateringWorkflowBoard(
+  companyId: string,
+  params?: { branchId?: string | null; signal?: AbortSignal; page?: number; pageSize?: number; search?: string },
+): Promise<CateringWorkflowBoard> {
+  const response = await http.get<CateringWorkflowBoard>(`${cateringBase(companyId)}/workflow`, {
+    params: { ...withBranch(params), page: params?.page, pageSize: params?.pageSize, search: params?.search },
+    signal: params?.signal,
+  });
+  return response.data;
+}
+
+export async function getCateringEventJourney(companyId: string, eventId: string, signal?: AbortSignal): Promise<CateringEventJourney> {
+  const response = await http.get<CateringEventJourney>(`${cateringBase(companyId)}/workflow/events/${encodeURIComponent(eventId)}`, { signal });
+  return response.data;
+}
+
+/** The event-workspace page (sidebar mode) that owns each tab. */
+export const WORKFLOW_TAB_MODE: Record<CateringWorkflowTab, "event" | "kitchen" | "inventory" | "finance"> = {
+  overview: "event",
+  logistics: "event",
+  close: "event",
+  kitchen: "kitchen",
+  stock: "inventory",
+  billing: "finance",
+};
+
+/** Link to the place where a workflow step is done. */
+export function workflowStepTarget(eventId: string, tab?: CateringWorkflowTab | null): string {
+  const t = tab ?? "overview";
+  return `${WORKFLOW_TAB_MODE[t]}?event=${encodeURIComponent(eventId)}&tab=${t}`;
+}

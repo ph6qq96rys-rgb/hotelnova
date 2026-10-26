@@ -349,29 +349,22 @@ export const onboardingApi = {
     await http.post(`/companies/${companyId}/activate`, {});
   },
 
+  /** Completes onboarding (the server checks readiness for every branch), then activates the company. */
   async complete(companyId: string, branchId?: string | null): Promise<void> {
-    if (branchId) {
-      try {
-        await http.post(`/companies/${companyId}/branches/${branchId}/onboarding/complete`, {});
-      } catch (err) {
-        const status = (err as any)?.response?.status ?? (err as any)?.status;
-        if (status !== 404) throw err;
-      }
-    }
+    const completeUrl = branchId
+      ? `/companies/${companyId}/branches/${branchId}/onboarding/complete`
+      : `/companies/${companyId}/onboarding/complete`;
 
+    await http.post(completeUrl, {});
     await this.activateCompany(companyId);
   },
 
   async listCompanies(): Promise<CompanyDto[]> {
-    try {
-      const res = await http.get<unknown>("/companies", {
-        params: { page: 1, pageSize: 100 },
-      });
+    const res = await http.get<unknown>("/companies", {
+      params: { page: 1, pageSize: 100 },
+    });
 
-      return itemsOf<CompanyDto>(res.data);
-    } catch {
-      return [];
-    }
+    return itemsOf<CompanyDto>(res.data);
   },
 
   async createCompany(payload: CreateCompanyDto): Promise<CompanyDto> {
@@ -390,29 +383,24 @@ export const onboardingApi = {
     return companyApi.updateCompany(companyId, payload as UpdateCompanyDto);
   },
 
+  /** Null only when the company has no settings yet (404); other failures are reported. */
   async getCompanySettings(companyId: string): Promise<CompanySettingsDto | null> {
     try {
       const res = await http.get<CompanySettingsDto>(`/companies/${companyId}/settings`);
       return res.data;
-    } catch {
-      return null;
+    } catch (err) {
+      const status = (err as any)?.response?.status ?? (err as any)?.status;
+      if (status === 404) return null;
+      throw err;
     }
   },
 
+  /** Saves the given settings; fields left out keep their current value on the server. */
   async upsertCompanySettings(
     companyId: string,
-    payload: CompanySettingsDto,
+    payload: Partial<CompanySettingsDto>,
   ): Promise<CompanySettingsDto> {
-    try {
-      return await companyApi.updateSettings(companyId, payload);
-    } catch {
-      const res = await http.put<CompanySettingsDto>(
-        `/companies/${companyId}/settings`,
-        payload,
-      );
-
-      return res.data;
-    }
+    return companyApi.updateSettings(companyId, payload as CompanySettingsDto);
   },
 
   async listBranches(companyId: string): Promise<BranchDto[]> {

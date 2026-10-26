@@ -1,5 +1,5 @@
 /* =========================================================
-   MERGED CSS (Hotel Nova Admin + InventoryItemsPage)
+   MERGED CSS (Process360 Admin + InventoryItemsPage)
    Goal: eliminate conflicts by SCOPING variables + generic classes
    ========================================================= */
 
@@ -58,10 +58,10 @@ textarea::placeholder {
 }
 
 /* =========================================================
-   1) Hotel Nova Admin Shell (SCOPED)
+   1) Process360 Admin Shell (SCOPED)
    ========================================================= */
 
-/* Put Hotel Nova theme tokens on the shell (NOT :root) */
+/* Put Process360 theme tokens on the shell (NOT :root) */
 .hna-shell {
   --sidebar-w: 280px;
   --topbar-h: 56px;

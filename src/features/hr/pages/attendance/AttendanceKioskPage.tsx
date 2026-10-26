@@ -120,7 +120,7 @@ export default function AttendanceKioskPage() {
     MixedChannelDenied: t.mixed, ManualDisabled: t.manualDisabled, ResetRequested: t.pending, InvalidCorrection: t.invalidCorrection, Pending: t.requested
   } as Record<string, string>)[result.code ?? ""] ?? (language === "en" ? result.message : t.invalid) : null;
   return <main className="attendance-kiosk" lang={language} onPointerDown={activity} onKeyDown={activity}>
-    <header><strong>HOTEL NOVA · {t.title}</strong><div><button onClick={() => setLanguage(language === "en" ? "am" : "en")}>{language === "en" ? "አማርኛ" : "English"}</button><button onClick={() => void document.documentElement.requestFullscreen().catch(() => {})}>{t.full}</button></div></header>
+    <header><strong>Process360 · {t.title}</strong><div><button onClick={() => setLanguage(language === "en" ? "am" : "en")}>{language === "en" ? "አማርኛ" : "English"}</button><button onClick={() => void document.documentElement.requestFullscreen().catch(() => {})}>{t.full}</button></div></header>
     <section className="kiosk-card">
       {checking ? <h1>{t.loading}</h1> : !device ? <>
         <h1>{t.pair}</h1><p>{t.setup}</p>

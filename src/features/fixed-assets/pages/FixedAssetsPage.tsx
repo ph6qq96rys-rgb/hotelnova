@@ -1,268 +1,272 @@
-import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Save } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import {http} from "../../../api/http";
-import { resolveBranchId } from "../../../api/http";
-import { formatCurrency } from "../../../shared/currency/currencyFormat";
+import { Download, Plus, RefreshCw, Search } from "lucide-react";
+
+import { PageHeader } from "../../../components/PageHeader";
+import { Button } from "../../../components/ui/button";
+import { StateMessage } from "../../../components/ui/Feedback";
+import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
+import { http, resolveBranchId } from "../../../api/http";
+import { useHasPermission } from "../../../auth/usePermissions";
+import { useI18n } from "../../../i18n";
 import { formatAppDate } from "../../../shared/datetime/dateFormat";
 import {
-  createFixedAsset,
-  createFixedAssetCategory,
-  listFixedAssetCategories,
-  listFixedAssets,
+  ASSET_STATUSES,
+  fixedAssetsApi,
   type FixedAssetCategory,
+  type FixedAssetDetail,
   type FixedAssetListItem,
+  type FixedAssetSummary,
 } from "../api/fixedAssetsApi";
+import { AssetDrawer } from "../components/AssetDrawer";
+import { AssetFormDialog, type AssetSource } from "../components/AssetFormDialog";
+import { CategoriesPanel } from "../components/CategoriesPanel";
+import { DepreciationPanel } from "../components/DepreciationPanel";
+import { apiError, downloadCsv, money, STATUS_LABEL, StatusChip } from "../components/faShared";
 import "./fixed-assets.css";
 
-const money = {
-  format: (value: number | string | null | undefined) => formatCurrency(value),
-};
+const PAGE_SIZE = 50;
+type Tab = "register" | "depreciation" | "categories";
 
-function formatDate(value?: string | null) {
-  return formatAppDate(value);
-}
-
-function statusTone(status: string) {
-  return `fa-chip fa-chip--${status.toLowerCase()}`;
-}
-
-const categoryDefaults = {
-  code: "",
-  name: "",
-  description: "",
-  depreciationMethod: "StraightLine",
-  usefulLifeMonths: 60,
-  residualValuePercent: 0,
-  capitalizationThreshold: 0,
-  inspectionIntervalDays: 180,
-  requiresSerialNumber: false,
-  requiresTagBeforeActivation: true,
-  requiresCustodianOnActivation: true,
-  isActive: true,
-};
-
-const assetDefaults = {
-  categoryId: "",
-  assetNo: "",
-  assetTagNumber: "",
-  name: "",
-  description: "",
-  brand: "",
-  model: "",
-  serialNumber: "",
-  barcode: "",
-  physicalLocation: "",
-  costCenterCode: "",
-  notes: "",
-  condition: "Good",
-  acquisitionMethod: "Purchase",
-  acquisitionDateUtc: new Date().toISOString(),
-  acquisitionCost: 0,
-  residualValue: 0,
-  usefulLifeMonths: 60,
-};
-
+/**
+ * Fixed Asset Register: assets with their custody, condition and book value; the full
+ * lifecycle from draft to disposal; monthly depreciation; and asset categories.
+ */
 export default function FixedAssetsPage() {
-  const { companyId } = useParams<{ companyId: string }>();
-  const [searchParams]=useSearchParams();
-  const sourceOrder=searchParams.get("purchaseOrderId"),sourceAcceptance=searchParams.get("acceptanceId");
-  const [source,setSource]=useState<{purchaseOrderId:string;acceptanceId:string;quantity:number}|null>(null);
-  const [rows, setRows] = useState<FixedAssetListItem[]>([]);
-  const [categories, setCategories] = useState<FixedAssetCategory[]>([]);
-  const [status, setStatus] = useState("");
-  const [search, setSearch] = useState("");
-  const [assetForm, setAssetForm] = useState(assetDefaults);
-  const [categoryForm, setCategoryForm] = useState(categoryDefaults);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
+  const { tx } = useI18n();
+  const { companyId = "" } = useParams<{ companyId: string }>();
+  const [params, setParams] = useSearchParams();
+  const canRegister = useHasPermission("fixedassets.register");
+  const canReports = useHasPermission("fixedassets.reports");
   const branchId = resolveBranchId();
 
-  const totals = useMemo(() => rows.reduce(
-    (acc, row) => {
-      acc.count += 1;
-      acc.value += row.netBookValue || 0;
-      if (row.status === "Draft") acc.draft += 1;
-      if (row.status === "Assigned") acc.assigned += 1;
-      if (row.nextInspectionDueUtc && new Date(row.nextInspectionDueUtc) <= new Date()) acc.due += 1;
-      return acc;
-    },
-    { count: 0, value: 0, draft: 0, assigned: 0, due: 0 },
-  ), [rows]);
+  const tab: Tab = params.get("tab") === "depreciation" && canReports ? "depreciation" : params.get("tab") === "categories" ? "categories" : "register";
+  const setTab = (next: Tab) => {
+    const p = new URLSearchParams(params);
+    if (next === "register") p.delete("tab"); else p.set("tab", next);
+    p.delete("purchaseOrderId"); p.delete("acceptanceId");
+    setParams(p, { replace: true });
+  };
 
-  async function load() {
+  const [rows, setRows] = useState<FixedAssetListItem[]>([]);
+  const [summary, setSummary] = useState<FixedAssetSummary | null>(null);
+  const [categories, setCategories] = useState<FixedAssetCategory[]>([]);
+  const [status, setStatus] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [allBranches, setAllBranches] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [form, setForm] = useState<{ asset: FixedAssetDetail | null } | null>(null);
+  const [source, setSource] = useState<AssetSource | null>(null);
+
+  const scopeBranch = allBranches ? null : branchId;
+
+  // Debounce typing in the search box.
+  useEffect(() => {
+    const t = window.setTimeout(() => { setSearch(searchText.trim()); setPage(1); }, 350);
+    return () => window.clearTimeout(t);
+  }, [searchText]);
+
+  const loadCategories = useCallback(async () => {
+    if (!companyId) return;
+    try { setCategories(await fixedAssetsApi.categories(companyId, true)); }
+    catch (err) { setError(apiError(err, tx("Asset categories could not be loaded."))); }
+  }, [companyId, tx]);
+
+  const load = useCallback(async () => {
     if (!companyId) return;
     setLoading(true);
     setError(null);
     try {
-      const [assetRows, categoryRows] = await Promise.all([
-        listFixedAssets(companyId, { branchId, status, search }),
-        listFixedAssetCategories(companyId),
+      const [list, totals] = await Promise.all([
+        fixedAssetsApi.list(companyId, { branchId: scopeBranch, status, search, categoryId, page, pageSize: PAGE_SIZE }),
+        fixedAssetsApi.summary(companyId, scopeBranch),
       ]);
-      setRows(assetRows);
-      setCategories(categoryRows);
-      setAssetForm((current) => ({ ...current, categoryId: current.categoryId || categoryRows[0]?.id || "" }));
-    } catch {
-      setError("Unable to load the fixed asset register.");
+      setRows(list);
+      setSummary(totals);
+    } catch (err) {
+      setError(apiError(err, tx("The fixed asset register could not be loaded.")));
     } finally {
       setLoading(false);
     }
-  }
+  }, [companyId, scopeBranch, status, search, categoryId, page, tx]);
 
-  useEffect(() => { void load(); }, [companyId]);
-  useEffect(()=>{
+  useEffect(() => { void loadCategories(); }, [loadCategories]);
+  useEffect(() => { void load(); }, [load]);
+
+  // Hand-off from procurement: equipment accepted on a purchase order opens a prefilled registration.
+  const sourceOrder = params.get("purchaseOrderId");
+  const sourceAcceptance = params.get("acceptanceId");
+  useEffect(() => {
     setSource(null);
-    if(!companyId||!sourceOrder||!sourceAcceptance)return;
-    let active=true;
-    void http.get<{purchaseOrderId:string;acceptanceId:string;quantity:number;name:string;description:string;unitCost:number;reference:string}>(`/companies/${companyId}/procurement/purchase-orders/${sourceOrder}/acceptances/${sourceAcceptance}/asset-handoff`).then(({data})=>{
-      if(!active)return;setSource(data);setAssetForm(current=>({...current,name:data.name,description:data.description,acquisitionCost:data.unitCost,notes:data.reference}));
-    }).catch(()=>{if(active)setError("Unable to load the accepted equipment. Open its acceptance record and retry.");});
-    return()=>{active=false;};
-  },[companyId,sourceOrder,sourceAcceptance]);
+    if (!companyId || !sourceOrder || !sourceAcceptance) return;
+    let active = true;
+    http.get<{ purchaseOrderId: string; acceptanceId: string; quantity: number; name: string; description: string; unitCost: number; reference: string }>(
+      `/companies/${companyId}/procurement/purchase-orders/${sourceOrder}/acceptances/${sourceAcceptance}/asset-handoff`)
+      .then(({ data }) => {
+        if (!active) return;
+        setSource({ purchaseOrderId: data.purchaseOrderId, name: data.name, description: data.description, unitCost: data.unitCost, reference: data.reference, quantity: data.quantity });
+        setForm({ asset: null });
+      })
+      .catch(() => { if (active) setError(tx("The accepted equipment could not be loaded. Open its acceptance record and try again.")); });
+    return () => { active = false; };
+  }, [companyId, sourceOrder, sourceAcceptance, tx]);
 
-  async function saveCategory() {
-    if (!companyId) return;
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const created = await createFixedAssetCategory(companyId, categoryForm);
-      setCategories((current) => [created, ...current.filter((x) => x.id !== created.id)]);
-      setAssetForm((current) => ({ ...current, categoryId: current.categoryId || created.id }));
-      setCategoryForm(categoryDefaults);
-      setMessage("Asset category saved.");
-    } catch {
-      setError("Unable to save fixed asset category.");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const changed = (message: string) => { setNotice(message); void load(); };
 
-  async function saveAsset() {
-    if (!companyId) return;
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-    try {
-      await createFixedAsset(companyId, {
-        ...assetForm,
-        purchaseOrderId:source?.purchaseOrderId,
-        currentBranchId: branchId,
-        acquisitionCost: Number(assetForm.acquisitionCost || 0),
-        residualValue: Number(assetForm.residualValue || 0),
-        usefulLifeMonths: Number(assetForm.usefulLifeMonths || 0),
-      });
-      setAssetForm({ ...assetDefaults, categoryId: categories[0]?.id || "" });
-      setMessage("Asset draft registered. Activate after assigning branch, location, and custody.");
-      await load();
-    } catch {
-      setError("Unable to register fixed asset. Check required category, tag, dates, and serial policy.");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const exportCsv = () => downloadCsv(`fixed-assets-${new Date().toISOString().slice(0, 10)}.csv`,
+    ["Asset no", "Tag", "Name", "Category", "Branch", "Location", "Custodian", "Status", "Condition", "Acquired", "In service", "Cost", "Net book value"],
+    rows.map((r) => [r.assetNo, r.assetTagNumber, r.name, r.categoryName, r.branchName ?? "", r.locationName ?? "", r.custodianName ?? r.departmentName ?? "",
+      STATUS_LABEL[r.status], r.condition, r.acquisitionDateUtc.slice(0, 10), r.inServiceDateUtc?.slice(0, 10) ?? "", r.acquisitionCost.toFixed(2), r.netBookValue.toFixed(2)]));
+
+  const activeCategories = useMemo(() => categories.filter((c) => c.isActive), [categories]);
+  const now = Date.now();
 
   if (!companyId) return null;
 
   return (
-    <main className="fa-page">
-      <header className="fa-header">
-        <div>
-          <div className="fa-kicker">Finance / Fixed Assets</div>
-          <h1>Fixed Asset Register</h1>
-          <p>Register, classify, value, and control asset custody across company and branch operations.</p>
-        </div>
-        <button className="fa-btn" type="button" onClick={load} disabled={loading}><RefreshCw size={16} /> Refresh</button>
-      </header>
-
-      {error ? <div className="fa-alert fa-alert--danger">{error}</div> : null}
-      {message ? <div className="fa-alert fa-alert--success">{message}</div> : null}
-
-      <section className="fa-metrics" aria-label="Fixed asset summary">
-        <div><span>Total assets</span><strong>{totals.count}</strong></div>
-        <div><span>Assigned</span><strong>{totals.assigned}</strong></div>
-        <div><span>Draft</span><strong>{totals.draft}</strong></div>
-        <div><span>Inspection due</span><strong>{totals.due}</strong></div>
-        <div><span>Net book value</span><strong>{money.format(totals.value)}</strong></div>
-      </section>
-
-      <section className="fa-workspace">
-        <div className="fa-panel fa-panel--wide">
-          <div className="fa-panel-head">
-            <div>
-              <h2>Asset Register</h2>
-              <p>Readable custody, location, status, and accounting values.</p>
-            </div>
-            <div className="fa-toolbar">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search asset no, tag, name, serial" />
-              <select value={status} onChange={(e) => setStatus(e.target.value)}>
-                <option value="">All status</option>
-                <option value="Draft">Draft</option>
-                <option value="Active">Active</option>
-                <option value="Assigned">Assigned</option>
-                <option value="UnderMaintenance">Under maintenance</option>
-                <option value="Disposed">Disposed</option>
-              </select>
-              <button className="fa-btn" type="button" onClick={load}>Apply</button>
-            </div>
+    <main className="fa-page ui-page">
+      <PageHeader title={tx("Fixed Asset Register")}
+        subtitle={tx("Register, assign, inspect, depreciate and dispose of the company's equipment and other fixed assets.")}
+        actions={
+          <div className="fa-toolbar">
+            <Button type="button" variant="outline" onClick={() => { void load(); void loadCategories(); }} disabled={loading}><RefreshCw size={15} aria-hidden="true" /> {tx("Refresh")}</Button>
+            {canRegister ? (
+              <Button type="button" disabled={activeCategories.length === 0} title={activeCategories.length === 0 ? tx("Create a category first.") : undefined}
+                onClick={() => { setSource(null); setForm({ asset: null }); }}>
+                <Plus size={15} aria-hidden="true" /> {tx("Register asset")}
+              </Button>
+            ) : null}
           </div>
-          <div className="fa-table-wrap">
-            <table className="fa-table">
-              <thead>
-                <tr>
-                  <th>Asset</th>
-                  <th>Category</th>
-                  <th>Branch / Location</th>
-                  <th>Custody</th>
-                  <th>Status</th>
-                  <th>Acquired</th>
-                  <th className="fa-right">NBV</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td><strong>{row.assetNo}</strong><span>{row.name}</span><small>{row.assetTagNumber || row.serialNumber || "No tag"}</small></td>
-                    <td>{row.categoryName}</td>
-                    <td>{row.branchName ?? "Company scope"}<span>{row.locationName ?? "Location pending"}</span></td>
-                    <td>{row.custodianName ?? row.departmentName ?? "Custody pending"}</td>
-                    <td><span className={statusTone(row.status)}>{row.status}</span></td>
-                    <td>{formatDate(row.acquisitionDateUtc)}</td>
-                    <td className="fa-right">{money.format(row.netBookValue || 0)}</td>
+        } />
+
+      <div className="fa-tabs fa-tabs--page" role="tablist">
+        <Button type="button" variant="ghost" role="tab" className="fa-tab" aria-selected={tab === "register"} onClick={() => setTab("register")}>{tx("Register")}</Button>
+        {canReports ? <Button type="button" variant="ghost" role="tab" className="fa-tab" aria-selected={tab === "depreciation"} onClick={() => setTab("depreciation")}>{tx("Depreciation")}</Button> : null}
+        <Button type="button" variant="ghost" role="tab" className="fa-tab" aria-selected={tab === "categories"} onClick={() => setTab("categories")}>{tx("Categories")}</Button>
+      </div>
+
+      {error ? <StateMessage tone="error">{error}</StateMessage> : null}
+      {notice ? <StateMessage tone="success">{notice}</StateMessage> : null}
+
+      {tab === "register" ? (
+        <>
+          {summary ? (
+            <section className="fa-metrics" aria-label={tx("Summary")}>
+              <div><span>{tx("Assets in register")}</span><strong>{summary.total - summary.disposed}</strong><small>{tx("{n} draft · {d} disposed", { n: summary.draft, d: summary.disposed })}</small></div>
+              <div><span>{tx("In use")}</span><strong>{summary.inUse}</strong><small>{tx("{m} in maintenance · {o} out of service", { m: summary.underMaintenance, o: summary.outOfService })}</small></div>
+              <div className={summary.inspectionDue ? "is-warn" : ""}><span>{tx("Inspection due")}</span><strong>{summary.inspectionDue}</strong></div>
+              <div className={summary.missingOrStolen ? "is-bad" : ""}><span>{tx("Missing or stolen")}</span><strong>{summary.missingOrStolen}</strong></div>
+              <div><span>{tx("Cost")}</span><strong>{money(summary.totalCost)}</strong><small>{tx("less {amount} depreciation", { amount: money(summary.accumulatedDepreciation) })}</small></div>
+              <div className={summary.depreciationBehind ? "is-warn" : ""}><span>{tx("Net book value")}</span><strong>{money(summary.netBookValue)}</strong>
+                <small>{summary.depreciationBehind ? tx("{n} asset(s) not depreciated up to last month", { n: summary.depreciationBehind }) : summary.lastRunPeriod ? tx("Depreciated up to {period}", { period: summary.lastRunPeriod }) : tx("No depreciation posted yet")}</small>
+              </div>
+            </section>
+          ) : null}
+          {summary?.depreciationBehind && canReports ? (
+            <p className="fa-note fa-note--warn">
+              {tx("Book values are overstated until last month's depreciation is posted.")}{" "}
+              <Button type="button" size="sm" variant="outline" onClick={() => setTab("depreciation")}>{tx("Run depreciation")}</Button>
+            </p>
+          ) : null}
+
+          <section className="fa-panel">
+            <div className="fa-filters">
+              <label className="fa-search">
+                <Search size={15} aria-hidden="true" />
+                <Input value={searchText} aria-label={tx("Search assets")} placeholder={tx("Asset no, tag, name, serial, barcode")} onChange={(e) => setSearchText(e.target.value)} />
+              </label>
+              <Select aria-label={tx("Status")} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
+                <option value="">{tx("All statuses")}</option>
+                {ASSET_STATUSES.map((s) => <option key={s} value={s}>{tx(STATUS_LABEL[s])}</option>)}
+              </Select>
+              <Select aria-label={tx("Category")} value={categoryId} onChange={(e) => { setCategoryId(e.target.value); setPage(1); }}>
+                <option value="">{tx("All categories")}</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
+              </Select>
+              <Select aria-label={tx("Branch scope")} value={allBranches ? "all" : "branch"} onChange={(e) => { setAllBranches(e.target.value === "all"); setPage(1); }}>
+                <option value="branch">{tx("This branch")}</option>
+                <option value="all">{tx("All branches")}</option>
+              </Select>
+              <Button type="button" variant="outline" disabled={rows.length === 0} onClick={exportCsv}><Download size={15} aria-hidden="true" /> {tx("Export")}</Button>
+            </div>
+
+            <div className="fa-table-wrap">
+              <table className="ui-table fa-table fa-table--register">
+                <thead>
+                  <tr>
+                    <th>{tx("Asset")}</th>
+                    <th>{tx("Category")}</th>
+                    <th>{tx("Branch / location")}</th>
+                    <th>{tx("custody")}</th>
+                    <th>{tx("Status")}</th>
+                    <th>{tx("In service")}</th>
+                    <th className="fa-num">{tx("Cost")}</th>
+                    <th className="fa-num">{tx("Book value")}</th>
                   </tr>
-                ))}
-                {!loading && rows.length === 0 ? <tr><td className="fa-empty" colSpan={7}>No fixed assets found.</td></tr> : null}
-                {loading ? <tr><td className="fa-empty" colSpan={7}>Loading fixed assets...</td></tr> : null}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <aside className="fa-side">
-          <section className="fa-panel">
-            <h2>Register Asset Draft</h2>
-            <label>Category<select value={assetForm.categoryId} onChange={(e) => setAssetForm({ ...assetForm, categoryId: e.target.value })}>{categories.map((c) => <option key={c.id} value={c.id}>{c.code} - {c.name}</option>)}</select></label>
-            <label>Asset name<input value={assetForm.name} onChange={(e) => setAssetForm({ ...assetForm, name: e.target.value })} /></label>
-            <label>Asset tag<input value={assetForm.assetTagNumber} onChange={(e) => setAssetForm({ ...assetForm, assetTagNumber: e.target.value })} /></label>
-            <label>Serial number<input value={assetForm.serialNumber} onChange={(e) => setAssetForm({ ...assetForm, serialNumber: e.target.value })} /></label>
-            <label>Physical location<input value={assetForm.physicalLocation} onChange={(e) => setAssetForm({ ...assetForm, physicalLocation: e.target.value })} /></label>
-            <div className="fa-two"><label>Cost<input type="number" value={assetForm.acquisitionCost} onChange={(e) => setAssetForm({ ...assetForm, acquisitionCost: Number(e.target.value) })} /></label><label>Life months<input type="number" value={assetForm.usefulLifeMonths} onChange={(e) => setAssetForm({ ...assetForm, usefulLifeMonths: Number(e.target.value) })} /></label></div>
-            <button className="fa-btn fa-btn--primary" type="button" onClick={saveAsset} disabled={saving || !assetForm.categoryId}><Plus size={16} /> Register draft</button>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const due = row.nextInspectionDueUtc && Date.parse(row.nextInspectionDueUtc) <= now && row.status !== "draft" && row.status !== "retired" && row.status !== "disposed";
+                    return (
+                      <tr key={row.id} className="fa-row" tabIndex={0} onClick={() => setSelectedId(row.id)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(row.id); } }}>
+                        <td><strong>{row.assetNo}</strong><span>{row.name}</span><small>{row.assetTagNumber || row.serialNumber || tx("No tag")}</small></td>
+                        <td>{row.categoryName}</td>
+                        <td>{row.branchName ?? tx("No branch")}<span>{row.locationName ?? "—"}</span></td>
+                        <td>{row.custodianName ?? row.departmentName ?? <span className="fa-warn-text">{tx("No custodian")}</span>}</td>
+                        <td><StatusChip status={row.status} />{due ? <small className="fa-warn-text">{tx("Inspection due")}</small> : null}</td>
+                        <td>{row.inServiceDateUtc ? formatAppDate(row.inServiceDateUtc) : "—"}</td>
+                        <td className="fa-num">{money(row.acquisitionCost)}</td>
+                        <td className="fa-num"><strong>{money(row.netBookValue)}</strong></td>
+                      </tr>
+                    );
+                  })}
+                  {!loading && rows.length === 0 ? (
+                    <tr><td className="fa-empty" colSpan={8}>{search || status || categoryId ? tx("No assets match these filters.") : tx("No fixed assets registered yet.")}</td></tr>
+                  ) : null}
+                  {loading && rows.length === 0 ? <tr><td className="fa-empty" colSpan={8}>{tx("Loading...")}</td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+            <div className="fa-pager">
+              <span className="fa-muted">{tx("Page {page}", { page })}</span>
+              <Button type="button" size="sm" variant="outline" disabled={page === 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>{tx("Previous")}</Button>
+              <Button type="button" size="sm" variant="outline" disabled={rows.length < PAGE_SIZE || loading} onClick={() => setPage((p) => p + 1)}>{tx("Next")}</Button>
+            </div>
           </section>
+        </>
+      ) : null}
 
-          <section className="fa-panel">
-            <h2>Category Setup</h2>
-            <label>Code<input value={categoryForm.code} onChange={(e) => setCategoryForm({ ...categoryForm, code: e.target.value })} /></label>
-            <label>Name<input value={categoryForm.name} onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })} /></label>
-            <div className="fa-two"><label>Useful life<input type="number" value={categoryForm.usefulLifeMonths} onChange={(e) => setCategoryForm({ ...categoryForm, usefulLifeMonths: Number(e.target.value) })} /></label><label>Inspection days<input type="number" value={categoryForm.inspectionIntervalDays} onChange={(e) => setCategoryForm({ ...categoryForm, inspectionIntervalDays: Number(e.target.value) })} /></label></div>
-            <label className="fa-check"><input type="checkbox" checked={categoryForm.requiresSerialNumber} onChange={(e) => setCategoryForm({ ...categoryForm, requiresSerialNumber: e.target.checked })} /> Require serial number</label>
-            <button className="fa-btn" type="button" onClick={saveCategory} disabled={saving}><Save size={16} /> Save category</button>
-          </section>
-        </aside>
-      </section>
+      {tab === "depreciation" ? <DepreciationPanel companyId={companyId} onPosted={() => void load()} /> : null}
+      {tab === "categories" ? <CategoriesPanel companyId={companyId} categories={categories} onChanged={(m) => { setNotice(m); void loadCategories(); }} /> : null}
+
+      <AssetDrawer companyId={companyId} assetId={selectedId} onClose={() => setSelectedId(null)}
+        onEdit={(asset) => setForm({ asset })} onChanged={changed} />
+
+      <AssetFormDialog companyId={companyId} open={!!form} asset={form?.asset ?? null} categories={categories}
+        defaultBranchId={branchId} source={form?.asset ? null : source}
+        onClose={() => setForm(null)}
+        onSaved={(asset, created) => {
+          setForm(null);
+          if (created) {
+            setSource(null);
+            const p = new URLSearchParams(params); p.delete("purchaseOrderId"); p.delete("acceptanceId"); setParams(p, { replace: true });
+            setNotice(tx("{asset} registered as a draft. Open it to activate.", { asset: asset.assetNo }));
+            setSelectedId(asset.id);
+          } else {
+            setNotice(tx("{asset} saved.", { asset: asset.assetNo }));
+            setSelectedId(null);
+            window.setTimeout(() => setSelectedId(asset.id), 0);
+          }
+          void load();
+        }} />
     </main>
   );
 }

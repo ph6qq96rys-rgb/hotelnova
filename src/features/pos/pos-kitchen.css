@@ -1,0 +1,22 @@
+/* Kitchen display and POS devices. Shared tokens only. */
+.rpos-kds { display: grid; gap: var(--ui-space-3); }
+.rpos-kds-toolbar { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); align-items: center; justify-content: space-between; }
+.rpos-kds-board { display: grid; gap: var(--ui-space-3); grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); align-items: start; }
+.rpos-kds-card { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); padding: var(--ui-space-3); display: grid; gap: var(--ui-space-2); }
+.rpos-kds-card header { display: flex; justify-content: space-between; gap: var(--ui-space-2); align-items: baseline; }
+.rpos-kds-card h3 { margin: 0; font-size: 1.25rem; }
+.rpos-kds-card.is-late { border-color: var(--warn-border); background: var(--warn-bg); }
+.rpos-kds-card.is-overdue { border-color: var(--danger-border); background: var(--danger-bg); }
+.rpos-kds-card.is-ready { border-color: var(--success-border); }
+.rpos-kds-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--ui-space-1); }
+.rpos-kds-card li { font-size: 1.05rem; font-weight: 600; }
+.rpos-kds-card li small { display: block; font-weight: 400; color: var(--text-muted); }
+.rpos-kds-card li.is-voided { text-decoration: line-through; color: var(--text-muted); }
+.rpos-kds-actions { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); }
+.rpos-kds-age { font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.rpos-devices { display: grid; gap: var(--ui-space-4); }
+.rpos-devices section { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); padding: var(--ui-space-4); display: grid; gap: var(--ui-space-3); }
+.rpos-devices h2 { margin: 0; font-size: 1.05rem; }
+.rpos-devices-grid { display: grid; gap: var(--ui-space-3); grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.rpos-devices-key { font-family: var(--font-mono, ui-monospace), monospace; overflow-wrap: anywhere; padding: var(--ui-space-2); border: 1px dashed var(--border); border-radius: var(--r-md); }
+.rpos-pick-list { max-height: 220px; overflow: auto; display: grid; gap: var(--ui-space-1); border: 1px solid var(--border-soft); border-radius: var(--r-md); padding: var(--ui-space-2); }

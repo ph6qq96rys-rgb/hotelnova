@@ -30,6 +30,7 @@ import { salesApi } from "../../sales/api/salesApi";
 import type { SaleListItemDto } from "../../sales/api/salesTypes";
 import { posApi } from "../api/posApi";
 import { posDrawerApi, type DrawerDto } from "../api/posDrawerApi";
+import { posOpenOrdersApi } from "../api/posOpenOrdersApi";
 import { posServiceApi, type PosFloorDto, type PosTicketSummaryDto } from "../api/posServiceApi";
 import { money } from "../components/posUi";
 import type { BulkPostCogsResultDto } from "../types/posTypes";
@@ -79,6 +80,8 @@ type Snapshot = {
   floor: Source<PosFloorDto>;
   drawers: Source<DrawerDto[]>;
   pendingCogs: Source<{ items: SaleListItemDto[]; truncated: boolean }>;
+  /** Confirmed sales with a balance still to collect. */
+  uncollected: Source<{ count: number; balance: number }>;
 };
 
 type Alert = { id: string; tone: "bad" | "warn"; title: string; detail: string; action?: { label: string; run: () => void } };
@@ -134,9 +137,10 @@ export function PosOperationsPage() {
   const canPostCogs = useHasPermission("sales.import");
   const canDrawers = useHasPermission("pos.session.approve");
   const canFloor = useHasPermission("pos.view");
+  const canOrders = useHasPermission("pos.orders.view");
 
   const [snap, setSnap] = useState<Snapshot>(() => ({
-    summary: blank(canSales), floor: blank(canFloor), drawers: blank(canDrawers), pendingCogs: blank(canSales),
+    summary: blank(canSales), floor: blank(canFloor), drawers: blank(canDrawers), pendingCogs: blank(canSales), uncollected: blank(canOrders),
   }));
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -164,7 +168,7 @@ export function PosOperationsPage() {
       try { return { data: await fetch(), error: null, allowed }; }
       catch (err) { return { data: null, error: extractApiError(err, tx(fallback)), allowed }; }
     };
-    const [summary, floor, drawers, pendingCogs] = await Promise.all([
+    const [summary, floor, drawers, pendingCogs, uncollected] = await Promise.all([
       settle(canSales, async () => (await operationsApi.salesSummaryForBusinessDate(scope.companyId, scope.branchId, today)).data,
         "Today's sales could not be loaded."),
       settle(canFloor, () => posServiceApi.floor(scope), "The floor could not be loaded."),
@@ -176,13 +180,17 @@ export function PosOperationsPage() {
         const items = (page?.items ?? []).filter((sale) => !sale.isInventoryPosted);
         return { items, truncated: (page?.totalCount ?? 0) > (page?.items?.length ?? 0) };
       }, "Unposted sales could not be loaded."),
+      settle(canOrders, async () => {
+        const s = (await posOpenOrdersApi.list(scope)).summary;
+        return { count: s.uncollectedCount, balance: s.uncollectedBalance };
+      }, "Unpaid balances could not be loaded."),
     ]);
     if (seq !== loadSeq.current) return;
-    setSnap({ summary, floor, drawers, pendingCogs });
+    setSnap({ summary, floor, drawers, pendingCogs, uncollected });
     setUpdatedAt(Date.now());
     setNow(Date.now());
     setLoading(false);
-  }, [ready, scope, canSales, canFloor, canDrawers, cogsFrom, cogsTo, tx]);
+  }, [ready, scope, canSales, canFloor, canDrawers, canOrders, cogsFrom, cogsTo, tx]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -231,6 +239,13 @@ export function PosOperationsPage() {
       detail: variancePending.map((d) => `${d.cashierName} ${money(d.cashVariance)}`).join(" · "),
       action: { label: tx("Review drawers"), run: () => go("sales/pos/session") },
     });
+    const unpaid = snap.uncollected.data;
+    if (unpaid && unpaid.count > 0) list.push({
+      id: "unpaid", tone: "warn",
+      title: tx("{count} sale(s) with a balance still to collect", { count: unpaid.count }),
+      detail: tx("{amount} not yet in the till. Collecting needs your own open cash drawer.", { amount: money(unpaid.balance) }),
+      action: { label: tx("Collect payments"), run: () => go("sales/pos/open-orders") },
+    });
     const overdue = lateTickets.filter((t) => t.age >= TICKET_WARN_MIN * 2);
     if (overdue.length) list.push({
       id: "overdue", tone: "bad",
@@ -258,7 +273,7 @@ export function PosOperationsPage() {
     });
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variancePending, lateTickets, pendingSales, staleDrawers, needsCleaning, canPostCogs, tx, companyId]);
+  }, [variancePending, lateTickets, pendingSales, staleDrawers, needsCleaning, canPostCogs, snap.uncollected.data, tx, companyId]);
 
   /* ── Stock posting ── */
   const runBulk = async () => {

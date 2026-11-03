@@ -4,14 +4,16 @@ import { Button } from "../../../components/ui/button";
 import { Textarea } from "../../../components/ui/textarea";
 import { apiError,dateTime } from "./p2pShared";
 import { useI18n } from "../../../i18n";
+import type { CopilotReviewState } from "./RequestApprovalCopilot";
 
-export default function RequisitionApprovalRoute({companyId,id,route,onChanged}:{companyId:string;id:string;route:ApprovalRoute;onChanged:()=>Promise<void>}){
+export default function RequisitionApprovalRoute({companyId,id,route,onChanged,copilot}:{companyId:string;id:string;route:ApprovalRoute;onChanged:()=>Promise<void>;copilot?:CopilotReviewState|null}){
   const {tx}=useI18n();const [reason,setReason]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
   async function decide(decision:string){
     if(busy)return;
     if(decision!=="Approve"&&!reason.trim()){setError("A reason is required for rejection or requested changes.");return;}
     setBusy(true);setError("");
-    try{await approvalsApi.decide(companyId,id,route.version,decision,reason);setReason("");await onChanged();}
+    if(decision==="Approve"&&copilot?.required&&!copilot.ready){setError("Complete the approval copilot review before approving this stage.");return;}
+    try{await approvalsApi.decide(companyId,id,route.version,decision,reason,copilot);setReason("");await onChanged();}
     catch(e){setError(apiError(e,"Unable to save the approval decision."));}
     finally{setBusy(false);}
   }
@@ -19,6 +21,6 @@ export default function RequisitionApprovalRoute({companyId,id,route,onChanged}:
     <ol>{route.policy.stages.map((stage,index)=><li key={index}><strong>{stage.name}</strong>: {stage.approverIds.map(x=>route.userNames[x]??tx("Assigned reviewer")).join(", ")}{index===route.currentStage&&route.status==="Pending"?` · ${tx("Current stage")} · ${tx("Due")} ${dateTime(route.dueAtUtc)}`:""}</li>)}</ol>
     {route.history.map(h=><p key={h.id}>{dateTime(h.atUtc)} · {route.userNames[h.actorId]??tx("Reviewer")} · {tx(h.decision)}{h.delegatedForId?` · ${tx("On behalf of")} ${route.userNames[h.delegatedForId]??tx("Assigned reviewer")}`:""}{h.reason?` — ${h.reason}`:""}</p>)}
     {error&&<p role="alert" className="prq-alert">{tx(error)}</p>}
-    {route.canDecide&&<><label>{tx("Decision reason")}<Textarea value={reason} maxLength={1000} onChange={e=>setReason(e.target.value)} disabled={busy}/></label><div className="prq-actions"><Button disabled={busy} onClick={()=>void decide("Approve")}>{tx("Approve stage")}</Button><Button variant="secondary" disabled={busy} onClick={()=>void decide("Return")}>{tx("Request changes")}</Button><Button variant="destructive" disabled={busy} onClick={()=>void decide("Reject")}>{tx("Reject")}</Button></div></>}
+    {route.canDecide&&<><label>{tx("Decision reason")}<Textarea value={reason} maxLength={1000} onChange={e=>setReason(e.target.value)} disabled={busy}/></label><div className="prq-actions"><Button disabled={busy||(!!copilot?.required&&!copilot.ready)} onClick={()=>void decide("Approve")}>{tx("Approve stage")}</Button><Button variant="secondary" disabled={busy} onClick={()=>void decide("Return")}>{tx("Request changes")}</Button><Button variant="destructive" disabled={busy} onClick={()=>void decide("Reject")}>{tx("Reject")}</Button></div></>}
   </section>;
 }

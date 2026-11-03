@@ -1,3 +1,4 @@
+import type { CopilotDecision } from "./requestCopilotApi";
 import { http } from "../../../api/http";
 import type { PurchaseOrder, RequisitionConversionInput } from "./purchasingApi";
 
@@ -208,8 +209,9 @@ export async function approvePurchaseRequisitionFnb(
   comment?: string,
   version?: string | null,
   lineAdjustments: PurchaseRequisitionLineAdjustment[] = [],
+  copilot?: CopilotDecision | null,
 ): Promise<CommandResult> {
-  const response = await http.post<CommandResult>(`${root(companyId)}/${id}/fnb-approval`, { comment, version, lineAdjustments });
+  const response = await http.post<CommandResult>(`${root(companyId)}/${id}/fnb-approval`, { comment, version, lineAdjustments, copilot: copilot ?? undefined });
   return response.data;
 }
 
@@ -231,11 +233,13 @@ export async function decidePurchaseRequisition(
   decision: "reject" | "return" | "cancel",
   comment?: string,
   version?: string | null,
+  copilot?: CopilotDecision | null,
 ): Promise<CommandResult> {
   const response = await http.post<CommandResult>(`${root(companyId)}/${id}/decision`, {
     decision,
     comment,
     version,
+    copilot: copilot ?? undefined,
   });
   return response.data;
 }

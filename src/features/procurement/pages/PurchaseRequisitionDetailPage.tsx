@@ -28,7 +28,8 @@ import "./procurement.css";
 import RequisitionDocuments from "../components/RequisitionDocuments";
 import RequisitionAmendmentPanel from "../components/RequisitionAmendmentPanel";
 import RequisitionApprovalRoute from "../components/RequisitionApprovalRoute";
-import PurchaseRequestEvaluation from "../components/PurchaseRequestEvaluation";
+import RequestApprovalCopilot, { type CopilotReviewState } from "../components/RequestApprovalCopilot";
+import { requestCopilotApi } from "../api/requestCopilotApi";
 import { approvalsApi, type ApprovalRoute } from "../api/procurementApprovalsApi";
 
 const CANCELLABLE = new Set(["Draft", "Returned", "Submitted", "PendingApproval", "PendingFnbApproval", "PendingFinanceApproval"]);
@@ -73,6 +74,8 @@ export default function PurchaseRequisitionDetailPage() {
   const [approvalRoute,setApprovalRoute]=useState<ApprovalRoute|null>(null);
   const [comment, setComment] = useState("");
   const [adjustments, setAdjustments] = useState<Record<string, string>>({});
+  const [copilotReview, setCopilotReview] = useState<CopilotReviewState | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,9 +133,22 @@ export default function PurchaseRequisitionDetailPage() {
     }
     setActionBusy(true);
     setError(null);
+    setNotice(null);
     try {
+      // PR-FNB-001 (AC7): at the F&B stage reductions are applied first; the analysis is refreshed and reviewed before approval.
+      if (stage === "fnb" && lineAdjustments.length > 0 && row?.version) {
+        await requestCopilotApi.reduce(companyId, id, row.version, lineAdjustments, decisionComment);
+        setAdjustments({});
+        setNotice(tx("Quantities reduced. Review the refreshed copilot analysis, then approve."));
+        await load();
+        return;
+      }
+      if (stage === "fnb" && copilotReview?.required && !copilotReview.ready) {
+        setError(tx("Complete the approval copilot review before approving."));
+        return;
+      }
       const result = stage === "fnb"
-        ? await approvePurchaseRequisitionFnb(companyId, id, decisionComment || undefined, row?.version, lineAdjustments)
+        ? await approvePurchaseRequisitionFnb(companyId, id, decisionComment || undefined, row?.version, [], copilotReview)
         : await approvePurchaseRequisitionFinance(companyId, id, decisionComment || undefined, row?.version, lineAdjustments);
       if (!result.success) {
         setError(tx(result.error ?? "Unable to approve requisition."));
@@ -162,7 +178,8 @@ export default function PurchaseRequisitionDetailPage() {
     setActionBusy(true);
     setError(null);
     try {
-      const result = await decidePurchaseRequisition(companyId, id, decision, decisionComment || undefined, row?.version);
+      const result = await decidePurchaseRequisition(companyId, id, decision, decisionComment || undefined, row?.version,
+        decision === "cancel" ? undefined : copilotReview);
       if (!result.success) {
         setError(tx(result.error ?? "Unable to update requisition decision."));
         return;
@@ -253,6 +270,10 @@ export default function PurchaseRequisitionDetailPage() {
     || (row.status === "PendingFinanceApproval" && canApproveFinancePurchaseRequisition)
     || (canDecideStage));
   const quantityReduced = !!row?.lines.some((line) => line.approvedQuantityOverridden);
+  const hasPendingReductions = !!row?.lines.some((line) => {
+    const raw = adjustments[line.id];
+    return raw !== undefined && raw !== "" && Number(raw) < effectiveApproved(line);
+  });
   const canAdjustQuantities = !!row && approvalRoute?.status !== "Pending" && (
     (row.status === "PendingFnbApproval" && canApproveFnbPurchaseRequisition)
     || (row.status === "PendingFinanceApproval" && canApproveFinancePurchaseRequisition));
@@ -277,6 +298,7 @@ export default function PurchaseRequisitionDetailPage() {
       </header>
 
       {error && <div className="prq-alert">{tx(error)}</div>}
+      {notice && <div className="p2p-muted" role="status">{notice}</div>}
       {loading && <div className="prq-panel prq-empty">{tx("Loading purchase requisition...")}</div>}
 
       {row && (
@@ -357,21 +379,27 @@ export default function PurchaseRequisitionDetailPage() {
             {quantityReduced && <p className="p2p-muted">* {tx("Approved quantity was reduced by the approver.")}</p>}
           </section>
 
-          <PurchaseRequestEvaluation companyId={companyId} id={id} version={row.version}/>
+          <RequestApprovalCopilot companyId={companyId} id={id} version={row.version}
+            canDecide={row.status === "PendingFnbApproval" && (canApproveFnbPurchaseRequisition || canApprovePurchaseRequisition || !!approvalRoute?.canDecide)}
+            onReview={setCopilotReview}
+            onSuggest={(lineId, quantity) => setAdjustments((a) => ({ ...a, [lineId]: String(quantity) }))}/>
           <RequisitionDocuments companyId={companyId} id={id} editable={canCreatePurchaseRequisition && ["Draft","Returned"].includes(row.status)} onChanged={()=>void load()}/>
           {canCreatePurchaseRequisition&&["Approved","Sourcing","Ordered","Completed"].includes(row.status)&&<RequisitionAmendmentPanel companyId={companyId} id={id} lines={row.lines}/>}
 
           {(decisionAvailable || !!approvalRoute) && <section className="prq-panel prq-approval">
             <div>
               <h2>{tx("Approval Decision")}</h2>
-              {approvalRoute&&companyId&&id&&<RequisitionApprovalRoute companyId={companyId} id={id} route={approvalRoute} onChanged={load}/>}
+              {approvalRoute&&companyId&&id&&<RequisitionApprovalRoute companyId={companyId} id={id} route={approvalRoute} onChanged={load} copilot={row.status === "PendingFnbApproval" ? copilotReview : null}/>}
               <p>{tx("Store Keeper submits the request. F&B validates operational need, then Finance gives final budget approval.")}</p>
             </div>
             <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder={tx("Decision comment (required for return or rejection)")} />
-            {canAdjustQuantities && <p className="p2p-muted">{tx("You can reduce approved quantities in the Lines table before approving. Explain the change in the comment.")}</p>}
+            {canAdjustQuantities && <p className="p2p-muted">{tx(row.status === "PendingFnbApproval"
+              ? "You can reduce approved quantities in the Lines table. Explain the change in the comment and apply it; the copilot then re-analyzes the request before you approve."
+              : "You can reduce approved quantities in the Lines table before approving. Explain the change in the comment.")}</p>}
             <div className="prq-actions">
               {approvalRoute?.status!=="Pending" && row.status === "PendingFnbApproval" && canApproveFnbPurchaseRequisition && (
-                <button className="prq-btn prq-btn--primary" type="button" onClick={() => approve("fnb")} disabled={actionBusy}>{tx("F&B approve")}</button>
+                <button className="prq-btn prq-btn--primary" type="button" onClick={() => approve("fnb")}
+                  disabled={actionBusy || (!hasPendingReductions && !!copilotReview?.required && !copilotReview.ready)}>{tx(hasPendingReductions ? "Apply quantity reductions" : "F&B approve")}</button>
               )}
               {approvalRoute?.status!=="Pending" && row.status === "PendingFinanceApproval" && canApproveFinancePurchaseRequisition && (
                 <button className="prq-btn prq-btn--primary" type="button" onClick={() => approve("finance")} disabled={actionBusy}>{tx("Finance approve")}</button>

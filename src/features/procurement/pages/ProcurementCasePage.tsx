@@ -99,6 +99,11 @@ export default function ProcurementCasePage() {
   }, [needsSupplier, suppliers.length, companyId]);
 
   async function run(action: CaseAction, comment?: string) {
+    // PR-FNB-001: F&B approval is recorded on the requisition page, where the approval copilot review is shown.
+    if (action.key === "approve" && action.targetKind === "requisition" && data?.requisition?.status === "PendingFnbApproval") {
+      navigate(`${root}/procurement/requisitions/${action.targetId}`);
+      return;
+    }
     if (action.link) {
       navigate(`${root}${action.link}`);
       return;

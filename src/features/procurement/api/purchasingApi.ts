@@ -88,6 +88,7 @@ export type SupplierItem = {
   lastPrice: number;
   lastPurchaseAtUtc?: string | null;
   minOrderQty: number;
+  orderMultiple?: number | null;
   leadTimeDays?: number | null;
   isPreferred: boolean;
   isActive: boolean;
@@ -100,6 +101,7 @@ export type SupplierItemInput = {
   supplierItemCode?: string | null;
   agreedPrice: number;
   minOrderQty: number;
+  orderMultiple?: number | null;
   leadTimeDays?: number | null;
   isPreferred: boolean;
   isActive: boolean;

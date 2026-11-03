@@ -114,7 +114,7 @@ export default function SupplierEditorPage() {
 
   const [priceList, setPriceList] = useState<SupplierItem[]>([]);
   const [items, setItems] = useState<InventoryItemDto[]>([]);
-  const [priceRow, setPriceRow] = useState({ inventoryItemId: "", uomId: "", agreedPrice: "", minOrderQty: "", leadTimeDays: "", supplierItemCode: "", isPreferred: false });
+  const [priceRow, setPriceRow] = useState({ inventoryItemId: "", uomId: "", agreedPrice: "", minOrderQty: "", orderMultiple: "", leadTimeDays: "", supplierItemCode: "", isPreferred: false });
 
   const root = `/companies/${companyId}/procurement/suppliers`;
   const set = <K extends keyof SupplierInput>(key: K, value: SupplierInput[K]) => setForm((f) => ({ ...f, [key]: value }));
@@ -216,11 +216,12 @@ export default function SupplierEditorPage() {
         supplierItemCode: priceRow.supplierItemCode.trim() || null,
         agreedPrice: Number(priceRow.agreedPrice || 0),
         minOrderQty: Number(priceRow.minOrderQty || 0),
+        orderMultiple: priceRow.orderMultiple ? Number(priceRow.orderMultiple) : null,
         leadTimeDays: priceRow.leadTimeDays ? Number(priceRow.leadTimeDays) : null,
         isPreferred: priceRow.isPreferred,
         isActive: true,
       });
-      setPriceRow({ inventoryItemId: "", uomId: "", agreedPrice: "", minOrderQty: "", leadTimeDays: "", supplierItemCode: "", isPreferred: false });
+      setPriceRow({ inventoryItemId: "", uomId: "", agreedPrice: "", minOrderQty: "", orderMultiple: "", leadTimeDays: "", supplierItemCode: "", isPreferred: false });
       setPriceList(await suppliersApi.items(companyId, { supplierId: supplier.id }));
     } catch (err) {
       setError(apiError(err, "Unable to save price."));
@@ -381,6 +382,7 @@ export default function SupplierEditorPage() {
                 </LabeledSelect>
                 <FormField label={tx("Agreed price")} type="number" min={0} step="0.0001" required value={priceRow.agreedPrice} onChange={(e) => setPriceRow((r) => ({ ...r, agreedPrice: e.target.value }))} />
                 <FormField label={tx("Min qty")} type="number" min={0} step="0.0001" value={priceRow.minOrderQty} onChange={(e) => setPriceRow((r) => ({ ...r, minOrderQty: e.target.value }))} />
+                <FormField label={tx("Order multiple")} type="number" min={0} step="0.0001" value={priceRow.orderMultiple} onChange={(e) => setPriceRow((r) => ({ ...r, orderMultiple: e.target.value }))} />
                 <FormField label={tx("Supplier code")} value={priceRow.supplierItemCode} onChange={(e) => setPriceRow((r) => ({ ...r, supplierItemCode: e.target.value }))} />
                 <label className="p2p-check"><Checkbox checked={priceRow.isPreferred} onChange={(e) => setPriceRow((r) => ({ ...r, isPreferred: e.target.checked }))} />{tx("Preferred")}</label>
                 <div className="p2p-toolbar-actions"><Button type="submit" disabled={saving}>{tx("Save price")}</Button></div>

@@ -1,97 +1,98 @@
 // src/features/inventory/adjustments/components/AdjustmentWorkflowActionBar.tsx
 
-import {
-  canApprove,
-  canEdit,
-  canPost,
-  canReject,
-  canReverse,
-  canSubmit,
-  normalizeAdjustmentStatus,
-} from "../utils/adjustmentWorkflow";
+import type { AvailableActions } from "../utils/adjustmentWorkflow";
+import { Button } from "../../../../components/ui/button";
 
 interface Props {
-  status:     string | number;
-  working?:   boolean;
-  onEdit?:    () => void;
-  onSubmit?:  () => void;
+  actions: AvailableActions;
+  working?: boolean;
+  onEdit?: () => void;
+  onSubmit?: () => void;
   onApprove?: () => void;
-  onReject?:  () => void;
-  onPost?:    () => void;
+  onReject?: () => void;
+  onCancel?: () => void;
+  onPost?: () => void;
   onReverse?: () => void;
 }
 
+/** Workflow buttons for the actions the user may take on the document as it stands. */
 export default function AdjustmentWorkflowActionBar({
-  status,
+  actions,
   working = false,
   onEdit,
   onSubmit,
   onApprove,
   onReject,
+  onCancel,
   onPost,
   onReverse,
 }: Props) {
-  const s = normalizeAdjustmentStatus(status);
+  const shown = [
+    actions.edit && onEdit,
+    actions.submit && onSubmit,
+    actions.approve && onApprove,
+    actions.reject && onReject,
+    actions.cancel && onCancel,
+    actions.post && onPost,
+    actions.reverse && onReverse,
+  ].some(Boolean);
 
-  const none =
-    !canEdit(s) && !canSubmit(s) && !canApprove(s) &&
-    !canReject(s) && !canPost(s) && !canReverse(s);
-
-  if (none) return null;
+  if (!shown) return null;
 
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
+        flexWrap: "wrap",
         gap: 8,
         padding: "10px 14px",
+        marginBottom: 16,
         background: "var(--surface)",
         border: "1px solid var(--border)",
         borderRadius: "var(--r-lg)",
       }}
     >
-      {canEdit(s) && (
-        <button className="btn" disabled={working} onClick={onEdit}>
-          <i className="ti ti-pencil" aria-hidden /> Edit draft
-        </button>
+      {actions.edit && onEdit && (
+        <Button variant="bare" type="button" className="btn" disabled={working} onClick={onEdit}>
+          <i className="ti ti-pencil" aria-hidden /> Edit
+        </Button>
       )}
 
-      {canSubmit(s) && (
-        <button className="btn btn-primary" disabled={working} onClick={onSubmit}>
-          <i className="ti ti-send" aria-hidden />
-          {working ? "Submitting..." : "Submit for review"}
-        </button>
+      {actions.submit && onSubmit && (
+        <Button variant="bare" type="button" className="btn btn-primary" disabled={working} onClick={onSubmit}>
+          <i className="ti ti-send" aria-hidden /> Submit
+        </Button>
       )}
 
-      {canApprove(s) && (
-        <button className="btn btn-success" disabled={working} onClick={onApprove}>
-          <i className="ti ti-thumb-up" aria-hidden />
-          {working ? "Approving..." : "Approve"}
-        </button>
+      {actions.approve && onApprove && (
+        <Button variant="bare" type="button" className="btn btn-success" disabled={working} onClick={onApprove}>
+          <i className="ti ti-thumb-up" aria-hidden /> Approve
+        </Button>
       )}
 
-      {canReject(s) && (
-        <button className="btn btn-danger" disabled={working} onClick={onReject}
-          style={{ background: "transparent" }}>
-          <i className="ti ti-thumb-down" aria-hidden />
-          Reject
-        </button>
+      {actions.reject && onReject && (
+        <Button variant="bare" type="button" className="btn btn-danger" disabled={working} onClick={onReject} style={{ background: "transparent" }}>
+          <i className="ti ti-thumb-down" aria-hidden /> Reject
+        </Button>
       )}
 
-      {canPost(s) && (
-        <button className="btn btn-primary" disabled={working} onClick={onPost}>
-          <i className="ti ti-circle-check" aria-hidden />
-          {working ? "Posting..." : "Post to inventory"}
-        </button>
+      {actions.post && onPost && (
+        <Button variant="bare" type="button" className="btn btn-primary" disabled={working} onClick={onPost}>
+          <i className="ti ti-circle-check" aria-hidden /> Post to stock
+        </Button>
       )}
 
-      {canReverse(s) && (
-        <button className="btn btn-danger" disabled={working} onClick={onReverse}
-          style={{ background: "transparent" }}>
-          <i className="ti ti-rotate-clockwise-2" aria-hidden />
-          Reverse
-        </button>
+      {actions.reverse && onReverse && (
+        <Button variant="bare" type="button" className="btn btn-danger" disabled={working} onClick={onReverse} style={{ background: "transparent" }}>
+          <i className="ti ti-rotate-clockwise-2" aria-hidden /> Reverse
+        </Button>
+      )}
+
+      {actions.cancel && onCancel && (
+        <Button variant="bare" type="button" className="btn" disabled={working} onClick={onCancel} style={{ marginLeft: "auto" }}>
+          <i className="ti ti-ban" aria-hidden /> Cancel adjustment
+        </Button>
       )}
     </div>
   );

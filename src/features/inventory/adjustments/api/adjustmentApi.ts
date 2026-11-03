@@ -3,166 +3,97 @@
 import { http } from "../../../../api/http";
 import { toUserFriendlyError } from "../../../../shared/errors/errorMessage.utils";
 import type {
-  InventoryAdjustmentDto,
   AdjustmentCandidateDto,
   AdjustmentFifoItemDto,
-  CreateAdjustmentDraftCommand as CreateAdjustmentCommand,
-  UpdateAdjustmentDraftCommand as UpdateAdjustmentCommand,
+  AdjustmentTypeOption,
+  CreateAdjustmentDraftCommand,
+  InventoryAdjustmentDto,
+  UpdateAdjustmentDraftCommand,
 } from "../types";
-
-//  URL builder 
 
 const base = (companyId: string, branchId: string) =>
   `/companies/${companyId}/branches/${branchId}/inventory-adjustments`;
 
-//  Error extraction 
-
-/**
- * Extracts a human-readable message from any API error.
- * Handles:
- *  - 422 { error: "message" }   (our business-rule failures)
- *  - 400 { title, errors }       (ASP.NET validation)
- *  - plain string bodies
- *  - network/axios errors
- */
+/** A readable message from any API error (business rules, validation, conflicts, network). */
 export function getApiError(e: unknown, fallback: string): string {
   return toUserFriendlyError(e, fallback);
 }
 
-//  API client 
+const list = <T>(r: { data: unknown }): T[] => (Array.isArray(r.data) ? (r.data as T[]) : []);
 
 export const adjustmentApi = {
+  //  Lookups
 
-  //  Lookups 
-
-  /** FIFO-aware item list for the typeahead search at a location. */
-  fifoItems: (
-    companyId:  string,
-    branchId:   string,
-    locationId: string,
-    q?:         string
-  ): Promise<AdjustmentFifoItemDto[]> =>
-    http
-      .get<AdjustmentFifoItemDto[]>(
-        `${base(companyId, branchId)}/lookups/fifo-items`,
-        { params: { locationId, ...(q ? { q } : {}) } }
-      )
-      .then((r) => (Array.isArray(r.data) ? r.data : [])),
-
-  /** Open FIFO lots at a location for the adjustment line picker. */
+  /** Open lots at a location, in each item's counting unit. */
   candidates: (
-    companyId:  string,
-    branchId:   string,
+    companyId: string,
+    branchId: string,
     locationId: string,
     params?: { itemId?: string; search?: string }
   ): Promise<AdjustmentCandidateDto[]> =>
     http
-      .get<AdjustmentCandidateDto[]>(
-        `${base(companyId, branchId)}/lookups/candidates`,
-        { params: { locationId, ...params } }
-      )
-      .then((r) => (Array.isArray(r.data) ? r.data : [])),
+      .get(`${base(companyId, branchId)}/lookups/candidates`, { params: { locationId, ...params } })
+      .then(list<AdjustmentCandidateDto>),
 
-  //  Queries 
+  /** Items counted as a whole at a location (found stock, items without an open lot). */
+  items: (companyId: string, branchId: string, locationId: string, search?: string): Promise<AdjustmentCandidateDto[]> =>
+    http
+      .get(`${base(companyId, branchId)}/lookups/items`, { params: { locationId, ...(search ? { search } : {}) } })
+      .then(list<AdjustmentCandidateDto>),
+
+  types: (companyId: string, branchId: string): Promise<AdjustmentTypeOption[]> =>
+    http.get(`${base(companyId, branchId)}/lookups/types`).then(list<AdjustmentTypeOption>),
+
+  /** Legacy typeahead. */
+  fifoItems: (companyId: string, branchId: string, locationId: string, q?: string): Promise<AdjustmentFifoItemDto[]> =>
+    http
+      .get(`${base(companyId, branchId)}/lookups/fifo-items`, { params: { locationId, ...(q ? { q } : {}) } })
+      .then(list<AdjustmentFifoItemDto>),
+
+  //  Queries
 
   list: (
     companyId: string,
-    branchId:  string,
+    branchId: string,
     params?: { locationId?: string | null; status?: string | null }
   ): Promise<InventoryAdjustmentDto[]> => {
     const query: Record<string, string> = {};
     if (params?.locationId) query.locationId = params.locationId;
-    if (params?.status)     query.status     = params.status;
-    return http
-      .get<InventoryAdjustmentDto[]>(base(companyId, branchId), { params: query })
-      .then((r) => (Array.isArray(r.data) ? r.data : []));
+    if (params?.status) query.status = params.status;
+    return http.get(base(companyId, branchId), { params: query }).then(list<InventoryAdjustmentDto>);
   },
 
-  get: (
-    companyId:    string,
-    branchId:     string,
-    adjustmentId: string
-  ): Promise<InventoryAdjustmentDto> =>
-    http
-      .get<InventoryAdjustmentDto>(`${base(companyId, branchId)}/${adjustmentId}`)
-      .then((r) => r.data),
+  get: (companyId: string, branchId: string, adjustmentId: string): Promise<InventoryAdjustmentDto> =>
+    http.get<InventoryAdjustmentDto>(`${base(companyId, branchId)}/${adjustmentId}`).then((r) => r.data),
 
-  //  Draft lifecycle 
+  //  Drafts
 
-  /**
-   * Creates a new Draft adjustment.
-   * CompanyId and BranchId are injected from route scope; do not include in cmd.
-   */
-  createDraft: (
-    companyId: string,
-    branchId:  string,
-    cmd:       Omit<CreateAdjustmentCommand, "companyId" | "branchId">
-  ): Promise<{ id: string }> =>
-    http
-      .post<{ id: string }>(base(companyId, branchId), cmd)
-      .then((r) => r.data),
+  createDraft: (companyId: string, branchId: string, cmd: CreateAdjustmentDraftCommand): Promise<{ id: string }> =>
+    http.post<{ id: string }>(base(companyId, branchId), cmd).then((r) => r.data),
 
-  /**
-   * Replaces lines and header fields of a Draft adjustment.
-   * CompanyId, BranchId, and Id are route params; do not include in cmd.
-   */
-  updateDraft: (
-    companyId:    string,
-    branchId:     string,
-    adjustmentId: string,
-    cmd:          Omit<UpdateAdjustmentCommand, "companyId" | "branchId" | "id">
-  ): Promise<void> =>
+  /** Saves a draft, or corrects a rejected adjustment (which returns it to Draft). */
+  updateDraft: (companyId: string, branchId: string, adjustmentId: string, cmd: UpdateAdjustmentDraftCommand): Promise<void> =>
+    http.put(`${base(companyId, branchId)}/${adjustmentId}`, cmd).then(() => undefined),
+
+  //  Workflow (each step sends the version the user is looking at)
+
+  submit: (companyId: string, branchId: string, adjustmentId: string, version?: string): Promise<void> =>
+    http.post(`${base(companyId, branchId)}/${adjustmentId}/submit`, { version: version ?? null }).then(() => undefined),
+
+  approve: (companyId: string, branchId: string, adjustmentId: string, note?: string, version?: string): Promise<void> =>
     http
-      .put(`${base(companyId, branchId)}/${adjustmentId}`, cmd)
+      .post(`${base(companyId, branchId)}/${adjustmentId}/approve`, { note: note?.trim() || null, version: version ?? null })
       .then(() => undefined),
 
-  //  Workflow transitions 
+  reject: (companyId: string, branchId: string, adjustmentId: string, note: string, version?: string): Promise<void> =>
+    http.post(`${base(companyId, branchId)}/${adjustmentId}/reject`, { note, version: version ?? null }).then(() => undefined),
 
-  submit: (
-    companyId:    string,
-    branchId:     string,
-    adjustmentId: string
-  ): Promise<void> =>
-    http
-      .post(`${base(companyId, branchId)}/${adjustmentId}/submit`)
-      .then(() => undefined),
+  cancel: (companyId: string, branchId: string, adjustmentId: string, reason: string, version?: string): Promise<void> =>
+    http.post(`${base(companyId, branchId)}/${adjustmentId}/cancel`, { note: reason, version: version ?? null }).then(() => undefined),
 
-  approve: (
-    companyId:    string,
-    branchId:     string,
-    adjustmentId: string,
-    note?:        string
-  ): Promise<void> =>
-    http
-      .post(`${base(companyId, branchId)}/${adjustmentId}/approve`, { note: note ?? null })
-      .then(() => undefined),
+  post: (companyId: string, branchId: string, adjustmentId: string, version?: string): Promise<void> =>
+    http.post(`${base(companyId, branchId)}/${adjustmentId}/post`, { version: version ?? null }).then(() => undefined),
 
-  reject: (
-    companyId:    string,
-    branchId:     string,
-    adjustmentId: string,
-    note:         string
-  ): Promise<void> =>
-    http
-      .post(`${base(companyId, branchId)}/${adjustmentId}/reject`, { note })
-      .then(() => undefined),
-
-  post: (
-    companyId:    string,
-    branchId:     string,
-    adjustmentId: string
-  ): Promise<void> =>
-    http
-      .post(`${base(companyId, branchId)}/${adjustmentId}/post`)
-      .then(() => undefined),
-
-  reverse: (
-    companyId:    string,
-    branchId:     string,
-    adjustmentId: string,
-    reason:       string
-  ): Promise<void> =>
-    http
-      .post(`${base(companyId, branchId)}/${adjustmentId}/reverse`, { reason })
-      .then(() => undefined),
+  reverse: (companyId: string, branchId: string, adjustmentId: string, reason: string, version?: string): Promise<void> =>
+    http.post(`${base(companyId, branchId)}/${adjustmentId}/reverse`, { reason, version: version ?? null }).then(() => undefined),
 };

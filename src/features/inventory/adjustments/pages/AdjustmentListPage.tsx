@@ -7,12 +7,14 @@ import { useAppScope } from "../../../../app/useAppScope";
 import { adjustmentApi, getApiError } from "../api/adjustmentApi";
 import { stockLocationsApi } from "../../stock-locations/api/stockLocationsApi";
 import {
+  ADJUSTMENT_TYPE_LABELS,
   normalizeAdjustmentStatus,
   STATUS_BADGE,
+  useAdjustmentPermissions,
 } from "../utils/adjustmentWorkflow";
 import type { InventoryAdjustmentDto, StockLocationOption } from "../types";
 
-const STATUS_OPTIONS = ["Draft", "Submitted", "Approved", "Posted", "Rejected", "Reversed"] as const;
+const STATUS_OPTIONS = ["Draft", "Submitted", "Approved", "Posted", "Rejected", "Reversed", "Cancelled"] as const;
 
 type LocationOption = {
   id: string;
@@ -61,12 +63,9 @@ function fmtMoney(value: number) {
   return `ETB ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function fmtQty(value: number) {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-}
-
+/** The document's value (planned until posted, then what the stock ledger posted). */
 function rowAmount(row: InventoryAdjustmentDto): number {
-  return (row.lines ?? []).reduce((sum, line) => sum + (line.lineAmount ?? 0), 0);
+  return Number(row.totalAdjustmentValue ?? 0);
 }
 
 function getRowLocation(row: InventoryAdjustmentDto): string {
@@ -77,6 +76,7 @@ function getRowLocation(row: InventoryAdjustmentDto): string {
 export default function AdjustmentListPage() {
   const navigate = useNavigate();
   const { companyId, branchId } = useAppScope();
+  const permissions = useAdjustmentPermissions();
 
   const [items, setItems] = useState<InventoryAdjustmentDto[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -151,14 +151,15 @@ export default function AdjustmentListPage() {
   }, [load]);
 
   const kpis = useMemo(() => {
-    const totalAmount = items.reduce((sum, row) => sum + rowAmount(row), 0);
-    const totalVariance = items.reduce((sum, row) => sum + (row.totalAdjustmentQty ?? 0), 0);
+    const posted = items.filter((row) => normalizeAdjustmentStatus(row.docStatus) === "Posted");
+    const postedValue = posted.reduce((sum, row) => sum + rowAmount(row), 0);
     const highVariance = items.filter((row) => row.hasHighVariance).length;
     const pendingApproval = items.filter((row) => normalizeAdjustmentStatus(row.docStatus) === "Submitted").length;
-    return { totalAmount, totalVariance, highVariance, pendingApproval };
+    const readyToPost = items.filter((row) => normalizeAdjustmentStatus(row.docStatus) === "Approved").length;
+    return { postedValue, highVariance, pendingApproval, readyToPost };
   }, [items]);
 
-  const canCreate = Boolean(companyId && branchId);
+  const canCreate = Boolean(companyId && branchId) && permissions.create;
 
   return (
     <main className="adj-page page">
@@ -169,16 +170,18 @@ export default function AdjustmentListPage() {
           <div className="adj-subtitle">Stock counts, waste, damage, and variance corrections by branch stock location.</div>
         </div>
 
-        <button type="button" className="btn btn-primary" disabled={!canCreate} onClick={goToCreate}>
-          <i className="ti ti-plus" aria-hidden /> New adjustment
-        </button>
+        {permissions.create && (
+          <button type="button" className="btn btn-primary" disabled={!canCreate} onClick={goToCreate}>
+            <i className="ti ti-plus" aria-hidden /> New adjustment
+          </button>
+        )}
       </header>
 
       <section className="adj-metrics" aria-label="Adjustment summary">
         <Metric label="Documents" value={items.length} />
-        <Metric label="Net variance qty" value={`${kpis.totalVariance >= 0 ? "+" : ""}${fmtQty(kpis.totalVariance)}`} sign={kpis.totalVariance < 0 ? "neg" : kpis.totalVariance > 0 ? "pos" : undefined} />
-        <Metric label="Total value" value={fmtMoney(kpis.totalAmount)} />
-        <Metric label="Pending approval" value={kpis.pendingApproval} badge={kpis.pendingApproval > 0 ? "Action needed" : undefined} />
+        <Metric label="Posted value" value={fmtMoney(kpis.postedValue)} sign={kpis.postedValue < 0 ? "neg" : kpis.postedValue > 0 ? "pos" : undefined} />
+        <Metric label="Waiting for approval" value={kpis.pendingApproval} badge={kpis.pendingApproval > 0 ? "Action needed" : undefined} />
+        <Metric label="Ready to post" value={kpis.readyToPost} badge={kpis.readyToPost > 0 ? "Action needed" : undefined} />
         <Metric label="High variance" value={kpis.highVariance} badge={kpis.highVariance > 0 ? "Review" : undefined} />
       </section>
 
@@ -218,23 +221,20 @@ export default function AdjustmentListPage() {
                 <th>Location</th>
                 <th>Type</th>
                 <th>Status</th>
-                <th className="num">System qty</th>
-                <th className="num">Counted qty</th>
-                <th className="num">Variance</th>
+                <th className="num">Highest variance</th>
                 <th className="num">Value</th>
                 <th />
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="adj-empty">Loading...</td></tr>
+                <tr><td colSpan={8} className="adj-empty">Loading...</td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={10} className="adj-empty">No adjustments found. <button type="button" className="link-button" disabled={!canCreate} onClick={goToCreate}>Create one</button></td></tr>
+                <tr><td colSpan={8} className="adj-empty">No adjustments found.{canCreate && <> <button type="button" className="link-button" onClick={goToCreate}>Create one</button></>}</td></tr>
               ) : (
                 items.map((row) => {
                   const normalizedStatus = normalizeAdjustmentStatus(row.docStatus);
                   const amount = rowAmount(row);
-                  const varianceQty = row.totalAdjustmentQty ?? 0;
 
                   return (
                     <tr key={row.id} className="adj-click-row" onClick={() => goToDetail(row.id)}>
@@ -245,16 +245,15 @@ export default function AdjustmentListPage() {
                         {row.hasHighVariance && <div className="adj-warning-line">Warning: High variance {row.highestVariancePercent?.toFixed(1) ?? "0.0"}%</div>}
                       </td>
                       <td>{getRowLocation(row)}</td>
-                      <td>{row.adjustmentType || "-"}</td>
+                      <td>{ADJUSTMENT_TYPE_LABELS[String(row.adjustmentType)] ?? row.adjustmentType ?? "-"}</td>
                       <td>
                         <span className={STATUS_BADGE[normalizedStatus]}>{normalizedStatus}</span>
-                        {row.rejectionNote && <div className="adj-danger-line" title={row.rejectionNote}>{row.rejectionNote}</div>}
+                        {normalizedStatus === "Rejected" && row.rejectionNote && <div className="adj-danger-line" title={row.rejectionNote}>{row.rejectionNote}</div>}
+                        {normalizedStatus === "Approved" && row.autoApproved && <div className="adj-subline">Within policy</div>}
                       </td>
-                      <td className="num adj-mono">{fmtQty(row.totalSystemQty ?? 0)}</td>
-                      <td className="num adj-mono">{fmtQty(row.totalCountedQty ?? 0)}</td>
-                      <td className="num adj-mono" data-sign={varianceQty < 0 ? "neg" : varianceQty > 0 ? "pos" : undefined}>{varianceQty >= 0 ? "+" : ""}{fmtQty(varianceQty)}</td>
-                      <td className="num adj-mono adj-strong">{fmtMoney(amount)}</td>
-                      <td className="num"><button type="button" className="btn btn-sm" onClick={(event) => { event.stopPropagation(); goToDetail(row.id); }}>Open to</button></td>
+                      <td className="num adj-mono">{Number(row.highestVariancePercent ?? 0).toFixed(1)}%</td>
+                      <td className="num adj-mono adj-strong" data-sign={amount < 0 ? "neg" : amount > 0 ? "pos" : undefined}>{fmtMoney(amount)}</td>
+                      <td className="num"><button type="button" className="btn btn-sm" onClick={(event) => { event.stopPropagation(); goToDetail(row.id); }}>Open</button></td>
                     </tr>
                   );
                 })

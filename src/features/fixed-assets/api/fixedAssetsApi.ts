@@ -130,6 +130,9 @@ export type FixedAssetDetail = FixedAssetListItem & {
 };
 
 export type UpsertFixedAssetPayload = {
+  supplierId?: string | null;
+  grnId?: string | null;
+  responsibleManagerEmployeeId?: string | null;
   purchaseOrderId?: string | null;
   categoryId: string;
   currentBranchId?: string | null;
@@ -262,6 +265,10 @@ export const fixedAssetsApi = {
 
   list: (companyId: string, params: { branchId?: string | null; status?: string; search?: string; categoryId?: string; page?: number; pageSize?: number }) =>
     data(http.get<FixedAssetListItem[]>(root(companyId), {
+      params: Object.fromEntries(Object.entries(params).filter(([, v]) => v !== null && v !== undefined && v !== "")),
+    })),
+  register: (companyId: string, params: { branchId?: string | null; status?: string; search?: string; categoryId?: string; page?: number; pageSize?: number }) =>
+    data(http.get<{ items: FixedAssetListItem[]; totalCount: number; page: number; pageSize: number }>(`${root(companyId)}/register`, {
       params: Object.fromEntries(Object.entries(params).filter(([, v]) => v !== null && v !== undefined && v !== "")),
     })),
   summary: (companyId: string, branchId?: string | null) =>

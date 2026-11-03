@@ -137,7 +137,7 @@ export function CategoriesPanel({ companyId, categories, onChanged }: { companyI
           <Field label={tx("Name")}><Input value={draft.name} maxLength={160} onChange={(e) => set({ name: e.target.value })} /></Field>
           <Field label={tx("Depreciation method")}>
             <Select value={draft.depreciationMethod} onChange={(e) => set({ depreciationMethod: e.target.value as DepreciationMethod })}>
-              {DEPRECIATION_METHODS.map((m) => <option key={m} value={m}>{tx(METHOD_LABEL[m])}</option>)}
+              {DEPRECIATION_METHODS.filter((m) => m !== "unitsOfProduction").map((m) => <option key={m} value={m}>{tx(METHOD_LABEL[m])}</option>)}
             </Select>
           </Field>
           <Field label={tx("Useful life (months)")}><Input type="number" min={0} value={draft.usefulLifeMonths} onChange={(e) => set({ usefulLifeMonths: Number(e.target.value) })} /></Field>

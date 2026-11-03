@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Input } from "../../../components/ui/input";
+import { Button } from "../../../components/ui/button";
 import { Select } from "../../../components/ui/select";
 import { Textarea } from "../../../components/ui/textarea";
 import { useI18n } from "../../../i18n";
@@ -131,6 +132,9 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
   const [lookups, setLookups] = useState<FixedAssetLookups>(emptyLookups);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [loadingLookups, setLoadingLookups] = useState(false);
 
   const editing = !!asset;
   const inUse = !!asset && asset.status !== "draft";
@@ -139,6 +143,7 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setStep(0);
     if (asset) { setDraft(fromAsset(asset)); return; }
     const category = categories.find((c) => c.isActive) ?? categories[0];
     const next = blank(defaultBranchId, category);
@@ -154,11 +159,14 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
   useEffect(() => {
     if (!open) return;
     let alive = true;
+    setLookupError(null);
+    setLoadingLookups(true);
     fixedAssetsApi.lookups(companyId, draft.branchId || null)
       .then((x) => { if (alive) setLookups(x); })
-      .catch(() => { if (alive) setLookups(emptyLookups); });
+      .catch((err) => { if (alive) { setLookups(emptyLookups); setLookupError(apiError(err, tx("Location and custody choices could not be loaded. Close and reopen the form to retry."))); } })
+      .finally(() => { if (alive) setLoadingLookups(false); });
     return () => { alive = false; };
-  }, [open, companyId, draft.branchId]);
+  }, [open, companyId, draft.branchId, tx]);
 
   const category = useMemo(() => categories.find((c) => c.id === draft.categoryId), [categories, draft.categoryId]);
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
@@ -183,7 +191,9 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
     : !draft.acquisitionDate ? "Enter the acquisition date."
     : !(cost >= 0) || draft.acquisitionCost === "" ? "Enter the acquisition cost."
     : residual < 0 || residual > cost ? "Residual value must be between zero and the cost."
-    : !(life >= 0) ? "Useful life cannot be negative."
+    : !Number.isInteger(life) || life < 0 ? "Useful life must be a whole number of months."
+    : ["straightLine", "reducingBalance"].includes(draft.depreciationMethod || category?.depreciationMethod || "") && life === 0 ? "Depreciating assets need at least one month of useful life."
+    : draft.warrantyExpiry && draft.warrantyExpiry < draft.acquisitionDate ? "Warranty expiry cannot be before acquisition."
     : category?.requiresSerialNumber && !draft.serialNumber.trim() ? "This category requires a serial number."
     : null;
 
@@ -194,6 +204,9 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
     setBusy(true);
     setError(null);
     const body: UpsertFixedAssetPayload = {
+      supplierId: asset?.supplierId ?? null,
+      grnId: asset?.grnId ?? null,
+      responsibleManagerEmployeeId: asset?.responsibleManagerEmployeeId ?? null,
       purchaseOrderId: asset?.purchaseOrderId ?? source?.purchaseOrderId ?? null,
       categoryId: draft.categoryId,
       currentBranchId: draft.branchId || null,
@@ -239,15 +252,23 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
     <FaDialog open={open} wide busy={busy} error={error}
       title={asset ? `${tx("Edit asset")} · ${asset.assetNo}` : tx("Register asset")}
       description={asset ? undefined : tx("The asset is saved as a draft. Activate it once it has a tag, a branch, a location and a custodian; depreciation starts in the month it is activated.")}
-      confirmText={asset ? tx("Save changes") : tx("Register draft")} confirmDisabled={!!problem}
-      onConfirm={() => void save()} onClose={onClose}>
+      confirmText={step < 3 ? tx("Continue") : asset ? tx("Save changes") : tx("Register draft")}
+      confirmDisabled={loadingLookups || !!lookupError || (step === 3 && !!problem)}
+      onConfirm={() => step < 3 ? setStep(step + 1) : void save()} onClose={onClose}>
+      <nav className="fa-registration-steps" aria-label={tx("Registration steps")}>
+        {["Identification", "Value and depreciation", "Location and custody", "Review"].map((label, index) => (
+          <Button key={label} type="button" variant={step === index ? "default" : "outline"} disabled={busy}
+            aria-current={step === index ? "step" : undefined} onClick={() => setStep(index)}>{index + 1}. {tx(label)}</Button>
+        ))}
+      </nav>
+      {lookupError ? <p role="alert" className="fa-note fa-note--warn">{lookupError}</p> : null}
       {source && !asset ? (
         <p className="fa-note">{tx("From purchase order {reference}: {qty} unit(s) accepted. Register one asset per unit.", { reference: source.reference, qty: source.quantity })}</p>
       ) : null}
       {locked ? <p className="fa-note">{tx("Depreciation is posted for this asset, so its category, cost, residual value, useful life, method and acquisition date are locked.")}</p> : null}
       {inUse ? <p className="fa-note">{tx("Branch, location, department and custodian of an asset in use change through Assign / transfer.")}</p> : null}
 
-      <fieldset className="fa-fieldset">
+      <fieldset className="fa-fieldset" hidden={step !== 0}>
         <legend>{tx("Identification")}</legend>
         <div className="fa-grid">
           <Field label={tx("Category")}>
@@ -277,7 +298,7 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
         </div>
       </fieldset>
 
-      <fieldset className="fa-fieldset">
+      <fieldset className="fa-fieldset" hidden={step !== 1}>
         <legend>{tx("Value and depreciation")}</legend>
         <div className="fa-grid">
           <Field label={tx("Acquired by")}>
@@ -298,7 +319,7 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
           <Field label={tx("Depreciation method")}>
             <Select value={draft.depreciationMethod} disabled={locked} onChange={(e) => set({ depreciationMethod: e.target.value })}>
               <option value="">{tx("Category default")}{category ? ` (${tx(METHOD_LABEL[category.depreciationMethod])})` : ""}</option>
-              {DEPRECIATION_METHODS.map((m) => <option key={m} value={m}>{tx(METHOD_LABEL[m])}</option>)}
+              {DEPRECIATION_METHODS.filter((m) => m !== "unitsOfProduction").map((m) => <option key={m} value={m}>{tx(METHOD_LABEL[m])}</option>)}
             </Select>
           </Field>
           <Field label={tx("Warranty until")}><Input type="date" value={draft.warrantyExpiry} onChange={(e) => set({ warrantyExpiry: e.target.value })} /></Field>
@@ -309,11 +330,11 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
         ) : null}
       </fieldset>
 
-      <fieldset className="fa-fieldset" disabled={inUse}>
+      <fieldset className="fa-fieldset" disabled={inUse || loadingLookups} hidden={step !== 2}>
         <legend>{tx("Location and custody")}</legend>
         <div className="fa-grid">
           <Field label={tx("Branch")}>
-            <Select value={draft.branchId} onChange={(e) => set({ branchId: e.target.value, locationId: "", departmentId: "" })}>
+            <Select value={draft.branchId} onChange={(e) => set({ branchId: e.target.value, locationId: "", departmentId: "", custodianId: "" })}>
               <option value="">{tx("Choose...")}</option>
               {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </Select>
@@ -340,9 +361,19 @@ export function AssetFormDialog({ companyId, open, asset, categories, defaultBra
         </div>
       </fieldset>
 
-      <Field label={tx("Description")} wide><Textarea rows={2} value={draft.description} onChange={(e) => set({ description: e.target.value })} /></Field>
-      <Field label={tx("Notes")} wide><Textarea rows={2} value={draft.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
-      {problem ? <p className="fa-muted">{tx(problem)}</p> : null}
+      {step === 3 ? <section className="fa-registration-review" aria-label={tx("Registration review")}>
+        <h4>{draft.name || tx("Unnamed asset")}</h4>
+        <dl className="fa-grid">
+          <div><dt>{tx("Category")}</dt><dd>{category?.name ?? tx("Not selected")}</dd></div>
+          <div><dt>{tx("Asset number")}</dt><dd>{draft.assetNo || tx("Assigned automatically")}</dd></div>
+          <div><dt>{tx("Cost / residual value")}</dt><dd>{money(cost || 0)} / {money(residual || 0)}</dd></div>
+          <div><dt>{tx("Branch")}</dt><dd>{lookups.branches.find(x => x.id === draft.branchId)?.name ?? tx("Not assigned")}</dd></div>
+        </dl>
+        <p className="fa-note">{tx("Registration saves a draft. Activation and custody changes are separate actions in the asset record.")}</p>
+        <Field label={tx("Description")} wide><Textarea rows={2} value={draft.description} onChange={(e) => set({ description: e.target.value })} /></Field>
+        <Field label={tx("Notes")} wide><Textarea rows={2} value={draft.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
+        {problem ? <p role="alert" className="fa-note fa-note--warn">{tx(problem)}</p> : null}
+      </section> : null}
     </FaDialog>
   );
 }

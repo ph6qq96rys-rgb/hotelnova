@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Download, Plus, RefreshCw, Search } from "lucide-react";
 
@@ -50,6 +50,8 @@ export default function FixedAssetsPage() {
   };
 
   const [rows, setRows] = useState<FixedAssetListItem[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const loadSequence = useRef(0);
   const [summary, setSummary] = useState<FixedAssetSummary | null>(null);
   const [categories, setCategories] = useState<FixedAssetCategory[]>([]);
   const [status, setStatus] = useState("");
@@ -81,24 +83,33 @@ export default function FixedAssetsPage() {
 
   const load = useCallback(async () => {
     if (!companyId) return;
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setError(null);
     try {
       const [list, totals] = await Promise.all([
-        fixedAssetsApi.list(companyId, { branchId: scopeBranch, status, search, categoryId, page, pageSize: PAGE_SIZE }),
+        fixedAssetsApi.register(companyId, { branchId: scopeBranch, status, search, categoryId, page, pageSize: PAGE_SIZE }),
         fixedAssetsApi.summary(companyId, scopeBranch),
       ]);
-      setRows(list);
+      if (sequence !== loadSequence.current) return;
+      setRows(list.items);
+      setTotalCount(list.totalCount);
+      setPage(list.page);
       setSummary(totals);
     } catch (err) {
+      if (sequence !== loadSequence.current) return;
+      setRows([]);
+      setSummary(null);
+      setTotalCount(0);
       setError(apiError(err, tx("The fixed asset register could not be loaded.")));
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [companyId, scopeBranch, status, search, categoryId, page, tx]);
 
   useEffect(() => { void loadCategories(); }, [loadCategories]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => { ++loadSequence.current; }; }, [load]);
+  useEffect(() => { setPage(1); setSelectedId(null); setForm(null); setRows([]); setSummary(null); }, [companyId, scopeBranch]);
 
   // Hand-off from procurement: equipment accepted on a purchase order opens a prefilled registration.
   const sourceOrder = params.get("purchaseOrderId");
@@ -192,9 +203,9 @@ export default function FixedAssetsPage() {
               </Select>
               <Select aria-label={tx("Branch scope")} value={allBranches ? "all" : "branch"} onChange={(e) => { setAllBranches(e.target.value === "all"); setPage(1); }}>
                 <option value="branch">{tx("This branch")}</option>
-                <option value="all">{tx("All branches")}</option>
+                <option value="all">{tx("All accessible branches")}</option>
               </Select>
-              <Button type="button" variant="outline" disabled={rows.length === 0} onClick={exportCsv}><Download size={15} aria-hidden="true" /> {tx("Export")}</Button>
+              <Button type="button" variant="outline" disabled={rows.length === 0 || loading} onClick={exportCsv}><Download size={15} aria-hidden="true" /> {tx("Export this page")}</Button>
             </div>
 
             <div className="fa-table-wrap">
@@ -236,9 +247,9 @@ export default function FixedAssetsPage() {
               </table>
             </div>
             <div className="fa-pager">
-              <span className="fa-muted">{tx("Page {page}", { page })}</span>
+              <span className="fa-muted" aria-live="polite">{tx("{count} assets · Page {page} of {pages}", { count: totalCount, page, pages: Math.max(1, Math.ceil(totalCount / PAGE_SIZE)) })}</span>
               <Button type="button" size="sm" variant="outline" disabled={page === 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>{tx("Previous")}</Button>
-              <Button type="button" size="sm" variant="outline" disabled={rows.length < PAGE_SIZE || loading} onClick={() => setPage((p) => p + 1)}>{tx("Next")}</Button>
+              <Button type="button" size="sm" variant="outline" disabled={page * PAGE_SIZE >= totalCount || loading} onClick={() => setPage((p) => p + 1)}>{tx("Next")}</Button>
             </div>
           </section>
         </>

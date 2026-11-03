@@ -14,7 +14,7 @@ function base64Url(value: string): string {
     .replace(/\//g, "_");
 }
 
-function createTestJwt(extra: string[] = []): string {
+function createTestJwt(extra: string[] = [], roles: string[] = ["COMPANYADMIN"]): string {
   const header = base64Url(JSON.stringify({ alg: "none", typ: "JWT" }));
   const payload = base64Url(
     JSON.stringify({
@@ -22,7 +22,7 @@ function createTestJwt(extra: string[] = []): string {
       email: "qae@hotelnova.local",
       name: "QAE Automation",
       exp: Math.floor(Date.now() / 1000) + 60 * 60,
-      roles: ["COMPANYADMIN"],
+      roles,
       permissions: [
         "dashboard.view",
         "menu.view",
@@ -45,8 +45,9 @@ function createTestJwt(extra: string[] = []): string {
   return `${header}.${payload}.`;
 }
 
-export async function seedWorkspaceAuth(page: Page, extraPermissions: string[] = []): Promise<void> {
-  const accessToken = createTestJwt(extraPermissions);
+/** Signs in a test user. Pass roles (for example []) to test a user who has only the listed permissions. */
+export async function seedWorkspaceAuth(page: Page, extraPermissions: string[] = [], roles: string[] = ["COMPANYADMIN"]): Promise<void> {
+  const accessToken = createTestJwt(extraPermissions, roles);
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const auth = {
     user: {
@@ -72,7 +73,7 @@ export async function seedWorkspaceAuth(page: Page, extraPermissions: string[] =
     "hr.overtime.view",
     ...extraPermissions,
   ],
-    roles: ["COMPANYADMIN"],
+    roles,
     companyId: TEST_COMPANY_ID,
     companyName: "Hotel Nova QAE",
     tenantSlug: "hotelnova-qae",

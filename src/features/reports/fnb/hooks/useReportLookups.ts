@@ -35,7 +35,7 @@ export function useReportLookups(companyId?: string | null) {
 
     Promise.all([
       http.get(`/companies/${companyId}/inventory-master/items`, { signal: controller.signal }),
-      http.get(`/companies/${companyId}/inventory-categories`, { signal: controller.signal }),
+      http.get(`/companies/${companyId}/inventory-master/categories`, { signal: controller.signal }),
     ])
       .then(([itemResponse, categoryResponse]) => {
         setItems(unwrap<RawItem>(itemResponse.data)

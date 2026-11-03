@@ -10,6 +10,8 @@ import type { InventoryAdjustmentDto } from "../types";
 import {
   normalizeAdjustmentStatus,
   STATUS_BADGE,
+  STATUS_LABEL,
+  useAdjustmentPermissions,
 } from "../utils/adjustmentWorkflow";
 
 function formatDate(value?: string | null): string {
@@ -38,7 +40,9 @@ function formatMoney(value?: number | null): string {
 
 export default function AdjustmentApprovalPage() {
   const navigate = useNavigate();
-  const { id } = useParams<{ id: string }>();
+  // The route is inventory/adjustments/:adjustmentId/approve.
+  const { adjustmentId: id } = useParams<{ adjustmentId: string }>();
+  const permissions = useAdjustmentPermissions();
   const { companyId, branchId } = useAppScope();
 
   const [item, setItem] = useState<InventoryAdjustmentDto | null>(null);
@@ -59,18 +63,17 @@ export default function AdjustmentApprovalPage() {
     : adjustmentBasePath;
 
   const status = normalizeAdjustmentStatus(item?.docStatus);
-  const canApprove = status === "Submitted";
+  const canApprove = status === "Submitted" && permissions.approve;
 
   const totals = useMemo(() => {
     return (item?.lines ?? []).reduce(
       (acc, line) => {
-        const adjustmentQty = Number(line.adjustmentQty ?? 0);
-        const unitCost = Number(line.unitCost ?? 0);
+        const value = Number(line.lineAmount ?? 0);
 
-        if (adjustmentQty > 0) acc.qtyIn += adjustmentQty;
-        if (adjustmentQty < 0) acc.qtyOut += Math.abs(adjustmentQty);
+        if (value > 0) acc.qtyIn += value;
+        if (value < 0) acc.qtyOut += Math.abs(value);
 
-        acc.amount += unitCost * adjustmentQty;
+        acc.amount += value;
 
         return acc;
       },
@@ -115,7 +118,7 @@ export default function AdjustmentApprovalPage() {
     setError(null);
 
     try {
-      await adjustmentApi.approve(companyId, branchId, id);
+      await adjustmentApi.approve(companyId, branchId, id, note, item?.version);
       navigate(`${adjustmentBasePath}/${id}`, { replace: true });
     } catch (err) {
       setError(getApiError(err, "Approval failed."));
@@ -138,7 +141,7 @@ export default function AdjustmentApprovalPage() {
     setError(null);
 
     try {
-      await adjustmentApi.reject(companyId, branchId, id, trimmed);
+      await adjustmentApi.reject(companyId, branchId, id, trimmed, item?.version);
       navigate(`${adjustmentBasePath}/${id}`, { replace: true });
     } catch (err) {
       setError(getApiError(err, "Rejection failed."));
@@ -197,7 +200,7 @@ export default function AdjustmentApprovalPage() {
             style={{ display: "flex", alignItems: "center", gap: 10 }}
           >
             Approve Adjustment
-            <span className={STATUS_BADGE[status]}>{status}</span>
+            <span className={STATUS_BADGE[status]}>{STATUS_LABEL[status]}</span>
           </div>
 
           <div className="page-sub">
@@ -212,12 +215,21 @@ export default function AdjustmentApprovalPage() {
 
       {error && <div className="alert alert-danger">{error}</div>}
 
-      {!canApprove && (
+      {status !== "Submitted" && (
         <div className="alert alert-warn">
-          Only submitted adjustments can be approved. Current status:{" "}
-          <strong>{status}</strong>.
+          Only submitted adjustments can be approved. This one is <strong>{STATUS_LABEL[status].toLowerCase()}</strong>.
         </div>
       )}
+
+      {status === "Submitted" && !permissions.approve && (
+        <div className="alert alert-warn">You do not have permission to approve adjustments.</div>
+      )}
+
+      <div className="alert alert-info">
+        Prepared by {item.createdByName ?? "-"}
+        {item.submittedByName && item.submittedByName !== item.createdByName ? `, submitted by ${item.submittedByName}` : ""}. The
+        preparer cannot approve their own adjustment, and the approver cannot post it.
+      </div>
 
       {item.hasHighVariance && (
         <div className="alert alert-warn">
@@ -238,19 +250,19 @@ export default function AdjustmentApprovalPage() {
         </div>
 
         <div className="kpi">
-          <div className="kpi-label">Positive adjustment</div>
-          <div className="kpi-val">{formatQty(totals.qtyIn)}</div>
-          <div className="kpi-sub">qty increase</div>
+          <div className="kpi-label">Stock found</div>
+          <div className="kpi-val">{formatMoney(totals.qtyIn)}</div>
+          <div className="kpi-sub">value increase</div>
         </div>
 
         <div className="kpi">
-          <div className="kpi-label">Negative adjustment</div>
-          <div className="kpi-val">{formatQty(totals.qtyOut)}</div>
-          <div className="kpi-sub">qty decrease</div>
+          <div className="kpi-label">Stock missing</div>
+          <div className="kpi-val">{formatMoney(totals.qtyOut)}</div>
+          <div className="kpi-sub">value decrease</div>
         </div>
 
         <div className="kpi">
-          <div className="kpi-label">Amount impact</div>
+          <div className="kpi-label">Net value</div>
           <div className="kpi-val">{formatMoney(totals.amount)}</div>
           <div className="kpi-sub">{item.adjustmentType || "Adjustment"}</div>
         </div>
@@ -279,7 +291,8 @@ export default function AdjustmentApprovalPage() {
               <th style={{ textAlign: "right" }}>System</th>
               <th style={{ textAlign: "right" }}>Counted</th>
               <th style={{ textAlign: "right" }}>Difference</th>
-              <th style={{ textAlign: "right" }}>Amount</th>
+              <th style={{ textAlign: "right" }}>Value</th>
+              <th style={{ textAlign: "right" }}>Variance</th>
               <th>Notes</th>
             </tr>
           </thead>
@@ -288,7 +301,7 @@ export default function AdjustmentApprovalPage() {
             {(item.lines ?? []).length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   style={{
                     padding: 48,
                     textAlign: "center",
@@ -302,7 +315,7 @@ export default function AdjustmentApprovalPage() {
             ) : (
               (item.lines ?? []).map((line, index) => {
                 const adjustmentQty = Number(line.adjustmentQty ?? 0);
-                const amount = Number(line.unitCost ?? 0) * adjustmentQty;
+                const amount = Number(line.lineAmount ?? 0);
 
                 return (
                   <tr key={line.id ?? `${line.itemId}-${index}`}>
@@ -310,6 +323,10 @@ export default function AdjustmentApprovalPage() {
                       <div style={{ fontWeight: 500, fontSize: 13 }}>
                         {line.itemName || "Unnamed item"}
                       </div>
+
+                      {!line.fifoLotId && (
+                        <div style={{ fontSize: 11, color: "var(--text-soft)", marginTop: 1 }}>Whole item</div>
+                      )}
 
                       {line.batchNo && (
                         <div
@@ -356,6 +373,16 @@ export default function AdjustmentApprovalPage() {
                       {formatMoney(amount)}
                     </td>
 
+                    <td
+                      style={{
+                        textAlign: "right",
+                        fontWeight: line.isHighVariance ? 700 : 400,
+                        color: line.isHighVariance ? "var(--warn)" : "var(--text-muted)",
+                      }}
+                    >
+                      {Number(line.variancePercent ?? 0).toFixed(1)}%
+                    </td>
+
                     <td>{line.notes || "-"}</td>
                   </tr>
                 );
@@ -380,7 +407,8 @@ export default function AdjustmentApprovalPage() {
         <textarea
           value={note}
           onChange={(event) => setNote(event.target.value)}
-          placeholder="Optional approval note"
+          placeholder="Why you approve (required when a line is at a critical variance)"
+          maxLength={500}
           disabled={working || !canApprove}
           style={{
             width: "100%",

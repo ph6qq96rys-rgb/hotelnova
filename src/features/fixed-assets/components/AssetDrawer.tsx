@@ -428,7 +428,7 @@ function AssignDialog({ companyId, asset, onClose, onDone }: ActionProps) {
           </Select>
         </Field>
         <Field label={tx("Branch")}>
-          <Select value={branchId} onChange={(e) => { setBranchId(e.target.value); setLocationId(""); setDepartmentId(""); }}>
+          <Select value={branchId} onChange={(e) => { setBranchId(e.target.value); setLocationId(""); setDepartmentId(""); setEmployeeId(""); }}>
             <option value="">{tx("Choose...")}</option>
             {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </Select>

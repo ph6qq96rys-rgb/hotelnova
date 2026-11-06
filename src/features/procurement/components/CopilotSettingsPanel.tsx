@@ -49,7 +49,7 @@ export default function CopilotSettingsPanel({ companyId }: { companyId: string 
         <Input type="number" min={0} value={settings[f.key]} onChange={e => set(f.key, Number(e.target.value))} />
         <span className="p2p-muted">{tx(f.hint)}</span>
       </label>)}
-      <label><Checkbox checked={settings.requireReviewAtApproval} onChange={e => set("requireReviewAtApproval", e.target.checked)} /> {tx("Require a current, reviewed analysis for F&B approval")}</label>
+      <p className="p2p-muted">{tx("The copilot is advice only. F&B approval is never held back by its findings; notes and outstanding findings are kept in the audit trail.")}</p>
       <label><Checkbox checked={settings.assistantEnabled} onChange={e => set("assistantEnabled", e.target.checked)} /> {tx("Enable the question assistant")}
         <span className="p2p-muted">{tx("Questions and the request's analysis evidence are sent to the configured AI model provider. The server also needs a provider key.")}</span></label>
       <div className="prq-actions"><Button type="submit" disabled={busy}>{tx(busy ? "Saving..." : "Save copilot settings")}</Button></div>

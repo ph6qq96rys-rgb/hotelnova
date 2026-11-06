@@ -18,12 +18,14 @@ import SupplierInvoiceDetailPage from "../features/procurement/pages/SupplierInv
 import PurchaseReturnListPage from "../features/procurement/pages/PurchaseReturnListPage";
 import PurchaseReturnCreatePage from "../features/procurement/pages/PurchaseReturnCreatePage";
 import PurchaseReturnDetailPage from "../features/procurement/pages/PurchaseReturnDetailPage";
+import PayablesPage from "../features/procurement/pages/PayablesPage";
 import PurchasingSettingsPage from "../features/procurement/pages/PurchasingSettingsPage";
 import ProcurementRulesPage from "../features/procurement/pages/ProcurementRulesPage";
 import ProcurementInboxPage from "../features/procurement/pages/ProcurementInboxPage";
 import ProcurementQuotationsPage from "../features/procurement/pages/ProcurementQuotationsPage";
 import FixedAssetsPage from "../features/fixed-assets/pages/FixedAssetsPage";
 import SupplierPerformancePage from "../features/procurement/pages/SupplierPerformancePage";
+import SupplierComparisonPage from "../features/procurement/pages/SupplierComparisonPage";
 import ProcurementBudgetsPage from "../features/procurement/pages/ProcurementBudgetsPage";
 import SupplierAgreementsPage from "../features/procurement/pages/SupplierAgreementsPage";
 import ProcurementPlanningPage from "../features/procurement/pages/ProcurementPlanningPage";
@@ -52,10 +54,12 @@ export const procurementRoutes: AppRoute[] = [
   {path:"procurement/supplier-portal",label:"Supplier Workspace",element:<SupplierPortalPage/>,icon:<Truck size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:95},
   {path:"procurement/supplier-submissions",label:"Supplier Submissions",element:<SupplierSubmissionsPage/>,icon:<FileText size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:55,permissions:["purchasing.view"]},
   {path:"procurement/receiving",label:"Receive Deliveries",element:<MobileReceivingPage/>,icon:<Truck size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:25,permissions:["purchasing.receiveinspect"]},
-  {path:"procurement/consolidation",label:"Branch Consolidation",element:<ProcurementConsolidationPage/>,icon:<ShoppingCart size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:62,permissions:["purchasing.view"]},
+  {path:"procurement/consolidation",label:"Company purchasing plan",element:<ProcurementConsolidationPage/>,icon:<ShoppingCart size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:62,permissions:["purchasing.view"]},
   {path:"procurement/planning",label:"Purchasing Planning",element:<ProcurementPlanningPage/>,icon:<ClipboardCheck size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:60,permissions:["purchasing.view"]},
   {path:"procurement/agreements",label:"Supplier Agreements",element:<SupplierAgreementsPage/>,icon:<FileText size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:72,permissions:["purchasing.view"]},
   {path:"procurement/budgets",label:"Purchasing Budgets",element:<ProcurementBudgetsPage/>,icon:<LayoutDashboard size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:70,permissions:["purchasing.view"]},
+  {path:"procurement/payables",label:"Payables",element:<PayablesPage/>,icon:<FileText size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:45,permissions:["finance.payables.manage","finance.payables.approve","finance.view"]},
+  {path:"procurement/supplier-comparison",label:"Compare Suppliers",element:<SupplierComparisonPage/>,icon:<LayoutDashboard size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:64,permissions:["purchasing.view"]},
   {path:"procurement/supplier-performance",label:"Supplier Performance",element:<SupplierPerformancePage/>,icon:<LayoutDashboard size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:65,permissions:["purchasing.view"]},
   {path:"procurement/assets",label:"Fixed Asset Register",element:<FixedAssetsPage/>,icon:<FileText size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:75,permissions:["fixedassets.view"]},
   {path:"procurement/quotations",label:"Supplier Quotations",element:<ProcurementQuotationsPage/>,icon:<FileText size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:15,permissions:["purchasing.view"]},

@@ -1,4 +1,3 @@
-import { Checkbox } from "../../../components/ui/checkbox";
 import "./catering-recipe-editor.css";
 import { Table } from "../../../components/ui/table";
 import { CateringItemCostPreview } from "./CateringItemCostPreview";
@@ -68,8 +67,10 @@ export function CateringItemRecipeEditor({
   useDialogFocus(true, busy, close);
   useEffect(() => {
     const c = new AbortController();
+    setRecipe(null);
+    setError("");
     http
-      .get<Recipe>("/companies/" + companyId + "/catering/catalog/items/" + item.id + "/recipe", { signal: c.signal })
+      .get<Recipe>("/companies/" + companyId + "/catering/catalog/items/" + item.id + "/recipe", { signal: c.signal, params: { branchId } })
       .then((r) => {
         if (!c.signal.aborted)
           setRecipe({
@@ -82,7 +83,7 @@ export function CateringItemRecipeEditor({
         if (!c.signal.aborted) setError(readApiError(e));
       });
     return () => c.abort();
-  }, [companyId, item.id]);
+  }, [companyId, branchId, item.id]);
   function change(next: Recipe) {
     setRecipe(next);
     setDirty(true);
@@ -163,7 +164,7 @@ export function CateringItemRecipeEditor({
                 <div className="co-form-grid">
                   {([['recipeYield','Recipe yield'],['numberOfServings','Servings per batch'],['servingSize','Serving size'],['wasteAllowancePercent','Preparation loss %']] as const).map(([key,label])=><label key={key}>{label}<Input required type="number" step="any" min={key==='wasteAllowancePercent'?0:0.000001} max={key==='wasteAllowancePercent'?99.999:undefined} value={recipe.serving[key]} onChange={e=>change({...recipe,serving:{...recipe.serving,[key]:Number(e.target.value)}})}/></label>)}
                   {([['yieldUomId','Yield unit'],['servingUomId','Serving unit']] as const).map(([key,label])=><label key={key}>{label}<Select required value={recipe.serving[key]} onChange={e=>change({...recipe,serving:{...recipe.serving,[key]:e.target.value}})}><option value="">Select unit</option>{resources.units?.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</Select></label>)}
-                  <label><Checkbox checked={recipe.serving.wholeBatches} onChange={e=>change({...recipe,serving:{...recipe.serving,wholeBatches:e.target.checked}})}/> Produce whole batches</label>
+                  <p>Ingredient quantities scale proportionally with the number of guests.</p>
                   <p>Net yield after preparation loss must equal servings × serving size. Ingredient waste is applied separately to ingredient quantities.</p>
                 </div>
                 <div className="cr-section-heading">

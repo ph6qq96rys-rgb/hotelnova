@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import CopilotDecisionReview from "../components/CopilotDecisionReview";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useHasPermission } from "../../../auth/usePermissions";
 import { formatCurrency } from "../../../shared/currency/currencyFormat";
@@ -79,16 +80,23 @@ export default function PurchaseRequisitionDetailPage() {
   const [loading, setLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error) {
+      errorRef.current?.focus({ preventScroll: true });
+      errorRef.current?.scrollIntoView({ block: "center" });
+    }
+  }, [error]);
 
-  async function load() {
+  async function load(preserveError = false) {
     if (!companyId || !id) return;
     setLoading(true);
-    setError(null);
+    if (!preserveError) setError(null);
     try {
       const [document,route]=await Promise.all([getPurchaseRequisition(companyId,id),approvalsApi.route(companyId,id)]);
       setRow(document);setApprovalRoute(route);
     } catch {
-      setError(tx("Unable to load purchase requisition."));
+      if (!preserveError) setError(tx("Unable to load purchase requisition."));
     } finally {
       setLoading(false);
     }
@@ -107,7 +115,7 @@ export default function PurchaseRequisitionDetailPage() {
       await load();
     } catch (e) {
       setError(tx(toUserFriendlyError(e, "Unable to submit requisition.")));
-      await load();
+      await load(true);
     } finally {
       setActionBusy(false);
     }
@@ -159,7 +167,7 @@ export default function PurchaseRequisitionDetailPage() {
       await load();
     } catch (e) {
       setError(tx(toUserFriendlyError(e, "Unable to approve requisition.")));
-      await load();
+      await load(true);
     } finally {
       setActionBusy(false);
     }
@@ -188,7 +196,7 @@ export default function PurchaseRequisitionDetailPage() {
       await load();
     } catch (e) {
       setError(tx(toUserFriendlyError(e, "Unable to update requisition decision.")));
-      await load();
+      await load(true);
     } finally {
       setActionBusy(false);
     }
@@ -206,11 +214,11 @@ export default function PurchaseRequisitionDetailPage() {
       const result = await action();
       if (!result.success) setError(tx(result.error ?? fallback));
       setDialog(null);
-      await load();
+      await load(!result.success);
     } catch (e) {
       setError(tx(apiError(e, fallback)));
       setDialog(null);
-      await load();
+      await load(true);
     } finally {
       setActionBusy(false);
     }
@@ -297,7 +305,7 @@ export default function PurchaseRequisitionDetailPage() {
         </div>
       </header>
 
-      {error && <div className="prq-alert">{tx(error)}</div>}
+      {error && <div ref={errorRef} role="alert" tabIndex={-1} className="prq-alert">{tx(error)}</div>}
       {notice && <div className="p2p-muted" role="status">{notice}</div>}
       {loading && <div className="prq-panel prq-empty">{tx("Loading purchase requisition...")}</div>}
 
@@ -393,6 +401,7 @@ export default function PurchaseRequisitionDetailPage() {
               <p>{tx("Store Keeper submits the request. F&B validates operational need, then Finance gives final budget approval.")}</p>
             </div>
             <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder={tx("Decision comment (required for return or rejection)")} />
+            {row.status==="PendingFnbApproval"&&approvalRoute?.status!=="Pending"&&<CopilotDecisionReview review={copilotReview} comment={comment}/>}
             {canAdjustQuantities && <p className="p2p-muted">{tx(row.status === "PendingFnbApproval"
               ? "You can reduce approved quantities in the Lines table. Explain the change in the comment and apply it; the copilot then re-analyzes the request before you approve."
               : "You can reduce approved quantities in the Lines table before approving. Explain the change in the comment.")}</p>}

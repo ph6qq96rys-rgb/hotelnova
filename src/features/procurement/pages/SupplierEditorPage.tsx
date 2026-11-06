@@ -15,6 +15,7 @@ import { useI18n } from "../../../i18n";
 import { inventoryItemsApi } from "../../inventoryMaster/items/api/inventoryItemsApi";
 import type { InventoryItemDto, ItemUomDto } from "../../inventoryMaster/items/types";
 import { suppliersApi, type Supplier, type SupplierInput, type SupplierItem } from "../api/purchasingApi";
+import { payablesApi } from "../api/payablesApi";
 import {
   ActionDialog,
   BackButton,
@@ -104,6 +105,9 @@ export default function SupplierEditorPage() {
   const editable = isNew ? canCreate : canUpdate;
 
   const [supplier, setSupplier] = useState<Supplier | null>(null);
+  const canVerifyBank = useHasPermission("suppliers.bank.verify");
+  const [bankBusy, setBankBusy] = useState(false);
+  const [bankError, setBankError] = useState<string | null>(null);
   const [form, setForm] = useState<SupplierInput>(EMPTY);
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -301,6 +305,17 @@ export default function SupplierEditorPage() {
               <FormField label={tx("Bank")} disabled={!canManage} value={form.bankName ?? ""} onChange={(e) => set("bankName", e.target.value)} />
               <FormField label={tx("Account name")} disabled={!canManage} value={form.bankAccountName ?? ""} onChange={(e) => set("bankAccountName", e.target.value)} />
               <FormField label={tx("Account number")} disabled={!canManage} value={form.bankAccountNo ?? ""} onChange={(e) => set("bankAccountNo", e.target.value)} />
+              {supplier?.bankStatus === "PendingVerification" && <div className="p2p-span-all">
+                <StateMessage tone="warning" action={canVerifyBank ? <Button size="sm" disabled={bankBusy} onClick={async () => {
+                  setBankBusy(true); setBankError(null);
+                  try { await payablesApi.verifyBank(companyId, supplier.id, supplier.version); setSupplier(await suppliersApi.get(companyId, supplier.id)); }
+                  catch (e) { setBankError(apiError(e, "Unable to verify the bank details.")); }
+                  finally { setBankBusy(false); }
+                }}>{tx("Verify bank details")}</Button> : undefined}>
+                  {tx("Bank details changed")} {supplier.bankChangedAtUtc ? new Date(supplier.bankChangedAtUtc).toLocaleString() : ""}. {tx("Non-cash payments to this supplier are held until someone other than the person who changed them confirms the account with the supplier.")}
+                </StateMessage>
+                {bankError && <StateMessage tone="error">{tx(bankError)}</StateMessage>}
+              </div>}
               <div className="p2p-span-all">
                 <LabeledTextarea label={tx("Notes")} value={form.notes ?? ""} onChange={(e) => set("notes", e.target.value)} />
               </div>

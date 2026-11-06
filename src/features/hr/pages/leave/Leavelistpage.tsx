@@ -33,7 +33,7 @@ export default function LeaveListPage() {
   async function approve(id: string) {
     if (!companyId) return;
     setWorking(id);
-    try { await leaveApi.approve(companyId, id, 'MANAGER'); await load(); }
+    try { await leaveApi.approve(companyId, id); await load(); }
     catch (e) { setError(getApiError(e, 'Approval failed.')); }
     finally { setWorking(null); }
   }
@@ -43,7 +43,7 @@ export default function LeaveListPage() {
     const reason = window.prompt('Rejection reason?');
     if (!reason) return;
     setWorking(id);
-    try { await leaveApi.reject(companyId, id, 'MANAGER', reason); await load(); }
+    try { await leaveApi.reject(companyId, id, reason); await load(); }
     catch (e) { setError(getApiError(e, 'Rejection failed.')); }
     finally { setWorking(null); }
   }

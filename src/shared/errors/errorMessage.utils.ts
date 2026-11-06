@@ -91,6 +91,10 @@ function sanitizeErrorMessage(message: string, fallback: string, status: number 
     return "Your session has expired. Please sign in again.";
   }
 
+  if (lower.startsWith("segregation of duties violation.") && !isTechnicalError(value)) {
+    return cleanupMessage(value);
+  }
+
   if (status === 403 || lower.includes("forbidden") || lower.includes("403")) {
     return "You do not have permission to view or change this area. Ask your Company Administrator to update your role or branch assignment.";
   }

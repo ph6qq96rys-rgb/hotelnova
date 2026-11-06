@@ -51,7 +51,7 @@ export function JournalDetailDialog({ companyId, journalId, branches, costCenter
               {j.status === "draft" && canCreate ? <Button type="button" variant="outline" disabled={busy} onClick={() => setConfirmDelete(true)}>Delete draft</Button> : null}
               {j.status === "draft" && canCreate ? <Button type="button" variant="outline" disabled={busy} onClick={() => onEdit(j)}>Edit</Button> : null}
               {j.status === "draft" && canPost ? <Button type="button" disabled={busy} onClick={() => void act(() => financeApi.postJournal(companyId, j.id, j.version), "The journal could not be posted.")}>Post journal</Button> : null}
-              {j.status === "posted" && canPost && !j.reversesEntryId
+              {j.status === "posted" && canPost && !j.reversesEntryId && j.type !== "automatic" && j.type !== "yearEndClose"
                 ? <Button type="button" variant="outline" disabled={busy} onClick={() => { setReason(""); setReverseDate(""); setReversing(true); }}>Reverse…</Button> : null}
         </> : null}>
         {!j && !error ? <StateMessage tone="loading">Loading journal…</StateMessage> : null}
@@ -71,7 +71,8 @@ export function JournalDetailDialog({ companyId, journalId, branches, costCenter
               <div><dt>Currency</dt><dd>{j.currencyCode}{j.exchangeRate !== 1 ? ` at ${j.exchangeRate}` : ""}</dd></div>
               {j.postingRuleVersion ? <div><dt>Posting rules</dt><dd>Version {j.postingRuleVersion}</dd></div> : null}
               <div><dt>Prepared by</dt><dd>{j.createdByName || (j.type === "automatic" ? "Automatic posting" : "—")}</dd></div>
-              <div><dt>Posted</dt><dd>{j.postedAtUtc ? `${formatAppDateTime(j.postedAtUtc)}${j.postedByName ? ` · ${j.postedByName}` : ""}` : "Not yet"}</dd></div>
+              <div><dt>Posted by</dt><dd>{j.postedByName || j.postedBy || (j.postedAtUtc ? "User not recorded" : "—")}</dd></div>
+              <div><dt>Posted at</dt><dd>{j.postedAtUtc ? formatAppDateTime(j.postedAtUtc) : "Not yet"}</dd></div>
               {j.reversesEntryId ? <div><dt>Reverses</dt><dd><Button type="button" variant="link" onClick={() => onOpen(j.reversesEntryId!)}>{j.reversesEntryNo}</Button></dd></div> : null}
               {j.reversedByEntryId ? <div><dt>Reversed by</dt><dd><Button type="button" variant="link" onClick={() => onOpen(j.reversedByEntryId!)}>{j.reversedByEntryNo}</Button></dd></div> : null}
               {j.reversalReason ? <div><dt>Reversal reason</dt><dd>{j.reversalReason}</dd></div> : null}

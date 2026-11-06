@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../../../components/ui/button";
-import { Checkbox } from "../../../components/ui/checkbox";
 import { StateMessage } from "../../../components/ui/Feedback";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
@@ -14,12 +13,13 @@ import { apiError, dateTime, money, qty } from "./p2pShared";
 import "./requestCopilot.css";
 
 /** What the page needs to record an F&B decision against the reviewed analysis. */
-export type CopilotReviewState = CopilotDecision & { ready: boolean; blockers: string[]; missing: string[]; required: boolean };
+export type CopilotReviewState = CopilotDecision & { ready: boolean; blockers: string[]; missing: string[]; required: boolean;
+  reason?: string; outstanding?: { key: string; label: string; explanation: string }[]; applyComment?: (comment: string) => void };
 
 const recommendationLabel: Record<CopilotRecommendation, string> = {
   Approve: "Approve", ReviewRequired: "Review required", ReturnForRevision: "Return for revision",
 };
-const actionLabel: Record<string, string> = { Warn: "Informational", Review: "Justification required", Block: "Blocks approval" };
+const actionLabel: Record<string, string> = { Warn: "Informational", Review: "Worth checking", Block: "Worth checking" };
 const questions = [
   "Why is this quantity flagged?",
   "What stock can we transfer from the main warehouse?",
@@ -71,8 +71,8 @@ function Findings({ lines, findings, overrides, onOverride, editable }: {
       <div><strong>{tx(actionLabel[f.action] ?? f.action)}</strong> · <span className="rqc-code">{tx(f.code)}</span>
         {f.ruleName && <span className="rqc-muted"> · {f.ruleName} ({tx("Revision")} {f.revision})</span>}</div>
       <p>{f.explanation}</p>
-      {f.action === "Review" && editable && <label className="rqc-justify">{tx("Justification")}
-        <Textarea value={overrides[key] ?? ""} maxLength={500} onChange={e => onOverride(key, e.target.value)} placeholder={tx("Why is approval appropriate despite this finding?")} />
+      {(f.action === "Review" || f.action === "Block") && editable && <label className="rqc-justify">{tx("Note (optional)")}
+        <Textarea value={overrides[key] ?? ""} maxLength={500} onChange={e => onOverride(key, e.target.value)} placeholder={tx("Optional: how you considered this finding")} />
       </label>}
     </li>;
   })}</ul>;
@@ -131,17 +131,25 @@ export default function RequestApprovalCopilot({ companyId, id, version, canDeci
   const stale = !!analysis && (analysis.isStale || analysis.requisitionVersion !== version);
 
   const review = useMemo<CopilotReviewState>(() => {
-    const required = !!analysis?.requireReviewAtApproval;
+    const required = analysis?.requireReviewAtApproval ?? canDecide;
     const all = snapshot ? [
-      ...snapshot.lines.flatMap(l => l.findings.map(f => ({ key: findingKey(l.lines, f.code), f }))),
-      ...snapshot.requestFindings.map(f => ({ key: findingKey("request", f.code), f })),
+      ...snapshot.lines.flatMap(l => l.findings.map(f => ({ key: findingKey(l.lines, f.code), label: `${l.itemName}: ${f.code}`, f }))),
+      ...snapshot.requestFindings.map(f => ({ key: findingKey("request", f.code), label: f.code, f })),
     ] : [];
-    const blockers = all.filter(x => x.f.action === "Block").map(x => x.f.code);
-    const missing = all.filter(x => x.f.action === "Review" && !(overrides[x.key] ?? "").trim()).map(x => x.key);
+    // Advice only: approval is never held back by findings. Only invalid request data (no branch or destination) stops approval.
+    const blockers = all.filter(x => x.f.code === "RequestDataInvalid").map(x => x.f.code);
+    const missing = all.filter(x => (x.f.action === "Review" || x.f.action === "Block") && !(overrides[x.key] ?? "").trim()).map(x => x.key);
     const cleaned = Object.fromEntries(Object.entries(overrides).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]));
-    const ready = !required || (!!analysis && !stale && (failed ? acknowledged : blockers.length === 0 && missing.length === 0));
-    return { analysisId: analysis?.id ?? null, overrides: cleaned, acknowledgeAnalysisUnavailable: failed && acknowledged, ready, blockers, missing, required };
-  }, [analysis, snapshot, overrides, acknowledged, stale, failed]);
+    const ready = stale || failed || blockers.length === 0;
+    const reason = ready ? undefined : "The request is missing its branch or destination stock location. Return it for correction.";
+    const outstanding = all.filter(x => missing.includes(x.key)).map(x => ({key:x.key,label:x.label,explanation:x.f.explanation}));
+    const applyComment = (comment: string) => {
+      const text=comment.trim();
+      if(!text||text.length>500||stale||failed||busy||!loaded||error||analysis?.status!=="Current"||blockers.length)return;
+      setOverrides(current=>({...current,...Object.fromEntries(missing.filter(key=>!(current[key]??"").trim()).map(key=>[key,text]))}));
+    };
+    return { analysisId: analysis?.id ?? null, overrides: cleaned, acknowledgeAnalysisUnavailable: failed && acknowledged, ready, blockers, missing, required, reason, outstanding, applyComment };
+  }, [analysis, snapshot, overrides, acknowledged, stale, failed, loaded, busy, error, canDecide]);
 
   useEffect(() => { onReview(review); }, [review, onReview]);
 
@@ -173,13 +181,12 @@ export default function RequestApprovalCopilot({ companyId, id, version, canDeci
     {loaded && !analysis && !busy && !error && <StateMessage tone="info">{tx("No analysis yet. Analyze the request to see stock coverage, price variance and exceptions.")}</StateMessage>}
 
     {analysis && stale && <StateMessage tone="warning" action={<Button size="sm" variant="outline" disabled={busy} onClick={() => void analyze()}>{tx("Refresh")}</Button>}>
-      {tx(analysis.staleReason ?? "The request changed after this analysis.")} {tx("Refresh before approving.")}
+      {tx(analysis.staleReason ?? "The request changed after this analysis.")} {tx("Refresh to see current advice.")}
     </StateMessage>}
 
     {analysis && failed && <div className="rqc-failed">
       <StateMessage tone="error">{tx("Analysis unavailable")}: {tx(analysis.error ?? "The analysis service failed.")} {tx("No check in this analysis has passed.")}</StateMessage>
-      {canDecide && <label className="rqc-ack"><Checkbox checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)} />
-        {tx("I am approving without the copilot analysis. I will explain why in the decision comment.")}</label>}
+      <p className="rqc-muted">{tx("You can still approve, return or reject using your own judgement.")}</p>
     </div>}
 
     {snapshot && <>
@@ -230,11 +237,11 @@ export default function RequestApprovalCopilot({ companyId, id, version, canDeci
         <p className="rqc-muted">{tx("Settings")}: {tx("consumption")} {snapshot.settings.consumptionLookbackDays} {tx("days")} · {tx("default coverage")} {snapshot.settings.defaultCoverageDays} {tx("days")} · {tx("duplicate window")} ±{snapshot.settings.duplicateWindowDays} {tx("days")} · {tx("price threshold")} {snapshot.settings.priceIncreaseThresholdPercent}%</p>
       </details>
 
-      {canDecide && review.required && !stale && !failed && (review.blockers.length > 0
-        ? <StateMessage tone="error">{tx("Approval is blocked by")}: {review.blockers.map(b => tx(b)).join(", ")}. {tx("Return the request for revision.")}</StateMessage>
+      {canDecide && !stale && !failed && (review.blockers.length > 0
+        ? <StateMessage tone="error">{tx(review.reason ?? "Return the request for correction.")}</StateMessage>
         : review.missing.length > 0
-          ? <StateMessage tone="warning">{tx("Add a justification for each finding marked 'Justification required' before approving")} ({review.missing.length}).</StateMessage>
-          : <StateMessage tone="success">{tx("Review complete. Your decision will be recorded against this analysis.")}</StateMessage>)}
+          ? <StateMessage tone="info">{tx("Notes on findings are optional. Anything you write is saved with your decision.")} ({review.missing.length} {tx("without a note")})</StateMessage>
+          : <StateMessage tone="success">{tx("Your decision will be recorded against this analysis.")}</StateMessage>)}
 
       {analysis!.assistantAvailable && !stale && <div className="rqc-block rqc-chat">
         <h3>{tx("Ask about this request")}</h3>
@@ -275,7 +282,7 @@ function LineRow({ companyId, line, overrides, onOverride, editable, onSuggest, 
       <td><span className={`rqc-pill rqc-pill--${tone}`}>{tx(recommendationLabel[line.recommendation])}</span></td>
     </tr>
     <tr className="rqc-detail"><td colSpan={8}>
-      <details>
+      <details open={editable && line.findings.some(f=>f.action==="Review"||f.action==="Block")}>
         <summary>{tx("Findings and evidence")}</summary>
         <p>{line.summary}</p>
         <dl className="rqc-facts rqc-facts--compact">

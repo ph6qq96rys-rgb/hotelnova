@@ -21,7 +21,7 @@ export function JournalEditor({ companyId, journal, accounts, costCenters, branc
   const [branchId, setBranchId] = useState(journal?.branchId ?? defaultBranchId ?? "");
   const [description, setDescription] = useState(journal?.description ?? "");
   const [reference, setReference] = useState(journal?.reference ?? "");
-  const [type, setType] = useState<"manual" | "adjustment">(journal?.type === "adjustment" ? "adjustment" : "manual");
+  const [type, setType] = useState<"manual" | "adjustment" | "openingBalance">(journal?.type === "adjustment" || journal?.type === "openingBalance" ? journal.type : "manual");
   const [lines, setLines] = useState<Line[]>(() => journal?.lines.length
     ? journal.lines.map((l) => ({ key: nextKey++, accountId: l.accountId, debit: l.debit ? String(l.debit) : "", credit: l.credit ? String(l.credit) : "",
         costCenterId: l.costCenterId ?? "", description: l.description ?? "" }))
@@ -57,9 +57,10 @@ export function JournalEditor({ companyId, journal, accounts, costCenters, branc
       <div className="gl-grid">
         <Field label="Date"><Input type="date" required value={entryDate} onChange={(e) => setEntryDate(e.target.value)} /></Field>
         <Field label="Type">
-          <Select value={type} onChange={(e) => setType(e.target.value as "manual" | "adjustment")}>
+          <Select value={type} onChange={(e) => setType(e.target.value as "manual" | "adjustment" | "openingBalance")}>
             <option value="manual">Manual journal</option>
             <option value="adjustment">Adjusting entry</option>
+            <option value="openingBalance">Opening balance (on or before the posting start date; may use control accounts)</option>
           </Select>
         </Field>
         <Field label="Branch">

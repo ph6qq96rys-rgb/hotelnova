@@ -1,7 +1,7 @@
 import { http } from "../../../api/http";
 
 export type AccountType = "asset" | "liability" | "equity" | "revenue" | "costOfSales" | "expense";
-export type JournalType = "manual" | "automatic" | "reversal" | "adjustment";
+export type JournalType = "manual" | "automatic" | "reversal" | "adjustment" | "yearEndClose" | "openingBalance";
 export type JournalStatus = "draft" | "posted" | "reversed";
 export type OutboxStatus = "pending" | "processed" | "skipped" | "failed" | "deadLetter";
 export type PeriodStatus = "open" | "closed";
@@ -11,8 +11,7 @@ export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
   asset: "Asset", liability: "Liability", equity: "Equity", revenue: "Revenue", costOfSales: "Cost of sales", expense: "Expense",
 };
 export const JOURNAL_TYPE_LABEL: Record<JournalType, string> = {
-  manual: "Manual", automatic: "Automatic", reversal: "Reversal", adjustment: "Adjustment",
-};
+  manual: "Manual", automatic: "Automatic", reversal: "Reversal", adjustment: "Adjustment", yearEndClose: "Year-end close", openingBalance: "Opening balance" };
 export const SOURCE_LABEL: Record<string, string> = {
   GRN: "Goods receipt",
   SupplierInvoice: "Supplier invoice",
@@ -36,7 +35,7 @@ export type Period = {
   id: string; fiscalYearId: string; periodNo: number; name: string; startDate: string; endDate: string; status: PeriodStatus;
   closedAtUtc?: string | null; version: string; draftJournals: number; postingExceptions: number;
 };
-export type FiscalYear = { id: string; name: string; startDate: string; endDate: string; periods: Period[] };
+export type FiscalYear = { id: string; name: string; startDate: string; endDate: string; periods: Period[]; status?: PeriodStatus; closedAtUtc?: string | null; closingJournalId?: string | null; version?: string | null };
 export type PeriodEvent = { action: string; reason?: string | null; userId: string; userName?: string | null; atUtc: string };
 export type RuleVersion = { branchId?: string | null; accountId: string; version: number; effectiveFrom: string; effectiveTo?: string | null };
 export type PostingRule = {
@@ -66,7 +65,7 @@ export type JournalLineInput = {
   accountId: string; debit: number; credit: number; branchId?: string | null; costCenterId?: string | null; projectCode?: string | null; description?: string | null;
 };
 export type JournalDraftInput = {
-  entryDate: string; branchId?: string | null; description: string; reference?: string | null; type: "manual" | "adjustment";
+  entryDate: string; branchId?: string | null; description: string; reference?: string | null; type: "manual" | "adjustment" | "openingBalance";
   lines: JournalLineInput[]; version?: string | null;
 };
 export type TrialBalanceRow = {
@@ -106,6 +105,8 @@ export const financeApi = {
   createFiscalYear: (c: string, name: string, startDate: string) => http.post(`${base(c)}/fiscal-years`, { name, startDate }),
   closePeriod: (c: string, id: string, version: string, reason?: string) => http.post(`${base(c)}/periods/${id}/close`, { reason, version }),
   reopenPeriod: (c: string, id: string, version: string, reason: string) => http.post(`${base(c)}/periods/${id}/reopen`, { reason, version }),
+  closeFiscalYear: (c: string, id: string, version?: string | null, reason?: string) => http.post(`${base(c)}/fiscal-years/${id}/close`, { reason, version }),
+  reopenFiscalYear: (c: string, id: string, version: string | null | undefined, reason: string) => http.post(`${base(c)}/fiscal-years/${id}/reopen`, { reason, version }),
   periodEvents: (c: string, id: string) => http.get<PeriodEvent[]>(`${base(c)}/periods/${id}/events`).then((r) => r.data),
   postingRules: (c: string) => http.get<PostingRule[]>(`${base(c)}/posting-rules`).then((r) => r.data),
   savePostingRule: (c: string, key: string, branchId: string | null, accountId: string | null, effectiveFrom?: string | null) =>

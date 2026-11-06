@@ -352,13 +352,13 @@ export const leaveApi = {
   submit: (companyId: string, body: Record<string, unknown>) =>
     http.post(`${base(companyId)}/leave/requests`, body).then((r) => r.data),
 
-  approve: (companyId: string, id: string, approverId: string, note?: string) =>
+  approve: (companyId: string, id: string, note?: string) =>
     http
-      .post(`${base(companyId)}/leave/requests/${id}/approve`, cleanParams({ approverId, note }))
+      .post(`${base(companyId)}/leave/requests/${id}/approve`, { note })
       .then((r) => r.data),
 
-  reject: (companyId: string, id: string, approverId: string, reason: string) =>
-    http.post(`${base(companyId)}/leave/requests/${id}/reject`, { approverId, reason }).then((r) => r.data),
+  reject: (companyId: string, id: string, reason: string) =>
+    http.post(`${base(companyId)}/leave/requests/${id}/reject`, { reason }).then((r) => r.data),
 
   cancel: (companyId: string, id: string, requestedBy: string, reason: string) =>
     http.post(`${base(companyId)}/leave/requests/${id}/cancel`, { requestedBy, reason }).then((r) => r.data),

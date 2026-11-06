@@ -3,13 +3,14 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../../../components/PageHeader";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
-import { EmptyState, StateMessage } from "../../../components/ui/Feedback";
+import { StateMessage } from "../../../components/ui/Feedback";
 import { FormField } from "../../../components/ui/FormField";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { useHasPermission } from "../../../auth/usePermissions";
 import { useI18n } from "../../../i18n";
 import { supplierInvoicesApi, type SupplierInvoice } from "../api/purchasingApi";
 import InvoiceEvidencePanel from "../components/InvoiceEvidencePanel";
+import InvoicePayablesPanel from "../components/InvoicePayablesPanel";
 import {
   ActionDialog,
   BackButton,
@@ -44,7 +45,7 @@ export default function SupplierInvoiceDetailPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [payment, setPayment] = useState({ amount: "", paidOn: todayIso(), method: "BankTransfer", reference: "" });
+  const [payment, setPayment] = useState({ amount: "", paidOn: todayIso(), method: "BankTransfer", reference: "", exchangeRate: "" });
 
   async function load() {
     if (!companyId || !id) return;
@@ -71,9 +72,10 @@ export default function SupplierInvoiceDetailPage() {
       setInv(await action(inv));
       setDialog(null);
     } catch (e) {
-      setError(apiError(e, fallback));
+      const actionError = apiError(e, fallback);
       setDialog(null);
       await load();
+      setError(current => current ? `${actionError} ${current}` : actionError);
     } finally {
       setBusy(false);
     }
@@ -87,8 +89,11 @@ export default function SupplierInvoiceDetailPage() {
   const showMatch = canRecord && open;
   const showApprove = canApprove && inv.status === "Matched";
   const showOverride = canApprove && canFinance && inv.status === "OnHold";
-  const showCancel = (open && canRecord) || (inv.status === "Approved" && canFinance && inv.paidAmount === 0 && inv.creditedAmount === 0);
-  const showPayment = canPayables && inv.status === "Approved" && inv.outstandingAmount > 0;
+  const showCancel = (open && canRecord) || (inv.status === "Approved" && canFinance && inv.paidAmount === 0 && inv.creditedAmount === 0 && inv.pendingPaymentAmount === 0);
+  const showPayment = canPayables && inv.status === "Approved" && inv.availableToPay > 0;
+  const paymentAmount = Number(payment.amount);
+  const validPaymentAmount = Number.isFinite(paymentAmount) && paymentAmount > 0 && paymentAmount <= inv.availableToPay;
+  const foreign = inv.exchangeRate !== 1;
   const poLink = inv.purchaseOrderId ? `/companies/${companyId}/procurement/purchase-orders/${inv.purchaseOrderId}` : null;
 
   return (
@@ -103,7 +108,7 @@ export default function SupplierInvoiceDetailPage() {
             {showMatch && <Button variant="outline" disabled={busy} onClick={() => void run((c) => supplierInvoicesApi.match(companyId, c.id, c.version), "Unable to run the three-way match.")}>{tx("Run match")}</Button>}
             {showApprove && <Button disabled={busy} onClick={() => setDialog("approve")}>{tx("Approve")}</Button>}
             {showOverride && <Button disabled={busy} onClick={() => setDialog("override")}>{tx("Approve with override")}</Button>}
-            {showPayment && <Button disabled={busy} onClick={() => { setPayment({ amount: String(inv.outstandingAmount), paidOn: todayIso(), method: "BankTransfer", reference: "" }); setDialog("payment"); }}>{tx("Record payment")}</Button>}
+            {showPayment && <Button disabled={busy} onClick={() => { setPayment({ amount: String(inv.availableToPay), paidOn: todayIso(), method: "BankTransfer", reference: "", exchangeRate: foreign ? String(inv.exchangeRate) : "" }); setDialog("payment"); }}>{tx("Record payment")}</Button>}
           </>
         }
       />
@@ -127,6 +132,8 @@ export default function SupplierInvoiceDetailPage() {
         <Metric label={tx("Refunds received")} value={money(inv.refundedAmount,inv.currencyCode)} />
         <Metric label={tx("Unapplied supplier credit")} value={money(inv.supplierCreditBalance,inv.currencyCode)} />
         <Metric label={tx("Outstanding")} value={money(inv.outstandingAmount, inv.currencyCode)} tone={inv.isOverdue ? "danger" : undefined} />
+        {inv.pendingPaymentAmount > 0 && <Metric label={tx("Payments awaiting approval")} value={money(inv.pendingPaymentAmount, inv.currencyCode)} tone="warning" />}
+        {inv.pendingPaymentAmount > 0 && <Metric label={tx("Available to pay")} value={money(inv.availableToPay, inv.currencyCode)} />}
       </section>
 
       <InvoiceEvidencePanel companyId={companyId} id={inv.id} version={inv.version}/>
@@ -187,37 +194,7 @@ export default function SupplierInvoiceDetailPage() {
         </CardContent>
       </Card>
 
-      {(inv.status === "Approved" || inv.payments.length > 0) && <Card>
-        <CardHeader><CardTitle>{tx("Payments")}</CardTitle></CardHeader>
-        <CardContent>
-          {inv.payments.length === 0 ? (
-            <EmptyState title={tx("No payments recorded")} detail={tx("Payments can be recorded once the invoice is approved.")} />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{tx("Paid on")}</TableHead>
-                  <TableHead>{tx("Method")}</TableHead>
-                  <TableHead>{tx("Reference")}</TableHead>
-                  <TableHead>{tx("Recorded")}</TableHead>
-                  <TableHead className="p2p-right">{tx("Amount")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inv.payments.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell>{date(p.paidOn)}</TableCell>
-                    <TableCell>{p.method ? tx(p.method) : "-"}</TableCell>
-                    <TableCell>{p.reference || "-"}</TableCell>
-                    <TableCell>{dateTime(p.recordedAtUtc)}</TableCell>
-                    <TableCell className="p2p-right">{money(p.amount, inv.currencyCode)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>}
+      {(inv.status === "Approved" || inv.payments.length > 0) && <InvoicePayablesPanel companyId={companyId} invoice={inv} onChanged={load} />}
 
       {showCancel && (
         <ManageCard
@@ -265,28 +242,33 @@ export default function SupplierInvoiceDetailPage() {
       <ActionDialog
         open={dialog === "payment"}
         title={tx("Record payment")}
-        message={`${tx("Outstanding")}: ${money(inv.outstandingAmount, inv.currencyCode)}`}
-        confirmText={tx("Record payment")}
+        message={`${tx("Available to pay")}: ${money(inv.availableToPay, inv.currencyCode)}. ${tx("A second person approves the payment before it reduces the balance or posts to the ledger.")}`}
+        confirmText={tx("Submit for approval")}
+        confirmDisabled={!validPaymentAmount}
         busy={busy}
         onConfirm={() => {
           const amount = Number(payment.amount);
-          if (!(amount > 0)) return setError(tx("Payment amount must be greater than zero."));
+          if (!validPaymentAmount) return;
           void run((cur) => supplierInvoicesApi.recordPayment(companyId, cur.id, {
             version: cur.version,
             amount,
             paidOn: payment.paidOn,
             method: payment.method,
             reference: payment.reference.trim() || null,
+            exchangeRate: foreign ? Number(payment.exchangeRate) || 0 : 0,
           }), "Unable to record payment.");
         }}
         onClose={() => setDialog(null)}
       >
-        <FormField label={tx("Amount")} type="number" min={0} step="0.01" required value={payment.amount} onChange={(e) => setPayment((p) => ({ ...p, amount: e.target.value }))} />
+        <FormField label={tx("Amount")} type="number" min={0.01} max={inv.availableToPay} step="0.01" required value={payment.amount} error={paymentAmount > inv.availableToPay ? tx("Amount exceeds the available balance after pending payments.") : undefined} onChange={(e) => setPayment((p) => ({ ...p, amount: e.target.value }))} />
         <FormField label={tx("Paid on")} type="date" required value={payment.paidOn} onChange={(e) => setPayment((p) => ({ ...p, paidOn: e.target.value }))} />
         <LabeledSelect label={tx("Method")} value={payment.method} onChange={(e) => setPayment((p) => ({ ...p, method: e.target.value }))}>
           {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{tx(m)}</option>)}
         </LabeledSelect>
         <FormField label={tx("Reference")} value={payment.reference} placeholder={tx("Bank reference or cheque number")} onChange={(e) => setPayment((p) => ({ ...p, reference: e.target.value }))} />
+        {foreign && <FormField label={`${tx("Exchange rate on the payment date")} (${inv.currencyCode})`} type="number" min={0} step="0.0001" required
+          help={`${tx("Invoice rate")}: ${inv.exchangeRate}. ${tx("The difference is posted as a realised exchange gain or loss.")}`}
+          value={payment.exchangeRate} onChange={(e) => setPayment((p) => ({ ...p, exchangeRate: e.target.value }))} />}
       </ActionDialog>
     </main>
   );

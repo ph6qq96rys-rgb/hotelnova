@@ -64,6 +64,10 @@ export type Supplier = Required<Omit<SupplierInput, "code">> & {
   version: string;
   createdAt: string;
   updatedAt?: string | null;
+  /** Verified, or PendingVerification after a bank change until a second person confirms it. */
+  bankStatus?: string;
+  bankChangedByUserId?: string | null;
+  bankChangedAtUtc?: string | null;
 };
 
 export type SupplierLookup = {
@@ -415,6 +419,17 @@ export type SupplierInvoicePayment = {
   reference?: string | null;
   recordedByUserId: string;
   recordedAtUtc: string;
+  /** Approved, PendingApproval, Rejected or Reversed. */
+  status: string;
+  /** Payment-day rate to company currency; 0 means the invoice rate. */
+  exchangeRate: number;
+  paymentRunId?: string | null;
+  advanceId?: string | null;
+  approvedByUserId?: string | null;
+  approvedAtUtc?: string | null;
+  rejectionReason?: string | null;
+  reversedAtUtc?: string | null;
+  reversalReason?: string | null;
 };
 
 export type SupplierInvoice = {
@@ -457,6 +472,10 @@ export type SupplierInvoice = {
   createdAt: string;
   lines: SupplierInvoiceLine[];
   payments: SupplierInvoicePayment[];
+  pendingPaymentAmount: number;
+  availableToPay: number;
+  preparedByUserId: string;
+  approvedByUserId?: string | null;
 };
 
 export type SupplierInvoiceLineInput = {
@@ -537,7 +556,7 @@ export const supplierInvoicesApi = {
   async recordPayment(
     companyId: string,
     id: string,
-    body: { version: string; amount: number; paidOn: string; method?: string | null; reference?: string | null },
+    body: { version: string; amount: number; paidOn: string; method?: string | null; reference?: string | null; exchangeRate?: number },
   ): Promise<SupplierInvoice> {
     const r = await http.post<SupplierInvoice>(`${base(companyId)}/supplier-invoices/${id}/payments`, body);
     return r.data;

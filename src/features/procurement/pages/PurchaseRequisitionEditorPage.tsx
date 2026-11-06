@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { http } from "../../../api/http";
 import { useI18n } from "../../../i18n";
-import { useAppScope } from "../../../app/useAppScope";
+
 import { Button } from "../../../components/ui/button";
 import { inventoryItemsApi } from "../../inventoryMaster/items/api/inventoryItemsApi";
 import type { InventoryItemDto } from "../../inventoryMaster/items/types";
@@ -30,9 +30,9 @@ const isLocked=(l:FormLine)=>(l.orderedQuantity??0)>0||(l.receivedQuantity??0)>0
 
 export default function PurchaseRequisitionEditorPage() {
   const {companyId,id}=useParams<{companyId:string;id:string}>(),navigate=useNavigate(),{tx}=useI18n();
-  const scope=useAppScope();
-  // New requisitions default to the active branch: branch-scoped users cannot raise company-level documents.
-  const [form,setForm]=useState<CreatePurchaseRequisitionPayload>(()=>({...blank(),branchId:scope.branchId||null})),[document,setDocument]=useState<PurchaseRequisition|null>(null);
+  const [origin,setOrigin]=useState<{branchId:string;branchName:string;locationId:string;locationName:string}|null>(null);
+
+  const [form,setForm]=useState<CreatePurchaseRequisitionPayload>(blank),[document,setDocument]=useState<PurchaseRequisition|null>(null);
   const [branches,setBranches]=useState<{id:string;name:string}[]>([]),[locations,setLocations]=useState<StockLocationDto[]>([]),[items,setItems]=useState<InventoryItemDto[]>([]);
   const [files,setFiles]=useState<File[]>([]),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState("");
   const requestId=useRef(crypto.randomUUID()),saved=useRef<PurchaseRequisition|null>(null);
@@ -41,20 +41,30 @@ export default function PurchaseRequisitionEditorPage() {
   // A purchasing manager can revise a submitted, approved or ordered requisition until it is final.
   const revising=!!document&&!["Draft","Returned"].includes(document.status)&&canManage&&document.canBeRevised!==false;
   const editable=!document||["Draft","Returned"].includes(document.status)||revising;
+  const hasInventory=form.lines.some(l=>l.lineType==="InventoryItem");
+  useEffect(()=>{
+    if(!companyId||!id||!document||!form.branchId||!hasInventory)return;
+    let active=true;
+    http.get<{locationId:string|null}>(`/companies/${companyId}/procurement/requisitions/default-destination`,{params:{branchId:form.branchId}})
+      .then(({data})=>{if(active&&data.locationId)setForm(f=>f.requiredStockLocationId||f.deliveryLocationId?f:{...f,requiredStockLocationId:data.locationId,deliveryLocationId:data.locationId});})
+      .catch(e=>active&&setError(apiError(e,"Unable to load the default receiving location. Select a destination before submitting.")));
+    return()=>{active=false;};
+  },[companyId,form.branchId,hasInventory,id,document?.id]);
   const [reason,setReason]=useState(""),[sendForApproval,setSendForApproval]=useState(false),[review,setReview]=useState<PurchaseRequisitionRevisionResult|null>(null);
   const patch=(change:Partial<CreatePurchaseRequisitionPayload>)=>{setReview(null);setForm(f=>({...f,...change}));};
   const patchLine=(index:number,change:Partial<CreatePurchaseRequisitionPayload["lines"][number]>)=>{setReview(null);setForm(f=>({...f,lines:f.lines.map((l,i)=>i===index?{...l,...change}:l)}));};
-  useEffect(()=>{if(!id&&!form.branchId&&scope.branchId)setForm(f=>f.branchId?f:{...f,branchId:scope.branchId});},[id,scope.branchId]);
+
   useEffect(()=>{
-    if(!companyId)return;let active=true;setLoading(true);
-    Promise.all([http.get(`/companies/${companyId}/branches`).catch(()=>({data:[] as {id:string;name:string}[]})),inventoryItemsApi.list(companyId),id?getPurchaseRequisition(companyId,id):Promise.resolve(null)])
-      .then(([b,i,r])=>{if(!active)return;setBranches(unwrap(b.data));setItems(i.filter(x=>x.isActive));if(r){saved.current=r;setDocument(r);setForm({...r,requiredByDateUtc:r.requiredByDateUtc.slice(0,10),submit:false,lines:r.lines.map(l=>({...l}))});}})
+    if(!companyId)return;let active=true;setLoading(true);setOrigin(null);setError("");
+    Promise.all([http.get(`/companies/${companyId}/branches`).catch(()=>({data:[] as {id:string;name:string}[]})),inventoryItemsApi.list(companyId),id?getPurchaseRequisition(companyId,id):Promise.resolve(null),id?Promise.resolve(null):http.get<{branchId:string;branchName:string;locationId:string;locationName:string}>(`/companies/${companyId}/procurement/requisitions/main-store-origin`)])
+      .then(([b,i,r,main])=>{if(!active)return;if(main){setOrigin(main.data);setForm({...blank(),branchId:main.data.branchId,requiredStockLocationId:main.data.locationId,deliveryLocationId:main.data.locationId});saved.current=null;setDocument(null);requestId.current=crypto.randomUUID();}setBranches(unwrap(b.data));setItems(i.filter(x=>x.isActive));if(r){saved.current=r;setDocument(r);setForm({...r,requiredByDateUtc:r.requiredByDateUtc.slice(0,10),submit:false,lines:r.lines.map(l=>({...l}))});}})
       .catch(e=>active&&setError(apiError(e,"Unable to load requisition setup."))).finally(()=>active&&setLoading(false));
     return()=>{active=false;};
   },[companyId,id]);
-  useEffect(()=>{if(!companyId)return;let active=true;stockLocationsApi.list(companyId,form.branchId).then(l=>active&&setLocations(l.filter(x=>x.isActive).map(x=>({...x,id:(x as {stockLocationId?:string}).stockLocationId??x.id})))).catch(e=>active&&setError(apiError(e,"Unable to load authorized locations.")));return()=>{active=false;};},[companyId,form.branchId]);
+  useEffect(()=>{if(!companyId||!id)return;let active=true;stockLocationsApi.list(companyId,form.branchId).then(l=>active&&setLocations(l.filter(x=>x.isActive).map(x=>({...x,id:(x as {stockLocationId?:string}).stockLocationId??x.id})))).catch(e=>active&&setError(apiError(e,"Unable to load authorized locations.")));return()=>{active=false;};},[companyId,id,form.branchId]);
   async function loadReorder(){if(!companyId)return;setBusy(true);setError("");try{const rows=await listReorderSuggestions(companyId,{branchId:form.branchId,stockLocationId:form.requiredStockLocationId});if(!rows.length){setError(tx("No items require replenishment at this location."));return;}patch({lines:rows.map(r=>({lineType:"InventoryItem",inventoryItemId:r.inventoryItemId,itemName:r.itemName,uomId:r.uomId,uomName:r.uomName,quantity:r.suggestedPurchaseQty,estimatedUnitPrice:r.estimatedUnitPrice,specification:r.recommendation}))});}catch(e){setError(apiError(e,"Unable to load reorder suggestions."));}finally{setBusy(false);}}
-  function validate(){
+  function validate(requireDestination=false){
+    if(requireDestination&&hasInventory&&(!form.branchId||!(form.requiredStockLocationId||form.deliveryLocationId))){setError(tx("Select a branch and destination stock location for inventory purchase requests before submitting."));return false;}
     if(!form.businessJustification.trim()||!form.purchaseCategory.trim()||!form.requiredByDateUtc){setError(tx("Purpose, category and required date are required."));return false;}
     if(form.lines.some(l=>!l.itemName.trim()||l.quantity<=0||!Number.isFinite(l.quantity)||l.estimatedUnitPrice<0||!Number.isFinite(l.estimatedUnitPrice)||(l.lineType==="InventoryItem"&&(!l.inventoryItemId||!l.uomId)))){setError(tx("Complete each item, purchase unit, positive quantity and estimated price."));return false;}
     const short=(form.lines as FormLine[]).find(l=>l.quantity<(l.orderedQuantity??0));
@@ -63,7 +73,7 @@ export default function PurchaseRequisitionEditorPage() {
   }
   /** Asks the server what the revision changes and whether it goes back for approval, then saves on confirmation. */
   async function revise(confirm:boolean){
-    if(!companyId||!document||busy||!validate())return;
+    if(!companyId||!document||busy||!validate(true))return;
     if(!reason.trim()){setError(tx("Explain why the requisition is being revised."));return;}
     setBusy(true);setError("");
     try{
@@ -76,9 +86,9 @@ export default function PurchaseRequisitionEditorPage() {
     finally{setBusy(false);}
   }
   async function save(submit:boolean){
-    if(!companyId||busy||!editable)return;
+    if(!companyId||busy||!editable||(!id&&!origin))return;
     if(revising){await revise(false);return;}
-    if(!validate())return;
+    if(!validate(submit))return;
     if(files.length>20||files.some(f=>f.size>5*1024*1024)){setError(tx("Use up to 20 attachments, no larger than 5 MB each."));return;}
     setBusy(true);setError("");
     try{
@@ -95,15 +105,15 @@ export default function PurchaseRequisitionEditorPage() {
   }
   if(loading)return <main className="prq-page" aria-busy="true">{tx("Loading requisition...")}</main>;
   return <main className="prq-page">
-    <header className="prq-page-header"><div><div className="prq-kicker">{tx("Procurement")}</div><h1>{document?`${tx(revising?"Revise requisition":"Edit requisition")} · ${document.requisitionNo}`:tx("New purchase requisition")}</h1><p>{tx(revising?"Correct the requisition at any stage. Spending more, adding or changing items, or changing the category, priority, department or cost center sends it back for approval.":"Capture goods, services or equipment and the destination that needs them.")}</p></div><Button variant="outline" onClick={()=>navigate(-1)} disabled={busy}>{tx("Back")}</Button></header>
+    <header className="prq-page-header"><div><div className="prq-kicker">{tx("Procurement")}</div><h1>{document?`${tx(revising?"Revise requisition":"Edit requisition")} · ${document.requisitionNo}`:tx("New purchase requisition")}</h1><p>{tx(revising?"Correct the requisition at any stage. Spending more, adding or changing items, or changing the category, priority, department or cost center sends it back for approval.":"The Main Store raises purchase requisitions for the company. Branches request stock from the Main Store.")}</p></div><Button variant="outline" onClick={()=>navigate(-1)} disabled={busy}>{tx("Back")}</Button></header>
     {error&&<div role="alert" className="prq-alert">{tx(error)}</div>}
     {!editable&&<StateMessage tone="warning">{tx(document?.canBeRevised===false?"This requisition is final and can no longer be changed.":"Only drafts and changes-requested requisitions can be edited. A purchasing manager can revise it.")}</StateMessage>}
     {revising&&document&&<StateMessage tone="info">{`${tx("Currently")} ${tx(document.status)}. ${tx("Lines already on a purchase order keep their item and unit and cannot go below the ordered quantity.")}`}</StateMessage>}
-    <fieldset disabled={busy||!editable} style={{border:0,padding:0,margin:0}}>
+    <fieldset disabled={busy||!editable||(!id&&!origin)} style={{border:0,padding:0,margin:0}}>
       <section className="prq-panel prq-form-grid">
         <label>{tx("Requester")}<Input readOnly value={document?.requestedByName??tx("Current signed-in user")}/></label>
-        <label>{tx("Branch")}<Select value={form.branchId??""} disabled={!!document} onChange={e=>patch({branchId:e.target.value||null,requiredStockLocationId:null,deliveryLocationId:null})}><option value="">{tx("Company scope")}</option>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</Select></label>
-        <label>{tx("Destination stock location")}<Select value={form.requiredStockLocationId??""} onChange={e=>patch({requiredStockLocationId:e.target.value||null,deliveryLocationId:e.target.value||null})}><option value="">{tx("Not applicable / select location")}</option>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</Select></label>
+        <label>{tx("Managing branch")}<Input readOnly value={origin?.branchName??document?.branchName??branches.find(b=>b.id===form.branchId)?.name??""}/></label>
+        {!id||document?.requiredStockLocationId ? <label>{tx("Requisition origin")}<Input readOnly value={origin?.locationName??document?.requiredStockLocationName??locations.find(l=>l.id===form.requiredStockLocationId)?.name??""}/></label> : <label>{tx("Receiving location")}<Select value={form.requiredStockLocationId??form.deliveryLocationId??""} onChange={e=>patch({requiredStockLocationId:e.target.value||null,deliveryLocationId:e.target.value||null})}><option value="">{tx(hasInventory?"Select destination (required for inventory)":"Not applicable / select location")}</option>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</Select></label>}
         <label>{tx("Required by")}<Input type="date" value={form.requiredByDateUtc?.slice(0,10)??""} onChange={e=>patch({requiredByDateUtc:e.target.value})}/></label>
         <label>{tx("Priority")}<Select value={form.priority} onChange={e=>patch({priority:e.target.value})}>{["Low","Normal","High","Urgent","Emergency"].map(p=><option key={p} value={p}>{tx(p)}</option>)}</Select></label>
         <label>{tx("Purchase category")}<Input maxLength={120} value={form.purchaseCategory} onChange={e=>patch({purchaseCategory:e.target.value})}/></label>

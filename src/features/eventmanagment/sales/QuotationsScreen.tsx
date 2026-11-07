@@ -12,6 +12,7 @@ import {
   acceptQuotation,
   approveQuotation,
   createQuotation,
+  getInquiry,
   listInquiries,
   listQuotations,
   rejectQuotation,
@@ -23,6 +24,7 @@ import {
   type UpsertCateringQuotationDto,
 } from "./salesApi";
 import { humanize, quotationStatusOptions } from "./options";
+import { canQuoteInquiry, closedInquiryMessage } from "./inquiryQuotationEligibility";
 import {
   Card,
   DateTimeField,
@@ -226,12 +228,15 @@ export function QuotationsScreen({
       setLoading(true);
       setLoadError(null);
       try {
-        const data = await listQuotations(companyId, {
+        const [data, inquiryData] = await Promise.all([listQuotations(companyId, {
           branchId: branchId || undefined,
           status: status || undefined,
           signal,
-        });
-        if (!signal?.aborted) setRows(data);
+        }), listInquiries(companyId, { branchId: branchId || undefined, signal })]);
+        if (!signal?.aborted) {
+          setRows(data);
+          setInquiries(inquiryData);
+        }
       } catch (cause) {
         if (!signal?.aborted) setLoadError(readApiError(cause, "Could not load quotations."));
       } finally {
@@ -247,17 +252,6 @@ export function QuotationsScreen({
     return () => controller.abort();
   }, [load]);
 
-  useEffect(() => {
-    if (!companyId) return;
-    const controller = new AbortController();
-    void listInquiries(companyId, { branchId: branchId || undefined, signal: controller.signal })
-      .then((data) => {
-        if (!controller.signal.aborted) setInquiries(data);
-      })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [branchId, companyId]);
-
   // Opening a draft from the inquiry screen.
   useEffect(() => {
     if (!draftForInquiryId) return;
@@ -268,15 +262,22 @@ export function QuotationsScreen({
   }, [draftForInquiryId]);
 
   const selected = rows.find((row) => row.id === selectedId) ?? null;
+  const eligibleInquiries = inquiries.filter(canQuoteInquiry);
 
   async function submitForm() {
     if (!editing) return;
     const payload = toPayload(editing.form);
     const ok = await mutation.run(
-      async () =>
-        editing.mode === "create"
+      async () => {
+        const inquiry = await getInquiry(companyId, payload.inquiryId);
+        setInquiries((current) => current.map((item) => item.id === inquiry.id ? inquiry : item));
+        if (!canQuoteInquiry(inquiry)) {
+          throw new Error(closedInquiryMessage(inquiry) ?? "This inquiry is unavailable for quotation. Refresh and select an open inquiry.");
+        }
+        return editing.mode === "create"
           ? createQuotation(companyId, payload)
-          : reviseQuotation(companyId, selectedId ?? "", payload),
+          : reviseQuotation(companyId, selectedId ?? "", payload);
+      },
       (saved) => {
         setEditing(null);
         onSelect(saved.id);
@@ -292,7 +293,7 @@ export function QuotationsScreen({
 
   if (selected) {
     const expired = new Date(selected.validUntilUtc).getTime() < Date.now();
-    const canRevise = canManage && selected.status === "draft";
+    const canRevise = canManage && selected.status === "draft" && canQuoteInquiry(inquiries.find((item) => item.id === selected.inquiryId));
     const canSubmit = canManage && selected.status === "draft";
     const canApprove = canApproveQuotes && selected.status === "submitted";
     const canAccept = canManage && selected.status === "approved";
@@ -548,12 +549,12 @@ export function QuotationsScreen({
         </Button>
         <Button variant="default"
           
-          disabled={!inquiries.length || !canManage}
+          disabled={!eligibleInquiries.length || loading || !canManage}
           onClick={() => {
             mutation.setError(null);
             setEditing({ mode: "create", form: emptyPricing() });
           }}
-          title={inquiries.length ? undefined : "An inquiry is required before quoting"}
+          title={eligibleInquiries.length ? undefined : "Create an open inquiry before quoting. Won and Lost inquiries are closed."}
           type="button"
         >
           <Plus size={15} /> New quotation
@@ -561,6 +562,7 @@ export function QuotationsScreen({
       </Toolbar>
 
       {loadError ? <ErrorBanner message={loadError} /> : null}
+      {!loading && !loadError && !eligibleInquiries.length ? <p role="status">No open inquiries are available. Create a new inquiry before preparing a quotation.</p> : null}
 
       {rows.length ? (
         <table className="cat-table">
@@ -642,6 +644,7 @@ function PricingDialog({
 }) {
   const set = <K extends keyof PricingForm>(key: K, value: PricingForm[K]) => onChange({ ...form, [key]: value });
   const totals = useMemo(() => estimate(form), [form]);
+  const inquiry = inquiries.find((item) => item.id === form.inquiryId);
   const selectedPackage = packages.find((p) => p.id === form.packageId);
   const packagePrice = (p: CateringPackage, selected: string[], guests: number) => {
     const o = p.offering;
@@ -660,8 +663,8 @@ function PricingDialog({
           ? "Creates a new version of this quotation. The previous version is superseded."
           : "Prices the job against an inquiry. Totals are recalculated by the server on save."
       }
-      disabled={!form.inquiryId}
-      error={error}
+      disabled={!canQuoteInquiry(inquiry)}
+      error={error ?? closedInquiryMessage(inquiry)}
       onClose={onClose}
       onSubmit={onSubmit}
       submitLabel={mode === "create" ? "Create quotation" : "Save revision"}
@@ -671,7 +674,7 @@ function PricingDialog({
         <SelectField
           label="Inquiry"
           onChange={(value) => set("inquiryId", value)}
-          options={inquiries.map((inquiry) => ({
+          options={inquiries.filter(canQuoteInquiry).map((inquiry) => ({
             value: inquiry.id,
             label: `${inquiry.inquiryNo} · ${inquiry.customerName} · ${inquiry.expectedGuests} guests`,
           }))}

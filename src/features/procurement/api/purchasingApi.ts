@@ -186,6 +186,10 @@ export type PurchaseOrderLine = {
   unitPrice: number;
   discountPercent: number;
   taxRatePercent: number;
+  /** Why this VAT rate applies: the item's VAT setting, or the supplier not being VAT-registered. */
+  vatTreatment?: PurchaseLineVat;
+  /** VAT charged against the item's setting by someone with the VAT override right. */
+  vatOverridden?: boolean;
   grossAmount: number;
   discountAmount: number;
   netAmount: number;
@@ -401,6 +405,8 @@ export type SupplierInvoiceLine = {
   quantity: number;
   unitPrice: number;
   taxRatePercent: number;
+  vatTreatment?: PurchaseLineVat;
+  vatOverridden?: boolean;
   netAmount: number;
   taxAmount: number;
   lineTotal: number;
@@ -654,8 +660,53 @@ export type PurchasingSettings = {
   withholdingEnabled: boolean;
   withholdingRatePercent: number;
   withholdingGoodsThreshold: number;
+  /** Purchases from suppliers not marked VAT-registered carry no VAT. */
+  zeroVatForUnregisteredSuppliers?: boolean;
   version?: string | null;
   updatedAtUtc?: string | null;
+};
+
+// ── VAT on purchases per item ─────────────────────────────────────────────────
+
+export type VatTreatment = "Standard" | "ZeroRated" | "Exempt";
+export type PurchaseLineVat = VatTreatment | "SupplierNotRegistered";
+
+export const VAT_TREATMENT_LABELS: Record<PurchaseLineVat, string> = {
+  Standard: "Standard VAT",
+  ZeroRated: "Zero-rated (0%)",
+  Exempt: "VAT exempt",
+  SupplierNotRegistered: "Supplier not VAT-registered",
+};
+
+export type VatCategoryRow = {
+  id: string; code: string; name: string; parentId?: string | null;
+  vatTreatment?: VatTreatment | null; effective: VatTreatment; itemCount: number;
+};
+
+export type VatItemRow = {
+  id: string; name: string; sku?: string | null; categoryName?: string | null;
+  /** Null: follows its category. */
+  vatTreatment?: VatTreatment | null; effective: VatTreatment;
+};
+
+export const purchaseVatApi = {
+  async categories(companyId: string): Promise<VatCategoryRow[]> {
+    return (await http.get<VatCategoryRow[]>(`${base(companyId)}/vat/categories`)).data;
+  },
+  async items(companyId: string, params: { q?: string; categoryId?: string; treatment?: VatTreatment; ids?: string[] } = {}): Promise<VatItemRow[]> {
+    const query = new URLSearchParams();
+    if (params.q) query.set("q", params.q);
+    if (params.categoryId) query.set("categoryId", params.categoryId);
+    if (params.treatment) query.set("treatment", params.treatment);
+    for (const id of params.ids ?? []) query.append("ids", id);
+    return (await http.get<VatItemRow[]>(`${base(companyId)}/vat/items?${query.toString()}`)).data;
+  },
+  async setCategory(companyId: string, categoryId: string, vatTreatment: VatTreatment | null): Promise<void> {
+    await http.put(`${base(companyId)}/vat/categories/${categoryId}`, { vatTreatment });
+  },
+  async setItems(companyId: string, itemIds: string[], vatTreatment: VatTreatment | null): Promise<{ changed: number }> {
+    return (await http.put<{ changed: number }>(`${base(companyId)}/vat/items`, { itemIds, vatTreatment })).data;
+  },
 };
 
 export type PurchasingDashboard = {

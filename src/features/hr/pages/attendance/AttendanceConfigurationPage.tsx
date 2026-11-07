@@ -4,6 +4,8 @@ import { useAppScope } from "../../../../app/useAppScope";
 import { attendanceApi } from "../../api/hrApi";
 import type { AttendancePolicyDto } from "../../types";
 import { getApiError } from "../../utils/hrUtils";
+import { Input } from "../../../../components/ui/input";
+import { Select } from "../../../../components/ui/select";
 
 type PolicyForm = {
   id: string | null;
@@ -20,6 +22,15 @@ type PolicyForm = {
   requiresOvertimeApproval: boolean;
   overtimeApprovalThresholdHours: string;
   overtimeRate: string;
+  nightOvertimeRate: string;
+  restDayOvertimeRate: string;
+  publicHolidayOvertimeRate: string;
+  maxOvertimeHoursPerDay: string;
+  maxOvertimeHoursPerWeek: string;
+  weeklyRestDay: string;
+  workDaysPerWeek: string;
+  maxSessionHours: string;
+  allowSplitShifts: boolean;
   duplicateScanGuardMinutes: string;
   allowManualEntry: boolean;
   requiresManualEntryApproval: boolean;
@@ -48,6 +59,15 @@ const defaultPolicy: PolicyForm = {
   requiresOvertimeApproval: true,
   overtimeApprovalThresholdHours: "8",
   overtimeRate: "1.5",
+  nightOvertimeRate: "1.75",
+  restDayOvertimeRate: "2",
+  publicHolidayOvertimeRate: "2.5",
+  maxOvertimeHoursPerDay: "4",
+  maxOvertimeHoursPerWeek: "12",
+  weeklyRestDay: "Sunday",
+  workDaysPerWeek: "5",
+  maxSessionHours: "16",
+  allowSplitShifts: true,
   duplicateScanGuardMinutes: "5",
   allowManualEntry: true,
   requiresManualEntryApproval: true,
@@ -79,6 +99,15 @@ function toForm(policy?: AttendancePolicyDto | null): PolicyForm {
     requiresOvertimeApproval: Boolean(policy.requiresOvertimeApproval),
     overtimeApprovalThresholdHours: String(policy.overtimeApprovalThresholdHours ?? 8),
     overtimeRate: String(policy.overtimeRate ?? 1.5),
+    nightOvertimeRate: String(policy.nightOvertimeRate ?? 1.75),
+    restDayOvertimeRate: String(policy.restDayOvertimeRate ?? 2),
+    publicHolidayOvertimeRate: String(policy.publicHolidayOvertimeRate ?? 2.5),
+    maxOvertimeHoursPerDay: String(policy.maxOvertimeHoursPerDay ?? 4),
+    maxOvertimeHoursPerWeek: String(policy.maxOvertimeHoursPerWeek ?? 12),
+    weeklyRestDay: restDayName(policy.weeklyRestDay),
+    workDaysPerWeek: String(policy.workDaysPerWeek ?? 5),
+    maxSessionHours: String(policy.maxSessionHours ?? 16),
+    allowSplitShifts: policy.allowSplitShifts ?? true,
     duplicateScanGuardMinutes: String(policy.duplicateScanGuardMinutes ?? 5),
     allowManualEntry: Boolean(policy.allowManualEntry),
     requiresManualEntryApproval: Boolean(policy.requiresManualEntryApproval),
@@ -91,6 +120,14 @@ function toForm(policy?: AttendancePolicyDto | null): PolicyForm {
     holidayCalendarName: policy.holidayCalendarName || defaultPolicy.holidayCalendarName,
     mealBreakRuleName: policy.mealBreakRuleName || defaultPolicy.mealBreakRuleName,
   };
+}
+
+const WEEK_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function restDayName(value: unknown): string {
+  if (typeof value === "number") return WEEK_DAYS[value] ?? "Sunday";
+  if (typeof value === "string" && WEEK_DAYS.includes(value)) return value;
+  return "Sunday";
 }
 
 function asNumber(value: string, fallback: number): number {
@@ -215,7 +252,14 @@ export default function AttendanceConfigurationPage() {
       ["overtimeThresholdHours", "Overtime threshold", 0, 24, false],
       ["overtimeApprovalThresholdHours", "Approval threshold", 0, 24, false],
       ["overtimeRate", "Overtime rate", 0.01, 5, false],
+      ["nightOvertimeRate", "Night overtime rate", 1, 5, false],
+      ["restDayOvertimeRate", "Rest-day rate", 1, 5, false],
+      ["publicHolidayOvertimeRate", "Public-holiday rate", 1, 5, false],
+      ["maxOvertimeHoursPerDay", "Daily overtime limit", 0.25, 12, false],
+      ["maxOvertimeHoursPerWeek", "Weekly overtime limit", 0.25, 60, false],
+      ["workDaysPerWeek", "Working days per week", 5, 6, true],
       ["duplicateScanGuardMinutes", "Duplicate scan guard", 0, 120, true],
+      ["maxSessionHours", "Maximum shift length", 4, 24, false],
     ];
     for (const [key, label, min, max, integer] of limits) {
       const value = String(form[key]).trim(), number = Number(value);
@@ -248,6 +292,15 @@ export default function AttendanceConfigurationPage() {
         requiresOvertimeApproval: form.requiresOvertimeApproval,
         overtimeApprovalThresholdHours: asNumber(form.overtimeApprovalThresholdHours, 8),
         overtimeRate: asNumber(form.overtimeRate, 1.5),
+        nightOvertimeRate: asNumber(form.nightOvertimeRate, 1.75),
+        restDayOvertimeRate: asNumber(form.restDayOvertimeRate, 2),
+        publicHolidayOvertimeRate: asNumber(form.publicHolidayOvertimeRate, 2.5),
+        maxOvertimeHoursPerDay: asNumber(form.maxOvertimeHoursPerDay, 4),
+        maxOvertimeHoursPerWeek: asNumber(form.maxOvertimeHoursPerWeek, 12),
+        weeklyRestDay: form.weeklyRestDay,
+        workDaysPerWeek: asNumber(form.workDaysPerWeek, 5),
+        maxSessionHours: asNumber(form.maxSessionHours, 16),
+        allowSplitShifts: form.allowSplitShifts,
         duplicateScanGuardMinutes: asNumber(form.duplicateScanGuardMinutes, 5),
         allowManualEntry: form.allowManualEntry,
         requiresManualEntryApproval: true,
@@ -378,6 +431,47 @@ export default function AttendanceConfigurationPage() {
       </section>
 
       <section className="card" style={{ marginBottom: 18, padding: 20 }}>
+        <div className="card-title">Overtime Premiums & Limits</div>
+        <div className="card-subtitle" style={{ marginBottom: 16 }}>
+          Defaults follow Labour Proclamation 1156/2019: 1.5x by day, 1.75x from 22:00 to 06:00, 2x on the weekly rest day,
+          2.5x on public holidays, at most 4 hours a day and 12 hours a week. The hourly base is basic salary divided by
+          the month&apos;s standard hours (daily hours x working days x 52 / 12). Confirm the rates with HR or legal before changing them.
+          A clock-in left open longer than the maximum shift length counts as a missed clock-out: it gets no hours until a correction is approved.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
+          <Field label="Night Overtime Rate">
+            <Input type="number" min="1" max="5" step="0.05" value={form.nightOvertimeRate} onChange={(e) => update("nightOvertimeRate", e.target.value)} />
+          </Field>
+          <Field label="Rest-day Rate">
+            <Input type="number" min="1" max="5" step="0.05" value={form.restDayOvertimeRate} onChange={(e) => update("restDayOvertimeRate", e.target.value)} />
+          </Field>
+          <Field label="Public-holiday Rate">
+            <Input type="number" min="1" max="5" step="0.05" value={form.publicHolidayOvertimeRate} onChange={(e) => update("publicHolidayOvertimeRate", e.target.value)} />
+          </Field>
+          <Field label="Daily Overtime Limit (h)">
+            <Input type="number" min="0.25" max="12" step="0.25" value={form.maxOvertimeHoursPerDay} onChange={(e) => update("maxOvertimeHoursPerDay", e.target.value)} />
+          </Field>
+          <Field label="Weekly Overtime Limit (h)">
+            <Input type="number" min="0.25" max="60" step="0.25" value={form.maxOvertimeHoursPerWeek} onChange={(e) => update("maxOvertimeHoursPerWeek", e.target.value)} />
+          </Field>
+          <Field label="Weekly Rest Day">
+            <Select value={form.weeklyRestDay} onChange={(e) => update("weeklyRestDay", e.target.value)}>
+              {WEEK_DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
+            </Select>
+          </Field>
+          <Field label="Maximum Shift Length (h)">
+            <Input type="number" min="4" max="24" step="0.5" value={form.maxSessionHours} onChange={(e) => update("maxSessionHours", e.target.value)} />
+          </Field>
+          <Field label="Working Days per Week">
+            <Select value={form.workDaysPerWeek} onChange={(e) => update("workDaysPerWeek", e.target.value)}>
+              <option value="5">5 (Monday to Friday)</option>
+              <option value="6">6 (every day except the rest day)</option>
+            </Select>
+          </Field>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginBottom: 18, padding: 20 }}>
         <div className="card-title">Operational Controls</div>
         <div className="card-subtitle" style={{ marginBottom: 16 }}>
           These switches define how kitchen and branch employees can create attendance records.
@@ -385,6 +479,7 @@ export default function AttendanceConfigurationPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12 }}>
           <p>Telegram attendance uses a branch QR code. Registered PIN kiosks are managed under Attendance kiosks.</p>
           <Toggle label="Allow manual entry" checked={form.allowManualEntry} onChange={(value) => update("allowManualEntry", value)} />
+          <Toggle label="Allow split shifts (clock in again the same day, e.g. lunch and dinner)" checked={form.allowSplitShifts} onChange={(value) => update("allowSplitShifts", value)} />
           <p>Manual corrections always require independent approval.</p>
           <p>Overtime is calculated as potential hours. Approval and payment follow the overtime workflow.</p>
           <Toggle label="Deduct meal break automatically" checked={form.deductMealBreakAutomatically} onChange={(value) => update("deductMealBreakAutomatically", value)} />

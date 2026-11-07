@@ -5,6 +5,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAppScope } from '../../../../app/useAppScope';
 import { formatAppDateTime } from '../../../../shared/datetime/dateFormat';
 import { payrollApi } from '../../api/hrApi';
+import { payrollControlApi, resultError } from '../../api/hrWorkflowApi';
+import { Button } from '../../../../components/ui/button';
+import { Textarea } from '../../../../components/ui/textarea';
 import type { PayrollRunDto, PaySlipSummaryDto } from '../../types/index';
 import { PAYROLL_STATUS_CLASS, fmtDate, fmtMoney, getApiError } from '../../utils/hrUtils';
 
@@ -30,6 +33,7 @@ export default function PayrollRunDetailPage() {
   const [loading,  setLoading]  = useState(false);
   const [working,  setWorking]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState<string | null>(null);
   const printedAt = useMemo(() => formatAppDateTime(new Date()), []);
 
   const load = useCallback(async () => {
@@ -61,6 +65,22 @@ export default function PayrollRunDetailPage() {
       await load();
     } catch (e) {
       setError(getApiError(e, 'Action failed.'));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!companyId || !runId || cancelReason == null) return;
+    if (!cancelReason.trim()) { setError('A cancellation reason is required.'); return; }
+    setWorking(true); setError(null);
+    try {
+      const failed = resultError(await payrollControlApi.cancelRun(companyId, runId, cancelReason.trim()), 'Cancel failed.');
+      if (failed) { setError(failed); return; }
+      setCancelReason(null);
+      await load();
+    } catch (e) {
+      setError(getApiError(e, 'Cancel failed.'));
     } finally {
       setWorking(false);
     }
@@ -98,7 +118,7 @@ export default function PayrollRunDetailPage() {
               {working ? 'Processing...' : 'Process Run'}
             </button>
           )}
-          {run.status === 'Pending' && (
+          {(run.status === 'Pending' || String(run.status) === 'Processed') && (
             <button className="btn btn-primary" onClick={() => handleAction('approve')} disabled={working}>
               {working ? 'Approving...' : 'Approve Run'}
             </button>
@@ -108,12 +128,29 @@ export default function PayrollRunDetailPage() {
               {working ? 'Marking...' : 'Mark as Paid'}
             </button>
           )}
+          {run.status !== 'Paid' && String(run.status) !== 'Cancelled' && cancelReason == null && (
+            <Button variant="outline" onClick={() => setCancelReason('')} disabled={working}>Cancel Run</Button>
+          )}
           <button className="btn" onClick={() => window.print()} disabled={loading}>
             <i className="ti ti-printer" /> Print
           </button>
           <button className="btn" onClick={() => nav('/hr/payroll')}>Back</button>
         </div>
       </div>
+
+      {cancelReason != null && (
+        <div className="card payroll-screen-only" style={{ marginBottom: 16, padding: 16, display: 'grid', gap: 8, maxWidth: 560 }}>
+          <div style={{ fontWeight: 600 }}>Cancel this payroll run</div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            Its approved overtime goes back to the approval queue for the next run, and a new run can be created for this period.
+          </div>
+          <Textarea rows={2} placeholder="Reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button variant="destructive" onClick={handleCancel} disabled={working}>{working ? 'Cancelling...' : 'Cancel run'}</Button>
+            <Button variant="outline" onClick={() => setCancelReason(null)} disabled={working}>Keep run</Button>
+          </div>
+        </div>
+      )}
 
       <section className="payroll-print-only payroll-print-title">
         <div>

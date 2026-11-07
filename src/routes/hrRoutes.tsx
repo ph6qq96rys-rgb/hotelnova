@@ -27,6 +27,13 @@ import AttendancePage from "../features/hr/pages/attendance/AttendancePage";
 import AttendanceConfigurationPage from "../features/hr/pages/attendance/AttendanceConfigurationPage";
 import BranchAttendanceQrGeneratorPage from "../features/hr/pages/attendance/BranchAttendanceQrGeneratorPage";
 import OvertimeGovernancePage from "../features/hr/pages/attendance/OvertimeGovernancePage";
+import OvertimeApprovalsPage from "../features/hr/pages/attendance/OvertimeApprovalsPage";
+import EmployeeCompensationPage from "../features/hr/pages/Employees/EmployeeCompensationPage";
+import MyOvertimePage from "../features/hr/pages/attendance/MyOvertimePage";
+import PayrollControlsPage from "../features/hr/pages/payroll/PayrollControlsPage";
+import PerformanceCycleWorkflowPage from "../features/hr/pages/performance/PerformanceCycleWorkflowPage";
+import MyPerformancePage from "../features/hr/pages/performance/MyPerformancePage";
+import KpiLibraryPage from "../features/hr/pages/performance/KpiLibraryPage";
 
 import LeaveRequestFormPage from "../features/hr/pages/leave/LeaveRequestFormPage";
 import LeaveBalancePage from "../features/hr/pages/leave/LeaveBalancePage";
@@ -112,6 +119,13 @@ export function getHrRoutes(): AppRoute[] {
     },
 
     {
+      path: "hr/employees/:employeeId/compensation",
+      permissions: ["hr.payroll.manage"],
+      element: <EmployeeCompensationPage />,
+      nav: false,
+    },
+
+    {
       path: "hr/employees/:employeeId/confirm",
       permissions: ["hr.employees.update"],
       element: <EmployeeConfirmPage />,
@@ -134,6 +148,16 @@ export function getHrRoutes(): AppRoute[] {
       section: HR_SECTION,
       order: 30,
       permissions: ["hr.payroll.view"],
+    },
+
+    {
+      path: "hr/payroll/controls",
+      label: "Payroll Controls",
+      element: <PayrollControlsPage />,
+      nav: true,
+      section: HR_SECTION,
+      order: 31,
+      permissions: ["hr.payroll.approve"],
     },
 
     {
@@ -215,7 +239,26 @@ export function getHrRoutes(): AppRoute[] {
       nav: true,
       section: HR_SECTION,
       order: 56,
-      permissions: ["hr.overtime.view"],
+      permissions: ["hr.attendance.view"],
+    },
+    {
+      path: "hr/overtime/approvals",
+      label: "Overtime Approvals",
+      element: <OvertimeApprovalsPage />,
+      icon: <Clock size={18} />,
+      nav: true,
+      section: HR_SECTION,
+      order: 57,
+      permissions: ["hr.overtime.approve"],
+    },
+    {
+      path: "hr/my/overtime",
+      label: "My Overtime",
+      element: <MyOvertimePage />,
+      icon: <Clock size={18} />,
+      nav: true,
+      section: HR_SECTION,
+      order: 58,
     },
 
     {
@@ -266,8 +309,29 @@ export function getHrRoutes(): AppRoute[] {
 
     {
       path: "hr/performance/cycles/:cycleId",
-      element: <PerformanceCycleFormPage />,
+      element: <PerformanceCycleWorkflowPage />,
       nav: false,
+    },
+
+    {
+      path: "hr/performance/kpis",
+      label: "KPI Library",
+      element: <KpiLibraryPage />,
+      icon: <Star size={18} />,
+      nav: true,
+      section: HR_SECTION,
+      order: 71,
+      permissions: ["hr.performance.manage"],
+    },
+
+    {
+      path: "hr/my/performance",
+      label: "My Performance",
+      element: <MyPerformancePage />,
+      icon: <Star size={18} />,
+      nav: true,
+      section: HR_SECTION,
+      order: 72,
     },
 
     {

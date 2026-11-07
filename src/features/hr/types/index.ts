@@ -52,7 +52,8 @@ export interface EmployeeDetailDto {
   confirmationDate?: string | null;
   terminationDate?: string | null;
   terminationReason?: string | null;
-  basicSalary: number;
+  /** Withheld (null) unless the viewer may see pay and IDs. */
+  basicSalary: number | null;
   payFrequency?: PayFrequency | string | null;
   workSchedule?: WorkSchedule | string | null;
   workEmail: string;
@@ -86,6 +87,13 @@ export interface EmployeeDetailDto {
   telegramChatId?: string | null;
   telegramUserName?: string | null;
   telegramLinkedAtUtc?: string | null;
+  /** Concurrency version to send back on save. */
+  version?: number;
+  /** False when salary, bank details and government IDs were withheld. */
+  canViewSensitive?: boolean;
+  bankStatus?: string | null;
+  /** The company's tenant key, used for the Telegram mini-app invite. */
+  tenantKey?: string | null;
 }
 
 export interface EmployeeDocumentDto {
@@ -337,6 +345,16 @@ export interface AttendancePolicyDto {
   overtimePolicyName?: string | null;
   holidayCalendarName?: string | null;
   mealBreakRuleName?: string | null;
+  nightOvertimeRate?: number;
+  restDayOvertimeRate?: number;
+  publicHolidayOvertimeRate?: number;
+  maxOvertimeHoursPerDay?: number;
+  maxOvertimeHoursPerWeek?: number;
+  weeklyRestDay?: string | number;
+  workDaysPerWeek?: number;
+  maxSessionHours?: number;
+  allowSplitShifts?: boolean;
+  monthlyStandardHours?: number;
 }
 
 export interface ShiftDto {

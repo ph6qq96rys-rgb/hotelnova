@@ -2,8 +2,23 @@ import { useEffect, useState } from "react";
 import { http } from "../../../../api/http";
 import { useAppScope } from "../../../../app/useAppScope";
 import { useAuth } from "../../../../auth/AuthProvider";
+import { Button } from "../../../../components/ui/button";
+import { Checkbox } from "../../../../components/ui/checkbox";
+import { Input } from "../../../../components/ui/input";
+import { Textarea } from "../../../../components/ui/textarea";
 
 type Row = Record<string, any>;
+// datetime-local values go to the server without an offset; it reads them in the company time zone.
+const wallClock = (value: string) => (value.length === 16 ? value + ":00" : value);
+// A kiosk that has not called in for 15 minutes is probably off or offline (it sends a heartbeat every 5).
+const OFFLINE_AFTER_MS = 15 * 60 * 1000;
+function lastSeen(d: Row) {
+  if (!d.isActive) return "Disabled";
+  if (!d.paired) return d.pairingExpiresAtUtc && new Date(d.pairingExpiresAtUtc).getTime() > Date.now() ? "Awaiting activation" : "Activation code expired";
+  if (!d.lastSeenAtUtc) return "Paired · not seen yet";
+  const age = Date.now() - new Date(d.lastSeenAtUtc).getTime();
+  return (age > OFFLINE_AFTER_MS ? "Offline · last seen " : "Online · ") + new Date(d.lastSeenAtUtc).toLocaleString();
+}
 export default function AttendanceKioskAdminPage() {
   const { companyId, branchId } = useAppScope();
   const { hasPermission, isSystemAdmin } = useAuth();
@@ -20,7 +35,13 @@ export default function AttendanceKioskAdminPage() {
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [deviceName, setDeviceName] = useState("");
-  const [photo, setPhoto] = useState(false);
+  const [photo, setPhoto] = useState(true);
+  const [editing, setEditing] = useState<Row | null>(null);
+  const [newSession, setNewSession] = useState(false);
+  const [bulkDate, setBulkDate] = useState("");
+  const [bulkReason, setBulkReason] = useState("");
+  const [bulkRows, setBulkRows] = useState<{ employeeId: string; label: string; clockIn: string; clockOut: string }[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
   const [mixed, setMixed] = useState(true);
   const [retention, setRetention] = useState(30);
   const [reason, setReason] = useState("");
@@ -47,7 +68,12 @@ export default function AttendanceKioskAdminPage() {
       setRows((await http.get(base + "/" + tab, { params: { branchId } })).data);
     }
   }
-  useEffect(() => { setRows([]); setPeople([]); setEmployee(""); setActivation(null); void run(load); }, [companyId, branchId, tab]);
+  useEffect(() => { setRows([]); setPeople([]); setEmployee(""); setActivation(null); setEditing(null); setSelected([]); setBulkRows([]); void run(load); }, [companyId, branchId, tab]);
+  function summarize(data: Row, verb: string) {
+    const failed = (data?.results ?? []).filter((r: Row) => !r.success);
+    const done = data?.submitted ?? data?.decided ?? 0;
+    return `${done} ${verb}.` + (failed.length ? ` Not done: ` + failed.map((r: Row) => `${r.employeeNo ?? ""} ${r.message}`.trim()).join("; ") : "");
+  }
   useEffect(() => { if (!canDevices && canPin) setTab("pins"); }, [canDevices, canPin]);
   useEffect(() => {
     if (!activation) return;
@@ -63,7 +89,7 @@ export default function AttendanceKioskAdminPage() {
   const picker = <div className="form-row">
     <label>Find employee<input className="form-control" value={query} onChange={e => setQuery(e.target.value)} placeholder="Employee number or first name" /></label>
     <button className="btn btn-secondary" disabled={busy || !branchId || !query.trim()} onClick={() => void find()}>Search</button>
-    <label>Employee<select className="form-control" value={employee} onChange={e => setEmployee(e.target.value)}><option value="">Select employee</option>{people.map(p => <option key={p.id} value={p.id}>{p.employeeNo} — {p.name}</option>)}</select></label>
+    <label>Employee<select className="form-control" value={employee} onChange={e => setEmployee(e.target.value)}><option value="">Select employee</option>{people.map(p => <option key={p.id} value={p.id}>{p.employeeNo} — {p.name}{p.pinStatus === "Locked" ? " (PIN locked)" : p.pinStatus === "NotSet" ? " (no PIN)" : ""}</option>)}</select></label>
   </div>;
   return <div className="page">
     <div className="page-header"><div><div className="page-kicker">Human Resources · Attendance</div><h1>Attendance kiosks</h1><p>Register branch devices, manage confidential PINs, and review attendance exceptions.</p></div></div>
@@ -85,24 +111,59 @@ export default function AttendanceKioskAdminPage() {
           setActivation(data); await load();
         })}>Register kiosk</button>
         {activation && <section className="alert"><h3>Activate within 10 minutes</h3><p>Kiosk ID: <code>{activation.id}</code></p><p>One-time device code: <code style={{ overflowWrap: "anywhere" }}>{activation.pairingCode}</code></p><button className="btn btn-secondary" onClick={() => setActivation(null)}>Hide code</button></section>}
-        <table className="table"><thead><tr><th>Kiosk</th><th>Location</th><th>Device</th><th>Status</th><th>Photo</th><th /></tr></thead><tbody>{devices.map(d => <tr key={d.id}><td>{d.name}</td><td>{d.location}</td><td>{d.device}</td><td>{!d.isActive ? "Disabled" : d.paired ? "Paired" : "Awaiting activation"}</td><td>{d.requirePhoto ? `Required · ${d.photoRetentionDays} days` : "Off"}</td><td><button className="btn btn-secondary" disabled={busy || !d.isActive} onClick={() => { if (window.confirm("Disable this kiosk immediately?")) void run(async () => { await http.delete(base + "/" + d.id); await load(); }); }}>Disable</button></td></tr>)}</tbody></table>
+        <table className="table"><thead><tr><th>Kiosk</th><th>Location</th><th>Device</th><th>Status</th><th>Photo</th><th /></tr></thead><tbody>{devices.map(d => <tr key={d.id}><td>{d.name}</td><td>{d.location}</td><td>{d.device}</td><td>{lastSeen(d)}</td><td>{d.requirePhoto ? `Required · ${d.photoRetentionDays} days` : "Off"}</td><td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => setEditing({ ...d })}>Edit</Button>
+          <Button variant="outline" size="sm" disabled={busy} title="Use when the device lost its activation, is replaced, or the kiosk was disabled. The current device stops at once." onClick={() => void run(async () => { const { data } = await http.post(base + "/" + d.id + "/pairing"); setActivation(data); await load(); })}>{d.isActive ? "New activation code" : "Reactivate"}</Button>
+          <button className="btn btn-secondary" disabled={busy || !d.isActive} onClick={() => { if (window.confirm("Disable this kiosk immediately?")) void run(async () => { await http.delete(base + "/" + d.id); await load(); }); }}>Disable</button></td></tr>)}</tbody></table>
+        {editing && <section className="alert" style={{ marginTop: 16 }}><h3>Edit {editing.name}</h3>
+          <div className="form-row"><label>Kiosk name<Input value={editing.name} maxLength={120} onChange={e => setEditing({ ...editing, name: e.target.value })} /></label><label>Physical location<Input value={editing.location} maxLength={200} onChange={e => setEditing({ ...editing, location: e.target.value })} /></label></div>
+          <label><Checkbox checked={editing.allowMixedChannels} onChange={e => setEditing({ ...editing, allowMixedChannels: e.target.checked })} /> Allow clock-out after Telegram or another attendance channel</label>
+          <label><Checkbox checked={editing.requirePhoto} onChange={e => setEditing({ ...editing, requirePhoto: e.target.checked })} /> Require a photo for clock-in and clock-out</label>
+          {editing.requirePhoto && <label>Retain photos for days<Input type="number" min={1} max={90} value={editing.photoRetentionDays} onChange={e => setEditing({ ...editing, photoRetentionDays: Number(e.target.value) })} /></label>}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <Button disabled={busy || !editing.name?.trim() || !editing.location?.trim()} onClick={() => void run(async () => { await http.put(base + "/" + editing.id, { name: editing.name, location: editing.location, requirePhoto: editing.requirePhoto, photoRetentionDays: editing.photoRetentionDays, allowMixedChannels: editing.allowMixedChannels }); setEditing(null); setNotice("Kiosk settings saved. The kiosk picks them up within five minutes or on its next reload."); await load(); })}>Save settings</Button>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+          </div>
+        </section>}
       </>}
       {tab === "pins" && canPin && <>
         <h2>Set or reset a temporary PIN</h2><p>Existing PINs cannot be viewed. Share the temporary PIN privately; the employee must change it before clocking attendance.</p>
         {picker}<label>Temporary six-digit PIN<input className="form-control" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ""))} /></label>
         <button className="btn btn-primary" disabled={busy || !employee || pin.length !== 6} onClick={() => void run(async () => { await http.post(base + "/employees/" + employee + "/pin", { temporaryPin: pin }); setNotice("Temporary PIN set. The employee must change it on first use."); })}>Set temporary PIN</button>
+        <section style={{ marginTop: 20 }}><h3>Unlock a PIN</h3><p>Wrong PINs lock an employee out for 1 minute after five tries, 5 minutes after ten, then 15 minutes. If someone was locked out (for example by a colleague typing their number), unlock them here; their PIN does not change.</p>
+          {(() => { const selected = people.find(p => p.id === employee); return selected && <p role="status">PIN status: {selected.pinStatus === "Locked" ? `Locked until ${display(selected.lockedUntilUtc)}` : selected.pinStatus === "NotSet" ? "No PIN set" : selected.pinStatus === "TemporaryPin" ? "Temporary PIN, not yet changed" : "Active"}{selected.failedAttempts ? ` · ${selected.failedAttempts} recent failed attempts` : ""}</p>; })()}
+          <Button variant="outline" disabled={busy || !employee} onClick={() => void run(async () => { const { data } = await http.post(base + "/employees/" + employee + "/unlock"); setNotice(data?.message ?? "PIN unlocked."); await find(); })}>Unlock PIN</Button>
+        </section>
         {canDevices && <section style={{ marginTop: 30 }}><h3>Approve cross-branch attendance</h3><p>For the selected employee, select the destination branch and expiry. Access is limited to that branch and period.</p><BranchGrant base={base} employee={employee} run={run} disabled={busy} /></section>}
       </>}
       {tab === "corrections" && canCorrections && <>
         <h2>Request an attendance correction</h2>{picker}
-        <div className="form-row"><label>Business date<input className="form-control" type="date" value={date} onChange={e => setDate(e.target.value)} /></label><label>Clock-in<input className="form-control" type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></label><label>Clock-out (optional)<input className="form-control" type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></label></div>
+        <div className="form-row"><label>Business date<input className="form-control" type="date" value={date} onChange={e => setDate(e.target.value)} /></label><label>Clock-in (branch time)<input className="form-control" type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></label><label>Clock-out (optional, branch time)<input className="form-control" type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></label></div>
         <label>Request / decision reason<textarea className="form-control" maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>
-        <button className="btn btn-primary" disabled={busy || !employee || !start || !date || !reason.trim()} onClick={() => void run(async () => { await http.post(base + "/employees/" + employee + "/corrections", { date, clockIn: new Date(start).toISOString(), clockOut: end ? new Date(end).toISOString() : null, reason }); setNotice("Correction submitted for independent approval."); await load(); })}>Submit correction</button>
-        <h3>Review requests</h3><p>Use the reason field above when approving or rejecting. You cannot approve your own request or attendance.</p>
-        <table className="table"><thead><tr><th>Employee</th><th>Original</th><th>Requested</th><th>Reason</th><th>Status</th><th /></tr></thead><tbody>{rows.map(r => <tr key={r.id}><td>{r.employeeName ?? r.employeeId}<br />{new Date(r.date).toLocaleDateString()}</td><td>{display(r.originalClockIn)}<br />{display(r.originalClockOut)}</td><td>{display(r.requestedClockIn)}<br />{display(r.requestedClockOut)}</td><td>{r.reason}<br />{r.decisionReason}</td><td>{r.status}</td><td>{canDecide && r.status === "Pending" && [true, false].map(approve => <button key={String(approve)} className="btn btn-secondary" disabled={busy || !reason.trim()} onClick={() => void run(async () => { await http.post(base + "/corrections/" + r.id + "/decision", { approve, reason }); await load(); })}>{approve ? "Approve" : "Reject"}</button>)}</td></tr>)}</tbody></table>
+        <label><Checkbox checked={newSession} onChange={e => setNewSession(e.target.checked)} /> Add as an extra shift on that day (split shift) instead of correcting an existing one</label>
+        <button className="btn btn-primary" disabled={busy || !employee || !start || !date || !reason.trim()} onClick={() => void run(async () => { await http.post(base + "/employees/" + employee + "/corrections", { date, clockIn: wallClock(start), clockOut: end ? wallClock(end) : null, reason, newSession }); setNotice("Correction submitted for independent approval."); setNewSession(false); await load(); })}>Submit correction</button>
+        <section style={{ marginTop: 28 }}><h3>Outage entry from the paper sign-in sheet</h3>
+          <p>When the internet or the kiosk is down, staff write their name and times on the branch sign-in sheet. Enter the sheet here: each line becomes a correction request that another person approves below. Find each employee above, then add them to the sheet.</p>
+          <div className="form-row"><label>Business date<Input type="date" value={bulkDate} onChange={e => setBulkDate(e.target.value)} /></label>
+            <label>What happened<Textarea maxLength={900} value={bulkReason} onChange={e => setBulkReason(e.target.value)} placeholder="e.g. Internet down 08:00–15:30; times from the kitchen sign-in sheet" /></label></div>
+          <Button variant="outline" disabled={busy || !employee || bulkRows.some(r => r.employeeId === employee)} onClick={() => { const p = people.find(x => x.id === employee); if (p) setBulkRows([...bulkRows, { employeeId: p.id, label: `${p.employeeNo} — ${p.name}`, clockIn: "", clockOut: "" }]); }}>Add selected employee to the sheet</Button>
+          {bulkRows.length > 0 && <table className="table"><thead><tr><th>Employee</th><th>Clock-in (branch time)</th><th>Clock-out (branch time)</th><th /></tr></thead><tbody>{bulkRows.map((r, i) => <tr key={r.employeeId}><td>{r.label}</td>
+            <td><Input type="datetime-local" value={r.clockIn} onChange={e => setBulkRows(bulkRows.map((x, j) => j === i ? { ...x, clockIn: e.target.value } : x))} /></td>
+            <td><Input type="datetime-local" value={r.clockOut} onChange={e => setBulkRows(bulkRows.map((x, j) => j === i ? { ...x, clockOut: e.target.value } : x))} /></td>
+            <td><Button variant="ghost" size="sm" onClick={() => setBulkRows(bulkRows.filter((_, j) => j !== i))}>Remove</Button></td></tr>)}</tbody></table>}
+          <Button disabled={busy || !bulkDate || !bulkReason.trim() || bulkRows.length === 0 || bulkRows.some(r => !r.clockIn)} onClick={() => void run(async () => {
+            const { data } = await http.post(base + "/corrections/bulk", { date: bulkDate, reason: bulkReason, entries: bulkRows.map(r => ({ employeeId: r.employeeId, clockIn: wallClock(r.clockIn), clockOut: r.clockOut ? wallClock(r.clockOut) : null })) });
+            setNotice(summarize(data, "request(s) submitted for approval"));
+            setBulkRows(bulkRows.filter(r => (data?.results ?? []).some((x: Row) => x.id === r.employeeId && !x.success)));
+            await load();
+          })}>Submit sheet for approval</Button>
+        </section>
+        <h3>Review requests</h3><p>Use the reason field above when approving or rejecting. You cannot approve your own request or attendance. Tick several requests (for example a whole outage sheet) to decide them together.</p>
+        {canDecide && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[true, false].map(approve => <Button key={String(approve)} variant={approve ? "default" : "outline"} disabled={busy || selected.length === 0 || !reason.trim()} onClick={() => void run(async () => { const { data } = await http.post(base + "/corrections/decisions", { ids: selected, approve, reason }); setNotice(summarize(data, approve ? "approved" : "rejected")); setSelected([]); await load(); })}>{approve ? "Approve selected" : "Reject selected"} ({selected.length})</Button>)}</div>}
+        <table className="table"><thead><tr><th /><th>Employee</th><th>Original</th><th>Requested</th><th>Reason</th><th>Status</th><th /></tr></thead><tbody>{rows.map(r => <tr key={r.id}><td>{canDecide && r.status === "Pending" && <Checkbox aria-label="Select request" checked={selected.includes(r.id)} onChange={e => setSelected(e.target.checked ? [...selected, r.id] : selected.filter(x => x !== r.id))} />}</td><td>{r.employeeName ?? r.employeeId}<br />{new Date(r.date).toLocaleDateString()}</td><td>{r.attendanceRecordId || r.originalClockIn ? <>{display(r.originalClockIn)}<br />{display(r.originalClockOut)}</> : "New shift"}</td><td>{display(r.requestedClockIn)}<br />{display(r.requestedClockOut)}</td><td>{r.reason}<br />{r.decisionReason}</td><td>{r.status}</td><td>{canDecide && r.status === "Pending" && [true, false].map(approve => <button key={String(approve)} className="btn btn-secondary" disabled={busy || !reason.trim()} onClick={() => void run(async () => { await http.post(base + "/corrections/" + r.id + "/decision", { approve, reason }); await load(); })}>{approve ? "Approve" : "Reject"}</button>)}</td></tr>)}</tbody></table>
       </>}
       {tab === "audit" && canAudit && <>
-        {branchId && <AttendancePhotos key={base + branchId} base={base} branchId={branchId} />}<h2>Recent attendance audit</h2><p>Includes failed attempts, five-attempt lockouts, unauthorized branch attempts, PIN reset requests, and corrections. Records cannot be edited.</p>
+        {branchId && <AttendancePhotos key={base + branchId} base={base} branchId={branchId} />}<h2>Recent attendance audit</h2><p>Includes failed attempts and lockouts, missed clock-outs, unauthorized branch attempts, PIN reset requests and unlocks, kiosk changes, photo views and corrections. Records cannot be edited.</p>
         <button className="btn btn-secondary" disabled={busy} onClick={() => void run(load)}>Refresh</button>
         <table className="table"><thead><tr><th>Server time</th><th>Employee</th><th>Action / method</th><th>Result</th><th>Details</th></tr></thead><tbody>{rows.map(r => <tr key={r.id}><td>{display(r.atUtc)}</td><td>{r.employeeName ?? r.employeeId ?? "Unknown"}</td><td>{r.action}<br />{r.method}</td><td>{r.success ? "Success" : "Review required"}</td><td style={{ maxWidth: 400, overflowWrap: "anywhere" }}>{r.detail}</td></tr>)}</tbody></table>
       </>}
@@ -134,9 +195,9 @@ function AttendancePhotos({ base, branchId }: { base: string; branchId: string }
     try { const response = await http.get(base + "/photos/" + id, { responseType: "blob" }); setPreview(URL.createObjectURL(response.data)); }
     catch { setError("Photo unavailable or retention period expired."); }
   }
-  return <section><h3>Attendance verification photos</h3><p>Use only for attendance review. Photos expire automatically under the kiosk retention policy.</p>
+  return <section><h3>Attendance verification photos</h3><p>Use only for attendance review, e.g. to check that the person in the photo is the employee who clocked. Each view is recorded in the audit. Photos expire automatically under the kiosk retention policy.</p>
     {error && <p role="status">{error}</p>}
     {preview && <div><img src={preview} alt="Selected attendance verification photo" style={{ maxWidth: 480, width: "100%" }} /><button className="btn btn-secondary" onClick={() => setPreview("")}>Close photo</button></div>}
-    <table className="table"><thead><tr><th>Employee</th><th>Action</th><th>Retention ends</th><th /></tr></thead><tbody>{photos.map(p => <tr key={p.id}><td>{p.employeeId}</td><td>{p.action}</td><td>{display(p.expiresAtUtc)}</td><td><button className="btn btn-secondary" onClick={() => void view(p.id)}>Review photo</button></td></tr>)}</tbody></table>
+    <table className="table"><thead><tr><th>Employee</th><th>Action</th><th>Punch time</th><th>Retention ends</th><th /></tr></thead><tbody>{photos.map(p => <tr key={p.id}><td>{p.employeeNo ? `${p.employeeNo} — ${p.employeeName ?? ""}` : p.employeeId}</td><td>{p.action}</td><td>{display(p.punchedAtUtc)}</td><td>{display(p.expiresAtUtc)}</td><td><button className="btn btn-secondary" onClick={() => void view(p.id)}>Review photo</button></td></tr>)}</tbody></table>
   </section>;
 }

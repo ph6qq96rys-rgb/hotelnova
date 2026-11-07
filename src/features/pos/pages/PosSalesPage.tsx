@@ -32,7 +32,7 @@ import { HoldReasonPicker, PosHoldDialog } from "../components/PosHoldDialog";
 import { PosTableStateDialog } from "../components/PosTableStateDialog";
 import { PosMenuPanel } from "../components/PosMenuPanel";
 import { PosPaymentPanel } from "../components/PosPaymentPanel";
-import { PosTicketPanel } from "../components/PosTicketPanel";
+import { PosTicketPanel, type PendingTicket } from "../components/PosTicketPanel";
 import { money } from "../components/posUi";
 import { SessionBanner, SessionGate } from "../components/SessionGate";
 import { usePosSession } from "../hooks/usePosSession";
@@ -49,23 +49,13 @@ import "../pos-workspace.css";
 import "../pos-service.css";
 
 type View = "FLOOR" | "ORDER" | "PAY";
-type NewTicketForm = {
-  orderType: PosOrderType;
+/** A new order that is saved together with its first items (see PendingTicket). */
+type NewTicketForm = PendingTicket & {
   tableId: string;
   tableLabel: string;
-  guests: string;
-  waiter: string;
-  customerName: string;
-  note: string;
 };
 
 const MIN_OPENING_FLOAT_ETB = 1;
-const ORDER_TYPES: Array<{ value: PosOrderType; label: string }> = [
-  { value: "dineIn", label: "Dine In" },
-  { value: "takeAway", label: "Take Away" },
-  { value: "delivery", label: "Delivery" },
-  { value: "roomService", label: "Room Service" },
-];
 
 function isConflict(err: unknown) {
   return (err as { response?: { status?: number } })?.response?.status === 409;
@@ -126,6 +116,7 @@ export function PosSalesPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
+  /** Hold reason being entered (only when the branch requires a reason). */
   const [holdTicket, setHoldTicket] = useState<{ reason: string } | null>(null);
   const [tableState, setTableState] = useState<(PosFloorTableDto & { area: string }) | null>(null);
 
@@ -141,15 +132,17 @@ export function PosSalesPage() {
 
   // A different company or branch starts from an empty floor.
   useEffect(() => {
-    setTicket(null); setCounter(false); dispatchDraft({ type: "CLEAR" }); setView("FLOOR"); setNotice(null); setUncertain(false); attemptKey.current = null;
+    setTicket(null); setCounter(false); setNewTicket(null); dispatchDraft({ type: "CLEAR" }); setView("FLOOR"); setNotice(null); setUncertain(false); attemptKey.current = null;
   }, [companyId, branchId]);
 
   useEffect(() => {
     if (sessionState.session?.storeId) setStoreId(sessionState.session.storeId);
   }, [sessionState.session?.id, sessionState.session?.storeId]);
 
-  const chargeLines = useMemo(() => (counter ? draft : splitSel ? selectedChargeLines(ticket, ws.menu, splitSel) : ticketChargeLines(ticket, ws.menu)),
-    [counter, draft, splitSel, ticket, ws.menu]);
+  // A counter sale and a new order not yet saved are priced from the items picked so far.
+  const pricedFromDraft = counter || (!!newTicket && !ticket);
+  const chargeLines = useMemo(() => (pricedFromDraft ? draft : splitSel ? selectedChargeLines(ticket, ws.menu, splitSel) : ticketChargeLines(ticket, ws.menu)),
+    [pricedFromDraft, draft, splitSel, ticket, ws.menu]);
   const totals = useMemo(() => buildTotals(chargeLines, discount?.amount ?? 0), [chargeLines, discount?.amount]);
   const owedQty = useMemo(() => owedLines(ticket).reduce((sum, line) => sum + line.quantity, 0), [ticket]);
 
@@ -285,7 +278,7 @@ export function PosSalesPage() {
   };
 
   const backToFloor = () => {
-    setTicket(null); setCounter(false); dispatchDraft({ type: "CLEAR" }); setView("FLOOR"); setLeaveOpen(false);
+    setTicket(null); setCounter(false); setNewTicket(null); dispatchDraft({ type: "CLEAR" }); setView("FLOOR"); setLeaveOpen(false);
     setPayers([]); setSplitSel(null); setDiscount(null);
     void ws.refreshFloor();
   };
@@ -299,7 +292,7 @@ export function PosSalesPage() {
       const loaded = await posServiceApi.ticket(scope, summary.id);
       dispatchDraft({ type: "CLEAR" });
       setSplitSel(null); setDiscount(null);
-      setCounter(false);
+      setCounter(false); setNewTicket(null);
       setTicket(loaded);
       setView("ORDER");
     } catch (err) {
@@ -342,10 +335,26 @@ export function PosSalesPage() {
     }
   };
 
-  /** Holds an open ticket, sending any unsent items with it. */
-  const holdExistingTicket = async () => {
-    if (!ticket || !holdTicket) return;
-    const done = await ticketAction(() => posServiceApi.holdTicket(scope, ticket.id, ticket.version, holdTicket.reason.trim() || null,
+  /** Holds the open ticket (sending any unsent items with it), or saves and holds a new table order. */
+  const holdCurrent = async (reason: string) => {
+    const holdReason = reason.trim() || null;
+    if (!ticket && newTicket) {
+      const waiter = ws.waiters.find((x) => waiterKey(x) === newTicket.waiter);
+      await holdNewOrder({
+        orderType: newTicket.orderType,
+        tableId: newTicket.orderType === "dineIn" ? newTicket.tableId || null : null,
+        waiterEmployeeId: waiter?.employeeId ?? null,
+        waiterUserId: waiter?.employeeId ? null : waiter?.userId ?? null,
+        guestCount: Number(newTicket.guests) || null,
+        customerName: newTicket.customerName.trim() || null,
+        note: newTicket.note.trim() || null,
+        holdReason,
+      }, { tableLabel: newTicket.tableLabel || undefined });
+      setHoldTicket(null);
+      return;
+    }
+    if (!ticket) return;
+    const done = await ticketAction(() => posServiceApi.holdTicket(scope, ticket.id, ticket.version, holdReason,
       draft.length ? draft.map((item) => ({ menuItemId: item.id, quantity: item.qty })) : undefined));
     if (done) {
       dispatchDraft({ type: "CLEAR" });
@@ -353,6 +362,12 @@ export function PosSalesPage() {
       backToFloor();
       setNotice({ tone: "ok", text: tx("Order {ticket} held{where}{waiter}.", { ticket: done.ticketNo, where: done.tableLabel ? ` · ${tx("Table")} ${done.tableLabel}` : "", waiter: done.waiterName ? ` · ${done.waiterName}` : "" }) });
     }
+  };
+
+  /** Hold in one tap; a reason is asked for only when the branch requires one. */
+  const requestHold = () => {
+    if (ws.serviceSettings?.requireHoldReason) setHoldTicket({ reason: "" });
+    else void holdCurrent("");
   };
 
   const saveTableState = async (state: TableServiceState, note: string) => {
@@ -378,17 +393,33 @@ export function PosSalesPage() {
     return own ? waiterKey(own) : "";
   }, [ws.actor, ws.waiters]);
 
+  /** Tapping a free table (or Take-away ticket) goes straight to the menu; the order is saved with its first items. */
   const startTicket = (orderType: PosOrderType, table?: PosFloorTableDto, areaName?: string) => {
+    const tableLabel = table ? `${table.number}${areaName ? ` · ${areaName}` : ""}` : "";
+    setNotice(null);
+    setTicket(null); setCounter(false); setSplitSel(null); setDiscount(null);
+    dispatchDraft({ type: "CLEAR" });
     setNewTicket({
+      title: orderType === "dineIn" ? `${tx("Table")} ${tableLabel}` : tx("New take-away ticket"),
       orderType,
       tableId: table?.id ?? "",
-      tableLabel: table ? `${table.number}${areaName ? ` · ${areaName}` : ""}` : "",
-      guests: "2",
+      tableLabel,
+      guests: orderType === "dineIn" ? String(Math.min(2, Math.max(1, table?.seats ?? 2))) : "1",
       waiter: ownWaiterKey,
       customerName: "",
       note: "",
     });
+    setView("ORDER");
   };
+
+  /** Why the new order cannot be saved yet. */
+  const pendingProblem = (() => {
+    if (!newTicket) return null;
+    if (newTicket.orderType === "dineIn" && !newTicket.tableId) return "Choose a table.";
+    if (!(Number(newTicket.guests) >= 1)) return "Enter the number of guests.";
+    if (cashierMode && holdRequires(ws.serviceSettings, newTicket.orderType).waiter && !newTicket.waiter) return "Choose the waiter serving this order.";
+    return null;
+  })();
 
   const onTable = (table: PosFloorTableDto, areaName: string, tickets: PosTicketSummaryDto[]) => {
     if (table.tickets.length === 0) {
@@ -400,9 +431,9 @@ export function PosSalesPage() {
     else if (tickets.length > 1) setTableChoice({ label: table.number, tickets });
   };
 
-  const createTicket = async () => {
-    if (!newTicket) return;
-    const guests = Number(newTicket.guests);
+  /** Saves a new order with its first items; the kitchen gets them as round 1. */
+  const createTicketWithItems = async (): Promise<PosTicketDto | null> => {
+    if (!newTicket || draft.length === 0 || pendingProblem) return null;
     const waiter = ws.waiters.find((x) => waiterKey(x) === newTicket.waiter);
     setBusy(true);
     setNotice(null);
@@ -410,26 +441,31 @@ export function PosSalesPage() {
       const created = await posServiceApi.openTicket(scope, {
         orderType: newTicket.orderType,
         tableId: newTicket.orderType === "dineIn" ? newTicket.tableId || null : null,
-        guestCount: guests,
+        guestCount: Number(newTicket.guests),
         waiterEmployeeId: waiter?.employeeId ?? null,
         waiterUserId: waiter?.employeeId ? null : waiter?.userId ?? null,
         customerName: newTicket.customerName.trim() || null,
         note: newTicket.note.trim() || null,
+        items: draft.map((item) => ({ menuItemId: item.id, quantity: item.qty })),
       });
-      setNewTicket(null);
-      setCounter(false);
       dispatchDraft({ type: "CLEAR" });
-      setTicket(created);
-      setView("ORDER");
+      setNewTicket(null);
       void ws.refreshFloor();
       void ws.refreshWaiters();
+      return created;
     } catch (err) {
-      fail(err, "The ticket could not be opened.");
+      // The items stay on screen: if the table was just taken, the message says by which order.
+      fail(err, "The order could not be sent.");
       void ws.refreshFloor();
+      return null;
     } finally {
       setBusy(false);
     }
   };
+
+  const sentNotice = (sent: PosTicketDto) => setNotice({ tone: "ok", text: tx("Order {ticket} sent{where}.", {
+    ticket: sent.ticketNo, where: sent.tableLabel ? ` · ${tx("Table")} ${sent.tableLabel}` : sent.customerName ? ` · ${sent.customerName}` : "",
+  }) });
 
   const addItem = (item: MenuItemDto) => {
     if (busy || uncertain) return;
@@ -438,12 +474,30 @@ export function PosSalesPage() {
     dispatchDraft({ type: "ADD", item });
   };
 
-  const sendDraft = () => ticketAction(async () => {
+  const sendDraftToTicket = () => ticketAction(async () => {
     const updated = await posServiceApi.addItems(scope, ticket!.id, ticket!.version,
       draft.map((item) => ({ menuItemId: item.id, quantity: item.qty })));
     dispatchDraft({ type: "CLEAR" });
     return updated;
-  }, "Order sent to the ticket.");
+  });
+
+  /** Send order: the items go to the kitchen and the floor is shown again, ready for the next table. */
+  const sendOrder = async () => {
+    const sent = ticket ? await sendDraftToTicket() : await createTicketWithItems();
+    if (!sent) return;
+    backToFloor();
+    sentNotice(sent);
+  };
+
+  /** Take payment straight away: unsent items are sent first, so there is no separate Send step. */
+  const payNow = async () => {
+    if (!counter && draft.length > 0) {
+      const sent = ticket ? await sendDraftToTicket() : await createTicketWithItems();
+      if (!sent) return;
+      setTicket(sent);
+    }
+    startPayment();
+  };
 
   const assignWaiter = (waiter: PosWaiterDto | null) =>
     ticketAction(() => posServiceApi.assignWaiter(scope, ticket!.id, ticket!.version, waiter), waiter ? "Waiter assigned." : "Waiter removed.");
@@ -470,7 +524,7 @@ export function PosSalesPage() {
   const payBlockedReason = (() => {
     if (!online) return "Offline · checkout unavailable";
     if (!sessionState.session) return "Open a cashier session to take payment.";
-    if (!counter && draft.length > 0) return "Send or clear the unsent items before taking payment.";
+    if (!counter && draft.length > 0) return newTicket ? pendingProblem : null; // sent automatically before payment
     if (totals.total <= 0) return "The transaction total must be greater than zero.";
     return null;
   })();
@@ -628,7 +682,7 @@ export function PosSalesPage() {
           onTable={onTable}
           onOpenTicket={(summary) => void openTicket(summary)}
           onNewTicket={() => startTicket("takeAway")}
-          onNewOrder={() => { setTicket(null); setCounter(true); dispatchDraft({ type: "CLEAR" }); setView("ORDER"); }}
+          onNewOrder={() => { setTicket(null); setNewTicket(null); setCounter(true); dispatchDraft({ type: "CLEAR" }); setView("ORDER"); }}
           onTableStatus={(table, area) => setTableState({ ...table, area })}
         />
       ) : (
@@ -664,7 +718,7 @@ export function PosSalesPage() {
             />
           ) : (
             <PosMenuPanel items={ws.menu} loading={ws.loading && ws.menu.length === 0} error={ws.menuError}
-              disabled={busy || uncertain || (!counter && !ticket?.canEdit)} onAdd={addItem} />
+              disabled={busy || uncertain || (!counter && !newTicket && !ticket?.canEdit)} onAdd={addItem} />
           )}
           <PosTicketPanel
             ticket={ticket}
@@ -679,11 +733,13 @@ export function PosSalesPage() {
             payBlockedReason={payBlockedReason}
             onDraftChange={dispatchDraft}
             onClearDraft={() => dispatchDraft({ type: "CLEAR" })}
-            onSend={() => void sendDraft()}
-            onPay={startPayment}
+            onSend={() => void sendOrder()}
+            onPay={() => void payNow()}
             onHold={counter
               ? draft.length > 0 ? () => setHoldOpen(true) : undefined
-              : ticket?.canEdit && (draft.length > 0 || ticket.lines.some((line) => !line.isVoided)) ? () => setHoldTicket({ reason: "" }) : undefined}
+              : newTicket
+                ? draft.length > 0 && !pendingProblem ? requestHold : undefined
+                : ticket?.canEdit && (draft.length > 0 || ticket.lines.some((line) => !line.isVoided)) ? requestHold : undefined}
             onPrintCheck={ticket && chargeLines.length > 0 && draft.length === 0 ? () => void printGuestCheck("browser") : undefined}
             onSendCheck={ticket && cashierMode && chargeLines.length > 0 && draft.length === 0 ? () => void printGuestCheck("printer") : undefined}
             onSplitItems={ticket && cashierMode && view !== "PAY" && draft.length === 0 && owedQty > 1 ? startSplit : undefined}
@@ -695,6 +751,11 @@ export function PosSalesPage() {
             onMoveTable={moveTable}
             onVoidLine={(line) => { setVoidReason(""); setVoidLine(line); }}
             onCancelTicket={() => { setCancelReason(""); setCancelOpen(true); }}
+            pending={newTicket}
+            pendingWaiterEditable={cashierMode}
+            pendingWaiterName={ws.actor?.name}
+            pendingProblem={pendingProblem}
+            onPendingChange={(patch) => setNewTicket((current) => current ? { ...current, ...patch } : current)}
           />
           {view === "ORDER" && draft.length > 0 ? (
             // Phones show the menu first; keep the next step within thumb reach.
@@ -706,62 +767,12 @@ export function PosSalesPage() {
                   {cashierMode ? <Button type="button" disabled={busy || !!payBlockedReason} onClick={startPayment}>{tx("Take payment")}</Button> : null}
                 </>
               ) : (
-                <Button type="button" disabled={busy || !ticket?.canEdit} onClick={() => void sendDraft()}>{tx("Send order")}</Button>
+                <Button type="button" disabled={busy || (newTicket ? !!pendingProblem : !ticket?.canEdit)} onClick={() => void sendOrder()}>{tx("Send order")}</Button>
               )}
             </div>
           ) : null}
         </main>
       )}
-
-      <PosDialog
-        open={!!newTicket}
-        title={newTicket?.orderType === "dineIn" ? `${tx("Open table")} ${newTicket.tableLabel}` : tx("New ticket")}
-        confirmText={tx("Open ticket")}
-        busy={busy}
-        confirmDisabled={!newTicket || !(Number(newTicket.guests) >= 1) || (newTicket.orderType === "dineIn" && !newTicket.tableId) ||
-          (cashierMode && holdRequires(ws.serviceSettings, newTicket.orderType).waiter && !newTicket.waiter)}
-        onConfirm={() => void createTicket()}
-        onClose={() => setNewTicket(null)}
-      >
-        {newTicket ? (
-          <div className="rpos-form-grid">
-            {newTicket.orderType !== "dineIn" ? (
-              <label className="rpos-field">
-                <span>{tx("Service Type")}</span>
-                <Select value={newTicket.orderType} onChange={(e) => setNewTicket({ ...newTicket, orderType: e.target.value as PosOrderType })}>
-                  {ORDER_TYPES.filter((x) => x.value !== "dineIn").map((x) => <option key={x.value} value={x.value}>{tx(x.label)}</option>)}
-                </Select>
-              </label>
-            ) : null}
-            <label className="rpos-field">
-              <span>{tx("Guest Count")}</span>
-              <Input type="number" min={1} max={500} value={newTicket.guests} onChange={(e) => setNewTicket({ ...newTicket, guests: e.target.value })} />
-            </label>
-            <label className="rpos-field">
-              <span>{tx("Waiter")}</span>
-              {cashierMode ? (
-                <Select value={newTicket.waiter} onChange={(e) => setNewTicket({ ...newTicket, waiter: e.target.value })}>
-                  <option value="">{tx("Unassigned")}</option>
-                  {ws.waiters.map((waiter) => (
-                    <option key={waiterKey(waiter)} value={waiterKey(waiter)}>
-                      {waiter.name}{waiter.openTickets ? ` (${tx("{count} open", { count: waiter.openTickets })})` : ""}
-                    </option>
-                  ))}
-                </Select>
-              ) : <strong>{ws.actor?.name}</strong>}
-            </label>
-            <label className="rpos-field">
-              <span>{tx("Customer / Guest")}</span>
-              <Input value={newTicket.customerName} maxLength={200} placeholder={tx("Walk-in customer")}
-                onChange={(e) => setNewTicket({ ...newTicket, customerName: e.target.value })} />
-            </label>
-            <label className="rpos-field rpos-span-all">
-              <span>{tx("Service Note")}</span>
-              <Textarea rows={2} maxLength={500} value={newTicket.note} onChange={(e) => setNewTicket({ ...newTicket, note: e.target.value })} />
-            </label>
-          </div>
-        ) : null}
-      </PosDialog>
 
       <PosDialog open={!!tableChoice} title={`${tx("Table")} ${tableChoice?.label ?? ""}`} confirmText={tx("Close")}
         description={tx("This table has more than one open ticket. Choose one.")} onConfirm={() => setTableChoice(null)} onClose={() => setTableChoice(null)}>
@@ -798,10 +809,10 @@ export function PosSalesPage() {
         settings={ws.serviceSettings} itemCount={draft.reduce((sum, item) => sum + item.qty, 0)} itemTotal={totals.total}
         onClose={() => setHoldOpen(false)} onConfirm={(request, summary) => void holdNewOrder(request, summary)} />
 
-      <PosDialog open={!!holdTicket} title={`${tx("Hold order")} ${ticket?.ticketNo ?? ""}`} confirmText={tx("Hold order")} busy={busy}
-        description={draft.length ? tx("Unsent items are sent with the order before it is put on hold.") : tx("The order stays at its table with its waiter until it is resumed or paid.")}
+      <PosDialog open={!!holdTicket} title={`${tx("Hold order")} ${ticket?.ticketNo ?? newTicket?.title ?? ""}`} confirmText={tx("Hold order")} busy={busy}
+        description={draft.length ? tx("Unsent items are sent with the order before it is put on hold.") : undefined}
         confirmDisabled={!!ws.serviceSettings?.requireHoldReason && !holdTicket?.reason.trim()}
-        onConfirm={() => void holdExistingTicket()} onClose={() => setHoldTicket(null)}>
+        onConfirm={() => void holdCurrent(holdTicket?.reason ?? "")} onClose={() => setHoldTicket(null)}>
         <HoldReasonPicker reasons={ws.serviceSettings?.holdReasons ?? []} value={holdTicket?.reason ?? ""}
           required={ws.serviceSettings?.requireHoldReason} onChange={(reason) => setHoldTicket({ reason })} />
       </PosDialog>

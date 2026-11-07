@@ -26,6 +26,7 @@ import ProcurementQuotationsPage from "../features/procurement/pages/Procurement
 import FixedAssetsPage from "../features/fixed-assets/pages/FixedAssetsPage";
 import SupplierPerformancePage from "../features/procurement/pages/SupplierPerformancePage";
 import SupplierComparisonPage from "../features/procurement/pages/SupplierComparisonPage";
+import ProcurementVatPage from "../features/procurement/pages/ProcurementVatPage";
 import ProcurementBudgetsPage from "../features/procurement/pages/ProcurementBudgetsPage";
 import SupplierAgreementsPage from "../features/procurement/pages/SupplierAgreementsPage";
 import ProcurementPlanningPage from "../features/procurement/pages/ProcurementPlanningPage";
@@ -59,6 +60,7 @@ export const procurementRoutes: AppRoute[] = [
   {path:"procurement/agreements",label:"Supplier Agreements",element:<SupplierAgreementsPage/>,icon:<FileText size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:72,permissions:["purchasing.view"]},
   {path:"procurement/budgets",label:"Purchasing Budgets",element:<ProcurementBudgetsPage/>,icon:<LayoutDashboard size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:70,permissions:["purchasing.view"]},
   {path:"procurement/payables",label:"Payables",element:<PayablesPage/>,icon:<FileText size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:45,permissions:["finance.payables.manage","finance.payables.approve","finance.view"]},
+  {path:"procurement/vat",label:"VAT on Purchases",element:<ProcurementVatPage/>,icon:<Settings2 size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:91,permissions:["purchasing.view"]},
   {path:"procurement/supplier-comparison",label:"Compare Suppliers",element:<SupplierComparisonPage/>,icon:<LayoutDashboard size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:64,permissions:["purchasing.view"]},
   {path:"procurement/supplier-performance",label:"Supplier Performance",element:<SupplierPerformancePage/>,icon:<LayoutDashboard size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:65,permissions:["purchasing.view"]},
   {path:"procurement/assets",label:"Fixed Asset Register",element:<FixedAssetsPage/>,icon:<FileText size={18}/>,nav:true,section:PROCUREMENT_SECTION,order:75,permissions:["fixedassets.view"]},

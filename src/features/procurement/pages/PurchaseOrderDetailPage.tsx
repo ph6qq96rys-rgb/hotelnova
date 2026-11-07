@@ -17,7 +17,7 @@ import PurchaseAgreementPanel from "../components/PurchaseAgreementPanel";
 import LandedCostsPanel from "../components/LandedCostsPanel";
 import BranchDeliveriesPanel from "../components/BranchDeliveriesPanel";
 import EmergencyPurchasePanel from "../components/EmergencyPurchasePanel";
-import { purchaseOrdersApi, type PurchaseOrder, type PurchaseOrderActionName } from "../api/purchasingApi";
+import { purchaseOrdersApi, VAT_TREATMENT_LABELS, type PurchaseOrder, type PurchaseOrderActionName } from "../api/purchasingApi";
 import {
   ActionDialog,
   BackButton,
@@ -232,7 +232,11 @@ export default function PurchaseOrderDetailPage() {
                   <TableCell className="p2p-right">{qty(l.invoicedQty)}</TableCell>
                   <TableCell className="p2p-right">{money(l.unitPrice, po.currencyCode)}</TableCell>
                   <TableCell className="p2p-right">{l.discountPercent}</TableCell>
-                  <TableCell className="p2p-right">{l.taxRatePercent}</TableCell>
+                  <TableCell className="p2p-right">
+                    {l.taxRatePercent}
+                    {l.vatTreatment && l.vatTreatment !== "Standard" ? <div className="p2p-muted">{tx(VAT_TREATMENT_LABELS[l.vatTreatment])}</div> : null}
+                    {l.vatOverridden ? <div className="p2p-muted">{tx("VAT overridden")}</div> : null}
+                  </TableCell>
                   <TableCell className="p2p-right">{money(l.lineTotal, po.currencyCode)}</TableCell>
                 </TableRow>
               ))}

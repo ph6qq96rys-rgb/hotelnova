@@ -19,8 +19,11 @@ import type { StockLocationDto } from "../../inventory/stock-locations/types";
 import {
   PO_LINE_TYPES,
   purchaseOrdersApi,
+  purchaseVatApi,
   purchasingSetupApi,
   suppliersApi,
+  VAT_TREATMENT_LABELS,
+  type VatTreatment,
   type PurchaseOrder,
   type PurchaseOrderInput,
   type SupplierItem,
@@ -82,6 +85,8 @@ export default function PurchaseOrderEditorPage() {
   const [items, setItems] = useState<InventoryItemDto[]>([]);
   const [priceList, setPriceList] = useState<SupplierItem[]>([]);
   const [defaultVat, setDefaultVat] = useState(15);
+  /** Each item's VAT setting (standard, zero-rated, exempt); a blank tax % follows it. */
+  const [vatByItem, setVatByItem] = useState<Record<string, VatTreatment>>({});
   const [header, setHeader] = useState({
     supplierId: "",
     deliveryLocationId: "",
@@ -141,6 +146,7 @@ export default function PurchaseOrderEditorPage() {
             notes: po.notes ?? "",
             terms: po.terms ?? "",
           });
+          const standardRate = settings?.defaultVatRatePercent ?? 15;
           setLines(po.lines.map((l) => ({
             key: `l${++seq}`,
             lineType: l.lineType,
@@ -150,7 +156,9 @@ export default function PurchaseOrderEditorPage() {
             quantity: String(l.orderedQty),
             unitPrice: String(l.unitPrice),
             discountPercent: String(l.discountPercent),
-            taxRatePercent: String(l.taxRatePercent),
+            // Blank = follow the item's VAT setting; keep only a rate that was chosen on purpose.
+            taxRatePercent: !l.vatOverridden && l.taxRatePercent === (l.vatTreatment && l.vatTreatment !== "Standard" ? 0 : standardRate)
+              ? "" : String(l.taxRatePercent),
             requisitionLineId: l.requisitionLineId,
             notes: l.notes ?? "",
           })));
@@ -174,6 +182,22 @@ export default function PurchaseOrderEditorPage() {
     suppliersApi.items(companyId, { supplierId: header.supplierId }).then(setPriceList).catch(() => setPriceList([]));
   }, [companyId, header.supplierId]);
 
+  const lineItemIds = useMemo(() => [...new Set(lines.map((l) => l.inventoryItemId).filter(Boolean))].sort().join(","), [lines]);
+  useEffect(() => {
+    if (!companyId || !lineItemIds) return;
+    const missing = lineItemIds.split(",").filter((itemId) => !(itemId in vatByItem));
+    if (missing.length === 0) return;
+    purchaseVatApi.items(companyId, { ids: missing })
+      .then((rows) => setVatByItem((current) => ({ ...current, ...Object.fromEntries(rows.map((r) => [r.id, r.effective])) })))
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, lineItemIds]);
+
+  /** VAT a blank tax % gets: none on exempt and zero-rated items, else the company rate. */
+  const lineVat = (l: LineForm): VatTreatment =>
+    l.lineType === "InventoryItem" && l.inventoryItemId ? vatByItem[l.inventoryItemId] ?? "Standard" : "Standard";
+  const expectedRate = (l: LineForm) => (lineVat(l) === "Standard" ? defaultVat : 0);
+
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const supplier = suppliers.find((s) => s.id === header.supplierId);
   const currency = header.currencyCode || supplier?.currencyCode || "ETB";
@@ -194,10 +218,11 @@ export default function PurchaseOrderEditorPage() {
       const gross = num(l.quantity) * num(l.unitPrice);
       const lineNet = gross - (gross * num(l.discountPercent)) / 100;
       net += lineNet;
-      tax += (lineNet * (l.taxRatePercent === "" ? defaultVat : num(l.taxRatePercent))) / 100;
+      tax += (lineNet * (l.taxRatePercent === "" ? expectedRate(l) : num(l.taxRatePercent))) / 100;
     }
     return { net, tax, total: net + tax };
-  }, [lines, defaultVat]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, defaultVat, vatByItem]);
 
   function buildInput(): PurchaseOrderInput | string {
     if (!header.supplierId) return "Select a supplier.";
@@ -277,7 +302,7 @@ export default function PurchaseOrderEditorPage() {
     <main className="p2p-page">
       <PageHeader
         title={isNew ? tx("New purchase order") : `${tx("Edit")} ${order?.poNo ?? ""}`}
-        subtitle={tx("Blank prices default from the supplier price list, then last price, then item cost. Blank tax uses the company VAT rate.")}
+        subtitle={tx("Blank prices default from the supplier price list, then last price, then item cost. Blank tax follows the item's VAT setting.")}
         actions={<Button variant="outline" onClick={() => navigate(isNew ? root : `${root}/${id}`)}>{tx("Cancel")}</Button>}
       />
       {error && <StateMessage tone="error">{tx(error)}</StateMessage>}
@@ -371,7 +396,7 @@ export default function PurchaseOrderEditorPage() {
                         <TableCell><Input aria-label={tx("Qty")} type="number" min={0} step="0.0001" value={l.quantity} onChange={(e) => updateLine(l.key, { quantity: e.target.value })} /></TableCell>
                         <TableCell><Input aria-label={tx("Unit Price")} type="number" min={0} step="0.0001" placeholder={tx("Auto")} value={l.unitPrice} onChange={(e) => updateLine(l.key, { unitPrice: e.target.value })} /><NegotiatedPriceHint companyId={companyId} supplierId={header.supplierId} branchId={locations.find(x=>x.id===header.deliveryLocationId)?.branchId ?? (scope.branchId || null)} itemId={l.inventoryItemId} uomId={l.uomId} quantity={Number(l.quantity)} currency={currency} date={header.orderDate} onUse={price=>updateLine(l.key,{unitPrice:String(price),discountPercent:"0"})}/></TableCell>
                         <TableCell><Input aria-label={tx("Disc. %")} type="number" min={0} max={100} step="0.01" value={l.discountPercent} onChange={(e) => updateLine(l.key, { discountPercent: e.target.value })} /></TableCell>
-                        <TableCell><Input aria-label={tx("Tax %")} type="number" min={0} max={100} step="0.01" placeholder={`${defaultVat}%`} value={l.taxRatePercent} onChange={(e) => updateLine(l.key, { taxRatePercent: e.target.value })} /></TableCell>
+                        <TableCell><Input aria-label={tx("Tax %")} type="number" min={0} max={100} step="0.01" placeholder={lineVat(l) === "Standard" ? `${defaultVat}%` : tx(VAT_TREATMENT_LABELS[lineVat(l)])} title={tx(VAT_TREATMENT_LABELS[lineVat(l)])} value={l.taxRatePercent} onChange={(e) => updateLine(l.key, { taxRatePercent: e.target.value })} /></TableCell>
                         <TableCell className="p2p-right">{l.unitPrice === "" ? tx("Auto") : money(net, currency)}</TableCell>
                         <TableCell>
                           <Button type="button" variant="ghost" size="icon" aria-label={tx("Remove line")} disabled={lines.length === 1} onClick={() => setLines((r) => r.filter((x) => x.key !== l.key))}>
@@ -388,6 +413,7 @@ export default function PurchaseOrderEditorPage() {
                 <span>{tx("Tax")}: {money(totals.tax, currency)}</span>
                 <strong>{tx("Estimated total")}: {money(totals.total, currency)}</strong>
                 <span className="p2p-muted">{tx("Final totals are calculated by the server.")}</span>
+                <span className="p2p-muted">{tx("Leave Tax % blank to follow each item's VAT setting (exempt and zero-rated items carry no VAT). Charging VAT against an item's setting needs the VAT override right.")}</span>
               </div>
             </CardContent>
           </Card>

@@ -3,6 +3,7 @@
 import { Button } from "../../../components/ui/button";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, RefreshCw } from "lucide-react";
+import { canQuoteInquiry, closedInquiryMessage } from "./inquiryQuotationEligibility";
 import {
   createInquiry,
   listCustomers,
@@ -252,7 +253,8 @@ export function InquiriesScreen({
                 Change status
               </Button>
               <Button variant="default"
-                
+                disabled={!canQuoteInquiry(selected)}
+                title={closedInquiryMessage(selected) ?? undefined}
                 onClick={() => onRaiseQuotation(selected.id)}
                 type="button"
               >
@@ -266,6 +268,7 @@ export function InquiriesScreen({
           title={`${selected.inquiryNo} · ${selected.customerName}`}
         />
 
+        {closedInquiryMessage(selected) ? <p role="status">{closedInquiryMessage(selected)}</p> : null}
         <Card title="Event request">
           <Facts
             items={[

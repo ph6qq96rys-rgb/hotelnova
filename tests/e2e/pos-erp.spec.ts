@@ -9,10 +9,12 @@ test.describe("POS ERP controls", () => {
     await page.goto(`/companies/${TEST_COMPANY_ID}/sales/pos`);
 
     await page.getByRole("button", { name: /^Table T1, Available/ }).click();
-    await page.getByRole("button", { name: "Open ticket" }).click();
     await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
     await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
+    await page.getByRole("combobox", { name: "Waiter" }).selectOption({ label: "QAE Waiter" });
     await page.getByRole("button", { name: "Send order" }).first().click();
+    // Sending returns to the floor; the cashier reopens the table to split the bill.
+    await page.getByRole("button", { name: /^Table T1, Occupied/ }).click();
     await expect(page.locator(".rpos-round h3").first()).toContainText("Round 1");
 
     await page.getByRole("button", { name: "Split by items" }).click();

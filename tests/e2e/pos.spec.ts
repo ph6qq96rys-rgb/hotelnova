@@ -20,22 +20,50 @@ test.describe("QAE POS smoke", () => {
     await expect(page.getByRole("button", { name: "Complete Sale" })).toBeVisible();
   });
 
-  test("waiter opens a table ticket and sends an order without payment access", async ({ page }) => {
+  test("waiter taps a table, picks items and sends: no dialog, back on the floor", async ({ page }) => {
     await seedWorkspaceAuth(page);
-    await mockPosWorkstation(page, "waiter");
+    const mock = await mockPosWorkstation(page, "waiter");
     await page.goto(`/companies/${TEST_COMPANY_ID}/sales/pos`);
 
     await expect(page.getByText("Waiter mode: your tables and tickets. A cashier takes payment.")).toBeVisible();
     await page.getByRole("button", { name: /^Table T1, Available/ }).click();
-    await page.getByLabel("Guest Count").fill("2");
-    await page.getByRole("button", { name: "Open ticket" }).click();
 
-    await expect(page.getByRole("heading", { name: "Ticket T0101-001" })).toBeVisible();
+    // Straight to the menu: the table, guests and the waiter are on the ticket panel.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /^Table T1/ })).toBeVisible();
+    await page.getByRole("button", { name: "More guests" }).click();
     await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
+    await expect(page.getByRole("button", { name: "Take payment" })).toHaveCount(0);
     await page.getByRole("button", { name: "Send order" }).first().click();
 
-    await expect(page.locator(".rpos-round h3").first()).toContainText("Round 1");
-    await expect(page.getByRole("button", { name: "Take payment" })).toHaveCount(0);
+    await expect(page.getByRole("status").first()).toContainText("Order T0101-001 sent · Table T1");
+    await expect(page.getByRole("button", { name: /^Table T1, Occupied/ })).toBeVisible();
+    expect(mock.openRequests).toHaveLength(1);
+    expect(mock.openRequests[0]).toMatchObject({ orderType: "dineIn", tableId: "table-1", guestCount: 3, items: [{ menuItemId: "menu-qae-1", quantity: 1 }] });
+  });
+
+  test("leaving a table before sending anything leaves no empty order", async ({ page }) => {
+    await seedWorkspaceAuth(page);
+    const mock = await mockPosWorkstation(page, "waiter");
+    await page.goto(`/companies/${TEST_COMPANY_ID}/sales/pos`);
+    await page.getByRole("button", { name: /^Table T1, Available/ }).click();
+    await page.getByRole("button", { name: "Back to floor" }).click();
+    await expect(page.getByRole("button", { name: /^Table T1, Available/ })).toBeVisible();
+    expect(mock.openRequests).toHaveLength(0);
+  });
+
+  test("hold is one tap when the branch does not require a reason", async ({ page }) => {
+    await seedWorkspaceAuth(page);
+    const mock = await mockPosWorkstation(page, "waiter");
+    await page.goto(`/companies/${TEST_COMPANY_ID}/sales/pos`);
+    await page.getByRole("button", { name: /^Table T1, Available/ }).click();
+    await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
+    await page.getByRole("button", { name: "Send order" }).first().click();
+    await page.getByRole("button", { name: /^Table T1, Occupied/ }).click();
+    await page.getByRole("button", { name: "Hold order" }).first().click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("status").first()).toContainText("Order T0101-001 held");
+    expect(mock.ticketHoldRequests).toEqual([{ version: "v1", holdReason: null }]);
   });
 
   test("cashier settles a dine-in ticket split between two payers, each choosing a tip", async ({ page }) => {
@@ -44,13 +72,12 @@ test.describe("QAE POS smoke", () => {
     await page.goto(`/companies/${TEST_COMPANY_ID}/sales/pos`);
 
     await page.getByRole("button", { name: /^Table T1, Available/ }).click();
-    await page.getByRole("button", { name: "Open ticket" }).click();
     await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
     await page.locator(".rpos-menu-card", { hasText: "QAE Burger" }).click();
-    await page.getByRole("button", { name: "Send order" }).first().click();
-    await expect(page.locator(".rpos-round h3").first()).toContainText("Round 1");
-
+    // A cashier serving the table chooses its waiter; Take payment sends the items first, no separate Send.
+    await page.getByRole("combobox", { name: "Waiter" }).selectOption({ label: "QAE Waiter" });
     await page.getByRole("button", { name: "Take payment" }).first().click();
+    expect(mock.openRequests[0]).toMatchObject({ waiterEmployeeId: "emp-qae-waiter", items: [{ menuItemId: "menu-qae-1", quantity: 2 }] });
     // No tip is ever preselected: the sale cannot complete until the guest has chosen.
     await expect(page.getByRole("radio", { name: "No tip" })).toHaveAttribute("aria-checked", "false");
     await expect(page.getByRole("button", { name: "Complete Sale" })).toBeDisabled();

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { PageHeader } from "../../../components/PageHeader";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -104,7 +105,14 @@ export default function PurchasingSettingsPage() {
           <Card className="p2p-span-all">
             <CardHeader><CardTitle>{tx("Tax")}</CardTitle></CardHeader>
             <CardContent className="p2p-grid">
-              {numberField("defaultVatRatePercent", "Default VAT %")}
+              {numberField("defaultVatRatePercent", "Standard VAT %", "Applies to items with standard VAT. Exempt and zero-rated items carry none.")}
+              <div className="p2p-span-all">
+                <Link to={`/companies/${companyId}/procurement/vat`}>{tx("Set which items are VAT exempt or zero-rated")}</Link>
+              </div>
+              <label className="p2p-check p2p-span-all"><Checkbox checked={!!settings.zeroVatForUnregisteredSuppliers} onChange={(e) => set("zeroVatForUnregisteredSuppliers", e.target.checked)} />{tx("No VAT on purchases from suppliers that are not VAT-registered")}</label>
+              {settings.zeroVatForUnregisteredSuppliers ? (
+                <div className="p2p-span-all"><StateMessage tone="warning">{tx("Check the VAT-registered box on every supplier that charges VAT first: purchases from the others will carry no VAT.")}</StateMessage></div>
+              ) : null}
               <FormField label={tx("Default currency")} maxLength={3} value={settings.defaultCurrencyCode} onChange={(e) => set("defaultCurrencyCode", e.target.value.toUpperCase())} />
               <label className="p2p-check"><Checkbox checked={settings.withholdingEnabled} onChange={(e) => set("withholdingEnabled", e.target.checked)} />{tx("Apply withholding tax on supplier invoices")}</label>
               {numberField("withholdingRatePercent", "Withholding rate %", undefined, "0.01", !settings.withholdingEnabled)}

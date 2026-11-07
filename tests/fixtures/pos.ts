@@ -15,6 +15,7 @@ export const TEST_TIP_SETTINGS = {
 
 export type PosMockState = {
   settleRequests: Array<Record<string, unknown>>; holdRequests: Array<Record<string, unknown>>;
+  openRequests: Array<Record<string, unknown>>; ticketHoldRequests: Array<Record<string, unknown>>;
   saleRequests: Array<Record<string, unknown>>; receiptRequests: string[]; bumps: Array<Record<string, unknown>>; printerSaves: Array<Record<string, unknown>>;
 };
 
@@ -50,7 +51,7 @@ const menuItem = {
  * sending a round and reading the ticket back behave like the real service.
  */
 export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Promise<PosMockState> {
-  const mockState: PosMockState = { settleRequests: [], holdRequests: [], saleRequests: [], receiptRequests: [], bumps: [], printerSaves: [] };
+  const mockState: PosMockState = { settleRequests: [], holdRequests: [], openRequests: [], ticketHoldRequests: [], saleRequests: [], receiptRequests: [], bumps: [], printerSaves: [] };
   let saleNo = 1;
   const kitchenOrder = {
     id: "ko-1", stationId: "station-hot", stationName: "Hot kitchen", orderNo: "#0001", ticketNo: "TKT-0001", round: 1, tableLabel: "T1",
@@ -167,15 +168,30 @@ export async function mockPosWorkstation(page: Page, mode: Mode = "cashier"): Pr
     });
     if (path === "tickets" && method === "POST") {
       const body = route.request().postDataJSON();
+      mockState.openRequests.push(body);
+      const items = (body.items ?? []) as Array<{ menuItemId: string; quantity: number }>;
       ticket = {
         id: "ticket-1", ticketNo: "T0101-001", orderType: body.orderType, status: "open", tableId: body.tableId,
         tableLabel: "T1", areaName: "Main hall", guestCount: body.guestCount, waiterEmployeeId: waiter.employeeId,
         waiterUserId: waiter.userId, waiterName: waiter.name, subtotal: 0, openedAtUtc, lastActivityAtUtc: openedAtUtc,
-        openedByName: waiter.name, version: "v1", canEdit: true, canManage: mode === "cashier", lines: [], events: [],
+        openedByName: waiter.name, version: "v1", canEdit: true, canManage: mode === "cashier", events: [],
+        // Items sent with the new ticket become round 1.
+        lines: items.map((item, index) => ({
+          id: `line-1-${index}`, menuItemId: item.menuItemId, itemName: menuItem.name, quantity: item.quantity,
+          unitPrice: menuItem.sellingPrice, lineTotal: item.quantity * menuItem.sellingPrice, round: 1,
+          addedAtUtc: new Date().toISOString(), addedByName: waiter.name, isVoided: false,
+        })),
       };
+      ticket.subtotal = (ticket.lines as Array<{ lineTotal: number }>).reduce((sum, line) => sum + line.lineTotal, 0);
       return json(route, ticket, 201);
     }
     if (path === "tickets/ticket-1" && ticket) return json(route, ticket);
+    if (path === "tickets/ticket-1/hold" && ticket) {
+      const body = route.request().postDataJSON() as { holdReason: string | null };
+      mockState.ticketHoldRequests.push(body);
+      ticket = { ...ticket, heldAtUtc: new Date().toISOString(), holdReason: body.holdReason, heldByName: waiter.name, version: `${ticket.version}-h` };
+      return json(route, ticket);
+    }
     if (path === "tickets/ticket-1/items" && ticket) {
       const { items } = route.request().postDataJSON() as { items: Array<{ menuItemId: string; quantity: number }> };
       const round = (ticket.lines as unknown[]).length ? 2 : 1;

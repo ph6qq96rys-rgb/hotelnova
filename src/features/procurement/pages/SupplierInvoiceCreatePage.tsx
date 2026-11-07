@@ -302,7 +302,7 @@ export default function SupplierInvoiceCreatePage() {
                       </TableCell>
                       <TableCell><Input aria-label={tx("Qty")} type="number" min={0} step="0.0001" value={l.quantity} onChange={(e) => updateLine(l.key, { quantity: e.target.value })} /></TableCell>
                       <TableCell><Input aria-label={tx("Unit Price")} type="number" min={0} step="0.0001" value={l.unitPrice} onChange={(e) => updateLine(l.key, { unitPrice: e.target.value })} /></TableCell>
-                      <TableCell><Input aria-label={tx("Tax %")} type="number" min={0} max={100} step="0.01" value={l.taxRatePercent} onChange={(e) => updateLine(l.key, { taxRatePercent: e.target.value })} /></TableCell>
+                      <TableCell><Input aria-label={tx("Tax %")} type="number" min={0} max={100} step="0.01" placeholder={tx("Item VAT")} title={tx("Blank: the purchase order line's VAT, or the item's VAT setting.")} value={l.taxRatePercent} onChange={(e) => updateLine(l.key, { taxRatePercent: e.target.value })} /></TableCell>
                       <TableCell className="p2p-right">{money(num(l.quantity) * num(l.unitPrice), currency)}</TableCell>
                       <TableCell>
                         <Button type="button" variant="ghost" size="icon" aria-label={tx("Remove line")} disabled={lines.length === 1} onClick={() => setLines((r) => r.filter((x) => x.key !== l.key))}>

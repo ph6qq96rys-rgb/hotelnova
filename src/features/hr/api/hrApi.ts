@@ -148,6 +148,37 @@ const normalizeLookups = (value: unknown): EmployeeRegistrationLookupsDto => {
 
 //  Employees 
 
+export interface CompensationHistoryRow {
+  id: string;
+  previousBasicSalary: number;
+  newBasicSalary: number;
+  previousPayFrequency?: string | null;
+  newPayFrequency?: string | null;
+  bankDetailsChanged: boolean;
+  previousAccountTail?: string | null;
+  newAccountTail?: string | null;
+  effectiveFrom?: string | null;
+  reason?: string | null;
+  changedBy?: string | null;
+  changedAtUtc: string;
+}
+
+export interface EmployeeCompensationView {
+  employeeId: string;
+  employeeNo: string;
+  fullName: string;
+  status: string;
+  basicSalary: number;
+  payFrequency: string;
+  bankName?: string | null;
+  bankBranch?: string | null;
+  bankAccountNo?: string | null;
+  bankStatus: string;
+  bankChangedAtUtc?: string | null;
+  version: number;
+  history: CompensationHistoryRow[];
+}
+
 export const employeeApi = {
   list: (
     companyId: string,
@@ -265,6 +296,15 @@ export const employeeApi = {
 
   updateCompensation: (companyId: string, id: string, body: Record<string, unknown>) =>
     http.put(`${base(companyId)}/employees/${id}/compensation`, body).then((r) => r.data),
+
+  getCompensation: (companyId: string, id: string) =>
+    http.get<EmployeeCompensationView>(`${base(companyId)}/employees/${id}/compensation`).then((r) => r.data),
+
+  suspend: (companyId: string, id: string, reason: string, version?: number) =>
+    http.post(`${base(companyId)}/employees/${id}/suspend`, { reason, version }).then((r) => r.data),
+
+  reinstate: (companyId: string, id: string, reason: string, version?: number) =>
+    http.post(`${base(companyId)}/employees/${id}/reinstate`, { reason, version }).then((r) => r.data),
 
   updateRegistration: (companyId: string, id: string, body: Record<string, unknown>) =>
     http.put(`${base(companyId)}/employees/${id}/registration`, body).then((r) => r.data),

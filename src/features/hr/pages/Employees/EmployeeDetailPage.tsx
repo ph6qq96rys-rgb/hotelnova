@@ -5,6 +5,9 @@ import { useParams } from "react-router-dom";
 
 import { useAppScope } from "../../../../app/useAppScope";
 import { useAuth } from "../../../../auth/AuthProvider";
+import { useI18n } from "../../../../i18n";
+import { Button } from "../../../../components/ui/button";
+import { Textarea } from "../../../../components/ui/textarea";
 import { useErpNavigate } from "../../../../routes/useErpNavigation";
 import { employeeApi } from "../../api/hrApi";
 import type { EmployeeDetailDto, EmployeeDocumentDto } from "../../types";
@@ -13,6 +16,9 @@ import { fmtDate, fmtDateTime, fmtMoney, getApiError } from "../../utils/hrUtils
 import styles from "./EmployeeDetailPage.module.css";
 
 type Maybe<T> = T | null | undefined;
+
+// Set from the page component so the small helpers below can translate labels.
+let t = (text: string) => text;
 
 type EmployeeDetailView = EmployeeDetailDto & {
   id?: string;
@@ -90,7 +96,6 @@ type TabKey =
   | "organization"
   | "payroll"
   | "attendance"
-  | "leave"
   | "documents"
   | "telegram"
   | "access"
@@ -116,7 +121,6 @@ const tabs: TabConfig[] = [
   { key: "organization", label: "Organization", icon: "ti-sitemap" },
   { key: "payroll", label: "Payroll", icon: "ti-cash-banknote" },
   { key: "attendance", label: "Attendance", icon: "ti-clock" },
-  { key: "leave", label: "Leave", icon: "ti-calendar" },
   { key: "documents", label: "Documents", icon: "ti-file-text" },
   { key: "telegram", label: "Telegram", icon: "ti-brand-telegram" },
   { key: "access", label: "Access", icon: "ti-shield-lock" },
@@ -132,7 +136,7 @@ function unwrapEmployee(response: unknown): EmployeeDetailView | null {
 
 function valueOrDash(value: DetailValue): string | number {
   if (value === null || value === undefined || value === "") return "-";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "boolean") return value ? t("Yes") : t("No");
   return value;
 }
 
@@ -172,7 +176,7 @@ function getPosition(employee: EmployeeDetailView): string | null {
 }
 
 function getCompleteness(employee: EmployeeDetailView): number {
-  const checks = [
+  const checks: unknown[] = [
     employee.fullName,
     employee.phoneNumber,
     employee.workEmail,
@@ -180,47 +184,48 @@ function getCompleteness(employee: EmployeeDetailView): number {
     employee.departmentName,
     getPosition(employee),
     employee.hireDate,
-    employee.basicSalary,
-    getTaxId(employee),
-    employee.pensionId,
+    employee.emergencyContactName,
   ];
+  // Pay and IDs only count for viewers allowed to see them.
+  if (employee.canViewSensitive) checks.push(employee.basicSalary, getTaxId(employee), employee.pensionId, employee.bankAccountNo);
 
   const completed = checks.filter((x) => x !== null && x !== undefined && x !== "").length;
   return Math.round((completed / checks.length) * 100);
 }
 
 function getMissingItems(employee: EmployeeDetailView): string[] {
-  const items = [
+  const items: Array<readonly [string, unknown]> = [
     ["Work email", employee.workEmail],
     ["Phone number", employee.phoneNumber],
     ["Department", employee.departmentName],
     ["Position", getPosition(employee)],
-    ["Basic salary", employee.basicSalary],
-    ["Tax ID / TIN", getTaxId(employee)],
-    ["Pension ID", employee.pensionId],
-    ["Bank account", employee.bankAccountNo],
     ["Emergency contact", employee.emergencyContactName],
-  ] as const;
+  ];
+  if (employee.canViewSensitive) {
+    items.push(["Basic salary", employee.basicSalary], ["Tax ID / TIN", getTaxId(employee)],
+      ["Pension ID", employee.pensionId], ["Bank account", employee.bankAccountNo]);
+  }
 
   return items.filter(([, value]) => value === null || value === undefined || value === "").map(([label]) => label);
 }
 
-function getTelegramStartParam(): string {
-  if (typeof window === "undefined") return "ambassador";
+/** The company's own tenant key; falls back to the tenant subdomain, never to another company. */
+function getTelegramStartParam(tenantKey?: string | null): string | null {
+  if (tenantKey && tenantKey.trim()) return tenantKey.trim().toLowerCase();
+  if (typeof window === "undefined") return null;
 
   const host = window.location.hostname.toLowerCase();
   const rootDomains = ["fnbnova.com", "www.fnbnova.com", "localhost", "127.0.0.1"];
-
-  if (rootDomains.includes(host)) return "ambassador";
+  if (rootDomains.includes(host)) return null;
 
   const [subdomain] = host.split(".");
-  return subdomain || "ambassador";
+  return subdomain || null;
 }
 
 function DetailField({ field }: { field: FieldConfig }) {
   return (
     <div className={`${styles.detailField} ${field.span === 2 ? styles.detailFieldWide : ""}`}>
-      <dt>{field.label}</dt>
+      <dt>{t(field.label)}</dt>
       <dd>{valueOrDash(field.value)}</dd>
     </div>
   );
@@ -229,7 +234,7 @@ function DetailField({ field }: { field: FieldConfig }) {
 function DetailSection({ title, fields }: { title: string; fields: FieldConfig[] }) {
   return (
     <section className={styles.detailSection}>
-      <h2>{title}</h2>
+      <h2>{t(title)}</h2>
       <dl className={styles.detailGrid}>
         {fields.map((field) => (
           <DetailField key={`${title}-${field.label}`} field={field} />
@@ -287,6 +292,8 @@ function EmptyState({ onBack }: { onBack: () => void }) {
 }
 
 export default function EmployeeDetailPage() {
+  const { tx } = useI18n();
+  t = tx;
   const nav = useErpNavigate();
   const { hasPermission } = useAuth();
   const { companyId: scopedCompanyId } = useAppScope();
@@ -311,6 +318,8 @@ export default function EmployeeDetailPage() {
   const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [documentSaving, setDocumentSaving] = useState(false);
   const [documentForm, setDocumentForm] = useState<EmployeeDocumentFormState>(defaultDocumentForm);
+  const [lifecycle, setLifecycle] = useState<{ action: "suspend" | "reinstate"; reason: string } | null>(null);
+  const [lifecycleSaving, setLifecycleSaving] = useState(false);
   const loadEmployee = useCallback(
     async (silent = false) => {
       if (!companyId || !employeeId) {
@@ -370,7 +379,9 @@ export default function EmployeeDetailPage() {
   const isTerminated = cleanStatus(employee?.status).toLowerCase() === "terminated";
   const missingItems = useMemo(() => (employee ? getMissingItems(employee) : []), [employee]);
   const completeness = employee ? getCompleteness(employee) : 0;
+  const isSuspended = cleanStatus(employee?.status).toLowerCase() === "suspended";
   const canManageEmployee = hasPermission("hr.employees.update");
+  const canManagePay = hasPermission("hr.payroll.manage");
 
   const tabSections = useMemo(() => {
     if (!employee) return {} as Record<TabKey, React.ReactNode>;
@@ -434,26 +445,18 @@ export default function EmployeeDetailPage() {
             { label: "Branch", value: employee.branchName },
             { label: "Department", value: employee.departmentName },
             { label: "Position", value: position },
-            { label: "Manager", value: employee.managerName ?? "No manager assigned" },
-            { label: "Cost Center", value: (employee as any).costCenterName ?? (employee as any).costCenterCode },
-            { label: "Profit Center", value: (employee as any).profitCenterName ?? (employee as any).profitCenterCode },
-            { label: "Business Unit", value: (employee as any).businessUnitName },
-            { label: "Outlet", value: (employee as any).outletName },
-            { label: "Kitchen / Work Area", value: (employee as any).workAreaName ?? (employee as any).kitchenName },
+            { label: "Manager", value: employee.managerName ?? t("No manager assigned") },
           ]}
         />
       ),
-      payroll: (
+      payroll: employee.canViewSensitive ? (
         <>
           <DetailSection
             title="Compensation"
             fields={[
               { label: "Basic Salary", value: fmtMoney(employee.basicSalary) },
               { label: "Pay Frequency", value: employee.payFrequency },
-              { label: "Payroll Group", value: (employee as any).payrollGroupName },
-              { label: "Salary Structure", value: (employee as any).salaryStructureName },
-              { label: "Currency", value: (employee as any).currencyCode },
-              { label: "Payment Method", value: (employee as any).paymentMethod },
+              { label: "Bank Details", value: employee.bankStatus === "PendingVerification" ? t("Waiting for verification") : t("Verified") },
             ]}
           />
           <DetailSection
@@ -467,7 +470,17 @@ export default function EmployeeDetailPage() {
               { label: "Bank Account No.", value: employee.bankAccountNo },
             ]}
           />
+          {canManagePay && !isTerminated ? (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              <Button variant="outline" onClick={() => nav(`hr/employees/${employeeRouteId}/compensation`)}>{t("Change pay")}</Button>
+            </div>
+          ) : null}
         </>
+      ) : (
+        <section className={styles.detailSection}>
+          <h2>{t("Compensation")}</h2>
+          <p className={styles.muted}>{t("Salary, bank details and government IDs are only shown to HR and payroll roles.")}</p>
+        </section>
       ),
       attendance: (
         <>
@@ -477,7 +490,6 @@ export default function EmployeeDetailPage() {
               { label: "Shift Pattern", value: (employee as any).shiftPatternName ?? employee.workSchedule },
               { label: "Roster Group", value: (employee as any).rosterGroupName },
               { label: "Attendance Device", value: (employee as any).attendanceDeviceName },
-              { label: "Biometric ID", value: (employee as any).biometricId },
               { label: "Overtime Policy", value: (employee as any).overtimePolicyName },
               { label: "Late Policy", value: (employee as any).latePolicyName },
               { label: "Holiday Calendar", value: (employee as any).holidayCalendarName },
@@ -492,18 +504,6 @@ export default function EmployeeDetailPage() {
             </div>
           )}
         </>
-      ),
-      leave: (
-        <DetailSection
-          title="Leave Profile"
-          fields={[
-            { label: "Leave Group", value: (employee as any).leaveGroupName },
-            { label: "Annual Leave Balance", value: (employee as any).annualLeaveBalance },
-            { label: "Sick Leave Balance", value: (employee as any).sickLeaveBalance },
-            { label: "Pending Requests", value: (employee as any).pendingLeaveRequests },
-            { label: "Last Leave Taken", value: safeDateTime((employee as any).lastLeaveTakenAt ?? null) },
-          ]}
-        />
       ),
       documents: (
         <section className={styles.detailSection}>
@@ -642,9 +642,6 @@ export default function EmployeeDetailPage() {
           fields={[
             { label: "System User", value: employee.hasSystemAccess },
             { label: "Last Login", value: safeDateTime(employee.lastLoginAt ?? null) },
-            { label: "ERP Role", value: (employee as any).erpRoleName },
-            { label: "POS Role", value: (employee as any).posRoleName },
-            { label: "Approval Limit", value: (employee as any).approvalLimit },
           ]}
         />
       ),
@@ -661,7 +658,7 @@ export default function EmployeeDetailPage() {
         />
       ),
     };
-  }, [canManageEmployee, documentForm, documentSaving, documents, documentsError, documentsLoading, employee, employeeCode, employeeRouteId, loadDocuments, nav, position, telegramLinkError, telegramLinkLoading, telegramToken, telegramTokenExpiresAt]);
+  }, [canManageEmployee, canManagePay, isTerminated, documentForm, documentSaving, documents, documentsError, documentsLoading, employee, employeeCode, employeeRouteId, loadDocuments, nav, position, telegramLinkError, telegramLinkLoading, telegramToken, telegramTokenExpiresAt]);
 
   function goToEmployees() {
     nav("hr/employees");
@@ -675,6 +672,23 @@ export default function EmployeeDetailPage() {
   function goToConfirm() {
     if (!employeeRouteId) return;
     nav(`hr/employees/${employeeRouteId}/confirm`);
+  }
+
+  async function submitLifecycle() {
+    if (!companyId || !employeeRouteId || !lifecycle) return;
+    if (!lifecycle.reason.trim()) { setError(t("A reason is required.")); return; }
+    setLifecycleSaving(true);
+    setError(null);
+    try {
+      if (lifecycle.action === "suspend") await employeeApi.suspend(companyId, employeeRouteId, lifecycle.reason.trim(), employee?.version);
+      else await employeeApi.reinstate(companyId, employeeRouteId, lifecycle.reason.trim(), employee?.version);
+      setLifecycle(null);
+      await loadEmployee(true);
+    } catch (e) {
+      setError(getApiError(e, t("The status change failed.")));
+    } finally {
+      setLifecycleSaving(false);
+    }
   }
 
   function goToTerminate() {
@@ -803,9 +817,14 @@ export default function EmployeeDetailPage() {
   async function copyTelegramInvite() {
     if (!telegramToken) return;
 
+    const startParam = getTelegramStartParam(employee?.tenantKey);
+    if (!startParam) {
+      setTelegramLinkError(t("This company has no tenant key, so the invite link cannot be built. Set the tenant key in company settings."));
+      return;
+    }
     const message = [
       "Open Process360 Mini App:",
-      `https://t.me/hotelnova_bot/erp?startapp=${getTelegramStartParam()}`,
+      `https://t.me/hotelnova_bot/erp?startapp=${startParam}`,
       "",
       "Your HR link code:",
       telegramToken,
@@ -839,7 +858,7 @@ export default function EmployeeDetailPage() {
   return (
     <div className={styles.root}>
       <header className={styles.masterHeader}>
-        <div className={styles.breadcrumb}>Human Resources / Employee Master / {employeeCode}</div>
+        <div className={styles.breadcrumb}>{t("Human Resources")} / {t("Employee Master")} / {employeeCode}</div>
 
         <div className={styles.headerGrid}>
           <div>
@@ -848,38 +867,59 @@ export default function EmployeeDetailPage() {
           </div>
 
           <div className={styles.headerFacts}>
-            <span><strong>Branch</strong>{valueOrDash(employee.branchName)}</span>
-            <span><strong>Department</strong>{valueOrDash(employee.departmentName)}</span>
-            <span><strong>Position</strong>{valueOrDash(position)}</span>
-            <span><strong>Payroll</strong>{valueOrDash(employee.payFrequency)}</span>
+            <span><strong>{t("Branch")}</strong>{valueOrDash(employee.branchName)}</span>
+            <span><strong>{t("Department")}</strong>{valueOrDash(employee.departmentName)}</span>
+            <span><strong>{t("Position")}</strong>{valueOrDash(position)}</span>
+            <span><strong>{t("Payroll")}</strong>{valueOrDash(employee.payFrequency)}</span>
           </div>
 
           <div className={styles.headerStatus}>
             <StatusPill status={employee.status} />
-            <span>Hired {safeDate(employee.hireDate)}</span>
+            <span>{t("Hired")} {safeDate(employee.hireDate)}</span>
           </div>
         </div>
       </header>
 
       <nav className={styles.commandRibbon} aria-label="Employee actions">
-        {canManageEmployee && <button type="button" className={`${styles.button} ${styles.buttonPrimary}`} onClick={goToEdit}>
-          <i className="ti ti-pencil" aria-hidden="true" /> Edit
+        {canManageEmployee && !isTerminated && <button type="button" className={`${styles.button} ${styles.buttonPrimary}`} onClick={goToEdit}>
+          <i className="ti ti-pencil" aria-hidden="true" /> {t("Edit")}
         </button>}
         {canManageEmployee && isProbation ? (
           <button type="button" className={styles.button} onClick={goToConfirm}>
-            <i className="ti ti-user-check" aria-hidden="true" /> Confirm
+            <i className="ti ti-user-check" aria-hidden="true" /> {t("Confirm")}
           </button>
         ) : null}
+        {canManageEmployee && !isTerminated && !isSuspended && !lifecycle ? (
+          <Button type="button" variant="bare" className={styles.button} onClick={() => setLifecycle({ action: "suspend", reason: "" })}>
+            {t("Suspend")}
+          </Button>
+        ) : null}
+        {canManageEmployee && isSuspended && !lifecycle ? (
+          <Button type="button" variant="bare" className={styles.button} onClick={() => setLifecycle({ action: "reinstate", reason: "" })}>
+            {t("Reinstate")}
+          </Button>
+        ) : null}
         <button type="button" className={styles.button} disabled={refreshing} onClick={() => void loadEmployee(true)}>
-          <i className="ti ti-refresh" aria-hidden="true" /> {refreshing ? "Refreshing..." : "Refresh"}
+          <i className="ti ti-refresh" aria-hidden="true" /> {refreshing ? t("Refreshing...") : t("Refresh")}
         </button>
         {canManageEmployee && !isTerminated ? (
           <button type="button" className={`${styles.button} ${styles.buttonDanger}`} onClick={goToTerminate}>
-            <i className="ti ti-user-x" aria-hidden="true" /> Terminate
+            <i className="ti ti-user-x" aria-hidden="true" /> {t("Terminate")}
           </button>
         ) : null}
-        <button type="button" className={styles.button} onClick={goToEmployees}>Back</button>
+        <button type="button" className={styles.button} onClick={goToEmployees}>{t("Back")}</button>
       </nav>
+
+      {lifecycle ? (
+        <section className={styles.systemMessage} role="dialog" aria-label={t(lifecycle.action === "suspend" ? "Suspend employee" : "Reinstate employee")}>
+          <strong>{t(lifecycle.action === "suspend" ? "Suspend this employee" : "Reinstate this employee")}</strong>
+          <Textarea rows={2} placeholder={t("Reason")} value={lifecycle.reason} onChange={(e) => setLifecycle({ ...lifecycle, reason: e.target.value })} />
+          <Button type="button" variant={lifecycle.action === "suspend" ? "destructive" : "default"} disabled={lifecycleSaving} onClick={() => void submitLifecycle()}>
+            {lifecycleSaving ? t("Saving...") : t(lifecycle.action === "suspend" ? "Suspend" : "Reinstate")}
+          </Button>
+          <Button type="button" variant="outline" disabled={lifecycleSaving} onClick={() => setLifecycle(null)}>{t("Cancel")}</Button>
+        </section>
+      ) : null}
 
       {error ? (
         <div className={styles.alert} role="alert">
@@ -899,7 +939,7 @@ export default function EmployeeDetailPage() {
             onClick={() => setActiveTab(tab.key)}
           >
             <i className={`ti ${tab.icon}`} aria-hidden="true" />
-            {tab.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>
@@ -909,33 +949,37 @@ export default function EmployeeDetailPage() {
 
         <aside className={styles.sidePanel}>
           <section className={styles.sideSection}>
-            <h2>Operational Status</h2>
+            <h2>{t("Operational Status")}</h2>
             <div className={styles.statusRows}>
-              <span>Status <strong>{cleanStatus(employee.status)}</strong></span>
-              <span>Payroll <strong>{employee.basicSalary && employee.bankAccountNo ? "Ready" : "Incomplete"}</strong></span>
-              <span>Attendance <strong>{employee.workSchedule ? "Configured" : "Missing"}</strong></span>
-              <span>Access <strong>{employee.hasSystemAccess ? "Enabled" : "Not linked"}</strong></span>
-              <span>Completeness <strong>{completeness}%</strong></span>
+              <span>{t("Status")} <strong>{t(cleanStatus(employee.status))}</strong></span>
+              {employee.canViewSensitive ? (
+                <span>{t("Payroll")} <strong>{employee.basicSalary && employee.bankAccountNo
+                  ? (employee.bankStatus === "PendingVerification" ? t("Bank details to verify") : t("Ready"))
+                  : t("Incomplete")}</strong></span>
+              ) : null}
+              <span>{t("Attendance")} <strong>{employee.workSchedule ? t("Configured") : t("Missing")}</strong></span>
+              <span>{t("Access")} <strong>{employee.hasSystemAccess ? t("Enabled") : t("Not linked")}</strong></span>
+              <span>{t("Completeness")} <strong>{completeness}%</strong></span>
             </div>
           </section>
 
           <section className={styles.sideSection}>
-            <h2>Missing Information</h2>
+            <h2>{t("Missing Information")}</h2>
             {missingItems.length ? (
               <ul className={styles.validationList}>
-                {missingItems.map((item) => <li key={item}>{item}</li>)}
+                {missingItems.map((item) => <li key={item}>{t(item)}</li>)}
               </ul>
             ) : (
-              <p className={styles.muted}>No required gaps detected.</p>
+              <p className={styles.muted}>{t("No required gaps detected.")}</p>
             )}
           </section>
 
           <section className={styles.sideSection}>
-            <h2>Recent Activity</h2>
+            <h2>{t("Recent Activity")}</h2>
             <div className={styles.statusRows}>
-              <span>Updated <strong>{safeDateTime(employee.updatedAt ?? null)}</strong></span>
-              <span>Updated By <strong>{valueOrDash(employee.updatedBy)}</strong></span>
-              <span>Last Login <strong>{safeDateTime(employee.lastLoginAt ?? null)}</strong></span>
+              <span>{t("Updated")} <strong>{safeDateTime(employee.updatedAt ?? null)}</strong></span>
+              <span>{t("Updated By")} <strong>{valueOrDash(employee.updatedBy)}</strong></span>
+              <span>{t("Last Login")} <strong>{safeDateTime(employee.lastLoginAt ?? null)}</strong></span>
             </div>
           </section>
         </aside>

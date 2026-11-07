@@ -1,15 +1,30 @@
 import { ArrowLeft, Ban, Minus, PauseCircle, Pencil, Plus, Printer, ReceiptText, Scissors, Send, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import { Select } from "../../../components/ui/select";
 import { useI18n } from "../../../i18n";
 import { formatAppDateTime } from "../../../shared/datetime/dateFormat";
-import type { PosFloorDto, PosTicketDto, PosTicketLineDto, PosWaiterDto } from "../api/posServiceApi";
+import type { PosFloorDto, PosOrderType, PosTicketDto, PosTicketLineDto, PosWaiterDto } from "../api/posServiceApi";
 import { waiterKey } from "../api/posServiceApi";
 import type { CartItem } from "../types/posTypes";
 import { money } from "./posUi";
 
 export type PosTotals = { subtotal: number; discount: number; serviceCharge: number; tax: number; total: number };
+
+/**
+ * A table or take-away order that is not saved yet. It is created together with its first items when
+ * they are sent, so tapping a table goes straight to the menu and an order with no items leaves nothing behind.
+ */
+export type PendingTicket = {
+  title: string;
+  orderType: PosOrderType;
+  guests: string;
+  waiter: string;
+  customerName: string;
+  note: string;
+};
+
 
 type Props = {
   ticket: PosTicketDto | null;
@@ -46,7 +61,21 @@ type Props = {
   onMoveTable: (tableId: string) => void;
   onVoidLine: (line: PosTicketLineDto) => void;
   onCancelTicket: () => void;
+  /** A new order that is saved when its items are sent. */
+  pending?: PendingTicket | null;
+  /** Cashiers choose the server; a waiter is always their own server. */
+  pendingWaiterEditable?: boolean;
+  pendingWaiterName?: string;
+  /** Why the new order cannot be sent yet (e.g. no waiter chosen). */
+  pendingProblem?: string | null;
+  onPendingChange?: (patch: Partial<PendingTicket>) => void;
 };
+
+const PENDING_ORDER_TYPES: Array<{ value: PosOrderType; label: string }> = [
+  { value: "takeAway", label: "Take Away" },
+  { value: "delivery", label: "Delivery" },
+  { value: "roomService", label: "Room Service" },
+];
 
 const EVENT_TEXT: Record<string, string> = {
   opened: "Order opened", held: "Put on hold", resumed: "Resumed", waiterChanged: "Waiter changed",
@@ -66,7 +95,9 @@ export function PosTicketPanel(props: Props) {
   const freeTables = (props.floor?.areas ?? []).flatMap((area) =>
     area.tables.filter((table) => table.status === "available" || table.id === ticket?.tableId).map((table) => ({ ...table, area: area.name })));
   const draftTotal = draft.reduce((sum, item) => sum + item.lineTotal, 0);
-  const editable = counter || !!ticket?.canEdit;
+  const pending = !ticket && !counter ? props.pending ?? null : null;
+  const editable = counter || !!pending || !!ticket?.canEdit;
+  const guests = Math.max(1, Number(pending?.guests) || 1);
 
   return (
     <aside className="rpos-ticket" aria-label={tx(counter ? "New order" : "Ticket")}>
@@ -75,7 +106,7 @@ export function PosTicketPanel(props: Props) {
           <ArrowLeft size={16} aria-hidden="true" />
         </Button>
         <div>
-          <h2>{counter ? tx("New order") : ticket ? `${tx("Ticket")} ${ticket.ticketNo}` : tx("New order")}</h2>
+          <h2>{counter ? tx("New order") : ticket ? `${tx("Ticket")} ${ticket.ticketNo}` : pending ? pending.title : tx("New order")}</h2>
           {ticket ? (
             <p className="rpos-muted">
               {tx(orderTypeText[ticket.orderType] ?? "Dine In")}
@@ -86,6 +117,53 @@ export function PosTicketPanel(props: Props) {
         </div>
       </header>
 
+      {pending && props.onPendingChange ? (
+        <div className="rpos-ticket-meta" aria-label={tx("Order details")}>
+          <label>
+            <span>{tx("Guests")}</span>
+            <span className="rpos-qty">
+              <Button type="button" size="sm" variant="outline" disabled={busy || guests <= 1} aria-label={tx("Fewer guests")}
+                onClick={() => props.onPendingChange!({ guests: String(guests - 1) })}><Minus size={14} aria-hidden="true" /></Button>
+              <span aria-live="polite">{guests}</span>
+              <Button type="button" size="sm" variant="outline" disabled={busy || guests >= 500} aria-label={tx("More guests")}
+                onClick={() => props.onPendingChange!({ guests: String(guests + 1) })}><Plus size={14} aria-hidden="true" /></Button>
+            </span>
+          </label>
+          <label>
+            <span>{tx("Waiter")}</span>
+            {props.pendingWaiterEditable ? (
+              <Select value={pending.waiter} disabled={busy} onChange={(event) => props.onPendingChange!({ waiter: event.target.value })}>
+                <option value="">{tx("Unassigned")}</option>
+                {waiters.map((waiter) => (
+                  <option key={waiterKey(waiter)} value={waiterKey(waiter)}>
+                    {waiter.name}{waiter.openTickets ? ` (${waiter.openTickets})` : ""}
+                  </option>
+                ))}
+              </Select>
+            ) : <strong>{props.pendingWaiterName || tx("Unassigned")}</strong>}
+          </label>
+          {pending.orderType !== "dineIn" ? (
+            <>
+              <label>
+                <span>{tx("Service Type")}</span>
+                <Select value={pending.orderType} disabled={busy} onChange={(event) => props.onPendingChange!({ orderType: event.target.value as PosOrderType })}>
+                  {PENDING_ORDER_TYPES.map((x) => <option key={x.value} value={x.value}>{tx(x.label)}</option>)}
+                </Select>
+              </label>
+              <label>
+                <span>{tx("Customer / Guest")}</span>
+                <Input value={pending.customerName} maxLength={200} placeholder={tx("Walk-in customer")} disabled={busy}
+                  onChange={(event) => props.onPendingChange!({ customerName: event.target.value })} />
+              </label>
+            </>
+          ) : null}
+          <label className="rpos-span-all">
+            <span>{tx("Service Note")}</span>
+            <Input value={pending.note} maxLength={500} placeholder={tx("Optional")} disabled={busy}
+              onChange={(event) => props.onPendingChange!({ note: event.target.value })} />
+          </label>
+        </div>
+      ) : null}
       {ticket ? (
         <div className="rpos-ticket-meta">
           <label>
@@ -218,12 +296,12 @@ export function PosTicketPanel(props: Props) {
         <div><dt>{tx("Service Charge")}</dt><dd>{money(totals.serviceCharge)}</dd></div>
         <div><dt>{tx("Tax")}</dt><dd>{money(totals.tax)}</dd></div>
         <div className="rpos-grand"><dt>{tx(counter ? "Total" : "Ticket total")}</dt><dd>{money(totals.total)}</dd></div>
-        {!counter && draft.length > 0 ? <div className="rpos-pending"><dt>{tx("Not sent yet")}</dt><dd>{money(draftTotal)}</dd></div> : null}
+        {!counter && !pending && draft.length > 0 ? <div className="rpos-pending"><dt>{tx("Not sent yet")}</dt><dd>{money(draftTotal)}</dd></div> : null}
       </dl>
 
       <div className="rpos-ticket-actions">
         {!counter && editable ? (
-          <Button type="button" disabled={busy || draft.length === 0} onClick={props.onSend}>
+          <Button type="button" disabled={busy || draft.length === 0 || (!!pending && !!props.pendingProblem)} onClick={props.onSend}>
             <Send size={16} aria-hidden="true" /> {tx("Send order")}
           </Button>
         ) : null}
@@ -259,6 +337,7 @@ export function PosTicketPanel(props: Props) {
           <Button type="button" variant="ghost" disabled={busy} onClick={props.onCancelTicket}>{tx("Cancel ticket")}</Button>
         ) : null}
       </div>
+      {pending && props.pendingProblem && draft.length > 0 ? <p className="rpos-muted" role="status">{tx(props.pendingProblem)}</p> : null}
       {props.canPay && props.payBlockedReason ? <p className="rpos-muted">{tx(props.payBlockedReason)}</p> : null}
       {props.waiterMode && ticket ? (
         <p className="rpos-muted">{tx("A cashier takes payment for this ticket. To take payment yourself, your role needs the Manage tickets permission (pos.tickets.manage).")}</p>

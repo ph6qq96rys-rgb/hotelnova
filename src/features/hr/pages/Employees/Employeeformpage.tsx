@@ -19,6 +19,9 @@ import type {
   PositionDto,
 } from "../../types/index";
 import { getApiError } from "../../utils/hrUtils";
+import { Button } from "../../../../components/ui/button";
+import { Input } from "../../../../components/ui/input";
+import { Select } from "../../../../components/ui/select";
 
 import styles from "./EmployeeFormPage.module.css";
 
@@ -60,9 +63,17 @@ interface EmployeeFormValues {
   phoneNumber: string;
   tinNumber: string;
   nationalId: string;
-  businessLicenseNo: string;
-  vatNumber: string;
   pensionId: string;
+  preferredName: string;
+  maritalStatus: string;
+  nationality: string;
+  personalEmail: string;
+  address: string;
+  city: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  emergencyContactRelation: string;
+  hireDateChangeReason: string;
   departmentId: string;
   positionId: string;
   managerId: string;
@@ -84,21 +95,33 @@ type WorkflowState = "done" | "active" | "blocked" | "pending";
 
 let translateHrText = (text: string) => text;
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+/** Today's date in the browser's local time zone (toISOString would give the UTC date). */
+const todayIso = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+};
 
 const EMPTY: EmployeeFormValues = {
   branchId: "",
   firstName: "",
   fatherName: "",
   grandFatherName: "",
-  gender: "Male",
+  gender: "",
   dateOfBirth: "",
   phoneNumber: "",
   tinNumber: "",
   nationalId: "",
-  businessLicenseNo: "",
-  vatNumber: "",
   pensionId: "",
+  preferredName: "",
+  maritalStatus: "",
+  nationality: "Ethiopian",
+  personalEmail: "",
+  address: "",
+  city: "",
+  emergencyContactName: "",
+  emergencyContactPhone: "",
+  emergencyContactRelation: "",
+  hireDateChangeReason: "",
   departmentId: "",
   positionId: "",
   managerId: "",
@@ -115,14 +138,14 @@ const EMPTY: EmployeeFormValues = {
 
 const EMPLOYMENT_TYPES = ["FullTime", "PartTime", "Contract", "Casual", "Intern"];
 const GENDERS = ["Male", "Female", "Other"];
-const PAY_FREQUENCIES = ["Daily", "Weekly", "BiWeekly", "Monthly"];
-const STATUS_OPTIONS: EmploymentStatus[] = [
-  "Probation",
-  "Active",
-  "Suspended",
-  "OnLeave",
-  "Terminated",
-];
+// Payroll runs monthly only.
+const PAY_FREQUENCIES = ["Monthly"];
+const MARITAL_STATUSES = ["Single", "Married", "Divorced", "Widowed"];
+const NATIONALITIES = ["Ethiopian", "Other"];
+// New hires start on probation; Active is for staff migrated from another system.
+// Other statuses change only through Confirm, Suspend, Reinstate and Terminate on the employee page.
+const NEW_HIRE_STATUSES: EmploymentStatus[] = ["Probation", "Active"];
+const TIN_REGEX = /^\d{10}$/;
 
 const SECTIONS: Array<{ key: SectionKey; label: string; icon: string }> = [
   { key: "identity", label: "General", icon: "ti-user" },
@@ -213,7 +236,7 @@ function ageOn(dateOfBirth: string, onDate = new Date()): number | null {
   return age;
 }
 
-function validate(values: EmployeeFormValues): FieldErrors {
+function validate(values: EmployeeFormValues, isEdit = false, originalHireDate = ""): FieldErrors {
   const errors: FieldErrors = {};
   const firstName = values.firstName.trim();
   const fatherName = values.fatherName.trim();
@@ -238,6 +261,11 @@ function validate(values: EmployeeFormValues): FieldErrors {
 
   if (values.phoneNumber.trim() && !PHONE_REGEX.test(values.phoneNumber.trim())) errors.phoneNumber = "Enter a valid phone number.";
   if (values.workEmail.trim() && !EMAIL_REGEX.test(values.workEmail.trim())) errors.workEmail = "Enter a valid work email address.";
+  if (values.personalEmail.trim() && !EMAIL_REGEX.test(values.personalEmail.trim())) errors.personalEmail = "Enter a valid personal email address.";
+  if (values.emergencyContactPhone.trim() && !PHONE_REGEX.test(values.emergencyContactPhone.trim())) errors.emergencyContactPhone = "Enter a valid phone number.";
+  if (values.tinNumber.trim() && !TIN_REGEX.test(values.tinNumber.trim())) errors.tinNumber = "TIN must be 10 digits.";
+  if (isEdit && originalHireDate && values.hireDate !== originalHireDate && !values.hireDateChangeReason.trim())
+    errors.hireDateChangeReason = "Give a reason for changing the hire date.";
   if (!values.branchId) errors.branchId = "Branch assignment is required.";
   if (!values.departmentId) errors.departmentId = "Department assignment is required.";
   if (!values.positionId) errors.positionId = "Position assignment is required.";
@@ -247,9 +275,12 @@ function validate(values: EmployeeFormValues): FieldErrors {
   if (!values.employmentType) errors.employmentType = "Employment type is required.";
   if (!values.payFrequency) errors.payFrequency = "Pay frequency is required.";
   if (!values.status) errors.status = "Employment status is required.";
-  if (salary === null) errors.basicSalary = "Basic salary is required for payroll enrollment.";
-  else if (!Number.isFinite(salary)) errors.basicSalary = "Enter a valid salary amount.";
-  else if (salary < 0) errors.basicSalary = "Salary cannot be negative.";
+  // Pay is captured at hire only; afterwards it changes through the compensation page (payroll rights, history).
+  if (!isEdit) {
+    if (salary === null) errors.basicSalary = "Basic salary is required for payroll enrollment.";
+    else if (!Number.isFinite(salary)) errors.basicSalary = "Enter a valid salary amount.";
+    else if (salary < 0) errors.basicSalary = "Salary cannot be negative.";
+  }
   return errors;
 }
 
@@ -263,14 +294,22 @@ function fromDto(dto: EmployeeDetailDto): EmployeeFormValues {
     firstName: hasNameParts ? dto.firstName ?? "" : names[0] ?? "",
     fatherName: hasNameParts ? dto.fatherName ?? "" : names[1] ?? "",
     grandFatherName: hasNameParts ? dto.grandFatherName ?? "" : names.slice(2).join(" "),
-    gender: dto.gender ?? EMPTY.gender,
+    gender: (dto.gender as string | null) ?? "",
     dateOfBirth: toDateInputValue(dto.dateOfBirth),
     phoneNumber: dto.phoneNumber ?? "",
     tinNumber: source.tinNumber ?? source.tin ?? dto.taxId ?? "",
     nationalId: source.nationalId ?? "",
-    businessLicenseNo: source.businessLicenseNo ?? source.businessLicenceNo ?? source.businessLicenseNumber ?? "",
-    vatNumber: source.vatNumber ?? "",
     pensionId: source.pensionId ?? "",
+    preferredName: dto.preferredName ?? "",
+    maritalStatus: (dto.maritalStatus as string | null) ?? "",
+    nationality: dto.nationality ?? "Ethiopian",
+    personalEmail: dto.personalEmail ?? "",
+    address: dto.address ?? "",
+    city: dto.city ?? "",
+    emergencyContactName: dto.emergencyContactName ?? "",
+    emergencyContactPhone: dto.emergencyContactPhone ?? "",
+    emergencyContactRelation: dto.emergencyContactRelation ?? "",
+    hireDateChangeReason: "",
     departmentId: source.departmentId ?? "",
     positionId: source.positionId ?? "",
     managerId: source.managerId ?? "",
@@ -303,9 +342,11 @@ function labelize(value: string): string {
 }
 
 function sectionForField(field: keyof EmployeeFormValues): SectionKey {
-  if (["firstName", "fatherName", "grandFatherName", "gender", "dateOfBirth", "phoneNumber", "workEmail"].includes(field)) return "identity";
-  if (["tinNumber", "nationalId", "businessLicenseNo", "vatNumber", "pensionId"].includes(field)) return "statutory";
-  if (["branchId", "departmentId", "positionId", "managerId", "hireDate", "employmentType", "status"].includes(field)) return "organization";
+  if (["firstName", "fatherName", "grandFatherName", "gender", "dateOfBirth", "phoneNumber", "workEmail", "preferredName",
+    "maritalStatus", "nationality", "personalEmail", "address", "city", "emergencyContactName", "emergencyContactPhone",
+    "emergencyContactRelation"].includes(field)) return "identity";
+  if (["tinNumber", "nationalId", "pensionId"].includes(field)) return "statutory";
+  if (["branchId", "departmentId", "positionId", "managerId", "hireDate", "hireDateChangeReason", "employmentType", "status"].includes(field)) return "organization";
   return "payroll";
 }
 
@@ -329,9 +370,9 @@ function Field({
   return (
     <div className={`${styles.field} ${className}`} data-field={fieldKey}>
       <label className={`${styles.label} ${error ? styles.labelError : ""}`}>
-        {label}
+        {translateHrText(label)}
         {required ? <span className={styles.required}>*</span> : null}
-        {hint && !error ? <span className={styles.hint}>- {hint}</span> : null}
+        {hint && !error ? <span className={styles.hint}>- {translateHrText(hint)}</span> : null}
       </label>
       {children}
       {error ? (
@@ -369,6 +410,10 @@ export default function EmployeeFormPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionKey>("identity");
+  const [originalHireDate, setOriginalHireDate] = useState("");
+  const [version, setVersion] = useState<number | undefined>(undefined);
+  const [dirty, setDirty] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const [branches, setBranches] = useState<BranchDto[]>([]);
   const [departments, setDepartments] = useState<DepartmentDto[]>([]);
@@ -401,7 +446,7 @@ export default function EmployeeFormPage() {
   const workflow = useMemo<Array<{ key: string; label: string; note: string; state: WorkflowState }>>(() => {
     const identityReady = Boolean(values.firstName.trim() && values.fatherName.trim() && values.grandFatherName.trim() && values.gender);
     const orgReady = Boolean(values.branchId && values.departmentId && values.positionId && values.hireDate && values.employmentType && values.status);
-    const payrollReady = values.basicSalary !== "" && Number(values.basicSalary) >= 0 && Boolean(values.payFrequency);
+    const payrollReady = isEdit || (values.basicSalary !== "" && Number(values.basicSalary) >= 0 && Boolean(values.payFrequency));
     return [
       { key: "draft", label: "Draft", note: isEdit ? "Existing record" : "New enrollment", state: "done" },
       { key: "identity", label: "Identity", note: identityReady ? "Legal identity ready" : "Complete identity", state: identityReady ? "done" : "active" },
@@ -475,6 +520,10 @@ export default function EmployeeFormPage() {
         if (dto) {
           const formValues = fromDto(dto);
           setValues(formValues);
+          setOriginalHireDate(formValues.hireDate);
+          setVersion(dto.version);
+          setDirty(false);
+          if (formValues.branchId) await loadDepartments(formValues.branchId);
           if (formValues.departmentId) await loadPositions(formValues.departmentId);
         } else {
           setValues({ ...EMPTY, hireDate: todayIso() });
@@ -488,10 +537,20 @@ export default function EmployeeFormPage() {
     }
     void load();
     return () => { cancelled = true; };
-  }, [companyId, employeeId, isEdit, loadPositions]);
+  }, [companyId, employeeId, isEdit, loadDepartments, loadPositions]);
+
+  // Warn before leaving the page with unsaved changes.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   function set<K extends keyof EmployeeFormValues>(key: K, value: EmployeeFormValues[K]) {
     setValues((previous) => ({ ...previous, [key]: value }));
+    setDirty(true);
+    setConfirmDiscard(false);
     if (fieldErrs[key]) {
       setFieldErrs((previous) => {
         const next = { ...previous };
@@ -540,11 +599,17 @@ export default function EmployeeFormPage() {
   }
 
   function goToReview() {
-    setFieldErrs(validate(values));
+    setFieldErrs(validate(values, isEdit, originalHireDate));
     setActiveSection("review");
   }
 
   function goBack() {
+    if (dirty && !confirmDiscard) {
+      setConfirmDiscard(true);
+      setApiError(tx("You have unsaved changes. Click Cancel again to discard them."));
+      return;
+    }
+    setDirty(false);
     erpNav(isEdit && employeeId ? `hr/employees/${employeeId}` : "hr/employees");
   }
 
@@ -554,7 +619,7 @@ export default function EmployeeFormPage() {
       setApiError(tx("Company context is missing."));
       return;
     }
-    const errors = validate(values);
+    const errors = validate(values, isEdit, originalHireDate);
     if (Object.keys(errors).length > 0) {
       setFieldErrs(errors);
       setApiError(tx("Please correct the highlighted fields before saving."));
@@ -573,13 +638,18 @@ export default function EmployeeFormPage() {
       gender: values.gender || null,
       dateOfBirth: values.dateOfBirth || null,
       phoneNumber: cleanText(values.phoneNumber),
-      tin: cleanText(values.tinNumber),
-      tinNumber: cleanText(values.tinNumber),
       taxId: cleanText(values.tinNumber),
       nationalId: cleanText(values.nationalId),
-      businessLicenseNo: cleanText(values.businessLicenseNo),
-      vatNumber: cleanText(values.vatNumber),
       pensionId: cleanText(values.pensionId),
+      preferredName: cleanText(values.preferredName),
+      maritalStatus: cleanText(values.maritalStatus),
+      nationality: cleanText(values.nationality),
+      personalEmail: cleanText(values.personalEmail),
+      address: cleanText(values.address),
+      city: cleanText(values.city),
+      emergencyContactName: cleanText(values.emergencyContactName),
+      emergencyContactPhone: cleanText(values.emergencyContactPhone),
+      emergencyContactRelation: cleanText(values.emergencyContactRelation),
     };
 
     const employmentPayload = {
@@ -590,7 +660,10 @@ export default function EmployeeFormPage() {
       employmentType: values.employmentType,
       hireDate: values.hireDate,
       workEmail: cleanText(values.workEmail),
+      // Only used when creating; status of an existing employee changes through lifecycle actions.
       status: values.status,
+      hireDateChangeReason: cleanText(values.hireDateChangeReason),
+      version,
     };
 
     const compensationPayload = {
@@ -603,13 +676,16 @@ export default function EmployeeFormPage() {
 
     try {
       if (isEdit && employeeId) {
-        await employeeApi.updateRegistration(companyId, employeeId, { ...personalPayload, ...employmentPayload, ...compensationPayload });
+        // Pay is not sent: it changes through the compensation page, which needs payroll rights and keeps history.
+        await employeeApi.updateRegistration(companyId, employeeId, { ...personalPayload, ...employmentPayload });
+        setDirty(false);
         erpNav(`hr/employees/${employeeId}`, { replace: true });
         return;
       }
 
       const response = await employeeApi.create(companyId, { ...personalPayload, ...employmentPayload, ...compensationPayload });
       const createdId = extractCreatedId(response);
+      setDirty(false);
       erpNav(createdId ? `hr/employees/${createdId}` : "hr/employees", { replace: true });
     } catch (error) {
       setApiError(getApiError(error, tx("Failed to save employee enrollment.")));
@@ -661,13 +737,18 @@ export default function EmployeeFormPage() {
           </div>
           <div className={styles.commandActions}>
             <button type="button" className={styles.btn} disabled={saving} onClick={goBack}>{tx("Cancel")}</button>
-            <button type="button" className={styles.btn} disabled={saving} onClick={() => setFieldErrs(validate(values))}>
+            <button type="button" className={styles.btn} disabled={saving} onClick={() => setFieldErrs(validate(values, isEdit, originalHireDate))}>
               {tx("Validate")}
             </button>
             <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={saving} onClick={goToReview}>
               <i className="ti ti-route" aria-hidden="true" />
               {tx("Review & Submit")}
             </button>
+            {isEdit ? (
+              <Button type="button" variant="bare" className={`${styles.btn} ${styles.btnPrimary}`} disabled={saving || !dirty} onClick={() => void handleSubmit()}>
+                {saving ? tx("Saving...") : tx("Save changes")}
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -709,10 +790,27 @@ export default function EmployeeFormPage() {
                   <Field label="First name" required error={fieldErrs.firstName} fieldKey="firstName"><input className={inputClass("firstName")} value={values.firstName} onChange={(e) => set("firstName", e.target.value)} /></Field>
                   <Field label="Father's name" required error={fieldErrs.fatherName} fieldKey="fatherName"><input className={inputClass("fatherName")} value={values.fatherName} onChange={(e) => set("fatherName", e.target.value)} /></Field>
                   <Field label="Grandfather's name" required error={fieldErrs.grandFatherName} fieldKey="grandFatherName"><input className={inputClass("grandFatherName")} value={values.grandFatherName} onChange={(e) => set("grandFatherName", e.target.value)} /></Field>
-                  <Field label="Gender" required error={fieldErrs.gender} fieldKey="gender"><select className={selectClass("gender")} value={values.gender} onChange={(e) => set("gender", e.target.value)}>{GENDERS.map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
+                  <Field label="Gender" required error={fieldErrs.gender} fieldKey="gender"><select className={selectClass("gender")} value={values.gender} onChange={(e) => set("gender", e.target.value)}><option value="">{tx("- Select -")}</option>{GENDERS.map((x) => <option key={x} value={x}>{tx(x)}</option>)}</select></Field>
                   <Field label="Date of birth" error={fieldErrs.dateOfBirth} fieldKey="dateOfBirth"><input type="date" className={inputClass("dateOfBirth")} value={values.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} /></Field>
                   <Field label="Phone number" hint="optional" error={fieldErrs.phoneNumber} fieldKey="phoneNumber"><input type="tel" className={inputClass("phoneNumber")} value={values.phoneNumber} onChange={(e) => set("phoneNumber", e.target.value)} /></Field>
                   <Field label="Work email" hint="optional" error={fieldErrs.workEmail} fieldKey="workEmail" className={styles.span2}><input type="email" className={inputClass("workEmail")} value={values.workEmail} onChange={(e) => set("workEmail", e.target.value)} /></Field>
+                  <Field label="Preferred name" hint="optional" fieldKey="preferredName"><Input className={inputClass("preferredName")} value={values.preferredName} onChange={(e) => set("preferredName", e.target.value)} /></Field>
+                  <Field label="Marital status" hint="optional" fieldKey="maritalStatus"><Select className={selectClass("maritalStatus")} value={values.maritalStatus} onChange={(e) => set("maritalStatus", e.target.value)}><option value="">{tx("- Select -")}</option>{MARITAL_STATUSES.map((x) => <option key={x} value={x}>{tx(x)}</option>)}</Select></Field>
+                  <Field label="Nationality" fieldKey="nationality"><Select className={selectClass("nationality")} value={values.nationality} onChange={(e) => set("nationality", e.target.value)}>{NATIONALITIES.map((x) => <option key={x} value={x}>{tx(x)}</option>)}</Select></Field>
+                  <Field label="Personal email" hint="optional" error={fieldErrs.personalEmail} fieldKey="personalEmail"><Input type="email" className={inputClass("personalEmail")} value={values.personalEmail} onChange={(e) => set("personalEmail", e.target.value)} /></Field>
+                  <Field label="City" hint="optional" fieldKey="city"><Input className={inputClass("city")} value={values.city} onChange={(e) => set("city", e.target.value)} /></Field>
+                  <Field label="Address" hint="optional" fieldKey="address"><Input className={inputClass("address")} value={values.address} onChange={(e) => set("address", e.target.value)} /></Field>
+                </div>
+              </section>
+            ) : null}
+
+            {activeSection === "identity" ? (
+              <section className={styles.panel}>
+                <header className={styles.panelHeader}><h2>{tx("Emergency Contact")}</h2><p>{tx("Who to call if something happens at work.")}</p></header>
+                <div className={styles.formGrid3}>
+                  <Field label="Contact name" hint="optional" fieldKey="emergencyContactName"><Input className={inputClass("emergencyContactName")} value={values.emergencyContactName} onChange={(e) => set("emergencyContactName", e.target.value)} /></Field>
+                  <Field label="Contact phone" hint="optional" error={fieldErrs.emergencyContactPhone} fieldKey="emergencyContactPhone"><Input type="tel" className={inputClass("emergencyContactPhone")} value={values.emergencyContactPhone} onChange={(e) => set("emergencyContactPhone", e.target.value)} /></Field>
+                  <Field label="Relationship" hint="optional" fieldKey="emergencyContactRelation"><Input className={inputClass("emergencyContactRelation")} value={values.emergencyContactRelation} onChange={(e) => set("emergencyContactRelation", e.target.value)} /></Field>
                 </div>
               </section>
             ) : null}
@@ -721,11 +819,9 @@ export default function EmployeeFormPage() {
               <section className={styles.panel}>
                 <header className={styles.panelHeader}><h2>{tx("Statutory & Government IDs")}</h2><p>{tx("Compliance identifiers used for tax, pension, and reporting.")}</p></header>
                 <div className={styles.formGrid3}>
-                  <Field label="TIN number" hint="optional" fieldKey="tinNumber"><input className={inputClass("tinNumber")} value={values.tinNumber} onChange={(e) => set("tinNumber", e.target.value)} /></Field>
+                  <Field label="TIN number" hint="10 digits, optional" error={fieldErrs.tinNumber} fieldKey="tinNumber"><input className={inputClass("tinNumber")} inputMode="numeric" maxLength={10} value={values.tinNumber} onChange={(e) => set("tinNumber", e.target.value.replace(/\D/g, ""))} /></Field>
                   <Field label="National ID" hint="optional" fieldKey="nationalId"><input className={inputClass("nationalId")} value={values.nationalId} onChange={(e) => set("nationalId", e.target.value)} /></Field>
                   <Field label="Pension ID" hint="optional" fieldKey="pensionId"><input className={inputClass("pensionId")} value={values.pensionId} onChange={(e) => set("pensionId", e.target.value)} /></Field>
-                  <Field label="Business license no." hint="optional" fieldKey="businessLicenseNo"><input className={inputClass("businessLicenseNo")} value={values.businessLicenseNo} onChange={(e) => set("businessLicenseNo", e.target.value)} /></Field>
-                  <Field label="VAT number" hint="optional" fieldKey="vatNumber"><input className={inputClass("vatNumber")} value={values.vatNumber} onChange={(e) => set("vatNumber", e.target.value)} /></Field>
                 </div>
               </section>
             ) : null}
@@ -748,8 +844,26 @@ export default function EmployeeFormPage() {
                     </select>
                   </Field>
                   <Field label="Hire date" required error={fieldErrs.hireDate} fieldKey="hireDate"><input type="date" className={inputClass("hireDate")} value={values.hireDate} onChange={(e) => set("hireDate", e.target.value)} /></Field>
+                  {isEdit && originalHireDate && values.hireDate !== originalHireDate ? (
+                    <Field label="Reason for changing hire date" required error={fieldErrs.hireDateChangeReason} fieldKey="hireDateChangeReason" className={styles.span2}>
+                      <Input className={inputClass("hireDateChangeReason")} value={values.hireDateChangeReason} onChange={(e) => set("hireDateChangeReason", e.target.value)} />
+                    </Field>
+                  ) : null}
                   <Field label="Employment type" required error={fieldErrs.employmentType} fieldKey="employmentType"><select className={selectClass("employmentType")} value={values.employmentType} onChange={(e) => set("employmentType", e.target.value)}>{EMPLOYMENT_TYPES.map((x) => <option key={x} value={x}>{labelize(x)}</option>)}</select></Field>
-                  <Field label="Employment status" required error={fieldErrs.status} fieldKey="status" className={styles.span3}><div className={styles.statusRow}>{STATUS_OPTIONS.map((x) => <button key={x} type="button" className={`${styles.statusPill} ${values.status === x ? styles.statusPillActive : ""}`} onClick={() => set("status", x)}>{labelize(x)}</button>)}</div></Field>
+                  {isEdit ? (
+                    <Field label="Employment status" fieldKey="status" className={styles.span3}>
+                      <div className={styles.statusRow}>
+                        <strong>{tx(labelize(values.status))}</strong>
+                        <span>{tx("Status changes through Confirm, Suspend, Reinstate and Terminate on the employee page.")}</span>
+                      </div>
+                    </Field>
+                  ) : (
+                    <Field label="Starting status" required error={fieldErrs.status} fieldKey="status">
+                      <Select className={selectClass("status")} value={values.status} onChange={(e) => set("status", e.target.value as EmploymentStatus)}>
+                        {NEW_HIRE_STATUSES.map((x) => <option key={x} value={x}>{tx(x === "Active" ? "Active (migrated staff)" : x)}</option>)}
+                      </Select>
+                    </Field>
+                  )}
                 </div>
               </section>
             ) : null}
@@ -757,6 +871,14 @@ export default function EmployeeFormPage() {
             {activeSection === "payroll" ? (
               <section className={styles.panel}>
                 <header className={styles.panelHeader}><h2>{tx("Payroll Profile")}</h2><p>{tx("Salary, payment account, and payroll control attributes.")}</p></header>
+                {isEdit ? (
+                  <div className={styles.formGrid2}>
+                    <p>{tx("Salary and bank details change on the compensation page. It needs payroll rights, an effective date and a reason, keeps a history, and holds changed bank details until a second person verifies them.")}</p>
+                    <div>
+                      <Button type="button" variant="outline" onClick={() => erpNav(`hr/employees/${employeeId}/compensation`)}>{tx("Open compensation")}</Button>
+                    </div>
+                  </div>
+                ) : (
                 <div className={styles.formGrid2}>
                   <Field label="Basic salary" required error={fieldErrs.basicSalary} fieldKey="basicSalary"><div className={styles.moneyWrap}><span>ETB</span><input type="number" min={0} step={0.01} className={inputClass("basicSalary")} value={values.basicSalary} onChange={(e) => set("basicSalary", e.target.value === "" ? "" : Number(e.target.value))} /></div></Field>
                   <Field label="Pay frequency" required error={fieldErrs.payFrequency} fieldKey="payFrequency"><select className={selectClass("payFrequency")} value={values.payFrequency} onChange={(e) => set("payFrequency", e.target.value)}>{PAY_FREQUENCIES.map((x) => <option key={x} value={x}>{labelize(x)}</option>)}</select></Field>
@@ -764,6 +886,7 @@ export default function EmployeeFormPage() {
                   <Field label="Bank account no." hint="optional" fieldKey="bankAccountNo"><input className={inputClass("bankAccountNo")} value={values.bankAccountNo} onChange={(e) => set("bankAccountNo", e.target.value)} /></Field>
                   <Field label="Bank branch" hint="optional" fieldKey="bankBranch"><input className={inputClass("bankBranch")} value={values.bankBranch} onChange={(e) => set("bankBranch", e.target.value)} /></Field>
                 </div>
+                )}
               </section>
             ) : null}
 
@@ -772,7 +895,7 @@ export default function EmployeeFormPage() {
                 <header className={styles.panelHeader}><h2>{tx("Review & Workflow")}</h2><p>{tx("Resolve business rules, then save or create the employee master record.")}</p></header>
                 <div className={styles.reviewGrid}>
                   <div className={styles.reviewCard}><h3>{tx("Workflow")}</h3>{workflow.map((s) => <DetailRow key={s.key} label={s.label} value={s.note} warn={s.state === "blocked" || s.state === "active"} />)}</div>
-                  <div className={styles.reviewCard}><h3>{tx("Validation")}</h3>{errCount ? errEntries.map(([field, msg]) => <button key={field} type="button" className={styles.validationLink} onClick={() => scrollToField(field)}>{msg}</button>) : <p className={styles.successText}>{tx("All required business rules passed.")}</p>}</div>
+                  <div className={styles.reviewCard}><h3>{tx("Validation")}</h3>{errCount ? errEntries.map(([field, msg]) => <button key={field} type="button" className={styles.validationLink} onClick={() => scrollToField(field)}>{tx(msg)}</button>) : <p className={styles.successText}>{tx("All required business rules passed.")}</p>}</div>
                 </div>
               </section>
             ) : null}
@@ -781,7 +904,7 @@ export default function EmployeeFormPage() {
               <span>
                 {activeSection === "review"
                   ? errCount
-                    ? `${errCount} validation issue${errCount === 1 ? "" : "s"} must be resolved before submission.`
+                    ? `${errCount} ${tx(errCount === 1 ? "validation issue must be resolved before submission." : "validation issues must be resolved before submission.")}`
                     : tx("Review complete. Employee master is ready to submit.")
                   : tx("Complete this functional area, then continue to the next step.")}
               </span>
@@ -789,11 +912,11 @@ export default function EmployeeFormPage() {
               <div className={styles.commandActions}>
                 {activeSection === "review" ? (
                   <button type="button" className={styles.btn} disabled={saving} onClick={goToPreviousSection}>
-                    Back
+                    {tx("Back")}
                   </button>
                 ) : (
                   <button type="button" className={styles.btn} disabled={saving} onClick={goBack}>
-                    Cancel
+                    {tx("Cancel")}
                   </button>
                 )}
 
@@ -821,11 +944,11 @@ export default function EmployeeFormPage() {
             <DetailRow label="Department" value={selectedDepartment?.name || "Required"} warn={!selectedDepartment} />
             <DetailRow label="Position" value={selectedPosition?.title || "Required"} warn={!selectedPosition} />
             <DetailRow label="Manager" value={selectedManager ? `${managerEmployeeNo(selectedManager) ? `${managerEmployeeNo(selectedManager)} - ` : ""}${managerName(selectedManager)}` : "No manager assigned"} />
-            <DetailRow label="Payroll" value={values.basicSalary !== "" ? `${values.basicSalary} / ${labelize(values.payFrequency)}` : "Required"} warn={values.basicSalary === ""} />
+            {isEdit ? null : <DetailRow label="Payroll" value={values.basicSalary !== "" ? `${values.basicSalary} / ${labelize(values.payFrequency)}` : "Required"} warn={values.basicSalary === ""} />}
           </section>
           <section className={styles.sideCard}>
             <h3>{tx("Business Rules")}</h3>
-            {errCount ? errEntries.map(([field, message]) => <button type="button" key={field} className={styles.ruleItem} onClick={() => scrollToField(field)}><i className="ti ti-alert-triangle" />{message}</button>) : <div className={styles.ruleOk}><i className="ti ti-circle-check" />{tx("Ready for save")}</div>}
+            {errCount ? errEntries.map(([field, message]) => <button type="button" key={field} className={styles.ruleItem} onClick={() => scrollToField(field)}><i className="ti ti-alert-triangle" />{tx(message)}</button>) : <div className={styles.ruleOk}><i className="ti ti-circle-check" />{tx("Ready for save")}</div>}
           </section>
         </aside>
       </div>

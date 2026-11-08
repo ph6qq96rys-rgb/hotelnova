@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Download } from "lucide-react";
 
@@ -24,18 +24,23 @@ export default function TrialBalancePage() {
   const [ledger, setLedger] = useState<AccountLedger | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
   const accountId = params.get("account");
+  const requestSequence = useRef(0);
 
   const load = useCallback(async () => {
     if (!from || !to) return;
-    setLoading(true); setError(null);
+    const request = ++requestSequence.current;
+    setLoading(true); setError(null); setLedger(null); setTb(null);
     try {
-      if (accountId) { setLedger(await financeApi.accountLedger(companyId, accountId, from, to, branchId || undefined)); setTb(null); }
-      else { setTb(await financeApi.trialBalance(companyId, from, to, branchId || undefined)); setLedger(null); }
-    } catch (e) { setError(apiError(e, "The report could not be loaded.")); }
-    finally { setLoading(false); }
-  }, [companyId, from, to, branchId, accountId]);
-  useEffect(() => { void load(); }, [load]);
+      if (accountId) { const result = await financeApi.accountLedger(companyId, accountId, from, to, branchId || undefined, page); if (request === requestSequence.current) setLedger(result); }
+      else { const result = await financeApi.trialBalance(companyId, from, to, branchId || undefined); if (request === requestSequence.current) setTb(result); }
+    } catch (e) { if (request === requestSequence.current) setError(apiError(e, "The report could not be loaded.")); }
+    finally { if (request === requestSequence.current) setLoading(false); }
+  }, [companyId, from, to, branchId, accountId, page]);
+  useEffect(() => { setPage(1); }, [companyId, from, to, branchId, accountId]);
+  useEffect(() => { void load(); return () => { requestSequence.current++; }; }, [load]);
 
   const showAccount = (id: string | null) => {
     const p = new URLSearchParams(params);
@@ -51,11 +56,18 @@ export default function TrialBalancePage() {
         subtitle={ledger ? "Every posted line on this account, with its running balance." : "Opening balance, movements and closing balance of every account with activity. Select an account to see its ledger."}
         actions={<>
           {ledger ? <Button variant="outline" onClick={() => showAccount(null)}>Back to trial balance</Button> : null}
-          <Button variant="outline" disabled={!tb && !ledger} onClick={() => {
+          <Button variant="outline" disabled={loading || exporting || (!tb && !ledger)} onClick={async () => {
+            setExporting(true);
+            try {
             if (tb) downloadCsv(`trial-balance-${from}-${to}.csv`, ["Code", "Account", "Type", "Opening", "Debit", "Credit", "Closing"],
               tb.rows.map((r) => [r.code, r.name, ACCOUNT_TYPE_LABEL[r.type], r.openingBalance, r.debit, r.credit, r.closingBalance]));
-            else if (ledger) downloadCsv(`ledger-${ledger.code}-${from}-${to}.csv`, ["Date", "Journal", "Description", "Source", "Debit", "Credit", "Balance"],
-              ledger.lines.map((l) => [l.entryDate, l.entryNo, l.lineDescription ?? l.description, l.sourceNo, l.debit, l.credit, l.balance]));
+            else if (ledger && accountId) {
+              const complete = await financeApi.accountLedger(companyId, accountId, from, to, branchId || undefined, 1, true);
+              downloadCsv(`ledger-${ledger.code}-${from}-${to}.csv`, ["Date", "Journal", "Description", "Source", "Debit", "Credit", "Balance"],
+                complete.lines.map((l) => [l.entryDate, l.entryNo, l.lineDescription ?? l.description, l.sourceNo, l.debit, l.credit, l.balance]));
+            }
+            } catch (e) { setError(apiError(e, "The complete report could not be exported.")); }
+            finally { setExporting(false); }
           }}><Download size={16} /> Export</Button>
         </>} />
       <section className="gl-panel">
@@ -112,7 +124,7 @@ export default function TrialBalancePage() {
             <div className="gl-metrics">
               <div><span>Opening {day(ledger.from)}</span><strong>{money(ledger.openingBalance)}</strong></div>
               <div><span>Closing {day(ledger.to)}</span><strong>{money(ledger.closingBalance)}</strong></div>
-              <div><span>Lines</span><strong>{ledger.lines.length}</strong></div>
+              <div><span>Total lines</span><strong>{ledger.totalLines}</strong></div>
             </div>
             <div className="gl-table-wrap gl-table-wrap--tall">
               <table className="gl-table">
@@ -128,9 +140,14 @@ export default function TrialBalancePage() {
                       <td className="gl-num">{amount(l.debit)}</td><td className="gl-num">{amount(l.credit)}</td><td className="gl-num">{money(l.balance)}</td>
                     </tr>
                   ))}
-                  {ledger.lines.length === 0 ? <tr><td colSpan={7} className="gl-empty">No postings in this range.</td></tr> : null}
+                  {ledger.lines.length === 0 ? <tr><td colSpan={7} className="gl-empty">No postings on this page.</td></tr> : null}
                 </tbody>
               </table>
+            </div>
+            <div className="gl-toolbar">
+              <Button variant="outline" disabled={loading || page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
+              <span>Page {page} of {Math.max(1, Math.ceil(ledger.totalLines / ledger.pageSize))}</span>
+              <Button variant="outline" disabled={loading || page * ledger.pageSize >= ledger.totalLines} onClick={() => setPage(page + 1)}>Next</Button>
             </div>
           </>
         ) : null}

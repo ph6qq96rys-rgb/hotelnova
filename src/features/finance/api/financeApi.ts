@@ -79,6 +79,7 @@ export type LedgerLine = {
   debit: number; credit: number; balance: number; branchId?: string | null; lineDescription?: string | null;
 };
 export type AccountLedger = {
+  totalLines: number; page: number; pageSize: number;
   accountId: string; code: string; name: string; type: AccountType; from: string; to: string; openingBalance: number; closingBalance: number; lines: LedgerLine[];
 };
 export type PostingException = {
@@ -130,7 +131,7 @@ export const financeApi = {
     http.get<{ total: number; items: AuditEntry[] }>(`${base(c)}/audit-log`, { params: { page, pageSize: 50, entityType: entityType || undefined } }).then((r) => r.data),
   trialBalance: (c: string, from: string, to: string, branchId?: string) =>
     http.get<TrialBalance>(`${base(c)}/reports/trial-balance`, { params: { from, to, branchId: branchId || undefined } }).then((r) => r.data),
-  accountLedger: (c: string, accountId: string, from: string, to: string, branchId?: string) =>
-    http.get<AccountLedger>(`${base(c)}/reports/account-ledger/${accountId}`, { params: { from, to, branchId: branchId || undefined } }).then((r) => r.data),
+  accountLedger: (c: string, accountId: string, from: string, to: string, branchId?: string, page = 1, exportAll = false) =>
+    http.get<AccountLedger>(`${base(c)}/reports/account-ledger/${accountId}`, { params: { from, to, branchId: branchId || undefined, page, pageSize: 200, exportAll } }).then((r) => r.data),
   branches: (c: string) => http.get<Branch[]>(`/companies/${c}/branches`).then((r) => (Array.isArray(r.data) ? r.data : [])).catch(() => [] as Branch[]),
 };

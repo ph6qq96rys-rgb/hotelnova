@@ -7,6 +7,8 @@ import ChartOfAccountsPage from "../features/finance/pages/ChartOfAccountsPage";
 import AccountingPeriodsPage from "../features/finance/pages/AccountingPeriodsPage";
 import PostingSetupPage from "../features/finance/pages/PostingSetupPage";
 import TrialBalancePage from "../features/finance/pages/TrialBalancePage";
+import FinancialStatementsPage from "../features/finance/pages/FinancialStatementsPage";
+import BankReconciliationPage from "../features/finance/pages/BankReconciliationPage";
 
 export type AppRoute = RouteObject & {
   label?: string;
@@ -21,6 +23,8 @@ const FINANCE_SECTION = "Finance";
 
 /** General ledger (finance phase 1). */
 export const financeRoutes: AppRoute[] = [
+  { path: "finance/statements", label: "Financial Statements", element: <FinancialStatementsPage />, icon: <Scale size={18} />, nav: true, section: FINANCE_SECTION, order: 21, permissions: ["finance.view"] },
+  { path: "finance/bank-reconciliation", label: "Bank Reconciliation", element: <BankReconciliationPage />, icon: <Scale size={18} />, nav: true, section: FINANCE_SECTION, order: 22, permissions: ["finance.view"] },
   { path: "finance/journals", label: "General Ledger & Journals", element: <JournalsPage />, icon: <BookOpen size={18} />, nav: true, section: FINANCE_SECTION, order: 10, permissions: ["finance.view"] },
   { path: "finance/trial-balance", label: "Financial Reports", element: <TrialBalancePage />, icon: <Scale size={18} />, nav: true, section: FINANCE_SECTION, order: 20, permissions: ["finance.view"] },
   { path: "finance/accounts", label: "Chart of Accounts", element: <ChartOfAccountsPage />, icon: <ListTree size={18} />, nav: true, section: FINANCE_SECTION, order: 30, permissions: ["finance.view"] },

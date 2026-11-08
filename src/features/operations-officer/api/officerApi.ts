@@ -103,6 +103,23 @@ export type BriefingListItem = { id: string; branchId?: string | null; businessD
 export type AuditEntry = { id: string; entityType: string; entityId: string; event: string; detailJson?: string | null; actorName: string; policyVersion: number; atUtc: string };
 export type MonitorResult = { detected: number; opened: number; updated: number; resolved: number; targetsChecked: number; actionsProposed: number };
 
+export type Package = "none" | "insights" | "operations" | "leadership";
+export type SubscriptionStatus = "notSubscribed" | "trial" | "active" | "suspended" | "cancelled" | "expired";
+export type PackageDefinition = { package: Package; label: string; description: string; capabilities: string[]; defaultIncludedUnits: number; dependencies: string[] };
+export type Subscription = {
+  package: Package; status: SubscriptionStatus; active: boolean; startsOn?: string | null; endsOn?: string | null; includedUnitsPerMonth: number;
+  monthlyPrice?: number | null; overagePricePerUnit?: number | null; currency: string; overageAuthorized: boolean; overageBudgetUnits?: number | null;
+  overageAuthorizedByName?: string | null; overageAuthorizedAtUtc?: string | null; warningPercent: number; chargesAcceptedByName?: string | null;
+  chargesAcceptedAtUtc?: string | null; statusReason?: string | null; version?: string | null; period: number; usedUnits: number; remainingUnits?: number | null;
+  warning: boolean; exhausted: boolean; usage: { kind: string; count: number; units: number }[]; capabilities: string[];
+  branches: { branchId: string; branchName: string; active: boolean; activatedAtUtc?: string | null; activatedByName?: string | null }[];
+  packages: PackageDefinition[]; issues: string[];
+};
+export type SubscribeInput = {
+  package: Package; acceptCharges: boolean; startsOn?: string | null; endsOn?: string | null; includedUnitsPerMonth?: number | null; monthlyPrice?: number | null;
+  overagePricePerUnit?: number | null; currency?: string | null; warningPercent?: number | null; trial: boolean; version?: string | null;
+};
+
 const base = (c: string) => `/companies/${c}/operations-officer`;
 const list = <T,>(data: unknown) => (Array.isArray(data) ? (data as T[]) : []);
 
@@ -157,5 +174,12 @@ export const officerApi = {
   rejectAction: (c: string, id: string, reason: string, version?: string) => http.post<OfficerAction>(`${base(c)}/actions/${id}/reject`, { reason, version }).then((r) => r.data),
   completeAction: (c: string, id: string, reference: string, version?: string) => http.post<OfficerAction>(`${base(c)}/actions/${id}/complete`, { reference, version }).then((r) => r.data),
   retryAction: (c: string, id: string, version?: string) => http.post<OfficerAction>(`${base(c)}/actions/${id}/retry`, { version }).then((r) => r.data),
+  subscription: (c: string) => http.get<Subscription>(`${base(c)}/subscription`).then((r) => r.data),
+  subscribe: (c: string, input: SubscribeInput) => http.post(`${base(c)}/subscription`, input),
+  setSubscriptionBranches: (c: string, branchIds: string[]) => http.put(`${base(c)}/subscription/branches`, { branchIds }),
+  setOverage: (c: string, authorize: boolean, budgetUnits: number | null, acceptCharges: boolean) => http.post(`${base(c)}/subscription/overage`, { authorize, budgetUnits, acceptCharges }),
+  suspendSubscription: (c: string, reason: string) => http.post(`${base(c)}/subscription/suspend`, { reason }),
+  cancelSubscription: (c: string, reason: string) => http.post(`${base(c)}/subscription/cancel`, { reason }),
+  pendingWork: (c: string) => http.get(`${base(c)}/pending-work`).then((r) => list<OfficerAction>(r.data)),
   audit: (c: string, q: { entityType?: string; entityId?: string; take?: number }) => http.get(`${base(c)}/audit`, { params: q }).then((r) => list<AuditEntry>(r.data)),
 };

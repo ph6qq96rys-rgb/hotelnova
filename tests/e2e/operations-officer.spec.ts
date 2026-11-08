@@ -95,3 +95,32 @@ test("Officer actions can be approved", async ({ page }) => {
   await expect(page.getByText("Assigned to Selam Bekele.")).toBeVisible();
   await page.screenshot({ path: "test-results/officer-action.png" });
 });
+
+test("The AI COO subscription shows the package, usage and branches", async ({ page }) => {
+  await seedWorkspaceAuth(page, ["aiops.view", "aiops.subscription.manage"]);
+  await mock(page);
+  const subscription = {
+    package: "insights", status: "active", active: true, startsOn: "2026-11-01", includedUnitsPerMonth: 3000, monthlyPrice: 4500, currency: "ETB",
+    overageAuthorized: false, warningPercent: 80, chargesAcceptedByName: "QAE", chargesAcceptedAtUtc: "2026-11-01T08:00:00Z", version: "v1", period: 202611,
+    usedUnits: 2600, remainingUnits: 400, warning: true, exhausted: false,
+    usage: [{ kind: "MonitorRun", count: 2400, units: 2400 }, { kind: "Briefing", count: 200, units: 200 }],
+    capabilities: ["monitoring", "briefings", "questions", "recommendations"],
+    branches: [{ branchId: "b-main", branchName: "Bole", active: true, activatedByName: "QAE", activatedAtUtc: "2026-11-01T08:00:00Z" }, { branchId: "b-2", branchName: "Piassa", active: false }],
+    packages: [
+      { package: "insights", label: "AI COO Insights", description: "Monitoring, briefings, questions and recommendations.", capabilities: [], defaultIncludedUnits: 3000, dependencies: ["Sales & POS", "Inventory"] },
+      { package: "leadership", label: "AI COO Leadership", description: "Adds targets.", capabilities: [], defaultIncludedUnits: 10000, dependencies: ["Purchasing"] },
+    ],
+    issues: ["2600 of 3000 units used this month."],
+  };
+  const saved: unknown[] = [];
+  await page.route(`**/operations-officer/subscription`, (r) => r.request().resourceType() === "document" ? r.fallback()
+    : r.request().method() === "GET" ? r.fulfill({ json: subscription }) : r.fulfill({ status: 204, body: "" }));
+  await page.route(`**/operations-officer/subscription/branches`, async (r) => { saved.push(r.request().postDataJSON()); await r.fulfill({ status: 204, body: "" }); });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/subscription`);
+  await expect(page.getByText("2600 of 3000 units used this month.").first()).toBeVisible();
+  await page.locator("label", { hasText: "Piassa" }).click();
+  await page.getByRole("button", { name: "Save branches" }).click();
+  await expect.poll(() => saved.length).toBe(1);
+  expect(saved[0]).toEqual({ branchIds: ["b-main", "b-2"] });
+  await page.screenshot({ path: `test-results/officer-subscription-${test.info().project.name}.png`, fullPage: true });
+});

@@ -28,3 +28,9 @@
   .oo-two { grid-template-columns: 1fr; }
   .oo-nav-link { padding: 10px 10px; }
 }
+
+.oo-meter { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; border: 1px solid var(--border-soft); }
+.oo-meter > span { display: block; height: 100%; background: var(--ui-primary); }
+.oo-meter > span.is-warn { background: var(--warn); }
+.oo-meter > span.is-bad { background: var(--danger); }
+.oo-basis { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-muted); }

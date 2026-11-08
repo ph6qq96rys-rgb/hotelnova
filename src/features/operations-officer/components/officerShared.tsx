@@ -97,6 +97,7 @@ const LINKS = [
   { to: "/targets", label: "Targets" },
   { to: "/actions", label: "Actions & audit" },
   { to: "/setup", label: "Setup & authority" },
+  { to: "/subscription", label: "Subscription" },
 ];
 
 /** Tabs between the officer's pages. */

@@ -20,7 +20,8 @@ function FindingCard({ f }: { f: Finding }) {
     <article className="oo-card">
       <div className="oo-card-head">
         <Button type="button" variant="ghost" className="oo-card-title" aria-expanded={open} onClick={() => setOpen(!open)}>{f.title}</Button>
-        <div className="gl-chip-row"><SeverityChip severity={f.severity} /><Chip tone="muted">{KIND_LABEL[f.kind]}</Chip></div>
+        <div className="gl-chip-row"><SeverityChip severity={f.severity} /><Chip tone="muted">{KIND_LABEL[f.kind]}</Chip>
+          {f.kind === "forecastRisk" ? <Chip tone="info">Estimate</Chip> : f.kind === "actualMiss" || f.evidenceQuality === "strong" ? <Chip tone="ok">Verified from records</Chip> : <Chip tone="warn">Partial evidence</Chip>}</div>
       </div>
       <div className="oo-meta">
         <span>{f.branchName ?? "Company"}</span>
@@ -161,11 +162,11 @@ export default function OfficerBriefingPage() {
             </Section>
           </div>
 
-          <Section title="Targets" hint="This period so far, the projection to its end, and the last completed period.">
+          <Section title="Targets" hint="Recorded results so far, an estimate of where the period ends, and the verified result of the last completed period.">
             {briefing.targets.length === 0 ? <p className="gl-muted">No active target covers today.</p> : (
               <div className="gl-table-wrap">
                 <table className="gl-table">
-                  <thead><tr><th>Target</th><th>Branch</th><th>Period</th><th className="gl-num">So far</th><th className="gl-num">Projected</th><th className="gl-num">Target</th><th>Status</th><th>Last period</th></tr></thead>
+                  <thead><tr><th>Target</th><th>Branch</th><th>Period</th><th className="gl-num">So far <span className="oo-basis">recorded</span></th><th className="gl-num">Projected <span className="oo-basis">estimate</span></th><th className="gl-num">Target</th><th>Status</th><th>Last period <span className="oo-basis">verified</span></th></tr></thead>
                   <tbody>
                     {briefing.targets.map((t) => (
                       <tr key={t.targetId}>

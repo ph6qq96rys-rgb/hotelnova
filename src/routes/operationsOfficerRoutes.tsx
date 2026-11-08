@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 import type { RouteObject } from "react-router-dom";
-import { Bot, ClipboardCheck, ListChecks, ScrollText, ShieldCheck } from "lucide-react";
+import { BadgeCheck, Bot, ClipboardCheck, ListChecks, ScrollText, ShieldCheck } from "lucide-react";
 
 import OfficerBriefingPage from "../features/operations-officer/pages/OfficerBriefingPage";
 import OfficerFindingsPage from "../features/operations-officer/pages/OfficerFindingsPage";
 import OfficerTargetsPage from "../features/operations-officer/pages/OfficerTargetsPage";
 import OfficerActionsPage from "../features/operations-officer/pages/OfficerActionsPage";
 import OfficerSetupPage from "../features/operations-officer/pages/OfficerSetupPage";
+import OfficerSubscriptionPage from "../features/operations-officer/pages/OfficerSubscriptionPage";
 
 export type AppRoute = RouteObject & {
   label?: string;
@@ -26,4 +27,5 @@ export const operationsOfficerRoutes: AppRoute[] = [
   { path: "operations-officer/targets", label: "Officer Targets", element: <OfficerTargetsPage />, icon: <ClipboardCheck size={18} />, nav: true, section: SECTION, order: 3, permissions: ["aiops.view"] },
   { path: "operations-officer/actions", label: "Officer Actions", element: <OfficerActionsPage />, icon: <ScrollText size={18} />, nav: true, section: SECTION, order: 4, permissions: ["aiops.view"] },
   { path: "operations-officer/setup", label: "Officer Setup", element: <OfficerSetupPage />, icon: <ShieldCheck size={18} />, nav: true, section: SECTION, order: 5, permissions: ["aiops.view"] },
+  { path: "operations-officer/subscription", label: "AI COO Subscription", element: <OfficerSubscriptionPage />, icon: <BadgeCheck size={18} />, nav: true, section: SECTION, order: 6, permissions: ["aiops.view"] },
 ];

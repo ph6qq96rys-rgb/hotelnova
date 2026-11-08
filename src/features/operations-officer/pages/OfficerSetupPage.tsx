@@ -11,8 +11,8 @@ import { Select } from "../../../components/ui/select";
 import { Textarea } from "../../../components/ui/textarea";
 import { useHasPermission } from "../../../auth/usePermissions";
 import { apiError, Chip, day, Field, GlDialog, todayIso } from "../../finance/components/glShared";
-import { officerApi, type AuthorityMode, type ConfigurationIssue, type Policy, type PolicyInput, type Scope, type ScopeInput, type Settings, type SettingsInput } from "../api/officerApi";
-import { BranchSelect, EmployeeSelect, MODE_LABEL, OfficerNav, Section, useOfficerRefs, when } from "../components/officerShared";
+import { officerApi, type OfficerAction, type AuthorityMode, type ConfigurationIssue, type Policy, type PolicyInput, type Scope, type ScopeInput, type Settings, type SettingsInput } from "../api/officerApi";
+import { ACTION_STATUS_LABEL, BranchSelect, EmployeeSelect, MODE_LABEL, OfficerNav, Section, useOfficerRefs, when } from "../components/officerShared";
 
 const NUMBER_FIELDS: { key: keyof SettingsInput; label: string; hint: string }[] = [
   { key: "monitorIntervalMinutes", label: "Check every (minutes)", hint: "How often findings are refreshed." },
@@ -49,12 +49,14 @@ export default function OfficerSetupPage() {
   const [policyEditor, setPolicyEditor] = useState<PolicyEditor | null>(null);
   const [pause, setPause] = useState<{ kind: "pause" | "resume"; reason: string } | null>(null);
   const [retire, setRetire] = useState<{ policy: Policy; reason: string } | null>(null);
+  const [pending, setPending] = useState<OfficerAction[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [s, sc, p, i] = await Promise.all([officerApi.settings(companyId), officerApi.scopes(companyId, showHistory), officerApi.policies(companyId, showHistory), officerApi.configurationIssues(companyId)]);
       setSettings(s); setScopes(sc); setPolicies(p); setIssues(i); setError(null);
+      setPending(s.automationPaused ? await officerApi.pendingWork(companyId).catch(() => []) : []);
     } catch (e) { setError(apiError(e, "The officer's set-up could not be loaded.")); }
     finally { setLoading(false); }
   }, [companyId, showHistory]);
@@ -98,6 +100,22 @@ export default function OfficerSetupPage() {
             ? <Button size="sm" onClick={() => setPause({ kind: "resume", reason: "" })}><Play size={16} /> Resume</Button>
             : <Button size="sm" variant="destructive" onClick={() => setPause({ kind: "pause", reason: "" })}><Pause size={16} /> Pause now</Button>) : null}
         </div>
+      ) : null}
+
+      {s?.automationPaused ? (
+        <Section title="Pending work to review" hint="Nothing runs while paused. Decide each item, or hand it over to the responsible person, before resuming.">
+          {pending.length === 0 ? <p className="gl-muted">No action is waiting.</p> : (
+            <div className="gl-table-wrap">
+              <table className="gl-table">
+                <thead><tr><th>Action</th><th>Branch</th><th>Status</th><th>Requested</th></tr></thead>
+                <tbody>{pending.map((a) => (
+                  <tr key={a.id}><td>{a.title}<small>{a.actionLabel}</small></td><td>{a.branchName ?? "Company"}</td><td>{ACTION_STATUS_LABEL[a.status]}{a.authorityNote ? <small>{a.authorityNote}</small> : null}</td><td>{a.requestedByName}<small>{when(a.requestedAtUtc)}</small></td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+          <p><a href={`/companies/${companyId}/operations-officer/actions`}>Open Actions to approve, reject or cancel them</a></p>
+        </Section>
       ) : null}
 
       {issues.length ? (

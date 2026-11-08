@@ -39,6 +39,7 @@ import { getPostRoutes } from "./posRoutes";
 import { organizationRoutes } from "./organizationRoutes";
 import { procurementRoutes } from "./procurementRoutes";
 import { financeRoutes } from "./financeRoutes";
+import { operationsOfficerRoutes } from "./operationsOfficerRoutes";
 
 import type { AppRouteLike } from "./routeDefConfig";
 import TelegramMiniAppDashboard from "../features/telegram-miniapp/TelegramMiniAppDashboard";
@@ -98,6 +99,7 @@ export default function AppRoutes() {
     ...(posRoutes as AppRouteLike[]),
     ...(procurementRoutes as AppRouteLike[]),
     ...(financeRoutes as AppRouteLike[]),
+    ...(operationsOfficerRoutes as AppRouteLike[]),
   ]);
 
   if (localStorage.getItem("attendance.kioskMode") === "true" && kioskLocation.pathname !== "/attendance-kiosk") return <Navigate to="/attendance-kiosk" replace />;

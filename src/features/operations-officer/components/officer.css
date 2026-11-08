@@ -1,0 +1,30 @@
+/* AI Operations Officer. Shared design tokens only; layout comes from the finance (gl-) classes. */
+
+.oo-nav { display: flex; gap: 4px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.oo-nav-link { padding: 10px 14px; min-height: 44px; display: inline-flex; align-items: center; color: var(--text-muted); font-weight: 600; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.oo-nav-link:hover { color: var(--text); }
+.oo-nav-link.is-active { color: var(--text); border-bottom-color: var(--ui-primary); }
+.oo-nav-link:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: -2px; }
+
+.oo-evidence { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.oo-evidence li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; overflow-wrap: anywhere; }
+.oo-evidence-type { color: var(--text-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+
+.oo-cards { display: grid; gap: var(--ui-space-2); }
+.oo-card { display: grid; gap: 6px; padding: var(--ui-space-3); border: 1px solid var(--border-soft); border-radius: var(--r-md); background: var(--surface); min-width: 0; }
+.oo-card-head { display: flex; justify-content: space-between; gap: var(--ui-space-2); align-items: flex-start; flex-wrap: wrap; }
+.oo-card-head h3 { margin: 0; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+.oo-card p { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.ui-button.ui-button.oo-card-title { padding: 0; min-height: 0; height: auto; border: 0; background: none; color: var(--text); font-weight: 600; font-size: 15px; line-height: 1.35; text-align: start; white-space: normal; overflow-wrap: anywhere; justify-content: flex-start; }
+.ui-button.ui-button.oo-card-title:hover { text-decoration: underline; background: none; }
+.oo-meta { display: flex; gap: 6px 12px; flex-wrap: wrap; color: var(--text-muted); font-size: 12px; }
+
+.oo-narrative { margin: 0; padding: var(--ui-space-3) var(--ui-space-4); border-left: 3px solid var(--ui-primary); background: var(--surface-2); border-radius: var(--r-md); white-space: pre-line; font-size: 14px; line-height: 1.55; }
+.oo-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--ui-space-4); }
+.oo-paused { display: flex; justify-content: space-between; align-items: center; gap: var(--ui-space-3); flex-wrap: wrap; }
+.oo-pre { margin: 0; max-height: 220px; overflow: auto; padding: 8px 10px; border-radius: var(--r-md); background: var(--surface-2); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .oo-two { grid-template-columns: 1fr; }
+  .oo-nav-link { padding: 10px 10px; }
+}

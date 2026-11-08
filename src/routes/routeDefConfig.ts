@@ -13,6 +13,7 @@ import { getPostRoutes } from "./posRoutes";
 import { inventoryMasterRoutes } from "./inventoryMasterRoutes";
 import { procurementRoutes } from "./procurementRoutes";
 import { financeRoutes } from "./financeRoutes";
+import { operationsOfficerRoutes } from "./operationsOfficerRoutes";
 import { useAppScope } from "../app/useAppScope";
 
 export type AppRouteLike = RouteObject & {
@@ -188,6 +189,7 @@ export function useAppRoutes(): RouteWithHref[] {
       ...(posRoutes as AppRouteLike[]),
       ...(procurementRoutes as AppRouteLike[]),
       ...(financeRoutes as AppRouteLike[]),
+      ...(operationsOfficerRoutes as AppRouteLike[]),
     ],
     [grnRoutes, salesRoutes, hrRoutes, posRoutes]
   );

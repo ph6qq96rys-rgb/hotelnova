@@ -123,6 +123,7 @@ const LINKS = [
   { to: "", label: "Briefing", end: true },
   { to: "/instructions", label: "Instructions" },
   { to: "/plans", label: "Plans" },
+  { to: "/stock", label: "Stock" },
   { to: "/ask", label: "Ask" },
   { to: "/findings", label: "Findings" },
   { to: "/targets", label: "Targets" },

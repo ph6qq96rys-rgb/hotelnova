@@ -26,6 +26,8 @@ export type Settings = {
   grnDraftHours: number; poOverdueDays: number; adjustmentPendingHours: number; dataFreshnessHours: number; forecastTolerancePercent: number;
   lastMonitoredAtUtc?: string | null; lastBriefingAtUtc?: string | null; version?: string | null; narrativeAvailable: boolean;
   acknowledgeHours: number; reminderHours: number; remindersBeforeEscalation: number;
+  expiryWarningDays: number; transferDelayHours: number; countIntervalDays: number; countVarianceTolerancePercent: number; countVarianceMinValue: number;
+  replenishmentLookbackDays: number; replenishmentCoverageDays: number;
 };
 export type SettingsInput = Omit<Settings, "automationPaused" | "pausedAtUtc" | "pausedByName" | "pauseReason" | "policyVersion" | "lastMonitoredAtUtc" | "lastBriefingAtUtc" | "narrativeAvailable">;
 
@@ -33,10 +35,11 @@ export type Scope = {
   id: string; level: ScopeLevel; branchId: string; branchName: string; departmentId?: string | null; departmentName?: string | null; stockLocationId?: string | null;
   stockLocationName?: string | null; isManaged: boolean; responsibleEmployeeId?: string | null; responsibleName?: string | null; escalationEmployeeId?: string | null;
   escalationName?: string | null; effectiveFrom: string; effectiveTo?: string | null; notes?: string | null; createdByName: string; createdAtUtc: string; version: string;
+  allocationPriority?: number | null;
 };
 export type ScopeInput = {
   branchId: string; departmentId?: string | null; stockLocationId?: string | null; isManaged: boolean; responsibleEmployeeId?: string | null;
-  escalationEmployeeId?: string | null; effectiveFrom?: string | null; notes?: string | null;
+  escalationEmployeeId?: string | null; effectiveFrom?: string | null; notes?: string | null; allocationPriority?: number | null;
 };
 export type ConfigurationIssue = { severity: "Error" | "Warning" | "Info"; message: string; branchId?: string | null; scopeId?: string | null };
 
@@ -176,6 +179,28 @@ export type OfficerMessage = {
   id: string; threadId: string; role: "User" | "Officer"; text: string; sources: Evidence[]; dataAsOfUtc?: string | null; modelVersion?: string | null;
   language?: string | null; atUtc: string;
 };
+export type ReplenishmentLine = {
+  itemId: string; itemName: string; baseUom: string; uomId: string; uom: string; toBaseFactor: number; onHand: number; reserved: number; inbound: number;
+  dailyUsage: number; usageBasis: string; daysOfCover?: number | null; coverageDays: number; leadTimeDays: number; target: number; suggested: number;
+  sourceFree: number; allocated: number; allocatedQty: number; shortfall: number; unitCost?: number | null; estimatedCost?: number | null; status: string;
+  warnings: string[]; ruleVersions: string[];
+};
+export type ReplenishmentLocation = {
+  locationId: string; locationName: string; allocationPriority?: number | null; error?: string | null; itemsEvaluated: number; itemsCovered: number;
+  closedDays: number; openSivs: number; recipeIssues: string[]; lines: ReplenishmentLine[];
+};
+export type AllocationConflict = { itemId: string; itemName: string; baseUom: string; needed: number; available: number; allocation: string[] };
+export type TransferOption = {
+  itemId: string; itemName: string; baseUom: string; toLocationId: string; toLocationName: string; shortfall: number; fromBranchId: string;
+  fromBranchName: string; fromLocationId: string; fromLocationName: string; available: number; unitCost?: number | null;
+};
+export type PurchaseNeed = { itemId: string; itemName: string; baseUom: string; shortfall: number; onOrder: number; openOrders: string[] };
+export type ReplenishmentReview = {
+  branchId: string; branchName: string; calculatedAtUtc: string; lookbackDays: number; coverageDays: number; assumptions: string[];
+  locations: ReplenishmentLocation[]; conflicts: AllocationConflict[]; transfers: TransferOption[]; purchaseNeeds: PurchaseNeed[]; estimatedCost?: number | null;
+};
+export type ReplenishDestination = { toLocationId: string; lines: { itemId: string; qty: number }[] };
+
 export type OfficerAnswer = { threadId: string; question: OfficerMessage; answer: OfficerMessage; usedModel: boolean; notes: string[] };
 
 const base = (c: string) => `/companies/${c}/operations-officer`;
@@ -276,6 +301,14 @@ export const officerApi = {
     http.post<Plan>(`${base(c)}/plans/${planId}/activities/${activityId}/remove`, { version }).then((r) => r.data),
   activatePlan: (c: string, id: string, version?: string) => http.post<Plan>(`${base(c)}/plans/${id}/activate`, { version }).then((r) => r.data),
   cancelPlan: (c: string, id: string, reason: string, version?: string) => http.post(`${base(c)}/plans/${id}/cancel`, { reason, version }),
+
+  replenishmentReview: (c: string, branchId: string) => http.get<ReplenishmentReview>(`${base(c)}/stock/replenishment`, { params: { branchId } }).then((r) => r.data),
+  proposeReplenishment: (c: string, input: { branchId: string; destinations: ReplenishDestination[]; reason?: string | null; clientRequestId: string }) =>
+    http.post<OfficerAction>(`${base(c)}/stock/replenishment`, input).then((r) => r.data),
+  proposeTransfer: (c: string, input: { fromBranchId: string; fromLocationId: string; toBranchId: string; toLocationId: string; itemId: string; baseQty: number; reason?: string | null }) =>
+    http.post<OfficerAction>(`${base(c)}/stock/transfers`, input).then((r) => r.data),
+  requestCount: (c: string, input: { branchId: string; locationId: string; ownerEmployeeId?: string | null; dueAtUtc: string; itemIds?: string[] | null; reason?: string | null; clientRequestId: string }) =>
+    http.post<OfficerAction>(`${base(c)}/stock/counts`, input).then((r) => r.data),
 
   ask: (c: string, input: { question: string; branchId?: string | null; threadId?: string | null; language?: string | null }) =>
     http.post<OfficerAnswer>(`${base(c)}/ask`, input).then((r) => r.data),

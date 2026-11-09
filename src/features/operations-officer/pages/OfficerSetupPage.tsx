@@ -28,6 +28,13 @@ const NUMBER_FIELDS: { key: keyof SettingsInput; label: string; hint: string }[]
   { key: "acknowledgeHours", label: "Acknowledge instructions within (hours)", hint: "Instructions not acknowledged in time are followed up." },
   { key: "reminderHours", label: "Remind every (hours)", hint: "Between reminders about late or unacknowledged instructions." },
   { key: "remindersBeforeEscalation", label: "Reminders before escalation", hint: "Then the escalation contact gets a finding." },
+  { key: "replenishmentLookbackDays", label: "Replenishment usage window (days)", hint: "Complete days of usage behind each suggestion." },
+  { key: "replenishmentCoverageDays", label: "Replenishment days of cover", hint: "Used where no replenishment rule sets the cover." },
+  { key: "expiryWarningDays", label: "Expiry warning (days)", hint: "Lots expiring within this many days are flagged." },
+  { key: "transferDelayHours", label: "Transfer delay (hours)", hint: "Approved transfers not dispatched, or dispatched and not received." },
+  { key: "countIntervalDays", label: "Count every (days)", hint: "Managed stock locations not counted in time are flagged." },
+  { key: "countVarianceTolerancePercent", label: "Count variance tolerance (%)", hint: "Count lines beyond this share are investigated…" },
+  { key: "countVarianceMinValue", label: "Count variance minimum value", hint: "…when they are also worth at least this much." },
 ];
 
 type ScopeEditor = ScopeInput & { title: string };
@@ -83,6 +90,9 @@ export default function OfficerSetupPage() {
       poOverdueDays: settings.poOverdueDays, adjustmentPendingHours: settings.adjustmentPendingHours, dataFreshnessHours: settings.dataFreshnessHours,
       forecastTolerancePercent: settings.forecastTolerancePercent, version: settings.version ?? null,
       acknowledgeHours: settings.acknowledgeHours ?? 2, reminderHours: settings.reminderHours ?? 2, remindersBeforeEscalation: settings.remindersBeforeEscalation ?? 1,
+      expiryWarningDays: settings.expiryWarningDays ?? 3, transferDelayHours: settings.transferDelayHours ?? 24, countIntervalDays: settings.countIntervalDays ?? 30,
+      countVarianceTolerancePercent: settings.countVarianceTolerancePercent ?? 5, countVarianceMinValue: settings.countVarianceMinValue ?? 500,
+      replenishmentLookbackDays: settings.replenishmentLookbackDays ?? 28, replenishmentCoverageDays: settings.replenishmentCoverageDays ?? 3,
     };
     void run(() => officerApi.saveSettings(companyId, input), "The settings could not be saved.", undefined, "Settings saved.");
   }
@@ -157,7 +167,7 @@ export default function OfficerSetupPage() {
               {scopes.length === 0 ? <tr><td colSpan={6} className="gl-empty">Nothing is managed yet.</td></tr> : null}
               {scopes.map((x) => (
                 <tr key={x.id} className={x.effectiveTo && x.effectiveTo < todayIso() ? "is-muted" : ""}>
-                  <td>{x.level === "branch" ? <strong>{x.branchName}</strong> : <>{x.departmentName ?? x.stockLocationName}<small>{x.branchName} · {x.level === "department" ? "department" : "stock location"}</small></>}</td>
+                  <td>{x.level === "branch" ? <strong>{x.branchName}</strong> : <>{x.departmentName ?? x.stockLocationName}<small>{x.branchName} · {x.level === "department" ? "department" : "stock location"}{x.allocationPriority ? ` · priority ${x.allocationPriority}` : ""}</small></>}</td>
                   <td>{x.isManaged ? <Chip tone="ok">Managed</Chip> : <Chip tone="muted">Not managed</Chip>}</td>
                   <td>{x.responsibleName ?? <Chip tone="bad">Missing</Chip>}</td>
                   <td>{x.escalationName ?? "—"}</td>
@@ -165,6 +175,7 @@ export default function OfficerSetupPage() {
                   <td className="gl-actions">{canConfigure && (!x.effectiveTo || x.effectiveTo >= todayIso()) ? <Button size="sm" variant="ghost" onClick={() => setScopeEditor({
                     title: "Change responsibility", branchId: x.branchId, departmentId: x.departmentId, stockLocationId: x.stockLocationId, isManaged: x.isManaged,
                     responsibleEmployeeId: x.responsibleEmployeeId, escalationEmployeeId: x.escalationEmployeeId, effectiveFrom: todayIso(), notes: "",
+                    allocationPriority: x.allocationPriority ?? null,
                   })}>Change</Button> : null}</td>
                 </tr>
               ))}
@@ -209,7 +220,7 @@ export default function OfficerSetupPage() {
             <Field label="Branch"><BranchSelect value={scopeEditor.branchId} onChange={(v) => setScopeEditor({ ...scopeEditor, branchId: v, departmentId: null, stockLocationId: null })} branches={refs.branches} /></Field>
             <Field label="Unit" hint="Leave on the whole branch, or pick a department or stock location within it.">
               <Select value={scopeEditor.departmentId ? `d:${scopeEditor.departmentId}` : scopeEditor.stockLocationId ? `l:${scopeEditor.stockLocationId}` : ""}
-                onChange={(e) => { const v = e.target.value; setScopeEditor({ ...scopeEditor, departmentId: v.startsWith("d:") ? v.slice(2) : null, stockLocationId: v.startsWith("l:") ? v.slice(2) : null }); }}>
+                onChange={(e) => { const v = e.target.value; setScopeEditor({ ...scopeEditor, departmentId: v.startsWith("d:") ? v.slice(2) : null, stockLocationId: v.startsWith("l:") ? v.slice(2) : null, allocationPriority: v.startsWith("l:") ? scopeEditor.allocationPriority : null }); }}>
                 <option value="">Whole branch</option>
                 <optgroup label="Departments">{refs.departments.filter((d) => d.branchId === scopeEditor.branchId).map((d) => <option key={d.id} value={`d:${d.id}`}>{d.name}</option>)}</optgroup>
                 <optgroup label="Stock locations">{refs.locations.filter((l) => l.branchId === scopeEditor.branchId).map((l) => <option key={l.id} value={`l:${l.id}`}>{l.name}</option>)}</optgroup>
@@ -217,6 +228,12 @@ export default function OfficerSetupPage() {
             </Field>
             <Field label="Responsible manager"><EmployeeSelect value={scopeEditor.responsibleEmployeeId ?? ""} onChange={(v) => setScopeEditor({ ...scopeEditor, responsibleEmployeeId: v || null })} employees={refs.employees} branchId={scopeEditor.branchId} /></Field>
             <Field label="Escalation contact"><EmployeeSelect value={scopeEditor.escalationEmployeeId ?? ""} onChange={(v) => setScopeEditor({ ...scopeEditor, escalationEmployeeId: v || null })} employees={refs.employees} branchId={scopeEditor.branchId} /></Field>
+            {scopeEditor.stockLocationId ? (
+              <Field label="Allocation priority (optional)" hint="1 is served first when stores cannot cover every location.">
+                <Input type="number" min={1} max={99} value={scopeEditor.allocationPriority ?? ""}
+                  onChange={(e) => setScopeEditor({ ...scopeEditor, allocationPriority: e.target.value === "" ? null : Number(e.target.value) })} />
+              </Field>
+            ) : null}
             <Field label="Effective from" hint="Today or later."><Input type="date" min={todayIso()} value={scopeEditor.effectiveFrom ?? todayIso()} onChange={(e) => setScopeEditor({ ...scopeEditor, effectiveFrom: e.target.value })} /></Field>
             <Field label="Notes (optional)" wide><Input value={scopeEditor.notes ?? ""} onChange={(e) => setScopeEditor({ ...scopeEditor, notes: e.target.value })} /></Field>
           </div>

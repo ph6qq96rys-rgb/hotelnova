@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { RouteObject } from "react-router-dom";
-import { BadgeCheck, Bot, CalendarCheck, ClipboardCheck, ListChecks, ListTodo, MessageCircleQuestion, ScrollText, ShieldCheck } from "lucide-react";
+import { BadgeCheck, Boxes, Bot, CalendarCheck, ClipboardCheck, ListChecks, ListTodo, MessageCircleQuestion, ScrollText, ShieldCheck } from "lucide-react";
 
 import OfficerBriefingPage from "../features/operations-officer/pages/OfficerBriefingPage";
 import OfficerFindingsPage from "../features/operations-officer/pages/OfficerFindingsPage";
@@ -11,6 +11,7 @@ import OfficerSubscriptionPage from "../features/operations-officer/pages/Office
 import OfficerInstructionsPage from "../features/operations-officer/pages/OfficerInstructionsPage";
 import OfficerPlansPage from "../features/operations-officer/pages/OfficerPlansPage";
 import OfficerAskPage from "../features/operations-officer/pages/OfficerAskPage";
+import OfficerStockPage from "../features/operations-officer/pages/OfficerStockPage";
 
 export type AppRoute = RouteObject & {
   label?: string;
@@ -29,6 +30,7 @@ export const operationsOfficerRoutes: AppRoute[] = [
   // Anyone can open the instructions assigned to them; the team view needs aiops.view.
   { path: "operations-officer/instructions", label: "My Instructions", element: <OfficerInstructionsPage />, icon: <ListTodo size={18} />, nav: true, section: SECTION, order: 1.1 },
   { path: "operations-officer/plans", label: "Officer Plans", element: <OfficerPlansPage />, icon: <CalendarCheck size={18} />, nav: true, section: SECTION, order: 1.2, permissions: ["aiops.view"] },
+  { path: "operations-officer/stock", label: "Officer Stock", element: <OfficerStockPage />, icon: <Boxes size={18} />, nav: true, section: SECTION, order: 1.25, permissions: ["aiops.view"] },
   { path: "operations-officer/ask", label: "Ask the Officer", element: <OfficerAskPage />, icon: <MessageCircleQuestion size={18} />, nav: true, section: SECTION, order: 1.3, permissions: ["aiops.view"] },
   { path: "operations-officer/findings", label: "Officer Findings", element: <OfficerFindingsPage />, icon: <ListChecks size={18} />, nav: true, section: SECTION, order: 2, permissions: ["aiops.view"] },
   { path: "operations-officer/targets", label: "Officer Targets", element: <OfficerTargetsPage />, icon: <ClipboardCheck size={18} />, nav: true, section: SECTION, order: 3, permissions: ["aiops.view"] },

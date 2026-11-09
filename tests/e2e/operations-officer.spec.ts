@@ -209,3 +209,40 @@ test("The officer answers a question with sources and data time", async ({ page 
   expect(asked[0]).toEqual({ question: "What needs my attention today?", branchId: null, threadId: null, language: "en" });
   await page.screenshot({ path: `test-results/officer-ask-${test.info().project.name}.png`, fullPage: true });
 });
+
+test("Stock review shares short supply and prepares SIV drafts", async ({ page }) => {
+  await seedWorkspaceAuth(page, ["aiops.view", "aiops.actions.request"]);
+  await mock(page);
+  const line = (itemId: string, itemName: string, suggested: number, allocated: number) => ({
+    itemId, itemName, baseUom: "kg", uomId: "u1", uom: "kg", toBaseFactor: 1, onHand: 1, reserved: 0, inbound: 0, dailyUsage: 3, usageBasis: "Ledger",
+    coverageDays: 3, leadTimeDays: 1, target: suggested + 1, suggested, sourceFree: 12, allocated, allocatedQty: allocated, shortfall: suggested - allocated,
+    status: "Low", warnings: [], ruleVersions: [],
+  });
+  const review = {
+    branchId: BRANCH, branchName: "Bole", calculatedAtUtc: "2026-11-09T08:00:00Z", lookbackDays: 28, coverageDays: 3, estimatedCost: 960,
+    assumptions: ["Usage over the last 28 complete days.", "Each item is requested from the store holding the stock that should leave first."],
+    locations: [
+      { locationId: "kitchen", locationName: "Kitchen", allocationPriority: 1, itemsEvaluated: 12, itemsCovered: 10, closedDays: 0, openSivs: 0, recipeIssues: [], lines: [line("milk", "Milk", 10, 10)] },
+      { locationId: "bar", locationName: "Bar", allocationPriority: 2, itemsEvaluated: 8, itemsCovered: 7, closedDays: 0, openSivs: 1, recipeIssues: [], lines: [line("milk", "Milk", 10, 2)] },
+    ],
+    conflicts: [{ itemId: "milk", itemName: "Milk", baseUom: "kg", needed: 20, available: 12, allocation: ["Kitchen (priority 1): 10 of 10", "Bar (priority 2): 2 of 10"] }],
+    transfers: [], purchaseNeeds: [{ itemId: "milk", itemName: "Milk", baseUom: "kg", shortfall: 8, onOrder: 0, openOrders: [] }],
+  };
+  const posts: unknown[] = [];
+  await page.route(`**/operations-officer/stock/replenishment**`, async (r) => {
+    if (r.request().resourceType() === "document") return r.fallback();
+    if (r.request().method() === "GET") return r.fulfill({ json: review });
+    posts.push(r.request().postDataJSON());
+    return r.fulfill({ json: { id: "a1", status: "executed", title: "Replenish", actionType: "stock.replenish.draft" } });
+  });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/stock`);
+  await expect(page.getByRole("heading", { name: "Officer Stock" })).toBeVisible();
+  await expect(page.getByText("Bar (priority 2): 2 of 10")).toBeVisible();
+  await expect(page.getByText("8 short")).toBeVisible();
+  await page.getByRole("checkbox", { name: "Request Milk" }).last().uncheck();
+  await page.getByRole("button", { name: "Prepare SIV drafts (1)" }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect((posts[0] as { destinations: unknown }).destinations).toEqual([{ toLocationId: "kitchen", lines: [{ itemId: "milk", qty: 10 }] }]);
+  await expect(page.getByText("SIV drafts prepared. They are approved and issued as usual.")).toBeVisible();
+  await page.screenshot({ path: `test-results/officer-stock-${test.info().project.name}.png`, fullPage: true });
+});

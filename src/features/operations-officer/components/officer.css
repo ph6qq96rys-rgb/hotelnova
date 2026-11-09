@@ -42,3 +42,5 @@
 .oo-ask { display: flex; gap: var(--ui-space-2); align-items: flex-end; flex-wrap: wrap; }
 .oo-ask > :first-child { flex: 1 1 280px; min-width: 0; }
 @media (max-width: 640px) { .oo-msg.is-user { margin-inline-start: 0; } }
+
+.oo-bad { color: var(--danger); }

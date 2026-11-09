@@ -124,6 +124,7 @@ const LINKS = [
   { to: "/instructions", label: "Instructions" },
   { to: "/plans", label: "Plans" },
   { to: "/stock", label: "Stock" },
+  { to: "/purchasing", label: "Purchasing" },
   { to: "/ask", label: "Ask" },
   { to: "/findings", label: "Findings" },
   { to: "/targets", label: "Targets" },

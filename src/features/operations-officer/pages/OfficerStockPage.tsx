@@ -11,7 +11,7 @@ import { Select } from "../../../components/ui/select";
 import { Textarea } from "../../../components/ui/textarea";
 import { useHasPermission } from "../../../auth/usePermissions";
 import { apiError, Chip, Field, GlDialog, money } from "../../finance/components/glShared";
-import { officerApi, type OfficerAction, type ReplenishmentReview, type TransferOption } from "../api/officerApi";
+import { officerApi, type OfficerAction, type PurchaseNeed, type ReplenishmentReview, type TransferOption } from "../api/officerApi";
 import { BranchSelect, EmployeeSelect, newClientId, OfficerNav, Section, toUtcIso, useOfficerRefs, when } from "../components/officerShared";
 
 const qty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 3 });
@@ -36,6 +36,7 @@ export default function OfficerStockPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [transfer, setTransfer] = useState<(TransferOption & { qty: string }) | null>(null);
   const [count, setCount] = useState<CountDraft | null>(null);
+  const [purchase, setPurchase] = useState<(PurchaseNeed & { qty: string; price: string }) | null>(null);
   const [requestId, setRequestId] = useState(newClientId);
 
   useEffect(() => { if (loaded && !branchId && refs.branches.length > 0) setBranchId(refs.branches[0].id); }, [loaded, branchId, refs.branches]);
@@ -168,6 +169,7 @@ export default function OfficerStockPage() {
               <article key={n.itemId} className="oo-card">
                 <div className="oo-card-head"><h3>{n.itemName}</h3><Chip tone="bad">{qty(n.shortfall)} {n.baseUom}</Chip></div>
                 <p className="gl-muted">{n.onOrder > 0 ? `${qty(n.onOrder)} already on order: ${n.openOrders.join(", ")}` : "Nothing on order."}</p>
+                {canRequest ? <div className="gl-toolbar"><Button size="sm" variant="outline" onClick={() => setPurchase({ ...n, qty: String(n.shortfall), price: n.unitCost != null ? String(n.unitCost) : "" })}>Request purchase</Button></div> : null}
               </article>))}</div>
           </Section>
         ) : null}
@@ -182,6 +184,17 @@ export default function OfficerStockPage() {
           <Field label={`Quantity (${transfer.baseUom})`} hint={`${qty(transfer.available)} available there.`}>
             <Input type="number" min={0} step="any" value={transfer.qty} onChange={(e) => setTransfer({ ...transfer, qty: e.target.value })} />
           </Field>
+        </GlDialog>
+      ) : null}
+
+      {purchase ? (
+        <GlDialog open title={`Request a purchase of ${purchase.itemName}`} description="Purchasing's planning checks stock, transfers and open requests again before the requisition is created."
+          busy={busy} error={error} onClose={() => { setPurchase(null); setError(null); }} confirmText="Request"
+          confirmDisabled={!(Number(purchase.qty) > 0) || purchase.price === "" || Number(purchase.price) < 0}
+          onConfirm={() => void run(() => officerApi.proposeRequisition(companyId, { branchId, locationId: purchase.locationId, itemId: purchase.itemId,
+            baseQty: Number(purchase.qty), estimatedUnitPrice: Number(purchase.price) }), "Requisition created.", "The purchase could not be requested.", () => setPurchase(null))}>
+          <Field label={`Quantity (${purchase.baseUom})`}><Input type="number" min={0} step="any" value={purchase.qty} onChange={(e) => setPurchase({ ...purchase, qty: e.target.value })} /></Field>
+          <Field label={`Estimated price per ${purchase.baseUom}`}><Input type="number" min={0} step="any" value={purchase.price} onChange={(e) => setPurchase({ ...purchase, price: e.target.value })} /></Field>
         </GlDialog>
       ) : null}
 

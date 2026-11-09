@@ -10,7 +10,7 @@ import { Select } from "../../../components/ui/select";
 import { Textarea } from "../../../components/ui/textarea";
 import { useHasPermission } from "../../../auth/usePermissions";
 import { apiError, Chip, Field, GlDialog } from "../../finance/components/glShared";
-import { officerApi, type CompletionMode, type Instruction, type InstructionPriority } from "../api/officerApi";
+import { officerApi, type CompletionMode, type Instruction, type InstructionChange, type InstructionPriority } from "../api/officerApi";
 import {
   BranchSelect, EmployeeSelect, INSTRUCTION_STATUS_LABEL, INSTRUCTION_STATUS_TONE, newClientId, OfficerNav, OPEN_INSTRUCTION, PRIORITY_LABEL, toLocalInput,
   toUtcIso, useOfficerRefs, when,
@@ -49,6 +49,13 @@ export default function OfficerInstructionsPage() {
   const [selected, setSelected] = useState<Instruction | null>(null);
   const [work, setWork] = useState<Work | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [changes, setChanges] = useState<InstructionChange[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    officerApi.myInstructionChanges(companyId).then((c) => { if (live) setChanges(c); }).catch(() => { if (live) setChanges([]); });
+    return () => { live = false; };
+  }, [companyId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,6 +155,18 @@ export default function OfficerInstructionsPage() {
         {tab === "team" ? <Field label="Branch"><BranchSelect value={branchId} onChange={setBranchId} branches={refs.branches} allLabel="All my branches" /></Field> : null}
       </div>
       {notice ? <StateMessage tone="success">{notice}</StateMessage> : null}
+      {tab === "mine" && changes.length > 0 ? (
+        <section className="oo-changes" data-testid="instruction-changes" aria-label="Changes to your instructions">
+          <StateMessage tone="warning">
+            <strong>Plans were revised.</strong> Work from your current instructions; these changed in the last three days:
+            <ul className="oo-evidence">
+              {changes.map((c) => (
+                <li key={`${c.instructionId}-${c.atUtc}`}><span>{c.title}: {c.event === "Revised" ? "deadline changed" : c.event === "Superseded" ? "replaced, stop work on it" : "cancelled"}. {c.note}</span><small>{when(c.atUtc)}</small></li>
+              ))}
+            </ul>
+          </StateMessage>
+        </section>
+      ) : null}
       {error && !work && !draft && !selected ? <StateMessage tone="error">{error}</StateMessage> : null}
       {loading ? <StateMessage tone="loading">Loading instructions…</StateMessage> : null}
 

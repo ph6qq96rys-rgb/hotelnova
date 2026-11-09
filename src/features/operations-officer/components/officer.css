@@ -44,3 +44,4 @@
 @media (max-width: 640px) { .oo-msg.is-user { margin-inline-start: 0; } }
 
 .oo-bad { color: var(--danger); }
+.oo-muted-row td { color: var(--text-muted); }

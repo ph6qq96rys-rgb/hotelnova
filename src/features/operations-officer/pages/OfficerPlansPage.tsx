@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { CalendarPlus, Plus } from "lucide-react";
+import { CalendarPlus, ChefHat, Plus } from "lucide-react";
 
 import { PageHeader } from "../../../components/PageHeader";
 import { Button } from "../../../components/ui/button";
@@ -10,13 +10,17 @@ import { Select } from "../../../components/ui/select";
 import { Textarea } from "../../../components/ui/textarea";
 import { useHasPermission } from "../../../auth/usePermissions";
 import { apiError, Chip, day, Field, GlDialog } from "../../finance/components/glShared";
-import { officerApi, type Commitment, type Plan, type PlanActivity, type PlanListItem } from "../api/officerApi";
+import { officerApi, type Commitment, type Plan, type PlanActivity, type PlanChanges, type PlanListItem, type ProductionRequirements } from "../api/officerApi";
 import {
   ACTION_STATUS_LABEL, BranchSelect, EmployeeSelect, INSTRUCTION_STATUS_LABEL, INSTRUCTION_STATUS_TONE, OfficerNav, PLAN_STATUS_LABEL, PLAN_STATUS_TONE, Section,
   toLocalInput, toUtcIso, useOfficerRefs, when,
 } from "../components/officerShared";
 
-type Prepare = { kind: "daily" | "event"; date: string; eventId: string; reason: string };
+type Prepare = { kind: Plan["kind"]; date: string; eventId: string; reason: string };
+const KIND_LABEL: Record<Plan["kind"], string> = { daily: "Daily", event: "Event", production: "Production" };
+const CHANGE_LABEL: Record<PlanChanges["changes"][number]["change"], string> = { added: "Added", removed: "Withdrawn", changed: "Changed", unchanged: "Unchanged", completed: "Done, kept" };
+const CHANGE_TONE: Record<PlanChanges["changes"][number]["change"], "ok" | "bad" | "warn" | "muted" | "neutral"> = { added: "ok", removed: "bad", changed: "warn", unchanged: "muted", completed: "neutral" };
+const qty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 3 });
 type Edit = { activity: PlanActivity | null; title: string; detail: string; ownerEmployeeId: string; due: string; criteria: string };
 
 const ACTIVITY_LABEL: Record<PlanActivity["status"], string> = { planned: "Planned", instructed: "Instructed", done: "Done", cancelled: "Removed" };
@@ -30,6 +34,9 @@ export default function OfficerPlansPage() {
   const [rows, setRows] = useState<PlanListItem[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [events, setEvents] = useState<Commitment[]>([]);
+  const [production, setProduction] = useState<ProductionRequirements | null>(null);
+  const [productionError, setProductionError] = useState<string | null>(null);
+  const [changes, setChanges] = useState<PlanChanges | null>(null);
   const [prepare, setPrepare] = useState<Prepare | null>(null);
   const [edit, setEdit] = useState<Edit | null>(null);
   const [cancelReason, setCancelReason] = useState<string | null>(null);
@@ -55,7 +62,26 @@ export default function OfficerPlansPage() {
     finally { setBusy(false); }
   }
 
-  async function openPrepare(kind: "daily" | "event") {
+  const changesKey = plan?.supersedesPlanId ? `${plan.id}|${plan.version}` : null;
+  useEffect(() => {
+    if (!changesKey) { setChanges(null); return; }
+    let live = true;
+    officerApi.planChanges(companyId, changesKey.split("|")[0]).then((c) => { if (live) setChanges(c); }).catch(() => { if (live) setChanges(null); });
+    return () => { live = false; };
+  }, [companyId, changesKey]);
+
+  const productionKey = prepare?.kind === "production" ? `${branchId}|${prepare.date}` : null;
+  useEffect(() => {
+    if (!productionKey || !branchId) { setProduction(null); return; }
+    let live = true;
+    setProduction(null); setProductionError(null);
+    officerApi.productionRequirements(companyId, branchId, productionKey.split("|")[1] || null)
+      .then((r) => { if (live) setProduction(r); })
+      .catch((e) => { if (live) setProductionError(apiError(e, "Production requirements could not be calculated.")); });
+    return () => { live = false; };
+  }, [companyId, branchId, productionKey]);
+
+  async function openPrepare(kind: Plan["kind"]) {
     setError(null);
     if (kind === "event" && branchId) {
       try { setEvents((await officerApi.liveBriefing(companyId, branchId)).upcoming.filter((u) => u.type === "CateringEvent")); }
@@ -68,7 +94,9 @@ export default function OfficerPlansPage() {
     if (!prepare) return;
     void run(() => prepare.kind === "daily"
       ? officerApi.prepareDailyPlan(companyId, branchId, prepare.date || null, prepare.reason)
-      : officerApi.prepareEventPlan(companyId, prepare.eventId, prepare.reason),
+      : prepare.kind === "production"
+        ? officerApi.prepareProductionPlan(companyId, branchId, prepare.date || null, prepare.reason)
+        : officerApi.prepareEventPlan(companyId, prepare.eventId, prepare.reason),
     "The plan could not be prepared.", (p) => { setPrepare(null); setPlan(p); });
   }
 
@@ -86,8 +114,9 @@ export default function OfficerPlansPage() {
   return (
     <div className="gl-page">
       <PageHeader title="Officer Plans"
-        subtitle="Daily and event operating plans drafted from today's priorities, deliveries, events and stock. Adjust a draft, then activate it: each activity becomes an instruction to its owner."
+        subtitle="Daily, production and event operating plans drafted from today's priorities, expected sales, deliveries, events and stock. Adjust a draft, then activate it: each activity becomes an instruction to its owner."
         actions={canManage ? <>
+          <Button variant="outline" disabled={!branchId || busy} onClick={() => void openPrepare("production")}><ChefHat size={16} /> Production plan</Button>
           <Button variant="outline" disabled={!branchId || busy} onClick={() => void openPrepare("event")}><CalendarPlus size={16} /> Event plan</Button>
           <Button disabled={!branchId || busy} onClick={() => void openPrepare("daily")}><Plus size={16} /> Daily plan</Button>
         </> : null} />
@@ -113,7 +142,7 @@ export default function OfficerPlansPage() {
             {rows.map((p) => (
               <tr key={p.id} className="gl-row" tabIndex={0} onClick={() => void run(() => officerApi.plan(companyId, p.id), "The plan could not be opened.", setPlan)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void run(() => officerApi.plan(companyId, p.id), "The plan could not be opened.", setPlan); } }}>
-                <td>{p.title}<small>{p.kind === "daily" ? "Daily" : "Event"} · {p.branchName}</small></td>
+                <td>{p.title}<small>{KIND_LABEL[p.kind] ?? p.kind} · {p.branchName}</small></td>
                 <td>{day(p.businessDate)}</td>
                 <td>v{p.versionNo}</td>
                 <td>{p.done}/{p.activities} done</td>
@@ -149,6 +178,31 @@ export default function OfficerPlansPage() {
           </dl>
           {plan.assumptions ? <Section title="Assumptions"><ul className="oo-evidence">{plan.assumptions.split("\n").map((a) => <li key={a}><span>{a}</span></li>)}</ul></Section> : null}
           {plan.constraints ? <Section title="Constraints and gaps"><ul className="oo-evidence">{plan.constraints.split("\n").map((a) => <li key={a}><span>{a}</span></li>)}</ul></Section> : null}
+          {changes && changes.comparedVersionNo ? (
+            <Section title={`Changes from v${changes.comparedVersionNo}`}>
+              <div data-testid="plan-changes">
+                {changes.material
+                  ? <StateMessage tone="warning">Material change: {changes.materialReasons.join("; ")}. Activation follows the delegated authority for revisions.</StateMessage>
+                  : <StateMessage>Not a material change: open instructions are kept and new work is added.</StateMessage>}
+                {changes.costChange != null ? <p className="gl-note">Stock cost of the quantity changes: {changes.costChange >= 0 ? "+" : ""}{changes.costChange.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p> : null}
+                <table className="gl-table">
+                  <thead><tr><th>Activity</th><th>Change</th><th>Owner</th><th>Deadline</th><th>Quantity</th><th>Instruction</th></tr></thead>
+                  <tbody>
+                    {changes.changes.map((c) => (
+                      <tr key={c.activityKey}>
+                        <td>{c.title}{c.previousTitle && c.previousTitle !== c.title ? <small>was {c.previousTitle}</small> : null}{c.dependsOn !== c.previousDependsOn && c.change === "changed" ? <small>after {c.dependsOn ?? "nothing"} (was {c.previousDependsOn ?? "nothing"})</small> : null}</td>
+                        <td><Chip tone={CHANGE_TONE[c.change]}>{CHANGE_LABEL[c.change]}</Chip></td>
+                        <td>{c.ownerName ?? "—"}{c.previousOwnerName && c.previousOwnerName !== c.ownerName ? <small>was {c.previousOwnerName}</small> : null}</td>
+                        <td>{c.dueAtUtc ? when(c.dueAtUtc) : "—"}{c.previousDueAtUtc && c.previousDueAtUtc !== c.dueAtUtc ? <small>was {when(c.previousDueAtUtc)}</small> : null}</td>
+                        <td>{c.quantity != null || c.previousQuantity != null ? <>{c.quantity != null ? qty(c.quantity) : "—"} {c.unit}{c.previousQuantity != null && c.previousQuantity !== c.quantity ? <small>was {qty(c.previousQuantity)}</small> : null}</> : "—"}</td>
+                        <td>{c.instructionEffect}{c.costChange ? <small>Cost {c.costChange > 0 ? "+" : ""}{c.costChange.toLocaleString(undefined, { maximumFractionDigits: 2 })}</small> : null}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+          ) : null}
           <h4>Activities</h4>
           <div className="oo-cards">
             {plan.activities.map((a) => (
@@ -181,13 +235,42 @@ export default function OfficerPlansPage() {
       ) : null}
 
       {prepare ? (
-        <GlDialog open title={prepare.kind === "daily" ? (plan?.status === "active" ? "Revise the daily plan" : "Prepare a daily plan") : "Prepare an event plan"}
+        <GlDialog open title={prepare.kind === "daily" ? (plan?.status === "active" ? "Revise the daily plan" : "Prepare a daily plan")
+            : prepare.kind === "production" ? (plan?.status === "active" ? "Revise the production plan" : "Prepare a production plan") : "Prepare an event plan"}
           description="The officer drafts the plan from Process360 records. Nothing is issued until the plan is activated."
           busy={busy} error={error} onClose={() => { setPrepare(null); setError(null); }} confirmText="Prepare"
-          confirmDisabled={prepare.kind === "event" && !prepare.eventId} onConfirm={submitPrepare}>
-          {prepare.kind === "daily" ? (
+          confirmDisabled={(prepare.kind === "event" && !prepare.eventId) || (prepare.kind === "production" && (!production || production.lines.length === 0))} onConfirm={submitPrepare}>
+          {prepare.kind !== "event" ? (
             <Field label="Day" hint="Today if left empty."><Input type="date" value={prepare.date} onChange={(e) => setPrepare({ ...prepare, date: e.target.value })} /></Field>
-          ) : (
+          ) : null}
+          {prepare.kind === "production" ? (
+            <div className="gl-stack" data-testid="production-preview">
+              {productionError ? <StateMessage tone="error">{productionError}</StateMessage> : null}
+              {!production && !productionError ? <StateMessage tone="loading">Calculating from recipes, expected sales and stock…</StateMessage> : null}
+              {production ? <>
+                {production.lines.length === 0 ? <StateMessage>Nothing needs to be prepared for this day.</StateMessage> : (
+                  <table className="gl-table">
+                    <thead><tr><th>Prepared item</th><th>Needed</th><th>Usable stock</th><th>Batches</th><th>Where / who</th><th>Ingredients short</th></tr></thead>
+                    <tbody>
+                      {production.lines.map((l) => (
+                        <tr key={l.itemId}>
+                          <td>{l.itemName}<small>{l.demandFrom.slice(0, 3).join(", ")}</small></td>
+                          <td>{qty(l.demand)} {l.baseUnit}</td>
+                          <td>{qty(l.usableStock)}</td>
+                          <td>{l.batches} × {qty(l.yieldPerBatch)} = {qty(l.plannedQuantity)}<small>Ready by {when(l.readyByUtc)}</small></td>
+                          <td>{l.locationName ?? "No location"}<small>{l.supervisorName ?? "No supervisor set"}</small></td>
+                          <td>{l.ingredients.filter((i) => i.short > 0).map((i) => `${i.itemName} ${qty(i.short)} ${i.baseUnit}`).join(", ") || "None"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {production.blocked.length > 0 ? <StateMessage tone="warning">Left out until fixed: {production.blocked.join("; ")}</StateMessage> : null}
+                {production.assumptions.map((a) => <small key={a}>{a}</small>)}
+              </> : null}
+            </div>
+          ) : null}
+          {prepare.kind === "event" ? (
             <Field label="Catering event" hint={events.length === 0 && !prepare.eventId ? "No events in the next 7 days." : undefined}>
               <Select value={prepare.eventId} onChange={(e) => setPrepare({ ...prepare, eventId: e.target.value })}>
                 <option value="">Choose an event</option>
@@ -195,7 +278,7 @@ export default function OfficerPlansPage() {
                 {prepare.eventId && !events.some((ev) => ev.id === prepare.eventId) ? <option value={prepare.eventId}>This plan's event</option> : null}
               </Select>
             </Field>
-          )}
+          ) : null}
           <Field label="Reason for revision" hint="Needed when a plan for this day or event is already active.">
             <Textarea rows={2} value={prepare.reason} onChange={(e) => setPrepare({ ...prepare, reason: e.target.value })} />
           </Field>

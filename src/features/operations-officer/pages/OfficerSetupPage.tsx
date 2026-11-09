@@ -35,6 +35,22 @@ const NUMBER_FIELDS: { key: keyof SettingsInput; label: string; hint: string }[]
   { key: "countIntervalDays", label: "Count every (days)", hint: "Managed stock locations not counted in time are flagged." },
   { key: "countVarianceTolerancePercent", label: "Count variance tolerance (%)", hint: "Count lines beyond this share are investigated…" },
   { key: "countVarianceMinValue", label: "Count variance minimum value", hint: "…when they are also worth at least this much." },
+  { key: "productionReadyHour", label: "Prepared items ready by (hour)", hint: "Local hour production plans aim to have prepared items ready." },
+  { key: "yieldTolerancePercent", label: "Yield tolerance (%)", hint: "Batch output or ingredient use beyond this against the recipe is explained." },
+  { key: "wasteSpikePercent", label: "Waste spike (%)", hint: "A week's write-offs this far above the previous four weeks' average…" },
+  { key: "wasteMinValue", label: "Waste spike minimum value", hint: "…and worth at least this much are investigated." },
+  { key: "cateringReadinessDays", label: "Catering readiness window (days)", hint: "Events this close that are blocked or need attention are raised." },
+  { key: "controlLookbackDays", label: "Branch control review (days)", hint: "Discounts, refunds and voids are compared with sales over this window." },
+  { key: "discountRatePercent", label: "Discount limit (% of sales)", hint: "Discounts without a recorded approver are always reviewed." },
+  { key: "refundRatePercent", label: "Refund limit (% of net sales)", hint: "Returns approved by their requester are sent to the escalation contact." },
+  { key: "voidRatePercent", label: "Void limit (% of sales)", hint: "Items voided after being sent to the kitchen or bar." },
+  { key: "staffingGraceMinutes", label: "Staffing gap after (minutes)", hint: "Rostered staff not clocked in this long after their shift starts." },
+  { key: "supplierAcknowledgeHours", label: "Supplier confirmation (hours)", hint: "Sent orders not acknowledged by then are followed up." },
+  { key: "weightPrice", label: "Supplier weight: price", hint: "The five weights add up to 100." },
+  { key: "weightQuality", label: "Supplier weight: quality", hint: "Received quantity not returned, last 12 months." },
+  { key: "weightLeadTime", label: "Supplier weight: lead time", hint: "Delivery against the need-by date." },
+  { key: "weightReliability", label: "Supplier weight: reliability", hint: "Orders received by their expected date." },
+  { key: "weightPaymentTerms", label: "Supplier weight: payment terms", hint: "Longer credit scores higher." },
 ];
 
 type ScopeEditor = ScopeInput & { title: string };
@@ -93,6 +109,12 @@ export default function OfficerSetupPage() {
       expiryWarningDays: settings.expiryWarningDays ?? 3, transferDelayHours: settings.transferDelayHours ?? 24, countIntervalDays: settings.countIntervalDays ?? 30,
       countVarianceTolerancePercent: settings.countVarianceTolerancePercent ?? 5, countVarianceMinValue: settings.countVarianceMinValue ?? 500,
       replenishmentLookbackDays: settings.replenishmentLookbackDays ?? 28, replenishmentCoverageDays: settings.replenishmentCoverageDays ?? 3,
+      weightPrice: settings.weightPrice ?? 50, weightQuality: settings.weightQuality ?? 15, weightLeadTime: settings.weightLeadTime ?? 15,
+      weightReliability: settings.weightReliability ?? 15, weightPaymentTerms: settings.weightPaymentTerms ?? 5, supplierAcknowledgeHours: settings.supplierAcknowledgeHours ?? 24,
+      productionReadyHour: settings.productionReadyHour ?? 10, yieldTolerancePercent: settings.yieldTolerancePercent ?? 10, wasteSpikePercent: settings.wasteSpikePercent ?? 50,
+      wasteMinValue: settings.wasteMinValue ?? 1000, cateringReadinessDays: settings.cateringReadinessDays ?? 3,
+      discountRatePercent: settings.discountRatePercent ?? 10, refundRatePercent: settings.refundRatePercent ?? 3, voidRatePercent: settings.voidRatePercent ?? 5,
+      controlLookbackDays: settings.controlLookbackDays ?? 7, staffingGraceMinutes: settings.staffingGraceMinutes ?? 30,
     };
     void run(() => officerApi.saveSettings(companyId, input), "The settings could not be saved.", undefined, "Settings saved.");
   }

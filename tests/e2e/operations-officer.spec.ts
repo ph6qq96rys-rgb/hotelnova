@@ -141,6 +141,7 @@ test("An employee acknowledges an instruction and reports a blocker", async ({ p
   let current: Record<string, unknown> = { ...instruction };
   const posts: { url: string; body: unknown }[] = [];
   await page.route(`**/operations-officer/instructions/mine**`, (r) => r.fulfill({ json: [current] }));
+  await page.route(`**/operations-officer/instructions/mine/changes`, (r) => r.fulfill({ json: [] }));
   await page.route(`**/operations-officer/instructions/i1`, (r) => r.fulfill({ json: current }));
   await page.route(`**/operations-officer/instructions/i1/*`, async (r) => {
     posts.push({ url: r.request().url(), body: r.request().postDataJSON() });
@@ -186,6 +187,74 @@ test("A daily plan is prepared and activated", async ({ page }) => {
   await page.getByRole("button", { name: "Activate" }).click();
   await expect(page.getByText("Plan active. Instructions were issued to the owners.")).toBeVisible();
   await page.screenshot({ path: `test-results/officer-plan-${test.info().project.name}.png`, fullPage: true });
+});
+
+test("A production plan shows batches, ingredients and blocked recipes before it is prepared", async ({ page }) => {
+  await seedWorkspaceAuth(page, ["aiops.view", "aiops.plans.manage"]);
+  await mock(page);
+  const requirements = {
+    branchId: BRANCH, branchName: "Bole", businessDate: "2026-11-09", calculatedAtUtc: "2026-11-09T05:00:00Z",
+    assumptions: ["Expected sales are the average of the last 4 Mondays."], blocked: ["Tomato sauce: the recipe has no yield"],
+    lines: [{ itemId: "i1", itemName: "Injera dough", baseUnit: "kg", recipeId: "r1", recipeVersion: 2, demand: 42, usableStock: 6, required: 36, yieldPerBatch: 10,
+      batches: 4, plannedQuantity: 40, locationId: "l1", locationName: "Main kitchen", supervisorEmployeeId: "e1", supervisorName: "Selam Bekele",
+      readyByUtc: "2026-11-09T07:00:00Z", demandFrom: ["Firfir", "Combo"], ingredients: [{ itemId: "t1", itemName: "Teff flour", baseUnit: "kg", needed: 20, onHand: 12, short: 8 }] }],
+  };
+  const plan = { id: "p2", branchId: BRANCH, branchName: "Bole", kind: "production", businessDate: "2026-11-09", title: "Production plan Mon 9 Nov", planGroupId: "g2",
+    versionNo: 1, status: "draft", assumptions: "", createdByName: "QAE", createdAtUtc: "2026-11-09T05:00:00Z", version: "v1", issues: [],
+    activities: [{ id: "x2", activityKey: "production:i1", sortOrder: 1, title: "Make 4 batches of Injera dough", detail: "40 kg", ownerEmployeeId: "e1", ownerName: "Selam Bekele",
+      ownerRole: "Production supervisor", dueAtUtc: "2026-11-09T07:00:00Z", completionCriteria: "Batches posted.", completionMode: "transaction", status: "planned" }] };
+  const posts: unknown[] = [];
+  await page.route(`**/operations-officer/plans?**`, (r) => r.fulfill({ json: [] }));
+  await page.route(`**/operations-officer/production/requirements**`, (r) => r.fulfill({ json: requirements }));
+  await page.route(`**/operations-officer/plans/production`, (r) => { posts.push(r.request().postDataJSON()); return r.fulfill({ json: plan }); });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/plans`);
+  await page.getByRole("button", { name: "Production plan" }).click();
+  const preview = page.getByTestId("production-preview");
+  await expect(preview.getByText("4 × 10 = 40")).toBeVisible();
+  await expect(preview.getByText("Teff flour 8 kg")).toBeVisible();
+  await expect(preview.getByText(/Tomato sauce: the recipe has no yield/)).toBeVisible();
+  await page.getByRole("button", { name: "Prepare" }).click();
+  await expect(page.getByText("Make 4 batches of Injera dough")).toBeVisible();
+  expect(posts[0]).toEqual({ branchId: BRANCH, businessDate: null, revisionReason: null });
+  await page.screenshot({ path: `test-results/officer-production-plan-${test.info().project.name}.png`, fullPage: true });
+});
+
+test("A revision shows what changed and the former owner is told to stop", async ({ page }) => {
+  await seedWorkspaceAuth(page, ["aiops.view", "aiops.plans.manage"]);
+  await mock(page);
+  const v2 = {
+    id: "p3", branchId: BRANCH, branchName: "Bole", kind: "production", businessDate: "2026-11-09", title: "Production plan Mon 9 Nov", planGroupId: "g3", versionNo: 2,
+    supersedesPlanId: "p2", status: "draft", revisionReason: "Officer replanning: Injera dough: planned 40, now needed 60 kg", createdByName: "AI Operations Officer",
+    createdAtUtc: "2026-11-09T09:00:00Z", version: "v2", issues: [],
+    activities: [{ id: "y1", activityKey: "production:i1", sortOrder: 1, title: "Prepare 60 kg Injera dough", ownerEmployeeId: "e2", ownerName: "Dawit Alemu",
+      ownerRole: "Production supervisor", dueAtUtc: "2026-11-09T07:00:00Z", completionCriteria: "A posted production batch of this item.", completionMode: "transaction", status: "planned" }],
+  };
+  const changes = { planId: "p3", versionNo: 2, comparedPlanId: "p2", comparedVersionNo: 1, revisionReason: v2.revisionReason, material: true,
+    materialReasons: ["Prepare 60 kg Injera dough reassigned", "Prepare 60 kg Injera dough: quantity 40 to 60"], costChange: 1300,
+    changes: [
+      { activityKey: "production:i1", change: "changed", title: "Prepare 60 kg Injera dough", previousTitle: "Prepare 40 kg Injera dough", ownerName: "Dawit Alemu", previousOwnerName: "Selam Bekele",
+        dueAtUtc: "2026-11-09T07:00:00Z", previousDueAtUtc: "2026-11-09T07:00:00Z", quantity: 60, previousQuantity: 40, unit: "kg", costChange: 1300,
+        instructionEffect: "The earlier instruction is superseded and the new owner is instructed" },
+      { activityKey: "production:i2", change: "completed", title: "Prepare 10 kg Shiro", previousTitle: "Prepare 10 kg Shiro", quantity: 10, previousQuantity: 10, unit: "kg",
+        instructionEffect: "Done in the earlier version; the work and its transactions stay" }] };
+  await page.route(`**/operations-officer/plans?**`, (r) => r.fulfill({ json: [{ ...v2, activities: 1, done: 0 }] }));
+  await page.route(`**/operations-officer/plans/p3`, (r) => r.fulfill({ json: v2 }));
+  await page.route(`**/operations-officer/plans/p3/changes`, (r) => r.fulfill({ json: changes }));
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/plans`);
+  await page.getByText("Production plan Mon 9 Nov").click();
+  const table = page.getByTestId("plan-changes");
+  await expect(table.getByText(/Material change: .*reassigned/)).toBeVisible();
+  await expect(table.getByText("was Selam Bekele")).toBeVisible();
+  await expect(table.getByText("Done, kept")).toBeVisible();
+  await expect(table.getByText("Stock cost of the quantity changes: +1,300")).toBeVisible();
+  await page.screenshot({ path: `test-results/officer-plan-changes-${test.info().project.name}.png`, fullPage: true });
+
+  await seedWorkspaceAuth(page, []);
+  await page.route(`**/operations-officer/instructions/mine**`, (r) => r.fulfill({ json: [] }));
+  await page.route(`**/operations-officer/instructions/mine/changes`, (r) => r.fulfill({ json: [
+    { instructionId: "i9", title: "Prepare 40 kg Injera dough", event: "Superseded", note: "Replaced by plan v2: more guests.", atUtc: "2026-11-09T09:10:00Z", status: "superseded", dueAtUtc: "2026-11-09T07:00:00Z" }] }));
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/instructions`);
+  await expect(page.getByTestId("instruction-changes").getByText(/Prepare 40 kg Injera dough: replaced, stop work on it/)).toBeVisible();
 });
 
 test("The officer answers a question with sources and data time", async ({ page }) => {
@@ -245,4 +314,42 @@ test("Stock review shares short supply and prepares SIV drafts", async ({ page }
   expect((posts[0] as { destinations: unknown }).destinations).toEqual([{ toLocationId: "kitchen", lines: [{ itemId: "milk", qty: 10 }] }]);
   await expect(page.getByText("SIV drafts prepared. They are approved and issued as usual.")).toBeVisible();
   await page.screenshot({ path: `test-results/officer-stock-${test.info().project.name}.png`, fullPage: true });
+});
+
+test("Purchasing ranks suppliers and asks for a reason before overriding", async ({ page }) => {
+  await seedWorkspaceAuth(page, ["aiops.view", "aiops.actions.request"]);
+  await mock(page);
+  const quote = (quoteId: string, supplierName: string, rank: number, s: number) => ({
+    quoteId, supplierId: `s-${quoteId}`, supplierName, rank, score: s, unitCostBase: 10 + rank, lineTotal: 100, currency: "ETB", exchangeRate: 1,
+    validUntil: "2026-11-20", deliveryDate: "2026-11-12", paymentTermDays: 30, quotedBaseQty: 10, priceScore: 100, leadTimeScore: 70,
+    reliabilityScore: 50, qualityScore: 50, paymentScore: 100, eligible: true, notes: [],
+  });
+  const comparison = {
+    requestId: "rfq1", reference: "RFQ-1", status: "Open", version: "v1", currency: "ETB", calculatedAtUtc: "2026-11-09T08:00:00Z",
+    weights: { price: 50, quality: 15, leadTime: 15, reliability: 15, paymentTerms: 5 },
+    assumptions: ["Price: lowest cost scores 100, others in proportion."], missingData: ["Cheap Dairy: no deliveries in the last 12 months."],
+    lines: [{ requisitionLineId: "l1", requisitionNo: "PR-9", itemName: "Milk", unit: "kg", quantity: 10, baseQuantity: 10, quotes: [quote("q1", "Cheap Dairy", 1, 80.5), quote("q2", "Prompt Dairy", 2, 75.4)], recommendedQuoteId: "q1" }],
+  };
+  const awards: unknown[] = [];
+  await page.route(`**/operations-officer/purchasing/requirements**`, (r) => r.fulfill({ json: { calculatedAtUtc: "2026-11-09T08:00:00Z", assumptions: [], items: [], excluded: [] } }));
+  await page.route(`**/operations-officer/purchasing/quotations`, (r) => r.request().resourceType() === "document" ? r.fallback()
+    : r.fulfill({ json: [{ id: "rfq1", reference: "RFQ-1", status: "Open", responseDue: "2026-11-10", lines: 1, quotes: 2 }] }));
+  await page.route(`**/operations-officer/purchasing/quotations/rfq1/comparison`, (r) => r.fulfill({ json: comparison }));
+  await page.route(`**/operations-officer/purchasing/quotations/rfq1/award`, async (r) => {
+    awards.push(r.request().postDataJSON());
+    return r.fulfill({ json: { id: "a1", status: "pendingApproval", title: "Select suppliers", authorityNote: "Waits for approval by a person." } });
+  });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/purchasing`);
+  await expect(page.getByRole("heading", { name: "Officer Purchasing" })).toBeVisible();
+  await page.getByLabel("View").selectOption("suppliers");
+  await expect(page.getByText("Weights: price 50, quality 15, lead time 15, reliability 15, payment terms 5")).toBeVisible();
+  await page.getByRole("checkbox", { name: "Choose Prompt Dairy for Milk" }).check();
+  const propose = page.getByRole("button", { name: "Propose selection" });
+  await expect(propose).toBeDisabled();
+  await page.getByLabel("Why not the first-ranked supplier?").fill("Breakfast cannot wait two more days");
+  await propose.click();
+  await expect.poll(() => awards.length).toBe(1);
+  expect(awards[0]).toMatchObject({ lines: [{ quoteId: "q2", requisitionLineId: "l1", quantity: 10 }], overrideReason: "Breakfast cannot wait two more days" });
+  await expect(page.getByText("Waits for approval by a person.")).toBeVisible();
+  await page.screenshot({ path: `test-results/officer-purchasing-${test.info().project.name}.png`, fullPage: true });
 });

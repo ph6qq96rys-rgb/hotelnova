@@ -28,6 +28,9 @@ export type Settings = {
   acknowledgeHours: number; reminderHours: number; remindersBeforeEscalation: number;
   expiryWarningDays: number; transferDelayHours: number; countIntervalDays: number; countVarianceTolerancePercent: number; countVarianceMinValue: number;
   replenishmentLookbackDays: number; replenishmentCoverageDays: number;
+  weightPrice: number; weightQuality: number; weightLeadTime: number; weightReliability: number; weightPaymentTerms: number; supplierAcknowledgeHours: number;
+  productionReadyHour: number; yieldTolerancePercent: number; wasteSpikePercent: number; wasteMinValue: number; cateringReadinessDays: number;
+  discountRatePercent: number; refundRatePercent: number; voidRatePercent: number; controlLookbackDays: number; staffingGraceMinutes: number;
 };
 export type SettingsInput = Omit<Settings, "automationPaused" | "pausedAtUtc" | "pausedByName" | "pauseReason" | "policyVersion" | "lastMonitoredAtUtc" | "lastBriefingAtUtc" | "narrativeAvailable">;
 
@@ -156,7 +159,24 @@ export type InstructionInput = {
   dueAtUtc: string; requiredEvidence: string; completionMode: CompletionMode; completionRef?: string | null; findingId?: string | null; mandatory: boolean; clientRequestId: string;
 };
 
-export type PlanKind = "daily" | "event";
+export type PlanKind = "daily" | "event" | "production";
+export type PlanChange = {
+  activityKey: string; change: "added" | "removed" | "changed" | "unchanged" | "completed"; title: string; previousTitle?: string | null; ownerName?: string | null;
+  previousOwnerName?: string | null; dueAtUtc?: string | null; previousDueAtUtc?: string | null; dependsOn?: string | null; previousDependsOn?: string | null;
+  quantity?: number | null; previousQuantity?: number | null; unit?: string | null; costChange?: number | null; instructionEffect: string;
+};
+export type PlanChanges = {
+  planId: string; versionNo: number; comparedPlanId?: string | null; comparedVersionNo?: number | null; revisionReason?: string | null; material: boolean;
+  materialReasons: string[]; costChange?: number | null; changes: PlanChange[];
+};
+export type InstructionChange = { instructionId: string; title: string; event: string; note: string; atUtc: string; status: string; dueAtUtc: string; planId?: string | null };
+export type ProductionIngredient = { itemId: string; itemName: string; baseUnit: string; needed: number; onHand: number; short: number };
+export type ProductionLine = {
+  itemId: string; itemName: string; baseUnit: string; recipeId: string; recipeVersion: number; demand: number; usableStock: number; required: number; yieldPerBatch: number;
+  batches: number; plannedQuantity: number; locationId?: string | null; locationName?: string | null; supervisorEmployeeId?: string | null; supervisorName?: string | null;
+  readyByUtc: string; demandFrom: string[]; ingredients: ProductionIngredient[];
+};
+export type ProductionRequirements = { branchId: string; branchName: string; businessDate: string; calculatedAtUtc: string; assumptions: string[]; blocked: string[]; lines: ProductionLine[] };
 export type PlanStatus = "draft" | "pendingActivation" | "active" | "superseded" | "completed" | "cancelled";
 export type ActivityStatus = "planned" | "instructed" | "done" | "cancelled";
 export type PlanActivity = {
@@ -194,7 +214,33 @@ export type TransferOption = {
   itemId: string; itemName: string; baseUom: string; toLocationId: string; toLocationName: string; shortfall: number; fromBranchId: string;
   fromBranchName: string; fromLocationId: string; fromLocationName: string; available: number; unitCost?: number | null;
 };
-export type PurchaseNeed = { itemId: string; itemName: string; baseUom: string; shortfall: number; onOrder: number; openOrders: string[] };
+export type PurchaseNeed = { itemId: string; itemName: string; baseUom: string; shortfall: number; onOrder: number; openOrders: string[]; locationId: string; unitCost?: number | null };
+
+export type RequirementOrigin = {
+  requisitionId: string; requisitionLineId: string; requisitionNo: string; branchId?: string | null; branchName?: string | null; status: string; priority: string;
+  purpose: string; quantity: number; unit: string; baseQuantity?: number | null; needByUtc: string; specification?: string | null; consolidable: boolean;
+};
+export type SupplierOption = { supplierId: string; name: string; preferred: boolean; agreedPrice?: number | null; lastPrice?: number | null; leadTimeDays?: number | null; suggested: boolean };
+export type Requirement = {
+  itemId: string; itemName: string; baseUnit: string; required: number; awaitingApproval: number; freeAtMainStore: number; inTransit: number; onOrder: number;
+  netToBuy: number; needByUtc: string; urgency: string; urgencyRank: number; issues: string[]; origins: RequirementOrigin[]; suppliers: SupplierOption[];
+};
+export type Requirements = { calculatedAtUtc: string; assumptions: string[]; items: Requirement[]; excluded: string[] };
+export type QuotationRequestSummary = { id: string; reference: string; status: string; branchId?: string | null; branchName?: string | null; responseDue: string; lines: number; quotes: number };
+export type QuoteScore = {
+  quoteId: string; supplierId: string; supplierName: string; rank: number; score?: number | null; unitCostBase: number; lineTotal: number; currency: string;
+  exchangeRate: number; validUntil: string; deliveryDate: string; paymentTermDays: number; quotedBaseQty: number; priceScore?: number | null;
+  leadTimeScore?: number | null; reliabilityScore?: number | null; qualityScore?: number | null; paymentScore?: number | null; eligible: boolean; notes: string[];
+};
+export type ComparisonLine = {
+  requisitionLineId: string; requisitionNo: string; itemName: string; unit: string; quantity: number; baseQuantity: number; needByUtc?: string | null;
+  specification?: string | null; quotes: QuoteScore[]; recommendedQuoteId?: string | null;
+};
+export type Comparison = {
+  requestId: string; reference: string; status: string; version: string; currency: string; calculatedAtUtc: string;
+  weights: { price: number; quality: number; leadTime: number; reliability: number; paymentTerms: number };
+  assumptions: string[]; missingData: string[]; lines: ComparisonLine[];
+};
 export type ReplenishmentReview = {
   branchId: string; branchName: string; calculatedAtUtc: string; lookbackDays: number; coverageDays: number; assumptions: string[];
   locations: ReplenishmentLocation[]; conflicts: AllocationConflict[]; transfers: TransferOption[]; purchaseNeeds: PurchaseNeed[]; estimatedCost?: number | null;
@@ -266,6 +312,8 @@ export const officerApi = {
   pendingWork: (c: string) => http.get(`${base(c)}/pending-work`).then((r) => list<OfficerAction>(r.data)),
   audit: (c: string, q: { entityType?: string; entityId?: string; take?: number }) => http.get(`${base(c)}/audit`, { params: q }).then((r) => list<AuditEntry>(r.data)),
 
+  myInstructionChanges: (c: string) => http.get(`${base(c)}/instructions/mine/changes`).then((r) => list<InstructionChange>(r.data)),
+  planChanges: (c: string, id: string) => http.get<PlanChanges>(`${base(c)}/plans/${id}/changes`).then((r) => r.data),
   myInstructions: (c: string, open = true) => http.get(`${base(c)}/instructions/mine`, { params: { open } }).then((r) => list<Instruction>(r.data)),
   teamInstructions: (c: string, open = true, branchId?: string) => http.get(`${base(c)}/instructions`, { params: { open, branchId } }).then((r) => list<Instruction>(r.data)),
   instruction: (c: string, id: string) => http.get<Instruction>(`${base(c)}/instructions/${id}`).then((r) => r.data),
@@ -291,6 +339,10 @@ export const officerApi = {
   plan: (c: string, id: string) => http.get<Plan>(`${base(c)}/plans/${id}`).then((r) => r.data),
   prepareDailyPlan: (c: string, branchId: string, businessDate?: string | null, revisionReason?: string | null) =>
     http.post<Plan>(`${base(c)}/plans/daily`, { branchId, businessDate: businessDate || null, revisionReason: revisionReason || null }).then((r) => r.data),
+  productionRequirements: (c: string, branchId: string, date?: string | null) =>
+    http.get<ProductionRequirements>(`${base(c)}/production/requirements`, { params: { branchId, date: date || undefined } }).then((r) => r.data),
+  prepareProductionPlan: (c: string, branchId: string, businessDate?: string | null, revisionReason?: string | null) =>
+    http.post<Plan>(`${base(c)}/plans/production`, { branchId, businessDate: businessDate || null, revisionReason: revisionReason || null }).then((r) => r.data),
   prepareEventPlan: (c: string, cateringEventId: string, revisionReason?: string | null) =>
     http.post<Plan>(`${base(c)}/plans/event`, { cateringEventId, revisionReason: revisionReason || null }).then((r) => r.data),
   updateActivity: (c: string, planId: string, activityId: string, input: { ownerEmployeeId?: string | null; dueAtUtc?: string | null; title?: string | null; detail?: string | null; version?: string }) =>
@@ -309,6 +361,17 @@ export const officerApi = {
     http.post<OfficerAction>(`${base(c)}/stock/transfers`, input).then((r) => r.data),
   requestCount: (c: string, input: { branchId: string; locationId: string; ownerEmployeeId?: string | null; dueAtUtc: string; itemIds?: string[] | null; reason?: string | null; clientRequestId: string }) =>
     http.post<OfficerAction>(`${base(c)}/stock/counts`, input).then((r) => r.data),
+
+  requirements: (c: string, branchId?: string) => http.get<Requirements>(`${base(c)}/purchasing/requirements`, { params: { branchId } }).then((r) => r.data),
+  proposeRequisition: (c: string, input: { branchId: string; locationId: string; itemId: string; supplierId?: string | null; baseQty: number; estimatedUnitPrice: number; reason?: string | null }) =>
+    http.post<OfficerAction>(`${base(c)}/purchasing/requisitions`, input).then((r) => r.data),
+  proposeConsolidation: (c: string, input: { supplierId: string; mode: "Direct" | "Central"; centralBranchId?: string | null; centralLocationId?: string | null; expectedDate: string;
+    reason?: string | null; lines: { requisitionLineId: string; quantity: number; unitPrice?: number | null }[]; clientRequestId: string }) =>
+    http.post<OfficerAction>(`${base(c)}/purchasing/consolidations`, input).then((r) => r.data),
+  quotationRequests: (c: string) => http.get(`${base(c)}/purchasing/quotations`).then((r) => list<QuotationRequestSummary>(r.data)),
+  comparison: (c: string, id: string) => http.get<Comparison>(`${base(c)}/purchasing/quotations/${id}/comparison`).then((r) => r.data),
+  proposeAward: (c: string, id: string, input: { lines: { quoteId: string; requisitionLineId: string; quantity: number }[]; overrideReason?: string | null; clientRequestId: string }) =>
+    http.post<OfficerAction>(`${base(c)}/purchasing/quotations/${id}/award`, input).then((r) => r.data),
 
   ask: (c: string, input: { question: string; branchId?: string | null; threadId?: string | null; language?: string | null }) =>
     http.post<OfficerAnswer>(`${base(c)}/ask`, input).then((r) => r.data),

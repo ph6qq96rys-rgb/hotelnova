@@ -25,6 +25,7 @@ export type Settings = {
   monitorIntervalMinutes: number; briefingHour: number; narrativeEnabled: boolean; unpaidSaleHours: number; posCloseHours: number; sivPendingHours: number;
   grnDraftHours: number; poOverdueDays: number; adjustmentPendingHours: number; dataFreshnessHours: number; forecastTolerancePercent: number;
   lastMonitoredAtUtc?: string | null; lastBriefingAtUtc?: string | null; version?: string | null; narrativeAvailable: boolean;
+  acknowledgeHours: number; reminderHours: number; remindersBeforeEscalation: number;
 };
 export type SettingsInput = Omit<Settings, "automationPaused" | "pausedAtUtc" | "pausedByName" | "pauseReason" | "policyVersion" | "lastMonitoredAtUtc" | "lastBriefingAtUtc" | "narrativeAvailable">;
 
@@ -98,6 +99,7 @@ export type Briefing = {
   enabled: boolean; automationPaused: boolean; policyVersion: number; targets: TargetProgress[]; priorities: Finding[]; dataQuality: Finding[];
   unacknowledged: Finding[]; decisions: OfficerAction[]; targetsAwaitingApproval: Target[]; upcoming: Commitment[]; configuration: ConfigurationIssue[];
   branches: BranchSummary[]; narrative?: string | null; modelVersion?: string | null; notes: string[];
+  overdueInstructions?: Instruction[] | null; blockers?: Blocker[] | null;
 };
 export type BriefingListItem = { id: string; branchId?: string | null; businessDate: string; generatedAtUtc: string; modelVersion?: string | null };
 export type AuditEntry = { id: string; entityType: string; entityId: string; event: string; detailJson?: string | null; actorName: string; policyVersion: number; atUtc: string };
@@ -119,6 +121,62 @@ export type SubscribeInput = {
   package: Package; acceptCharges: boolean; startsOn?: string | null; endsOn?: string | null; includedUnitsPerMonth?: number | null; monthlyPrice?: number | null;
   overagePricePerUnit?: number | null; currency?: string | null; warningPercent?: number | null; trial: boolean; version?: string | null;
 };
+
+
+export type CompletionMode = "transaction" | "evidence";
+export type InstructionKind = "mandatory" | "recommendation";
+export type InstructionPriority = "low" | "normal" | "high" | "urgent";
+export type InstructionStatus = "issued" | "acknowledged" | "inProgress" | "blocked" | "awaitingReview" | "completed" | "cancelled" | "superseded";
+export type BlockerStatus = "open" | "resolved" | "escalated";
+export type ExceptionStatus = "pending" | "approved" | "rejected";
+export type Blocker = {
+  id: string; instructionId: string; cause: string; impact?: string | null; evidence?: string | null; assistanceRequired?: string | null; assignedRole: string;
+  assignedEmployeeId?: string | null; assignedName?: string | null; status: BlockerStatus; reportedByName: string; reportedAtUtc: string; reportedBeforeDue: boolean;
+  escalatedAtUtc?: string | null; resolvedAtUtc?: string | null; resolvedByName?: string | null; resolution?: string | null;
+};
+export type InstructionException = {
+  id: string; instructionId: string; requestedDueAtUtc?: string | null; waive: boolean; reason: string; status: ExceptionStatus; requestedByName: string;
+  requestedAtUtc: string; originalDueAtUtc: string; decidedByName?: string | null; decidedAtUtc?: string | null; decisionNote?: string | null;
+};
+export type InstructionEvent = { event: string; note?: string | null; fromName?: string | null; toName?: string | null; actorName: string; atUtc: string };
+export type Instruction = {
+  id: string; branchId: string; branchName?: string | null; departmentId?: string | null; departmentName?: string | null; planId?: string | null; findingId?: string | null;
+  kind: InstructionKind; priority: InstructionPriority; title: string; actionText: string; reason: string; authority: string; ownerEmployeeId: string;
+  ownerName?: string | null; ownerRole?: string | null; dueAtUtc: string; acknowledgeByUtc: string; requiredEvidence: string; completionMode: CompletionMode;
+  completionRef?: string | null; status: InstructionStatus; overdue: boolean; acknowledgementOverdue: boolean; progressPercent: number; progressNote?: string | null;
+  acknowledgedAtUtc?: string | null; evidenceText?: string | null; evidenceReference?: string | null; completedAtUtc?: string | null; completedByName?: string | null;
+  completionNote?: string | null; remindersSent: number; escalatedAtUtc?: string | null; escalatedToName?: string | null; issuedByName: string; issuedAtUtc: string;
+  version: string; isMine: boolean; blockers: Blocker[]; exceptions: InstructionException[]; history: InstructionEvent[];
+};
+export type InstructionInput = {
+  branchId: string; departmentId?: string | null; ownerEmployeeId: string; title: string; actionText: string; reason: string; priority: InstructionPriority;
+  dueAtUtc: string; requiredEvidence: string; completionMode: CompletionMode; completionRef?: string | null; findingId?: string | null; mandatory: boolean; clientRequestId: string;
+};
+
+export type PlanKind = "daily" | "event";
+export type PlanStatus = "draft" | "pendingActivation" | "active" | "superseded" | "completed" | "cancelled";
+export type ActivityStatus = "planned" | "instructed" | "done" | "cancelled";
+export type PlanActivity = {
+  id: string; activityKey: string; sortOrder: number; title: string; detail?: string | null; departmentId?: string | null; departmentName?: string | null;
+  ownerEmployeeId?: string | null; ownerName?: string | null; ownerRole: string; dueAtUtc: string; dependsOn?: string | null; completionCriteria: string;
+  completionMode: CompletionMode; completionRef?: string | null; linkedDocNo?: string | null; status: ActivityStatus; instructionId?: string | null;
+  instructionStatus?: InstructionStatus | null;
+};
+export type Plan = {
+  id: string; branchId: string; branchName?: string | null; kind: PlanKind; businessDate: string; cateringEventId?: string | null; title: string; planGroupId: string;
+  versionNo: number; supersedesPlanId?: string | null; status: PlanStatus; assumptions?: string | null; constraints?: string | null; revisionReason?: string | null;
+  createdByName: string; createdAtUtc: string; activatedByName?: string | null; activatedAtUtc?: string | null; activationActionId?: string | null;
+  activationStatus?: ActionStatus | null; activationNote?: string | null; version: string; activities: PlanActivity[]; issues: string[];
+};
+export type PlanListItem = {
+  id: string; branchId: string; branchName?: string | null; kind: PlanKind; businessDate: string; title: string; versionNo: number; status: PlanStatus;
+  activities: number; done: number; createdAtUtc: string;
+};
+export type OfficerMessage = {
+  id: string; threadId: string; role: "User" | "Officer"; text: string; sources: Evidence[]; dataAsOfUtc?: string | null; modelVersion?: string | null;
+  language?: string | null; atUtc: string;
+};
+export type OfficerAnswer = { threadId: string; question: OfficerMessage; answer: OfficerMessage; usedModel: boolean; notes: string[] };
 
 const base = (c: string) => `/companies/${c}/operations-officer`;
 const list = <T,>(data: unknown) => (Array.isArray(data) ? (data as T[]) : []);
@@ -182,4 +240,44 @@ export const officerApi = {
   cancelSubscription: (c: string, reason: string) => http.post(`${base(c)}/subscription/cancel`, { reason }),
   pendingWork: (c: string) => http.get(`${base(c)}/pending-work`).then((r) => list<OfficerAction>(r.data)),
   audit: (c: string, q: { entityType?: string; entityId?: string; take?: number }) => http.get(`${base(c)}/audit`, { params: q }).then((r) => list<AuditEntry>(r.data)),
+
+  myInstructions: (c: string, open = true) => http.get(`${base(c)}/instructions/mine`, { params: { open } }).then((r) => list<Instruction>(r.data)),
+  teamInstructions: (c: string, open = true, branchId?: string) => http.get(`${base(c)}/instructions`, { params: { open, branchId } }).then((r) => list<Instruction>(r.data)),
+  instruction: (c: string, id: string) => http.get<Instruction>(`${base(c)}/instructions/${id}`).then((r) => r.data),
+  requestInstruction: (c: string, input: InstructionInput) => http.post<OfficerAction>(`${base(c)}/instructions`, input).then((r) => r.data),
+  acknowledgeInstruction: (c: string, id: string, version?: string) => http.post<Instruction>(`${base(c)}/instructions/${id}/acknowledge`, { version }).then((r) => r.data),
+  progressInstruction: (c: string, id: string, percent: number, note: string, version?: string) =>
+    http.post<Instruction>(`${base(c)}/instructions/${id}/progress`, { percent, note, version }).then((r) => r.data),
+  submitEvidence: (c: string, id: string, evidence: string, reference: string, version?: string) =>
+    http.post<Instruction>(`${base(c)}/instructions/${id}/evidence`, { evidence, reference, version }).then((r) => r.data),
+  reviewInstruction: (c: string, id: string, accept: boolean, note: string, version?: string) =>
+    http.post<Instruction>(`${base(c)}/instructions/${id}/review`, { accept, note, version }).then((r) => r.data),
+  reassignInstruction: (c: string, id: string, employeeId: string, reason: string, version?: string) =>
+    http.post<Instruction>(`${base(c)}/instructions/${id}/reassign`, { employeeId, reason, version }).then((r) => r.data),
+  cancelInstruction: (c: string, id: string, reason: string, version?: string) => http.post<Instruction>(`${base(c)}/instructions/${id}/cancel`, { reason, version }).then((r) => r.data),
+  reportBlocker: (c: string, id: string, input: { cause: string; impact?: string; evidence?: string; assistanceRequired?: string }) =>
+    http.post<Instruction>(`${base(c)}/instructions/${id}/blockers`, input).then((r) => r.data),
+  resolveBlocker: (c: string, id: string, resolution: string) => http.post(`${base(c)}/blockers/${id}/resolve`, { resolution }),
+  requestException: (c: string, id: string, input: { newDueAtUtc?: string | null; waive: boolean; reason: string }) =>
+    http.post<Instruction>(`${base(c)}/instructions/${id}/exceptions`, input).then((r) => r.data),
+  decideException: (c: string, id: string, approve: boolean, note?: string) => http.post(`${base(c)}/exceptions/${id}/decide`, { approve, note }),
+
+  plans: (c: string, branchId?: string, current = false) => http.get(`${base(c)}/plans`, { params: { branchId, current } }).then((r) => list<PlanListItem>(r.data)),
+  plan: (c: string, id: string) => http.get<Plan>(`${base(c)}/plans/${id}`).then((r) => r.data),
+  prepareDailyPlan: (c: string, branchId: string, businessDate?: string | null, revisionReason?: string | null) =>
+    http.post<Plan>(`${base(c)}/plans/daily`, { branchId, businessDate: businessDate || null, revisionReason: revisionReason || null }).then((r) => r.data),
+  prepareEventPlan: (c: string, cateringEventId: string, revisionReason?: string | null) =>
+    http.post<Plan>(`${base(c)}/plans/event`, { cateringEventId, revisionReason: revisionReason || null }).then((r) => r.data),
+  updateActivity: (c: string, planId: string, activityId: string, input: { ownerEmployeeId?: string | null; dueAtUtc?: string | null; title?: string | null; detail?: string | null; version?: string }) =>
+    http.put<Plan>(`${base(c)}/plans/${planId}/activities/${activityId}`, input).then((r) => r.data),
+  addActivity: (c: string, planId: string, input: { title: string; detail?: string | null; departmentId?: string | null; ownerEmployeeId?: string | null; dueAtUtc: string; completionCriteria: string; version?: string }) =>
+    http.post<Plan>(`${base(c)}/plans/${planId}/activities`, input).then((r) => r.data),
+  removeActivity: (c: string, planId: string, activityId: string, version?: string) =>
+    http.post<Plan>(`${base(c)}/plans/${planId}/activities/${activityId}/remove`, { version }).then((r) => r.data),
+  activatePlan: (c: string, id: string, version?: string) => http.post<Plan>(`${base(c)}/plans/${id}/activate`, { version }).then((r) => r.data),
+  cancelPlan: (c: string, id: string, reason: string, version?: string) => http.post(`${base(c)}/plans/${id}/cancel`, { reason, version }),
+
+  ask: (c: string, input: { question: string; branchId?: string | null; threadId?: string | null; language?: string | null }) =>
+    http.post<OfficerAnswer>(`${base(c)}/ask`, input).then((r) => r.data),
+  conversation: (c: string, threadId?: string) => http.get(`${base(c)}/conversation`, { params: { threadId } }).then((r) => list<OfficerMessage>(r.data)),
 };

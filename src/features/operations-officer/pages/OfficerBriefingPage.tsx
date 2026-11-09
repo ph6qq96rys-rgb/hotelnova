@@ -10,7 +10,7 @@ import { useHasPermission } from "../../../auth/usePermissions";
 import { apiError, Chip, day, Field } from "../../finance/components/glShared";
 import { officerApi, type Briefing, type BriefingListItem, type Finding } from "../api/officerApi";
 import {
-  ACTION_STATUS_LABEL, ACTION_STATUS_TONE, BranchSelect, EvidenceList, KIND_LABEL, metricValue, OfficerNav, PROGRESS_LABEL, PROGRESS_TONE, Section,
+  ACTION_STATUS_LABEL, ACTION_STATUS_TONE, BranchSelect, EvidenceList, INSTRUCTION_STATUS_LABEL, KIND_LABEL, metricValue, OfficerNav, PROGRESS_LABEL, PROGRESS_TONE, Section,
   SeverityChip, TARGET_STATUS_LABEL, useOfficerRefs, when,
 } from "../components/officerShared";
 
@@ -185,6 +185,30 @@ export default function OfficerBriefingPage() {
               </div>
             )}
           </Section>
+
+          {(briefing.overdueInstructions?.length ?? 0) > 0 || (briefing.blockers?.length ?? 0) > 0 ? (
+            <div className="oo-two">
+              <Section title="Instructions behind schedule" hint="Mandatory instructions past their deadline or not acknowledged in time.">
+                {(briefing.overdueInstructions ?? []).length === 0 ? <p className="gl-muted">Every instruction is on time.</p> : (
+                  <div className="oo-cards">{(briefing.overdueInstructions ?? []).map((i) => (
+                    <article key={i.id} className="oo-card">
+                      <div className="oo-card-head"><h3>{i.title}</h3><Chip tone={i.overdue ? "bad" : "warn"}>{i.overdue ? "Overdue" : "Not acknowledged"}</Chip></div>
+                      <div className="oo-meta"><span>{i.ownerName ?? "Owner"}</span><span>Due {when(i.dueAtUtc)}</span><span>{INSTRUCTION_STATUS_LABEL[i.status]}</span>{i.escalatedAtUtc ? <span>Escalated</span> : null}</div>
+                    </article>))}</div>
+                )}
+              </Section>
+              <Section title="Blockers" hint="Reported obstacles waiting for help. Deadlines stay unless an exception is approved.">
+                {(briefing.blockers ?? []).length === 0 ? <p className="gl-muted">No open blockers.</p> : (
+                  <div className="oo-cards">{(briefing.blockers ?? []).map((b) => (
+                    <article key={b.id} className="oo-card">
+                      <div className="oo-card-head"><h3>{b.cause}</h3><Chip tone={b.status === "escalated" ? "bad" : "warn"}>{b.status === "escalated" ? "Escalated" : "Open"}</Chip></div>
+                      <div className="oo-meta"><span>Reported by {b.reportedByName}, {when(b.reportedAtUtc)}</span><span>With {b.assignedName ?? b.assignedRole}</span></div>
+                      {b.assistanceRequired ? <p>Help needed: {b.assistanceRequired}</p> : null}
+                    </article>))}</div>
+                )}
+              </Section>
+            </div>
+          ) : null}
 
           <div className="oo-two">
             <Section title="Not acknowledged for over a day">

@@ -34,3 +34,11 @@
 .oo-meter > span.is-warn { background: var(--warn); }
 .oo-meter > span.is-bad { background: var(--danger); }
 .oo-basis { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-muted); }
+
+.oo-thread { display: grid; gap: var(--ui-space-3); margin-bottom: var(--ui-space-3); }
+.oo-msg { display: grid; gap: 6px; padding: var(--ui-space-3); border: 1px solid var(--border-soft); border-radius: var(--r-md); background: var(--surface); min-width: 0; }
+.oo-msg.is-user { background: var(--surface-2); margin-inline-start: min(15%, 80px); }
+.oo-msg p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; line-height: 1.5; }
+.oo-ask { display: flex; gap: var(--ui-space-2); align-items: flex-end; flex-wrap: wrap; }
+.oo-ask > :first-child { flex: 1 1 280px; min-width: 0; }
+@media (max-width: 640px) { .oo-msg.is-user { margin-inline-start: 0; } }

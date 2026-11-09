@@ -34,7 +34,9 @@ const briefing = {
     { branchId: BRANCH, branchName: "Bole", critical: 0, high: 1, open: 2, targetsAtRisk: 1, targetsMissed: 2 },
     { branchId: "b-2", branchName: "Piassa", critical: 1, high: 0, open: 1, targetsAtRisk: 0, targetsMissed: 0 },
   ],
-  notes: ["Instructions, acknowledgments and blockers arrive with Release 2; follow-ups here are findings and officer actions."],
+  notes: [],
+  overdueInstructions: [{ id: "i9", title: "Count the bar stock", ownerName: "Dawit Alemu", dueAtUtc: "2026-11-08T05:00:00Z", status: "issued", overdue: true }],
+  blockers: [],
 };
 const refs = {
   branches: [{ id: BRANCH, name: "Bole", isActive: true }, { id: "b-2", name: "Piassa", isActive: true }], departments: [], locations: [],
@@ -58,6 +60,7 @@ test("Operations Officer briefing shows priorities, targets and decisions", asyn
   await expect(page.getByText("3 unpaid order(s) older than 4 h at Bole").first()).toBeVisible();
   await expect(page.getByText("At risk").first()).toBeVisible();
   await expect(page.getByText("EV-0042")).toBeVisible();
+  await expect(page.getByText("Count the bar stock")).toBeVisible();
   await page.getByRole("button", { name: "3 unpaid order(s) older than 4 h at Bole" }).click();
   await expect(page.getByText("S-1001")).toBeVisible();
   await page.screenshot({ path: `test-results/officer-briefing-${test.info().project.name}.png`, fullPage: true });
@@ -123,4 +126,86 @@ test("The AI COO subscription shows the package, usage and branches", async ({ p
   await expect.poll(() => saved.length).toBe(1);
   expect(saved[0]).toEqual({ branchIds: ["b-main", "b-2"] });
   await page.screenshot({ path: `test-results/officer-subscription-${test.info().project.name}.png`, fullPage: true });
+});
+
+const instruction = {
+  id: "i1", branchId: BRANCH, branchName: "Bole", kind: "mandatory", priority: "high", title: "Fix the walk-in cooler", actionText: "Call the technician and move stock to the reach-in.",
+  reason: "Food safety", authority: "Within delegated authority (policy v3).", ownerEmployeeId: "e1", ownerName: "Selam Bekele", ownerRole: "Branch manager",
+  dueAtUtc: "2026-11-08T15:00:00Z", acknowledgeByUtc: "2026-11-08T09:00:00Z", requiredEvidence: "Technician report", completionMode: "evidence", status: "issued",
+  overdue: false, acknowledgementOverdue: false, progressPercent: 0, remindersSent: 0, issuedByName: "Operations Officer", issuedAtUtc: "2026-11-08T07:00:00Z",
+  version: "v1", isMine: true, blockers: [], exceptions: [], history: [{ event: "Issued", note: "Mandatory.", actorName: "Operations Officer", atUtc: "2026-11-08T07:00:00Z" }],
+};
+
+test("An employee acknowledges an instruction and reports a blocker", async ({ page }) => {
+  await seedWorkspaceAuth(page, []);
+  let current: Record<string, unknown> = { ...instruction };
+  const posts: { url: string; body: unknown }[] = [];
+  await page.route(`**/operations-officer/instructions/mine**`, (r) => r.fulfill({ json: [current] }));
+  await page.route(`**/operations-officer/instructions/i1`, (r) => r.fulfill({ json: current }));
+  await page.route(`**/operations-officer/instructions/i1/*`, async (r) => {
+    posts.push({ url: r.request().url(), body: r.request().postDataJSON() });
+    current = r.request().url().endsWith("/acknowledge") ? { ...current, status: "acknowledged" }
+      : { ...current, status: "blocked", blockers: [{ id: "bl1", instructionId: "i1", cause: "Spare part not in stock", assignedRole: "Escalation contact", assignedName: "Dawit Alemu",
+          status: "open", reportedByName: "Selam", reportedAtUtc: "2026-11-08T08:00:00Z", reportedBeforeDue: true }] };
+    await r.fulfill({ json: current });
+  });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/instructions`);
+  await expect(page.getByRole("heading", { name: "Officer Instructions" })).toBeVisible();
+  await page.getByRole("button", { name: "Acknowledge" }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  await page.getByRole("button", { name: "Fix the walk-in cooler" }).click();
+  await page.getByRole("button", { name: "Report blocker" }).click();
+  await page.getByLabel("What is blocking the work").fill("Spare part not in stock");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect.poll(() => posts.length).toBe(2);
+  expect(posts[1].body).toEqual({ cause: "Spare part not in stock", impact: "", assistanceRequired: "" });
+  await expect(page.getByText("Blocker reported. The deadline stays unless an exception is approved.")).toBeVisible();
+  await page.screenshot({ path: `test-results/officer-instructions-${test.info().project.name}.png`, fullPage: true });
+});
+
+test("A daily plan is prepared and activated", async ({ page }) => {
+  await seedWorkspaceAuth(page, ["aiops.view", "aiops.plans.manage"]);
+  await mock(page);
+  const plan = {
+    id: "p1", branchId: BRANCH, branchName: "Bole", kind: "daily", businessDate: "2026-11-08", title: "Daily plan Sun 8 Nov", planGroupId: "g1", versionNo: 1, status: "draft",
+    assumptions: "Expected net sales about 58,000 (average of 4 previous Sundays).\nStaffing rosters are not used in this release.", createdByName: "QAE",
+    createdAtUtc: "2026-11-08T06:00:00Z", version: "v1", issues: [],
+    activities: [{ id: "x1", activityKey: "po:1", sortOrder: 1, title: "Receive PO-0107", detail: "Expected today.", ownerEmployeeId: "e1", ownerName: "Selam Bekele",
+      ownerRole: "Branch manager", dueAtUtc: "2026-11-08T15:00:00Z", completionCriteria: "The goods receipt is posted.", completionMode: "transaction", status: "planned" }],
+  };
+  let activated = false;
+  await page.route(`**/operations-officer/plans?**`, (r) => r.fulfill({ json: activated ? [{ ...plan, status: "active", activities: 1, done: 0 }] : [] }));
+  await page.route(`**/operations-officer/plans/daily`, (r) => r.fulfill({ json: plan }));
+  await page.route(`**/operations-officer/plans/p1/activate`, (r) => { activated = true;
+    return r.fulfill({ json: { ...plan, status: "active", activities: [{ ...plan.activities[0], status: "instructed", instructionStatus: "issued" }] } }); });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/plans`);
+  await page.getByRole("button", { name: "Daily plan" }).click();
+  await page.getByRole("button", { name: "Prepare" }).click();
+  await expect(page.getByText("Receive PO-0107")).toBeVisible();
+  await expect(page.getByText("Staffing rosters are not used in this release.")).toBeVisible();
+  await page.getByRole("button", { name: "Activate" }).click();
+  await expect(page.getByText("Plan active. Instructions were issued to the owners.")).toBeVisible();
+  await page.screenshot({ path: `test-results/officer-plan-${test.info().project.name}.png`, fullPage: true });
+});
+
+test("The officer answers a question with sources and data time", async ({ page }) => {
+  await seedWorkspaceAuth(page, ["aiops.view", "aiops.view.company"]);
+  await mock(page);
+  const asked: unknown[] = [];
+  await page.route(`**/operations-officer/ask`, async (r) => {
+    if (r.request().resourceType() === "document") return r.fallback();
+    asked.push(r.request().postDataJSON());
+    await r.fulfill({ json: {
+      threadId: "th1", usedModel: false, notes: ["No language model is configured; this answer lists the facts directly."],
+      question: { id: "m1", threadId: "th1", role: "User", text: "What needs my attention today?", sources: [], atUtc: "2026-11-08T08:00:00Z" },
+      answer: { id: "m2", threadId: "th1", role: "Officer", text: "Company, 2026-11-08. From today's briefing:\n• High: 3 unpaid order(s) older than 4 h at Bole.", dataAsOfUtc: "2026-11-08T07:58:00Z",
+        sources: [{ type: "OfficerFinding", id: "f1", label: "3 unpaid order(s) older than 4 h at Bole" }], atUtc: "2026-11-08T08:00:01Z" },
+    } });
+  });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/ask`);
+  await page.getByRole("button", { name: "What needs my attention today?" }).click();
+  await expect(page.getByText("Facts listed directly, no language model")).toBeVisible();
+  await expect(page.getByText("OfficerFinding")).toBeVisible();
+  expect(asked[0]).toEqual({ question: "What needs my attention today?", branchId: null, threadId: null, language: "en" });
+  await page.screenshot({ path: `test-results/officer-ask-${test.info().project.name}.png`, fullPage: true });
 });

@@ -25,6 +25,9 @@ const NUMBER_FIELDS: { key: keyof SettingsInput; label: string; hint: string }[]
   { key: "adjustmentPendingHours", label: "Adjustment waiting longer than (hours)", hint: "Stock adjustments awaiting approval." },
   { key: "dataFreshnessHours", label: "Data stale after (hours)", hint: "Older data is reported, not used for conclusions." },
   { key: "forecastTolerancePercent", label: "Forecast tolerance (%)", hint: "Projected misses within this margin are not raised." },
+  { key: "acknowledgeHours", label: "Acknowledge instructions within (hours)", hint: "Instructions not acknowledged in time are followed up." },
+  { key: "reminderHours", label: "Remind every (hours)", hint: "Between reminders about late or unacknowledged instructions." },
+  { key: "remindersBeforeEscalation", label: "Reminders before escalation", hint: "Then the escalation contact gets a finding." },
 ];
 
 type ScopeEditor = ScopeInput & { title: string };
@@ -79,6 +82,7 @@ export default function OfficerSetupPage() {
       unpaidSaleHours: settings.unpaidSaleHours, posCloseHours: settings.posCloseHours, sivPendingHours: settings.sivPendingHours, grnDraftHours: settings.grnDraftHours,
       poOverdueDays: settings.poOverdueDays, adjustmentPendingHours: settings.adjustmentPendingHours, dataFreshnessHours: settings.dataFreshnessHours,
       forecastTolerancePercent: settings.forecastTolerancePercent, version: settings.version ?? null,
+      acknowledgeHours: settings.acknowledgeHours ?? 2, reminderHours: settings.reminderHours ?? 2, remindersBeforeEscalation: settings.remindersBeforeEscalation ?? 1,
     };
     void run(() => officerApi.saveSettings(companyId, input), "The settings could not be saved.", undefined, "Settings saved.");
   }

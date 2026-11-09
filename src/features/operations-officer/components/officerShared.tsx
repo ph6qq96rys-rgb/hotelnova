@@ -5,7 +5,10 @@ import { Select } from "../../../components/ui/select";
 import { formatAppDateTime } from "../../../shared/datetime/dateFormat";
 import { formatCurrency } from "../../../shared/currency/currencyFormat";
 import { Chip } from "../../finance/components/glShared";
-import { officerApi, type ActionStatus, type AuthorityMode, type Evidence, type FindingKind, type FindingStatus, type ProgressStatus, type References, type Severity, type TargetStatus } from "../api/officerApi";
+import {
+  officerApi, type ActionStatus, type AuthorityMode, type Evidence, type FindingKind, type FindingStatus, type InstructionPriority, type InstructionStatus, type PlanStatus,
+  type ProgressStatus, type References, type Severity, type TargetStatus,
+} from "../api/officerApi";
 import "./officer.css";
 
 export const SEVERITY_LABEL: Record<Severity, string> = { low: "Low", medium: "Medium", high: "High", critical: "Critical" };
@@ -30,6 +33,31 @@ export const TARGET_STATUS_TONE: Record<TargetStatus, "neutral" | "ok" | "warn" 
 };
 export const PROGRESS_LABEL: Record<ProgressStatus, string> = { onTrack: "On track", atRisk: "At risk", missed: "Missed", met: "Met", noData: "No data" };
 export const PROGRESS_TONE: Record<ProgressStatus, "ok" | "warn" | "bad" | "muted"> = { onTrack: "ok", atRisk: "warn", missed: "bad", met: "ok", noData: "muted" };
+
+export const INSTRUCTION_STATUS_LABEL: Record<InstructionStatus, string> = {
+  issued: "Issued", acknowledged: "Acknowledged", inProgress: "In progress", blocked: "Blocked", awaitingReview: "Awaiting review", completed: "Completed",
+  cancelled: "Cancelled", superseded: "Superseded",
+};
+export const INSTRUCTION_STATUS_TONE: Record<InstructionStatus, "neutral" | "ok" | "warn" | "bad" | "info" | "muted"> = {
+  issued: "warn", acknowledged: "info", inProgress: "info", blocked: "bad", awaitingReview: "warn", completed: "ok", cancelled: "muted", superseded: "muted",
+};
+export const PRIORITY_LABEL: Record<InstructionPriority, string> = { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" };
+export const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
+  draft: "Draft", pendingActivation: "Awaiting activation", active: "Active", superseded: "Superseded", completed: "Completed", cancelled: "Cancelled",
+};
+export const PLAN_STATUS_TONE: Record<PlanStatus, "neutral" | "ok" | "warn" | "bad" | "info" | "muted"> = {
+  draft: "neutral", pendingActivation: "warn", active: "ok", superseded: "muted", completed: "ok", cancelled: "muted",
+};
+export const OPEN_INSTRUCTION: InstructionStatus[] = ["issued", "acknowledged", "inProgress", "blocked", "awaitingReview"];
+
+/** A datetime-local value (the browser's time) as UTC ISO, and back. */
+export const toUtcIso = (local: string) => (local ? new Date(local).toISOString() : "");
+export const toLocalInput = (utc?: string | null) => {
+  if (!utc) return "";
+  const d = new Date(utc);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 export const when = (value?: string | null) => (value ? formatAppDateTime(value) : "—");
 export const metricValue = (unit: "money" | "percent", value?: number | null) =>
@@ -93,6 +121,9 @@ export function EmployeeSelect({ value, onChange, employees, branchId, placehold
 
 const LINKS = [
   { to: "", label: "Briefing", end: true },
+  { to: "/instructions", label: "Instructions" },
+  { to: "/plans", label: "Plans" },
+  { to: "/ask", label: "Ask" },
   { to: "/findings", label: "Findings" },
   { to: "/targets", label: "Targets" },
   { to: "/actions", label: "Actions & audit" },

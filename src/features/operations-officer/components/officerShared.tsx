@@ -121,6 +121,7 @@ export function EmployeeSelect({ value, onChange, employees, branchId, placehold
 
 const LINKS = [
   { to: "", label: "Briefing", end: true },
+  { to: "/daily-cycle", label: "Daily cycle" },
   { to: "/instructions", label: "Instructions" },
   { to: "/plans", label: "Plans" },
   { to: "/stock", label: "Stock" },
@@ -128,6 +129,8 @@ const LINKS = [
   { to: "/ask", label: "Ask" },
   { to: "/findings", label: "Findings" },
   { to: "/targets", label: "Targets" },
+  { to: "/cases", label: "Cases" },
+  { to: "/scorecards", label: "Scorecards" },
   { to: "/actions", label: "Actions & audit" },
   { to: "/setup", label: "Setup & authority" },
   { to: "/subscription", label: "Subscription" },

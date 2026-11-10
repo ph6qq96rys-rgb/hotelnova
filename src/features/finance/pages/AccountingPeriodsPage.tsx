@@ -10,6 +10,7 @@ import { useHasPermission } from "../../../auth/usePermissions";
 import { formatAppDateTime } from "../../../shared/datetime/dateFormat";
 import { financeApi, type FiscalYear, type Period, type PeriodEvent } from "../api/financeApi";
 import { apiError, Chip, day, Field, GlDialog } from "../components/glShared";
+import { CloseReviewPanel } from "../components/CloseReviewPanel";
 
 /** Suggested start of the next fiscal year: the day after the latest year ends, or 8 July (Hamle 1). */
 function nextStart(years: FiscalYear[]) {
@@ -27,6 +28,7 @@ export default function AccountingPeriodsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reviewPeriod, setReviewPeriod] = useState<Period | null>(null);
   const [creating, setCreating] = useState<{ name: string; startDate: string } | null>(null);
   const [action, setAction] = useState<{ period: Period; kind: "close" | "reopen"; reason: string } | null>(null);
   const [history, setHistory] = useState<{ period: Period; events: PeriodEvent[] | null } | null>(null);
@@ -84,6 +86,7 @@ export default function AccountingPeriodsPage() {
                       </div>
                     </td>
                     <td className="gl-actions">
+                      <Button size="sm" variant="outline" onClick={() => setReviewPeriod(p)}>Close review</Button>
                       <Button size="sm" variant="ghost" onClick={() => openHistory(p)}>History</Button>
                       {canClose && p.status === "open" ? <Button size="sm" variant="outline" onClick={() => { setError(null); setAction({ period: p, kind: "close", reason: "" }); }}>Close</Button> : null}
                       {canClose && p.status === "closed" ? <Button size="sm" variant="ghost" onClick={() => { setError(null); setAction({ period: p, kind: "reopen", reason: "" }); }}>Reopen</Button> : null}
@@ -96,6 +99,7 @@ export default function AccountingPeriodsPage() {
         </section>
       ))}
 
+      {reviewPeriod && <CloseReviewPanel companyId={companyId} period={reviewPeriod} onClose={() => setReviewPeriod(null)} />}
       {creating ? (
         <GlDialog open title="New fiscal year" confirmText="Create year" busy={busy} error={error} onClose={() => setCreating(null)}
           description="Twelve monthly periods are created from the start date. The Ethiopian fiscal year starts on Hamle 1 (8 July)."
@@ -112,7 +116,7 @@ export default function AccountingPeriodsPage() {
           danger={action.kind === "reopen"} busy={busy} error={error} onClose={() => setAction(null)}
           confirmDisabled={action.kind === "reopen" && action.reason.trim().length < 10}
           description={action.kind === "close"
-            ? "Nothing can be posted into a closed period. Earlier periods must be closed first, and no draft journals or unposted documents may remain."
+            ? "Closing reruns the monetary reconciliation and close checks. Resolve differences, provide current supporting schedules prepared by another user, and approve period-end bank reconciliations first. The verification evidence is saved with the close."
             : "Reopening lets journals post into this period again. Later closed periods must be reopened first. Your reason is kept in the period history."}
           onConfirm={() => void run(() => action.kind === "close"
             ? financeApi.closePeriod(companyId, action.period.id, action.period.version, action.reason.trim() || undefined)

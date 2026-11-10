@@ -31,6 +31,8 @@ export type Settings = {
   weightPrice: number; weightQuality: number; weightLeadTime: number; weightReliability: number; weightPaymentTerms: number; supplierAcknowledgeHours: number;
   productionReadyHour: number; yieldTolerancePercent: number; wasteSpikePercent: number; wasteMinValue: number; cateringReadinessDays: number;
   discountRatePercent: number; refundRatePercent: number; voidRatePercent: number; controlLookbackDays: number; staffingGraceMinutes: number;
+  caseExplanationHours: number; caseChallengeDays: number; caseRecurrenceDays: number; caseEscalateRecurrence: number;
+  scoreWeightTargets: number; scoreWeightInstructions: number; scoreWeightReporting: number; scoreWeightCorrections: number; scoreMinItems: number;
 };
 export type SettingsInput = Omit<Settings, "automationPaused" | "pausedAtUtc" | "pausedByName" | "pauseReason" | "policyVersion" | "lastMonitoredAtUtc" | "lastBriefingAtUtc" | "narrativeAvailable">;
 
@@ -249,10 +251,64 @@ export type ReplenishDestination = { toLocationId: string; lines: { itemId: stri
 
 export type OfficerAnswer = { threadId: string; question: OfficerMessage; answer: OfficerMessage; usedModel: boolean; notes: string[] };
 
+export type CaseStatus = "awaitingExplanation" | "awaitingAssessment" | "assessed" | "challenged" | "final" | "closed" | "withdrawn";
+export type Responsibility = "managerControlled" | "shared" | "externalDependency" | "insufficientEvidence";
+export type FailureType = "resultMissed" | "instructionNotFollowed" | "both";
+export type ReviewDecision = "upheld" | "amended" | "withdrawn";
+export type CorrectionStatus = "proposed" | "instructed" | "done" | "verified" | "notEffective" | "cancelled";
+export type PersonnelDecision = "noAction" | "coaching" | "formalWarning" | "deduction" | "suspension" | "termination";
+export type CaseListItem = {
+  id: string; caseNo: string; kind: "missedTarget" | "instructionFailure"; status: CaseStatus; branchId: string; branchName?: string | null; subjectEmployeeId: string;
+  subjectName?: string | null; title: string; severity: Severity; openedAtUtc: string; explanationDueUtc: string; explanationOverdue: boolean; recurrenceNo: number;
+  escalated: boolean; dataLimited: boolean; responsibility?: Responsibility | null; isMine: boolean;
+};
+export type CaseCorrection = {
+  id: string; action: string; ownerEmployeeId: string; ownerName?: string | null; dueAtUtc: string; support?: string | null; recoveryMeasure: string; spendAmount?: number | null;
+  policyException: boolean; status: CorrectionStatus; actionId?: string | null; actionStatus?: string | null; authorityNote?: string | null; instructionId?: string | null;
+  instructionStatus?: string | null; verificationNote?: string | null; verifiedAtUtc?: string | null; verifiedByName?: string | null; version: string;
+};
+export type CaseDetail = CaseListItem & {
+  departmentName?: string | null; summary: string; findingId?: string | null; targetId?: string | null; instructionId?: string | null; periodStart?: string | null;
+  periodEnd?: string | null; expected?: number | null; actual?: number | null; dueAtUtc?: string | null; evidence: Evidence[]; dataLimitation?: string | null;
+  dataResolvedAtUtc?: string | null; dataResolvedByName?: string | null; dataResolution?: string | null; causes?: string | null; mitigation?: string | null;
+  priorBlockers?: string | null; proposedCorrection?: string | null; explainedAtUtc?: string | null; explainedByName?: string | null; nonResponseEscalatedAtUtc?: string | null;
+  suggestion?: { responsibility: Responsibility; failureType: FailureType; dependencies: string[]; mitigationReasonable?: boolean | null; reasons: string[] } | null;
+  failureType?: FailureType | null; dependencies: string[]; mitigationReasonable?: boolean | null; uncertainty?: string | null; assessmentNote?: string | null;
+  assessedAtUtc?: string | null; assessedByName?: string | null; challengeByUtc?: string | null; challenge?: string | null; challengeEvidence?: string | null;
+  challengedAtUtc?: string | null; reviewDecision?: ReviewDecision | null; reviewNote?: string | null; reviewedByName?: string | null; reviewedAtUtc?: string | null;
+  previousCaseId?: string | null; escalatedAtUtc?: string | null; escalatedToName?: string | null; escalationReason?: string | null; recommendation?: string | null;
+  outcome?: string | null; closedAtUtc?: string | null; closedByName?: string | null; openedByName: string; version: string; corrections: CaseCorrection[];
+  decisions: { decision: PersonnelDecision; note: string; decidedByName: string; decidedAtUtc: string }[]; events: { event: string; note?: string | null; actorName: string; atUtc: string }[];
+  canDo: string[];
+};
+export type ScoreItem = { type: string; id?: string | null; label: string; dueAtUtc?: string | null; result: string; met?: boolean | null };
+export type ScoreComponent = { key: string; label: string; weight: number; met: number; counted: number; score?: number | null; rated: boolean; rule: string; items: ScoreItem[]; notes: string[] };
+export type Scorecard = {
+  branchId: string; branchName?: string | null; departmentId?: string | null; departmentName?: string | null; subjectEmployeeId?: string | null; subjectName?: string | null;
+  from: string; to: string; overall?: number | null; withheld: boolean; withheldReason?: string | null; disputes: number; components: ScoreComponent[]; context: string[];
+  calculation: string; calculatedAtUtc: string;
+};
+
+export type DayMetric = { targetId?: string | null; name: string; calculation: string; unit: string; target?: number | null; actual?: number | null;
+  from: string; to: string; status: string; dataAsOfUtc?: string | null; guidance: string[]; evidence: Evidence[] };
+export type BranchDay = { id: string; branchId: string; branchName?: string | null; managerEmployeeId?: string | null; managerName?: string | null;
+  businessDate: string; openedAtUtc: string; planDueAtUtc: string; explanationDueAtUtc: string; status: string; late: boolean; planId?: string | null; submittedAtUtc?: string | null;
+  salesPlan: string; foodCostPlan: string; wastePlan: string; staffingPlan: string; validation: string[]; yesterday: DayMetric[]; today: DayMetric[];
+  explanationRequired: boolean; explanation?: string | null; correctivePlan?: string | null; correctionDueAtUtc?: string | null;
+  correctionActionId?: string | null; correctionStatus?: string | null; canSubmit: boolean; canRespond: boolean; version: string };
+export type DailyCycle = { enabled: boolean; timeZone: string; opensAt: string; plansDueAt: string; today: string; branches: BranchDay[] };
+
 const base = (c: string) => `/companies/${c}/operations-officer`;
 const list = <T,>(data: unknown) => (Array.isArray(data) ? (data as T[]) : []);
 
 export const officerApi = {
+  dailyCycle: (c: string, date?: string) => http.get<DailyCycle>(`${base(c)}/daily-cycle`, { params: { date } }).then(r => r.data),
+  setDailyCycle: (c: string, enabled: boolean) => http.put(`${base(c)}/daily-cycle/settings`, { enabled }),
+  runDailyCycle: (c: string) => http.post(`${base(c)}/daily-cycle/run`),
+  submitDailyPlan: (c: string, id: string, input: { planId: string; planVersion: string; salesPlan: string; foodCostPlan: string; wastePlan: string; staffingPlan: string; version: string }) =>
+    http.post(`${base(c)}/daily-cycle/${id}/submit`, input),
+  respondDailyCycle: (c: string, id: string, input: { explanation: string; correctivePlan: string; dueAtUtc: string; version: string }) =>
+    http.post(`${base(c)}/daily-cycle/${id}/respond`, input),
   references: (c: string) => http.get<References>(`${base(c)}/references`).then((r) => r.data),
   settings: (c: string) => http.get<Settings>(`${base(c)}/settings`).then((r) => r.data),
   saveSettings: (c: string, s: SettingsInput) => http.put(`${base(c)}/settings`, s),
@@ -375,5 +431,13 @@ export const officerApi = {
 
   ask: (c: string, input: { question: string; branchId?: string | null; threadId?: string | null; language?: string | null }) =>
     http.post<OfficerAnswer>(`${base(c)}/ask`, input).then((r) => r.data),
+  cases: (c: string, q: { mine?: boolean; open?: boolean; branchId?: string }) => http.get(`${base(c)}/cases`, { params: q }).then((r) => list<CaseListItem>(r.data)),
+  caseDetail: (c: string, id: string) => http.get<CaseDetail>(`${base(c)}/cases/${id}`).then((r) => r.data),
+  openCase: (c: string, input: { findingId?: string | null; instructionId?: string | null }) => http.post<CaseDetail>(`${base(c)}/cases`, input).then((r) => r.data),
+  caseStep: (c: string, id: string, step: string, body: Record<string, unknown>) => http.post<CaseDetail>(`${base(c)}/cases/${id}/${step}`, body).then((r) => r.data),
+  acceptCase: (c: string, id: string, version: string) => http.post<CaseDetail>(`${base(c)}/cases/${id}/accept`, null, { params: { version } }).then((r) => r.data),
+  verifyCorrection: (c: string, id: string, correctionId: string, body: { effective: boolean; note: string; version: string }) =>
+    http.post<CaseDetail>(`${base(c)}/cases/${id}/corrections/${correctionId}/verify`, body).then((r) => r.data),
+  scorecards: (c: string, q: { from?: string; to?: string; branchId?: string }) => http.get(`${base(c)}/scorecards`, { params: q }).then((r) => list<Scorecard>(r.data)),
   conversation: (c: string, threadId?: string) => http.get(`${base(c)}/conversation`, { params: { threadId } }).then((r) => list<OfficerMessage>(r.data)),
 };

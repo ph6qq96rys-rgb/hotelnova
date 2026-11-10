@@ -45,3 +45,7 @@
 
 .oo-bad { color: var(--danger); }
 .oo-muted-row td { color: var(--text-muted); }
+
+/* Accountability */
+.oo-score { font-size: 28px; font-weight: 700; line-height: 1; }
+.oo-components { display: grid; gap: var(--ui-space-2); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }

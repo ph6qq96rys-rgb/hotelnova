@@ -353,3 +353,90 @@ test("Purchasing ranks suppliers and asks for a reason before overriding", async
   await expect(page.getByText("Waits for approval by a person.")).toBeVisible();
   await page.screenshot({ path: `test-results/officer-purchasing-${test.info().project.name}.png`, fullPage: true });
 });
+
+const caseBase = {
+  id: "c1", caseNo: "AC-202611-0001", kind: "missedTarget", status: "awaitingExplanation", branchId: BRANCH, branchName: "Bole", subjectEmployeeId: "e1",
+  subjectName: "Selam Bekele", title: "Daily net sales missed on 08 Nov", severity: "high", openedAtUtc: "2026-11-09T06:00:00Z", explanationDueUtc: "2026-11-11T06:00:00Z",
+  explanationOverdue: false, recurrenceNo: 1, escalated: false, dataLimited: false, responsibility: null, isMine: true,
+};
+const caseDetail = {
+  ...caseBase, summary: "48,000 against a target of at least 60,000.", findingId: "f9", targetId: "t1", periodStart: "2026-11-08", periodEnd: "2026-11-08",
+  expected: 60000, actual: 48000, evidence: [{ type: "OfficerInstruction", id: "i3", label: "Run the lunch promotion: due 08 Nov 10:00, completed late" },
+    { type: "OfficerBlocker", id: "bl3", no: "Buyer", label: "Blocker before the deadline: supplier did not deliver the injera (open, Buyer)" }],
+  dependencies: [], openedByName: "Dawit Alemu", version: "cv1", corrections: [], decisions: [], events: [{ event: "Opened", note: "Explanation due 11 Nov.", actorName: "Dawit Alemu", atUtc: "2026-11-09T06:00:00Z" }],
+  canDo: ["explain"],
+  suggestion: { responsibility: "shared", failureType: "both", dependencies: ["Supplier"], mitigationReasonable: true,
+    reasons: ["Blocker reported before the deadline: supplier did not deliver the injera → Buyer, not resolved.", "Supplier: PO-0107 is overdue."] },
+};
+
+test("The responsible manager explains a case in their own words", async ({ page }) => {
+  await seedWorkspaceAuth(page, []);
+  const posts: unknown[] = [];
+  await page.route(`**/operations-officer/cases?**`, (r) => r.fulfill({ json: [caseBase] }));
+  await page.route(`**/operations-officer/cases/c1`, (r) => r.fulfill({ json: caseDetail }));
+  await page.route(`**/operations-officer/cases/c1/explain`, (r) => { posts.push(r.request().postDataJSON());
+    return r.fulfill({ json: { ...caseDetail, status: "awaitingAssessment", canDo: [], causes: "Supplier did not deliver", proposedCorrection: "Second injera supplier",
+      explainedAtUtc: "2026-11-09T08:00:00Z", explainedByName: "Selam Bekele" } }); });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/cases`);
+  await page.getByText("AC-202611-0001 · Daily net sales missed on 08 Nov").click();
+  await expect(page.getByText(/Please explain by/)).toBeVisible();
+  await expect(page.getByTestId("case-suggestion")).toHaveCount(0); // the subject does not see the officer's suggestion
+  await page.getByRole("button", { name: "Explain", exact: true }).click();
+  await page.getByLabel("Causes").fill("Supplier did not deliver");
+  await page.getByLabel("Correction you propose").fill("Second injera supplier");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Explanation sent.")).toBeVisible();
+  expect(posts[0]).toMatchObject({ causes: "Supplier did not deliver", proposedCorrection: "Second injera supplier", version: "cv1" });
+  await page.screenshot({ path: `test-results/officer-case-explained-${test.info().project.name}.png`, fullPage: true });
+});
+
+test("An assessor starts from the officer's suggestion and records dependencies", async ({ page }) => {
+  await seedWorkspaceAuth(page, ["aiops.view", "aiops.cases.manage"]);
+  await mock(page);
+  const explained = { ...caseDetail, isMine: false, status: "awaitingAssessment", canDo: ["assess", "withdraw"], causes: "Supplier did not deliver",
+    proposedCorrection: "Second injera supplier", explainedAtUtc: "2026-11-09T08:00:00Z", explainedByName: "Selam Bekele" };
+  const posts: Record<string, unknown>[] = [];
+  await page.route(`**/operations-officer/cases?**`, (r) => r.fulfill({ json: [{ ...caseBase, isMine: false, status: "awaitingAssessment" }] }));
+  await page.route(`**/operations-officer/cases/c1`, (r) => r.fulfill({ json: explained }));
+  await page.route(`**/operations-officer/cases/c1/assess`, (r) => { posts.push(r.request().postDataJSON());
+    return r.fulfill({ json: { ...explained, status: "assessed", canDo: ["correct", "withdraw"], responsibility: "shared", failureType: "both", dependencies: ["Supplier"],
+      assessedByName: "Dawit Alemu", assessedAtUtc: "2026-11-09T09:00:00Z", challengeByUtc: "2026-11-14T09:00:00Z" } }); });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/cases`);
+  await page.getByRole("tab", { name: "All cases" }).click();
+  await page.getByText("AC-202611-0001 · Daily net sales missed on 08 Nov").click();
+  await expect(page.getByTestId("case-suggestion")).toContainText("Shared");
+  await page.getByRole("button", { name: "Assess", exact: true }).click();
+  await expect(page.getByLabel("Who controlled the outcome")).toHaveValue("shared");
+  await expect(page.getByLabel("Supplier")).toBeChecked();
+  await page.getByLabel("Uncertainty and evidence relied on").fill("Supplier delay confirmed by PO-0107; promotion was late as well.");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByTestId("case-assessment")).toContainText("Shared");
+  expect(posts[0]).toMatchObject({ responsibility: "shared", failureType: "both", dependencies: ["Supplier"], mitigationReasonable: true });
+});
+
+test("A scorecard separates its components and shows the items behind each", async ({ page }) => {
+  await seedWorkspaceAuth(page, ["aiops.view", "aiops.scorecards.view"]);
+  await mock(page);
+  const card = {
+    branchId: BRANCH, branchName: "Bole", subjectEmployeeId: "e1", subjectName: "Selam Bekele", from: "2026-11-01", to: "2026-11-08", overall: null, withheld: true,
+    withheldReason: "1 challenged case(s) await review (AC-202611-0001).", disputes: 1, calculatedAtUtc: "2026-11-09T09:00:00Z",
+    calculation: "Overall = Σ(component score × weight) ÷ Σ(weights of rated components).", context: ["Net sales 412,000 over 8 trading day(s)."],
+    components: [
+      { key: "targets", label: "Target achievement", weight: 40, met: 5, counted: 7, score: 71.4, rated: true, rule: "Completed target periods met.", notes: [],
+        items: [{ type: "TargetPeriod", id: "t1", label: "Daily net sales 08 Nov", result: "Excused by case AC-202611-0002 (external dependency)", met: null }] },
+      { key: "instructions", label: "Instruction compliance", weight: 30, met: 3, counted: 4, score: 75, rated: true, rule: "Instructions completed by their deadline.", notes: [],
+        items: [{ type: "OfficerInstruction", id: "i1", label: "Post GRN 7", dueAtUtc: "2026-11-07T15:00:00Z", result: "Completed late (2026-11-07 20:00)", met: false }] },
+      { key: "reporting", label: "Reporting timeliness", weight: 15, met: 2, counted: 2, score: 100, rated: false, rule: "In time.", notes: [], items: [] },
+      { key: "corrections", label: "Correction completion", weight: 15, met: 0, counted: 0, score: null, rated: false, rule: "Verified.", notes: [], items: [] },
+    ],
+  };
+  await page.route(`**/api/companies/*/operations-officer/scorecards**`, (r) => r.fulfill({ json: [card] }));
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/scorecards`);
+  const sc = page.getByTestId("scorecard");
+  await expect(sc.getByText("Overall withheld")).toBeVisible();
+  await expect(sc.getByText(/Personnel assessment withheld until review/)).toBeVisible();
+  await expect(sc.getByText("75% · 3 of 4 counted")).toBeVisible();
+  await sc.getByRole("button", { name: "Items and rule" }).nth(1).click();
+  await expect(page.getByTestId("score-items").getByText("Completed late (2026-11-07 20:00)")).toBeVisible();
+  await page.screenshot({ path: `test-results/officer-scorecard-${test.info().project.name}.png`, fullPage: true });
+});

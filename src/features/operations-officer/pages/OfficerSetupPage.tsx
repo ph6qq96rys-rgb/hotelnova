@@ -45,6 +45,15 @@ const NUMBER_FIELDS: { key: keyof SettingsInput; label: string; hint: string }[]
   { key: "refundRatePercent", label: "Refund limit (% of net sales)", hint: "Returns approved by their requester are sent to the escalation contact." },
   { key: "voidRatePercent", label: "Void limit (% of sales)", hint: "Items voided after being sent to the kitchen or bar." },
   { key: "staffingGraceMinutes", label: "Staffing gap after (minutes)", hint: "Rostered staff not clocked in this long after their shift starts." },
+  { key: "caseExplanationHours", label: "Case explanation within (hours)", hint: "The responsible manager explains a case in this time; silence is escalated separately." },
+  { key: "caseChallengeDays", label: "Challenge an assessment within (days)", hint: "Unchallenged assessments become final after this." },
+  { key: "caseRecurrenceDays", label: "Recurrence window (days)", hint: "Earlier cases of the same person and target within this window count as repeats…" },
+  { key: "caseEscalateRecurrence", label: "Escalate after repeats", hint: "…and a case beyond this count, or of critical severity, goes to the escalation contact." },
+  { key: "scoreWeightTargets", label: "Scorecard weight: targets", hint: "The four scorecard weights add up to 100." },
+  { key: "scoreWeightInstructions", label: "Scorecard weight: instructions", hint: "Mandatory instructions done by their deadline." },
+  { key: "scoreWeightReporting", label: "Scorecard weight: reporting", hint: "Acknowledgements and case explanations in time." },
+  { key: "scoreWeightCorrections", label: "Scorecard weight: corrections", hint: "Case corrections done in time and verified." },
+  { key: "scoreMinItems", label: "Fewest items for a score", hint: "A component with fewer items is shown but not rated." },
   { key: "supplierAcknowledgeHours", label: "Supplier confirmation (hours)", hint: "Sent orders not acknowledged by then are followed up." },
   { key: "weightPrice", label: "Supplier weight: price", hint: "The five weights add up to 100." },
   { key: "weightQuality", label: "Supplier weight: quality", hint: "Received quantity not returned, last 12 months." },
@@ -115,6 +124,10 @@ export default function OfficerSetupPage() {
       wasteMinValue: settings.wasteMinValue ?? 1000, cateringReadinessDays: settings.cateringReadinessDays ?? 3,
       discountRatePercent: settings.discountRatePercent ?? 10, refundRatePercent: settings.refundRatePercent ?? 3, voidRatePercent: settings.voidRatePercent ?? 5,
       controlLookbackDays: settings.controlLookbackDays ?? 7, staffingGraceMinutes: settings.staffingGraceMinutes ?? 30,
+      caseExplanationHours: settings.caseExplanationHours ?? 48, caseChallengeDays: settings.caseChallengeDays ?? 5, caseRecurrenceDays: settings.caseRecurrenceDays ?? 90,
+      caseEscalateRecurrence: settings.caseEscalateRecurrence ?? 2, scoreWeightTargets: settings.scoreWeightTargets ?? 40,
+      scoreWeightInstructions: settings.scoreWeightInstructions ?? 30, scoreWeightReporting: settings.scoreWeightReporting ?? 15,
+      scoreWeightCorrections: settings.scoreWeightCorrections ?? 15, scoreMinItems: settings.scoreMinItems ?? 3,
     };
     void run(() => officerApi.saveSettings(companyId, input), "The settings could not be saved.", undefined, "Settings saved.");
   }
@@ -279,7 +292,7 @@ export default function OfficerSetupPage() {
               </Select>
             </Field>
             <Field label="Branch"><BranchSelect value={policyEditor.input.branchId ?? ""} onChange={(v) => setPolicyEditor({ ...policyEditor, input: { ...policyEditor.input, branchId: v || null } })} branches={refs.branches} allLabel="All branches" /></Field>
-            <Field label="Category (optional)"><Input value={policyEditor.input.category ?? ""} onChange={(e) => setPolicyEditor({ ...policyEditor, input: { ...policyEditor.input, category: e.target.value || null } })} /></Field>
+            <Field label="Category (optional)" hint={'"Revision" covers material plan revisions and "CorrectionSpending" case corrections with spending; a policy without a category does not cover them.'}><Input value={policyEditor.input.category ?? ""} onChange={(e) => setPolicyEditor({ ...policyEditor, input: { ...policyEditor.input, category: e.target.value || null } })} /></Field>
             <Field label="Value limit (optional)" hint="Above it the action needs approval."><Input type="number" step="any" value={policyEditor.input.maxValue ?? ""} onChange={(e) => setPolicyEditor({ ...policyEditor, input: { ...policyEditor.input, maxValue: e.target.value === "" ? null : Number(e.target.value) } })} /></Field>
             <Field label="Allowed from hour (optional)"><Input type="number" min={0} max={23} value={policyEditor.input.allowedFromHour ?? ""} onChange={(e) => setPolicyEditor({ ...policyEditor, input: { ...policyEditor.input, allowedFromHour: e.target.value === "" ? null : Number(e.target.value) } })} /></Field>
             <Field label="Allowed until hour (optional)"><Input type="number" min={1} max={24} value={policyEditor.input.allowedToHour ?? ""} onChange={(e) => setPolicyEditor({ ...policyEditor, input: { ...policyEditor.input, allowedToHour: e.target.value === "" ? null : Number(e.target.value) } })} /></Field>

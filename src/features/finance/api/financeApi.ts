@@ -94,6 +94,8 @@ export type Branch = { id: string; name: string; code?: string | null };
 const base = (companyId: string) => `/companies/${companyId}/finance`;
 
 export const financeApi = {
+  closeReview: (c: string, id: string) => http.get<CloseReview>(`${base(c)}/periods/${id}/close-review`).then(r => r.data),
+  closeEvidence: (c: string, id: string, input: { key: string; balance: number; reference: string; note: string; fingerprint: string }) => http.post(`${base(c)}/periods/${id}/close-evidence`, input),
   accounts: (c: string) => http.get<GlAccount[]>(`${base(c)}/accounts`).then((r) => r.data),
   saveAccount: (c: string, id: string | null, input: GlAccountInput) =>
     (id ? http.put(`${base(c)}/accounts/${id}`, input) : http.post(`${base(c)}/accounts`, input)).then((r) => r.data),
@@ -135,3 +137,6 @@ export const financeApi = {
     http.get<AccountLedger>(`${base(c)}/reports/account-ledger/${accountId}`, { params: { from, to, branchId: branchId || undefined, page, pageSize: 200, exportAll } }).then((r) => r.data),
   branches: (c: string) => http.get<Branch[]>(`/companies/${c}/branches`).then((r) => (Array.isArray(r.data) ? r.data : [])).catch(() => [] as Branch[]),
 };
+
+export type CloseControl = { key: string; name: string; ledgerBalance: number; supportingBalance: number | null; difference: number | null; status: string; method: string; reference: string | null; preparedBy: string | null; note?: string | null };
+export type CloseReview = { periodId: string; asOf: string; currency: string; fingerprint: string; controls: CloseControl[]; blockers: string[]; ready: boolean };

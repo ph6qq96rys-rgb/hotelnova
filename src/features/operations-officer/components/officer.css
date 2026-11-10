@@ -49,3 +49,9 @@
 /* Accountability */
 .oo-score { font-size: 28px; font-weight: 700; line-height: 1; }
 .oo-components { display: grid; gap: var(--ui-space-2); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+/* Management reviews */
+.oo-thread { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--ui-space-2); }
+.oo-entry { border: 1px solid var(--border-soft); border-radius: var(--r-md); padding: var(--ui-space-2) var(--ui-space-3); background: var(--surface); }
+.oo-entry--officer { background: var(--surface-2); }
+.oo-entry-text { white-space: pre-line; margin: var(--ui-space-1) 0; overflow-wrap: anywhere; }

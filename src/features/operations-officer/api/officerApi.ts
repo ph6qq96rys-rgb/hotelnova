@@ -33,6 +33,7 @@ export type Settings = {
   discountRatePercent: number; refundRatePercent: number; voidRatePercent: number; controlLookbackDays: number; staffingGraceMinutes: number;
   caseExplanationHours: number; caseChallengeDays: number; caseRecurrenceDays: number; caseEscalateRecurrence: number;
   scoreWeightTargets: number; scoreWeightInstructions: number; scoreWeightReporting: number; scoreWeightCorrections: number; scoreMinItems: number;
+  reviewWeekday: number; commitmentConfirmHours: number; reviewRetentionDays: number;
 };
 export type SettingsInput = Omit<Settings, "automationPaused" | "pausedAtUtc" | "pausedByName" | "pauseReason" | "policyVersion" | "lastMonitoredAtUtc" | "lastBriefingAtUtc" | "narrativeAvailable">;
 
@@ -281,6 +282,43 @@ export type CaseDetail = CaseListItem & {
   decisions: { decision: PersonnelDecision; note: string; decidedByName: string; decidedAtUtc: string }[]; events: { event: string; note?: string | null; actorName: string; atUtc: string }[];
   canDo: string[];
 };
+export type ReviewEntryKind = "opening" | "question" | "answer" | "statement" | "evidence" | "correction" | "challenge" | "recognition" | "decision" | "note" | "escalation" | "humanReview" | "changes";
+export type ReviewClassification = "statement" | "verified" | "assumed" | "disputed" | "agreed";
+export type CommitmentKind = "agreed" | "instruction";
+export type CommitmentStatus = "proposed" | "confirmed" | "constrained" | "issued" | "completed" | "withdrawn";
+export type ReviewRole = "accountable" | "contributor" | "observer";
+export type ReviewEntry = {
+  id: string; seq: number; kind: ReviewEntryKind; classification: ReviewClassification; byOfficer: boolean; authorName: string; authorEmployeeId?: string | null;
+  audienceEmployeeId?: string | null; audienceName?: string | null; replyToId?: string | null; amendsEntryId?: string | null; subject?: string | null; text: string;
+  evidence: Evidence[]; atUtc: string; classifiedByName?: string | null;
+};
+export type ReviewCommitment = {
+  id: string; kind: CommitmentKind; status: CommitmentStatus; ownerEmployeeId: string; ownerName?: string | null; deliverable: string; dueAtUtc: string; originalDueAtUtc: string;
+  dependencies?: string | null; requiredEvidence: string; constraint?: string | null; respondedAtUtc?: string | null;
+  revisions: { from: string; to: string; reason: string; by: string; at: string }[]; actionId?: string | null; actionStatus?: string | null; instructionId?: string | null;
+  instructionStatus?: string | null; awaitingResponse: boolean; version: string;
+};
+export type ReviewSummary = {
+  version: number; atUtc: string; by: string; decisions: string[]; verifiedFacts: string[]; statements: string[]; assumptions: string[]; disputed: string[];
+  commitments: string[]; openIssues: string[]; amendment?: string | null;
+};
+export type ReviewListItem = {
+  id: string; reviewNo: string; kind: string; trigger: string; status: "open" | "concluded" | "cancelled"; branchId?: string | null; branchName?: string | null; title: string;
+  openedAtUtc: string; participants: number; openCommitments: number; awaitingMe: number; escalated: boolean;
+};
+export type Review = {
+  id: string; reviewNo: string; kind: string; trigger: string; status: ReviewListItem["status"]; tone: "standard" | "firm"; branchId?: string | null; branchName?: string | null;
+  title: string; purpose: string; expectedOutcome: string; language: "en" | "am"; links: Evidence[]; facts: Evidence[]; factsAsOfUtc: string; previousReviewId?: string | null;
+  escalatedAtUtc?: string | null; escalatedToName?: string | null; escalationReason?: string | null; openedByName: string; openedAtUtc: string; concludedAtUtc?: string | null;
+  concludedByName?: string | null; retainUntilUtc?: string | null; redacted: boolean; version: string;
+  participants: { employeeId: string; name?: string | null; role: ReviewRole; responsibility?: string | null; restricted: boolean; channel: string }[];
+  entries: ReviewEntry[]; commitments: ReviewCommitment[]; summaries: ReviewSummary[]; facilitator: boolean; restricted: boolean; canDo: string[];
+};
+export type ReviewOpenInput = {
+  kind: "operational"; trigger: "request"; branchId: string; title: string; purpose: string; expectedOutcome: string; language: "en" | "am";
+  links: { type: string; id: string }[]; participants: { employeeId: string; role: ReviewRole; responsibility?: string; restricted: boolean }[];
+};
+
 export type ScoreItem = { type: string; id?: string | null; label: string; dueAtUtc?: string | null; result: string; met?: boolean | null };
 export type ScoreComponent = { key: string; label: string; weight: number; met: number; counted: number; score?: number | null; rated: boolean; rule: string; items: ScoreItem[]; notes: string[] };
 export type Scorecard = {
@@ -438,6 +476,10 @@ export const officerApi = {
   acceptCase: (c: string, id: string, version: string) => http.post<CaseDetail>(`${base(c)}/cases/${id}/accept`, null, { params: { version } }).then((r) => r.data),
   verifyCorrection: (c: string, id: string, correctionId: string, body: { effective: boolean; note: string; version: string }) =>
     http.post<CaseDetail>(`${base(c)}/cases/${id}/corrections/${correctionId}/verify`, body).then((r) => r.data),
+  reviews: (c: string, q: { mine: boolean; open: boolean }) => http.get(`${base(c)}/reviews`, { params: q }).then((r) => list<ReviewListItem>(r.data)),
+  review: (c: string, id: string) => http.get<Review>(`${base(c)}/reviews/${id}`).then((r) => r.data),
+  openReview: (c: string, input: ReviewOpenInput) => http.post<Review>(`${base(c)}/reviews`, input).then((r) => r.data),
+  reviewStep: (c: string, id: string, path: string, body?: Record<string, unknown>) => http.post<Review>(`${base(c)}/reviews/${id}/${path}`, body ?? {}).then((r) => r.data),
   scorecards: (c: string, q: { from?: string; to?: string; branchId?: string }) => http.get(`${base(c)}/scorecards`, { params: q }).then((r) => list<Scorecard>(r.data)),
   conversation: (c: string, threadId?: string) => http.get(`${base(c)}/conversation`, { params: { threadId } }).then((r) => list<OfficerMessage>(r.data)),
 };

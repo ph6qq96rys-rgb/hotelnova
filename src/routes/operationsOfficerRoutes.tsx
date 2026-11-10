@@ -1,7 +1,7 @@
 import OfficerDailyCyclePage from "../features/operations-officer/pages/OfficerDailyCyclePage";
 import type { ReactNode } from "react";
 import type { RouteObject } from "react-router-dom";
-import { BadgeCheck, Boxes, Bot, ShoppingCart, CalendarCheck, ClipboardCheck, Gauge, ListChecks, ListTodo, MessageCircleQuestion, Scale, ScrollText, ShieldCheck } from "lucide-react";
+import { BadgeCheck, Bot, Boxes, CalendarCheck, ClipboardCheck, Gauge, ListChecks, ListTodo, MessageCircleQuestion, MessagesSquare, Scale, ScrollText, ShieldCheck, ShoppingCart } from "lucide-react";
 
 import OfficerBriefingPage from "../features/operations-officer/pages/OfficerBriefingPage";
 import OfficerFindingsPage from "../features/operations-officer/pages/OfficerFindingsPage";
@@ -15,6 +15,7 @@ import OfficerAskPage from "../features/operations-officer/pages/OfficerAskPage"
 import OfficerStockPage from "../features/operations-officer/pages/OfficerStockPage";
 import OfficerPurchasingPage from "../features/operations-officer/pages/OfficerPurchasingPage";
 import OfficerCasesPage from "../features/operations-officer/pages/OfficerCasesPage";
+import OfficerReviewsPage from "../features/operations-officer/pages/OfficerReviewsPage";
 import OfficerScorecardsPage from "../features/operations-officer/pages/OfficerScorecardsPage";
 
 export type AppRoute = RouteObject & {
@@ -40,6 +41,8 @@ export const operationsOfficerRoutes: AppRoute[] = [
   { path: "operations-officer/ask", label: "Ask the Officer", element: <OfficerAskPage />, icon: <MessageCircleQuestion size={18} />, nav: true, section: SECTION, order: 1.3, permissions: ["aiops.view"] },
   { path: "operations-officer/findings", label: "Officer Findings", element: <OfficerFindingsPage />, icon: <ListChecks size={18} />, nav: true, section: SECTION, order: 2, permissions: ["aiops.view"] },
   // The responsible manager opens their own cases and scorecard; the other views need the case or scorecard permissions.
+  // Participants open their own reviews without an officer permission.
+  { path: "operations-officer/reviews", label: "Management Reviews", element: <OfficerReviewsPage />, icon: <MessagesSquare size={18} />, nav: true, section: SECTION, order: 2.4 },
   { path: "operations-officer/cases", label: "Accountability Cases", element: <OfficerCasesPage />, icon: <Scale size={18} />, nav: true, section: SECTION, order: 2.5 },
   { path: "operations-officer/scorecards", label: "Manager Scorecards", element: <OfficerScorecardsPage />, icon: <Gauge size={18} />, nav: true, section: SECTION, order: 2.6 },
   { path: "operations-officer/targets", label: "Officer Targets", element: <OfficerTargetsPage />, icon: <ClipboardCheck size={18} />, nav: true, section: SECTION, order: 3, permissions: ["aiops.view"] },

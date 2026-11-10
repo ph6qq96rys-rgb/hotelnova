@@ -129,6 +129,7 @@ const LINKS = [
   { to: "/ask", label: "Ask" },
   { to: "/findings", label: "Findings" },
   { to: "/targets", label: "Targets" },
+  { to: "/reviews", label: "Reviews" },
   { to: "/cases", label: "Cases" },
   { to: "/scorecards", label: "Scorecards" },
   { to: "/actions", label: "Actions & audit" },

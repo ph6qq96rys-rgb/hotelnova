@@ -440,3 +440,59 @@ test("A scorecard separates its components and shows the items behind each", asy
   await expect(page.getByTestId("score-items").getByText("Completed late (2026-11-07 20:00)")).toBeVisible();
   await page.screenshot({ path: `test-results/officer-scorecard-${test.info().project.name}.png`, fullPage: true });
 });
+
+const reviewBase = {
+  id: "r1", reviewNo: "RV-202611-0001", kind: "operational", trigger: "request", status: "open", tone: "firm", branchId: BRANCH, branchName: "Bole",
+  title: "Late stock requests", purpose: "Understand why the weekly stock request was late.", expectedOutcome: "Agreed actions so it is submitted on time.", language: "en",
+  links: [{ type: "OfficerInstruction", id: "i7", label: "Submit the weekly stock request" }], facts: [], factsAsOfUtc: "2026-11-09T08:00:00Z", openedByName: "Dawit Alemu",
+  openedAtUtc: "2026-11-09T08:00:00Z", redacted: false, version: "rv1", facilitator: false, restricted: false, canDo: ["post", "humanReview"], summaries: [],
+  participants: [{ employeeId: "e1", name: "Selam Bekele", role: "accountable", restricted: false, channel: "InApp" }],
+  entries: [
+    { id: "q0", seq: 1, kind: "opening", classification: "verified", byOfficer: true, authorName: "AI Operations Officer", text: "I am the AI Operations Officer of this company, an AI system conducting this review on behalf of management.\nPurpose: Understand why the weekly stock request was late.", evidence: [], atUtc: "2026-11-09T08:00:00Z" },
+    { id: "q1", seq: 2, kind: "question", classification: "verified", byOfficer: true, authorName: "AI Operations Officer", subject: "OfficerInstruction:i7", text: "Selam Bekele: \"Submit the weekly stock request\" was due 2026-11-03 09:00 UTC; Process360 records it as submitted 2026-11-05 10:00 UTC, not yet accepted. What prevented completion by the deadline, and when was it reported?", evidence: [], atUtc: "2026-11-09T08:00:01Z" },
+  ],
+  commitments: [],
+};
+
+test("A manager answers the officer and sees the explanation compared with the records", async ({ page }) => {
+  await seedWorkspaceAuth(page, []);
+  const posts: Record<string, unknown>[] = [];
+  await page.route(`**/api/companies/*/operations-officer/reviews?**`, (r) => r.fulfill({ json: [{ id: "r1", reviewNo: "RV-202611-0001", kind: "operational", trigger: "request", status: "open", branchId: BRANCH, branchName: "Bole", title: "Late stock requests", openedAtUtc: "2026-11-09T08:00:00Z", participants: 1, openCommitments: 0, awaitingMe: 0, escalated: false }] }));
+  await page.route(`**/api/companies/*/operations-officer/reviews/r1`, (r) => r.fulfill({ json: reviewBase }));
+  await page.route(`**/api/companies/*/operations-officer/reviews/r1/entries`, (r) => { posts.push(r.request().postDataJSON());
+    return r.fulfill({ json: { ...reviewBase, entries: [...reviewBase.entries,
+      { id: "a1", seq: 3, kind: "answer", classification: "assumed", byOfficer: false, authorName: "Selam Bekele", authorEmployeeId: "e1", replyToId: "q1", subject: "OfficerInstruction:i7", text: "The warehouse had no stock.", evidence: [], atUtc: "2026-11-09T08:05:00Z" },
+      { id: "c1", seq: 4, kind: "challenge", classification: "verified", byOfficer: true, authorName: "AI Operations Officer", replyToId: "a1", subject: "OfficerInstruction:i7", text: "Warehouse availability may explain a delay in delivery. It does not yet explain the late completion of \"Submit the weekly stock request\": no blocker about it was recorded before 2026-11-03 09:00 UTC. Did another issue prevent it, and when was it reported?", evidence: [], atUtc: "2026-11-09T08:05:00Z" }] } }); });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/reviews`);
+  await page.getByText("RV-202611-0001 · Late stock requests").click();
+  const thread = page.getByTestId("review-thread");
+  await expect(thread.getByText(/an AI system conducting this review/)).toBeVisible();
+  await thread.getByRole("button", { name: "Answer" }).click();
+  await page.getByLabel("Your answer").fill("The warehouse had no stock.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(thread.getByText(/It does not yet explain the late completion/)).toBeVisible();
+  await expect(thread.getByText("Assumed")).toBeVisible();
+  expect(posts[0]).toMatchObject({ kind: "answer", text: "The warehouse had no stock.", replyToId: "q1" });
+  await page.screenshot({ path: `test-results/officer-review-challenge-${test.info().project.name}.png`, fullPage: true });
+});
+
+test("An agreed commitment waits for the owner's own confirmation", async ({ page }) => {
+  await seedWorkspaceAuth(page, []);
+  const commitment = { id: "k1", kind: "agreed", status: "proposed", ownerEmployeeId: "e1", ownerName: "Selam Bekele", deliverable: "Submit the stock request every Monday by 10:00",
+    dueAtUtc: "2026-11-16T07:00:00Z", originalDueAtUtc: "2026-11-16T07:00:00Z", requiredEvidence: "The submitted request", revisions: [], awaitingResponse: true, version: "kv1" };
+  const posts: Record<string, unknown>[] = [];
+  await page.route(`**/api/companies/*/operations-officer/reviews?**`, (r) => r.fulfill({ json: [{ id: "r1", reviewNo: "RV-202611-0001", kind: "operational", trigger: "request", status: "open", branchId: BRANCH, branchName: "Bole", title: "Late stock requests", openedAtUtc: "2026-11-09T08:00:00Z", participants: 1, openCommitments: 1, awaitingMe: 1, escalated: false }] }));
+  await page.route(`**/api/companies/*/operations-officer/reviews/r1`, (r) => r.fulfill({ json: { ...reviewBase, commitments: [commitment] } }));
+  await page.route(`**/api/companies/*/operations-officer/reviews/r1/commitments/k1/respond`, (r) => { posts.push(r.request().postDataJSON());
+    return r.fulfill({ json: { ...reviewBase, commitments: [{ ...commitment, status: "issued", awaitingResponse: false, actionId: "x1" }] } }); });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/reviews`);
+  await expect(page.getByText("1 awaiting your confirmation")).toBeVisible();
+  await page.getByText("RV-202611-0001 · Late stock requests").click();
+  const table = page.getByTestId("review-commitments");
+  await expect(table.getByText("Awaiting confirmation")).toBeVisible();
+  await table.getByRole("button", { name: "Confirm" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(table.getByText("Issued as instruction")).toBeVisible();
+  expect(posts[0]).toMatchObject({ confirm: true, version: "kv1" });
+});
+

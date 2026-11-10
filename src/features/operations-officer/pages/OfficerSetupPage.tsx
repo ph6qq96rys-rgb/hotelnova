@@ -54,6 +54,8 @@ const NUMBER_FIELDS: { key: keyof SettingsInput; label: string; hint: string }[]
   { key: "scoreWeightReporting", label: "Scorecard weight: reporting", hint: "Acknowledgements and case explanations in time." },
   { key: "scoreWeightCorrections", label: "Scorecard weight: corrections", hint: "Case corrections done in time and verified." },
   { key: "scoreMinItems", label: "Fewest items for a score", hint: "A component with fewer items is shown but not rated." },
+  { key: "commitmentConfirmHours", label: "Confirm a commitment within (hours)", hint: "Silence is not agreement: an unconfirmed commitment is followed up after this." },
+  { key: "reviewRetentionDays", label: "Keep review conversations (days)", hint: "After this, conversation text is removed; decisions, commitments and summaries stay." },
   { key: "supplierAcknowledgeHours", label: "Supplier confirmation (hours)", hint: "Sent orders not acknowledged by then are followed up." },
   { key: "weightPrice", label: "Supplier weight: price", hint: "The five weights add up to 100." },
   { key: "weightQuality", label: "Supplier weight: quality", hint: "Received quantity not returned, last 12 months." },
@@ -128,6 +130,7 @@ export default function OfficerSetupPage() {
       caseEscalateRecurrence: settings.caseEscalateRecurrence ?? 2, scoreWeightTargets: settings.scoreWeightTargets ?? 40,
       scoreWeightInstructions: settings.scoreWeightInstructions ?? 30, scoreWeightReporting: settings.scoreWeightReporting ?? 15,
       scoreWeightCorrections: settings.scoreWeightCorrections ?? 15, scoreMinItems: settings.scoreMinItems ?? 3,
+      reviewWeekday: settings.reviewWeekday ?? -1, commitmentConfirmHours: settings.commitmentConfirmHours ?? 24, reviewRetentionDays: settings.reviewRetentionDays ?? 730,
     };
     void run(() => officerApi.saveSettings(companyId, input), "The settings could not be saved.", undefined, "Settings saved.");
   }
@@ -187,6 +190,12 @@ export default function OfficerSetupPage() {
                   onChange={(e) => setSettings({ ...s, [f.key]: Number(e.target.value) })} />
               </Field>
             ))}
+            <Field label="Weekly review day" hint="The officer proposes a weekly operational review per branch on this day; opening it follows delegated authority.">
+              <Select disabled={!canConfigure} value={String(s.reviewWeekday ?? -1)} onChange={(e) => setSettings({ ...s, reviewWeekday: Number(e.target.value) })}>
+                <option value="-1">No scheduled review</option>
+                {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => <option key={d} value={i}>{d}</option>)}
+              </Select>
+            </Field>
           </div>
         </Section>
       ) : null}

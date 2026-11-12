@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { seedWorkspaceAuth, TEST_COMPANY_ID } from "../fixtures/auth";
+import { seedOperationsOwner as seedWorkspaceAuth, TEST_COMPANY_ID } from "../fixtures/auth";
 
 const BRANCH = "b-main";
 const finding = {
@@ -452,6 +452,7 @@ const reviewBase = {
     { id: "q1", seq: 2, kind: "question", classification: "verified", byOfficer: true, authorName: "AI Operations Officer", subject: "OfficerInstruction:i7", text: "Selam Bekele: \"Submit the weekly stock request\" was due 2026-11-03 09:00 UTC; Process360 records it as submitted 2026-11-05 10:00 UTC, not yet accepted. What prevented completion by the deadline, and when was it reported?", evidence: [], atUtc: "2026-11-09T08:00:01Z" },
   ],
   commitments: [],
+  details: { options: [], milestones: [], changes: [], departments: {}, canDo: [] },
 };
 
 test("A manager answers the officer and sees the explanation compared with the records", async ({ page }) => {
@@ -496,3 +497,52 @@ test("An agreed commitment waits for the owner's own confirmation", async ({ pag
   expect(posts[0]).toMatchObject({ confirm: true, version: "kv1" });
 });
 
+
+const details = { options: [], milestones: [], changes: [], departments: {}, canDo: [] };
+
+test("The decision-maker records a decision and a contractual option goes to approval", async ({ page }) => {
+  await seedWorkspaceAuth(page, []);
+  const options = [
+    { id: "o1", label: "Keep one supplier", description: "", expectedImpact: "No new cost; outages continue", contractual: false, recommended: false },
+    { id: "o2", label: "Add a second supplier", description: "One-year contract", expectedImpact: "Fewer outages; 4% higher price", evidence: "Three outages last month", value: 120000, contractual: true, recommended: true },
+  ];
+  const decisionReview = { ...reviewBase, id: "r2", reviewNo: "RV-202611-0002", kind: "decision", title: "Second flour supplier", entries: reviewBase.entries.slice(0, 1),
+    details: { ...details, decisionMakerEmployeeId: "e1", decisionMakerName: "Selam Bekele", decisionDueUtc: "2026-11-12T09:00:00Z", options, canDo: ["decide"] } };
+  const posts: Record<string, unknown>[] = [];
+  await page.route(`**/api/companies/*/operations-officer/reviews?**`, (r) => r.fulfill({ json: [{ id: "r2", reviewNo: "RV-202611-0002", kind: "decision", trigger: "request", status: "open", branchId: BRANCH, branchName: "Bole", title: "Second flour supplier", openedAtUtc: "2026-11-09T08:00:00Z", participants: 2, openCommitments: 0, awaitingMe: 0, escalated: false }] }));
+  await page.route(`**/api/companies/*/operations-officer/reviews/r2`, (r) => r.fulfill({ json: decisionReview }));
+  await page.route(`**/api/companies/*/operations-officer/reviews/r2/decision`, (r) => { posts.push(r.request().postDataJSON());
+    return r.fulfill({ json: { ...decisionReview, details: { ...decisionReview.details, canDo: [], decisionOutcome: "approved", decidedOptionId: "o2", decidedByName: "Selam Bekele",
+      decidedAtUtc: "2026-11-10T10:00:00Z", contractActionId: "x9", contractStatus: "pendingApproval" } } }); });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/reviews`);
+  await page.getByText("RV-202611-0002 · Second flour supplier").click();
+  const table = page.getByTestId("review-decision");
+  await expect(table.getByText("Recommended")).toBeVisible();
+  await page.getByRole("button", { name: "Record the decision" }).click();
+  await expect(page.getByText(/binds the company only once approved under delegated authority/)).toBeVisible();
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText(/Contract approval: pendingApproval/)).toBeVisible();
+  await expect(table.getByText("Chosen")).toBeVisible();
+  expect(posts[0]).toMatchObject({ outcome: "approved", optionId: "o2", version: "rv1" });
+  await page.screenshot({ path: `test-results/officer-review-decision-${test.info().project.name}.png`, fullPage: true });
+});
+
+test("An implementation milestone claim waits for proof", async ({ page }) => {
+  await seedWorkspaceAuth(page, []);
+  const milestone = { id: "m1", category: "deliverable", title: "Table service screens", ownerEmployeeId: "e1", ownerName: "Selam Bekele", dueAtUtc: "2026-11-20T09:00:00Z",
+    acceptanceEvidence: "Signed user acceptance", targetStage: "adopted", claimedStage: "notStarted", verifiedStage: "notStarted", verifications: [], awaitingProof: false, overdue: false, version: "mv1" };
+  const impl = { ...reviewBase, id: "r3", reviewNo: "RV-202611-0003", kind: "implementation", title: "POS roll-out", entries: reviewBase.entries.slice(0, 1), details: { ...details, milestones: [milestone] } };
+  const posts: Record<string, unknown>[] = [];
+  await page.route(`**/api/companies/*/operations-officer/reviews?**`, (r) => r.fulfill({ json: [{ id: "r3", reviewNo: "RV-202611-0003", kind: "implementation", trigger: "request", status: "open", branchId: BRANCH, branchName: "Bole", title: "POS roll-out", openedAtUtc: "2026-11-09T08:00:00Z", participants: 2, openCommitments: 0, awaitingMe: 0, escalated: false }] }));
+  await page.route(`**/api/companies/*/operations-officer/reviews/r3`, (r) => r.fulfill({ json: impl }));
+  await page.route(`**/api/companies/*/operations-officer/reviews/r3/milestones/m1/claim`, (r) => { posts.push(r.request().postDataJSON());
+    return r.fulfill({ json: { ...impl, details: { ...impl.details, milestones: [{ ...milestone, claimedStage: "developed", awaitingProof: true, version: "mv2" }] } } }); });
+  await page.goto(`/companies/${TEST_COMPANY_ID}/operations-officer/reviews`);
+  await page.getByText("RV-202611-0003 · POS roll-out").click();
+  const table = page.getByTestId("review-milestones");
+  await table.getByRole("button", { name: "Report progress" }).click();
+  await expect(page.getByText(/ask for a demonstration or the record before this stage counts/)).toBeVisible();
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(table.getByText("Developed: awaiting proof")).toBeVisible();
+  expect(posts[0]).toMatchObject({ stage: "developed", version: "mv1" });
+});

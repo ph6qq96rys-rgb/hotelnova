@@ -178,6 +178,12 @@ export interface PaySlipDetailDto {
   workingDays: number;
   status: PaySlipStatus;
   lines: PaySlipLineDto[];
+  periodStart?: string;
+  periodEnd?: string;
+  absentDays?: number;
+  taxableIncome?: number;
+  taxTableCode?: string | null;
+  taxOnGross?: boolean;
 }
 
 export interface PaySlipLineDto {

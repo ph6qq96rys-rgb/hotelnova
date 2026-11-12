@@ -89,7 +89,42 @@ export const overtimeApi = {
     http.post<CommandResult>(`${base(companyId)}/overtime/${id}/reject`, { reason }).then((r) => r.data),
   cancel: (companyId: string, id: string, reason: string) =>
     http.post<CommandResult>(`${base(companyId)}/overtime/${id}/cancel`, { reason }).then((r) => r.data),
+  unrequested: (companyId: string, params: { from?: string; to?: string } = {}) =>
+    http.get<UnrequestedOvertimeRow[]>(`${base(companyId)}/overtime/unrequested`, { params: clean(params) }).then((r) => r.data ?? []),
+  approveUnrequested: (companyId: string, body: OvertimeAfterTheFactInput) =>
+    http.post<CommandResult>(`${base(companyId)}/overtime/unrequested/approve`, body).then((r) => r.data),
+  rejectUnrequested: (companyId: string, body: { employeeId: string; date: string; reason: string }) =>
+    http.post<CommandResult>(`${base(companyId)}/overtime/unrequested/reject`, body).then((r) => r.data),
 };
+
+/** Overtime clocked on attendance with no overtime request. */
+export interface UnrequestedOvertimeRow {
+  employeeId: string;
+  employeeName: string;
+  branchId: string;
+  date: string;
+  clockIn?: string | null;
+  clockOut?: string | null;
+  workedHours: number;
+  clockedOvertimeHours: number;
+  maxApprovableHours: number;
+  category: string;
+  canDecide: boolean;
+}
+
+export interface OvertimeAfterTheFactInput {
+  employeeId: string;
+  date: string;
+  workAssignment: string;
+  reason: string;
+  kpiDescription: string;
+  kpiTarget: string;
+  kpiResult: string;
+  kpiAchieved: boolean;
+  evidenceNote?: string;
+  approvedHours: number;
+  note: string;
+}
 
 //  Payroll controls
 

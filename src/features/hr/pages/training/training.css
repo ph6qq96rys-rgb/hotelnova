@@ -1,0 +1,34 @@
+.training-workspace { max-width: 1180px; margin: auto; }
+.training-workspace .card { margin: 16px 0; padding: 22px; }
+.training-workspace h1 { font-size: 1.65rem; margin: 6px 0; }
+.training-workspace h2 { font-size: 1.2rem; margin: 0 0 12px; }
+.training-workspace h3 { font-size: 1rem; margin: 18px 0 8px; }
+.training-workspace p, .training-workspace li { line-height: 1.65; }
+.training-workspace li { margin-bottom: 10px; }
+.training-workspace ul { padding-left: 24px; }
+.training-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.training-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 16px 0; }
+.training-workspace label { display: grid; gap: 7px; margin: 10px 0; font-weight: 500; }
+.training-workspace input:not([type=checkbox]), .training-workspace select, .training-workspace textarea { width: 100%; min-height: 42px; padding: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.training-workspace .training-check { display: flex; align-items: center; gap: 10px; }
+.training-check input { width: 18px; height: 18px; }
+.training-workspace fieldset { margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+.training-workspace details { padding: 10px 0; }
+.training-workspace summary { cursor: pointer; font-weight: 500; }
+.training-workspace:lang(am) { line-height: 1.9; }
+.training-materials:lang(am) { font-size: 1.125rem; }
+.training-materials li { margin-bottom: 16px; padding-left: 4px; }
+.training-question { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.training-question p { margin: 8px 0; }
+@media print {
+  body:has(.training-materials) * { visibility: hidden; }
+  body:has(.training-materials) .training-materials,
+  body:has(.training-materials) .training-materials * { visibility: visible; }
+  .training-materials { position: absolute; left: 0; top: 0; width: 100%; }
+  .training-materials .card { break-inside: avoid; box-shadow: none; }
+  .training-no-print, .training-materials .training-no-print { display: none !important; }
+  .training-materials details { display: block; }
+}
+.training-table { overflow-x: auto; margin-top: 16px; }
+.training-table table { min-width: 560px; }
+@media (max-width: 600px) { .training-workspace .card { padding: 16px; } .training-workspace .page-header { display: block; } }

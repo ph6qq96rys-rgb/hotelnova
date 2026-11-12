@@ -96,10 +96,27 @@ export default function PaySlipDetailPage() {
     );
   }
 
-  // Group line items by type
-  const earnings   = slip.lines.filter(l => l.type === 'Earning'   || l.type === 'Allowance' || l.type === 'Bonus' || l.type === 'Overtime');
+  // Group line items by type. The summary amounts (allowances, overtime, bonus, other deductions) are the totals
+  // of these lines, so each is shown once: as its lines when there are any, otherwise as the total.
+  const allowances = slip.lines.filter(l => l.type === 'Allowance');
+  const earnedLines = slip.lines.filter(l => l.type === 'Earning' || l.type === 'Bonus' || l.type === 'Overtime');
   const deductions = slip.lines.filter(l => l.type === 'Deduction' || l.type === 'Tax'       || l.type === 'Pension');
-  const otherLines = slip.lines.filter(l => !earnings.includes(l) && !deductions.includes(l));
+  const otherLines = slip.lines.filter(l => !allowances.includes(l) && !earnedLines.includes(l) && !deductions.includes(l));
+
+  // Basic salary and allowances are monthly amounts paid for the days worked out of the month's working days.
+  // The unpaid share is what the gross pay leaves out of them; it is derived from the payslip's own totals.
+  const earnedSeparately = earnedLines.length > 0
+    ? earnedLines.reduce((sum, l) => sum + l.amount, 0)
+    : slip.overtimePay + slip.bonusPay;
+  const unpaid = Math.round((slip.basicSalary + slip.totalAllowances + earnedSeparately - slip.grossPay) * 100) / 100;
+  const unpaidDays = Math.max(0, slip.workingDays - slip.daysWorked);
+  const taxBase = slip.taxableIncome ?? 0;
+  const partialPeriod = (() => {
+    if (!slip.periodStart || !slip.periodEnd) return false;
+    const [y, m, d] = slip.periodStart.slice(0, 10).split('-').map(Number);
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return d !== 1 || slip.periodEnd.slice(0, 10) !== `${slip.periodStart.slice(0, 7)}-${String(lastDay).padStart(2, '0')}`;
+  })();
 
   return (
     <div className="page">
@@ -119,6 +136,16 @@ export default function PaySlipDetailPage() {
         </div>
       </div>
 
+      {partialPeriod && (
+        <div role="alert" style={{
+          padding: '10px 14px', marginBottom: 16, border: '1px solid var(--danger)', borderRadius: 8,
+          background: 'var(--surface-2)', fontSize: 13,
+        }}>
+          This payroll run covers {slip.periodStart?.slice(0, 10)} to {slip.periodEnd?.slice(0, 10)}, not a whole month, so the monthly
+          salary is pro-rated on only {slip.workingDays} working days. Cancel the run and create one for the whole month.
+        </div>
+      )}
+
       {/* Employee & period info */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{
@@ -131,9 +158,10 @@ export default function PaySlipDetailPage() {
           <Field label="Employee"    value={slip.employeeName} />
           <Field label="Employee No" value={slip.employeeNo} />
           <Field label="TIN number"  value={slip.tinNumber} />
-          <Field label="Pay Period"  value={slip.periodName} />
+          <Field label="Pay Period"  value={slip.periodStart && slip.periodEnd
+            ? `${slip.periodName} (${slip.periodStart.slice(0, 10)} to ${slip.periodEnd.slice(0, 10)})` : slip.periodName} />
           <Field label="Status"      value={slip.status} />
-          <Field label="Days Worked" value={`${slip.daysWorked} / ${slip.workingDays}`} />
+          <Field label="Days Paid" value={`${slip.daysWorked} of ${slip.workingDays} working days`} />
           <Field label="Basic Salary" value={fmtMoney(slip.basicSalary)} />
           <Field label="Bank" value={slip.bankName} />
           <Field label="Bank Account" value={slip.bankAccountNo} />
@@ -151,19 +179,23 @@ export default function PaySlipDetailPage() {
           }}>
             Earnings
           </div>
-          <LineRow label="Basic Salary"    amount={slip.basicSalary} />
-          {slip.totalAllowances > 0 && (
-            <LineRow label="Allowances"    amount={slip.totalAllowances} />
+          <LineRow label="Basic Salary (monthly)" amount={slip.basicSalary} />
+          {allowances.length > 0
+            ? allowances.map(l => <LineRow key={'a' + l.description} label={`${l.description} (monthly)`} amount={l.amount} />)
+            : slip.totalAllowances > 0 && <LineRow label="Allowances (monthly)" amount={slip.totalAllowances} />}
+          {unpaid > 0.004 && (
+            <LineRow
+              label={`Days not paid: ${unpaidDays} of ${slip.workingDays} working days`}
+              amount={unpaid}
+              type="deduction"
+            />
           )}
-          {slip.overtimePay > 0 && (
-            <LineRow label="Overtime Pay"  amount={slip.overtimePay} />
-          )}
-          {slip.bonusPay > 0 && (
-            <LineRow label="Bonus"         amount={slip.bonusPay} />
-          )}
-          {earnings.map(l => (
-            <LineRow key={l.description} label={l.description} amount={l.amount} />
-          ))}
+          {earnedLines.length > 0
+            ? earnedLines.map(l => <LineRow key={'e' + l.description} label={l.description} amount={l.amount} />)
+            : <>
+                {slip.overtimePay > 0 && <LineRow label="Overtime Pay" amount={slip.overtimePay} />}
+                {slip.bonusPay > 0 && <LineRow label="Bonus" amount={slip.bonusPay} />}
+              </>}
           <LineRow label="Gross Pay" amount={slip.grossPay} type="earning" highlight />
         </div>
 
@@ -176,12 +208,16 @@ export default function PaySlipDetailPage() {
             Deductions
           </div>
           {slip.incomeTax > 0 && (
-            <LineRow label="Income Tax"          amount={slip.incomeTax}       type="deduction" />
+            <LineRow
+              label={taxBase > 0 ? `Income Tax (on taxable ${fmtMoney(taxBase)})` : 'Income Tax'}
+              amount={slip.incomeTax}
+              type="deduction"
+            />
           )}
           {slip.employeePension > 0 && (
             <LineRow label="Employee Pension"    amount={slip.employeePension} type="deduction" />
           )}
-          {slip.otherDeductions > 0 && (
+          {slip.otherDeductions > 0 && !deductions.some(l => l.type === 'Deduction') && (
             <LineRow label="Other Deductions"    amount={slip.otherDeductions} type="deduction" />
           )}
           {deductions.map(l => (

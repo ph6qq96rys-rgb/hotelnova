@@ -25,7 +25,7 @@ function approvalLabel(record: AttendanceRecordDto): string {
     return "Manager approval required";
   }
 
-  return "KPI required";
+  return "No request: decide in Overtime Approvals";
 }
 
 function approvalClass(record: AttendanceRecordDto): string {

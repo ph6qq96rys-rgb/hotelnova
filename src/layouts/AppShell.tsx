@@ -135,6 +135,7 @@ export default function AppShell() {
     const identity = {
       roles: roleNames,
       permissions: permissionNames,
+      email: auth.user?.email,
     };
 
     const candidatesByKey = new Map<string, MobileNavItem>();
@@ -179,7 +180,7 @@ export default function AppShell() {
     }
 
     return [...bySection.values()].slice(0, 4);
-  }, [routes, companyId, roleNames, permissionNames]);
+  }, [routes, companyId, roleNames, permissionNames, auth.user?.email]);
 
   useEffect(() => {
     const workspaceTitle = companyName ?? "Company";

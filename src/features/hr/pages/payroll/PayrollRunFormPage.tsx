@@ -27,12 +27,18 @@ const MONTH_NAMES = [
   'July','August','September','October','November','December',
 ];
 
-// Default to current month period
-const defaultStart = new Date(currentYear, currentMonth, 1)
-  .toISOString().slice(0, 10);
-const defaultEnd   = new Date(currentYear, currentMonth + 1, 0)
-  .toISOString().slice(0, 10);
-const defaultName  = `${MONTH_NAMES[currentMonth]} ${currentYear}`;
+// A payroll run covers one whole calendar month. Dates are built as text, not through toISOString(),
+// which shifts them a day back in time zones east of UTC (Addis Ababa: 1 Oct became 30 Sep).
+function monthPeriod(year: number, monthIndex: number) {
+  const mm = String(monthIndex + 1).padStart(2, '0');
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  return {
+    periodStart: `${year}-${mm}-01`,
+    periodEnd: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+    periodName: `${MONTH_NAMES[monthIndex]} ${year}`,
+  };
+}
+const { periodStart: defaultStart, periodEnd: defaultEnd, periodName: defaultName } = monthPeriod(currentYear, currentMonth);
 
 const EMPTY: PayrollRunFormValues = {
   periodName:  defaultName,
@@ -112,14 +118,14 @@ export default function PayrollRunFormPage() {
     return { width: '100%', height: 34, fontSize: 13, padding: '0 10px', ...errBorder(!!fieldErrs[key]) };
   }
 
-  // Auto-fill period name when dates change
-  function handleDateChange(key: 'periodStart' | 'periodEnd', value: string) {
-    set(key, value);
-    const start = key === 'periodStart' ? value : values.periodStart;
-    if (start) {
-      const d = new Date(start);
-      set('periodName', `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`);
-    }
+  // Choosing the month sets the whole-month period and its name.
+  function handleMonthChange(value: string) {
+    const [y, m] = value.split('-').map(Number);
+    if (!y || !m) return;
+    const period = monthPeriod(y, m - 1);
+    set('periodStart', period.periodStart);
+    set('periodEnd', period.periodEnd);
+    set('periodName', period.periodName);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -204,24 +210,21 @@ export default function PayrollRunFormPage() {
               </Field>
             </div>
 
-            <Field label="Period Start" required error={fe.periodStart} fieldKey="periodStart">
+            <Field label="Month" required error={fe.periodStart} fieldKey="periodStart">
               <input
-                type="date"
+                type="month"
                 className="input"
-                value={values.periodStart}
-                onChange={e => handleDateChange('periodStart', e.target.value)}
+                aria-label="Payroll month"
+                value={values.periodStart.slice(0, 7)}
+                onChange={e => handleMonthChange(e.target.value)}
                 style={inputStyle('periodStart')}
               />
             </Field>
 
-            <Field label="Period End" required error={fe.periodEnd} fieldKey="periodEnd">
-              <input
-                type="date"
-                className="input"
-                value={values.periodEnd}
-                onChange={e => handleDateChange('periodEnd', e.target.value)}
-                style={inputStyle('periodEnd')}
-              />
+            <Field label="Period" fieldKey="periodEnd">
+              <div style={{ fontSize: 13, padding: '8px 0' }}>
+                {values.periodStart} to {values.periodEnd} (salaries are paid for the whole month, pro-rated by days worked)
+              </div>
             </Field>
 
           </div>

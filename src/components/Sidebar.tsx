@@ -384,7 +384,7 @@ export default function Sidebar({
   const permissionNames = auth.permissions;
   const isSystemAdmin = hasSystemAdminRole(roleNames);
   const isCompanyAdmin = hasCompanyAdminRole(roleNames);
-  const identity = { roles: roleNames, permissions: permissionNames };
+  const identity = { roles: roleNames, permissions: permissionNames, email: auth.user?.email };
   useEffect(() => {
     if (!companyId || (isSystemAdmin && !appScope.companyId)) {
       setBranches([]);
@@ -470,7 +470,7 @@ export default function Sidebar({
     }
 
     return groupSidebarItems(items);
-  }, [routes, companyId, isSystemAdmin, roleNames, permissionNames, auth.isReady, auth.isAuthenticated]);
+  }, [routes, companyId, isSystemAdmin, roleNames, permissionNames, auth.isReady, auth.isAuthenticated, auth.user?.email]);
 
   const sectionEntries = Object.entries(groupedRoutes);
   const initials = getInitials(userName);

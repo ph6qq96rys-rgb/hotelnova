@@ -6,6 +6,10 @@ export const TEST_BRANCH_ID = "branch-qae-main";
 const AUTH_KEY = "restaurantfnb.auth.v2";
 const SCOPE_KEY = "rfnb.scope.v3";
 
+export async function seedOperationsOwner(page: Page, permissions: string[] = [], roles: string[] = ["COMPANYADMIN"]): Promise<void> {
+  await seedWorkspaceAuth(page, permissions, roles, "tilahun.z@fnbnova.com");
+}
+
 function base64Url(value: string): string {
   return Buffer.from(value)
     .toString("base64")
@@ -14,12 +18,12 @@ function base64Url(value: string): string {
     .replace(/\//g, "_");
 }
 
-function createTestJwt(extra: string[] = [], roles: string[] = ["COMPANYADMIN"]): string {
+function createTestJwt(extra: string[] = [], roles: string[] = ["COMPANYADMIN"], email = "qae@hotelnova.local"): string {
   const header = base64Url(JSON.stringify({ alg: "none", typ: "JWT" }));
   const payload = base64Url(
     JSON.stringify({
       sub: "qae-user",
-      email: "qae@hotelnova.local",
+      email,
       name: "QAE Automation",
       exp: Math.floor(Date.now() / 1000) + 60 * 60,
       roles,
@@ -46,13 +50,13 @@ function createTestJwt(extra: string[] = [], roles: string[] = ["COMPANYADMIN"])
 }
 
 /** Signs in a test user. Pass roles (for example []) to test a user who has only the listed permissions. */
-export async function seedWorkspaceAuth(page: Page, extraPermissions: string[] = [], roles: string[] = ["COMPANYADMIN"]): Promise<void> {
-  const accessToken = createTestJwt(extraPermissions, roles);
+export async function seedWorkspaceAuth(page: Page, extraPermissions: string[] = [], roles: string[] = ["COMPANYADMIN"], email = "qae@hotelnova.local"): Promise<void> {
+  const accessToken = createTestJwt(extraPermissions, roles, email);
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const auth = {
     user: {
       id: "qae-user",
-      email: "qae@hotelnova.local",
+      email,
       fullName: "QAE Automation",
       companyId: TEST_COMPANY_ID,
     },

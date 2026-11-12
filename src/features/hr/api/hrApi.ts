@@ -573,6 +573,7 @@ export const trainingApi = {
     params?: {
       category?: TrainingCategory;
       isMandatory?: boolean;
+      language?: string;
     }
   ): Promise<TrainingProgramDto[]> =>
     http

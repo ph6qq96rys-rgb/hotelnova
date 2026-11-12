@@ -1,3 +1,4 @@
+import { useTrainingLanguage, TrainingLanguageBar } from './trainingLanguage';
 // src/features/hr/pages/training/TrainingProgramFormPage.tsx
 
 import { useState } from 'react';
@@ -29,7 +30,7 @@ const EMPTY: ProgramFormValues = {
   code:          '',
   title:         '',
   category:      '',
-  mode:          'InPerson',
+  mode:          'Online',
   durationHours: '',
   isMandatory:   false,
   provider:      '',
@@ -38,8 +39,8 @@ const EMPTY: ProgramFormValues = {
   objectives:    '',
 };
 
-const CATEGORIES = ['Technical', 'Soft Skills', 'Compliance', 'Leadership', 'Safety', 'Onboarding', 'Other'];
-const MODES      = ['InPerson', 'Online', 'Hybrid', 'SelfPaced'];
+const CATEGORIES = ['TechnicalSkills', 'SoftSkills', 'Compliance', 'Leadership', 'Safety', 'Onboarding', 'Other'];
+const MODES      = ['Online'];
 
 // =============================================================================
 // Validation
@@ -69,13 +70,14 @@ function errBorder(hasErr: boolean): React.CSSProperties {
 // =============================================================================
 
 function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
+  const { tr } = useTrainingLanguage();
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div style={{
         fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
         letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 16,
       }}>
-        {title}
+        {tr(title)}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
         {children}
@@ -94,16 +96,17 @@ interface FieldProps {
 }
 
 function Field({ label, required, span = 1, error, fieldKey, children }: FieldProps) {
+  const { tr } = useTrainingLanguage();
   return (
     <div style={{ gridColumn: `span ${span}` }} data-field={fieldKey}>
       <label style={{
         display: 'block', fontSize: 11, marginBottom: 4,
         color: error ? 'var(--danger)' : 'var(--text-muted)',
       }}>
-        {label}{required && <span style={{ color: 'var(--danger)', marginLeft: 2 }}>*</span>}
+        {tr(label)}{required && <span style={{ color: 'var(--danger)', marginLeft: 2 }}>*</span>}
       </label>
       {children}
-      {error && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>{error}</div>}
+      {error && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>{tr(error)}</div>}
     </div>
   );
 }
@@ -113,6 +116,7 @@ function Field({ label, required, span = 1, error, fieldKey, children }: FieldPr
 // =============================================================================
 
 export default function TrainingProgramFormPage() {
+  const { tr } = useTrainingLanguage();
   const nav               = useNavigate();
   const { companyId, userId } = useAppScope();
 
@@ -150,8 +154,8 @@ export default function TrainingProgramFormPage() {
         onChange={e => set(key, e.target.value as ProgramFormValues[typeof key])}
         style={inputStyle(key)}
       >
-        <option value="">Select...</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        <option value="">{tr("Select...")}</option>
+        {options.map(o => <option key={tr(o)} value={tr(o)}>{tr(o)}</option>)}
       </select>
     );
   }
@@ -183,7 +187,7 @@ export default function TrainingProgramFormPage() {
         Objectives:    values.objectives || null,
         CreatedBy:     userId,
       });
-      nav(`/hr/training/programs/${created.id}`);
+      nav(`/companies/${companyId}/hr/training/programs/${created.id}`);
     } catch (e) {
       setApiError(getApiError(e, 'Failed to create training program.'));
     } finally {
@@ -194,28 +198,24 @@ export default function TrainingProgramFormPage() {
   const fe = fieldErrs;
 
   return (
-    <div className="page">
+    <div className="page"><TrainingLanguageBar />
       <div className="page-header">
         <div>
-          <div className="page-kicker">Human Resources - Training</div>
-          <div className="page-title">New Training Program</div>
-          <div className="page-sub">Define a reusable training program for scheduling</div>
+          <div className="page-kicker">{tr("Human Resources - Training")}</div>
+          <div className="page-title">{tr("New Training Program")}</div>
+          <div className="page-sub">{tr("Define a reusable training program for scheduling")}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? 'Creating...' : 'Create Program'}
+            {tr(saving ? 'Creating...' : 'Create Program')}
           </button>
-          <button className="btn" onClick={() => nav('/hr/training')} disabled={saving}>
-            Cancel
-          </button>
+          <button className="btn" onClick={() => nav(`/companies/${companyId}/hr/training`)} disabled={saving}>{tr("Cancel")}</button>
         </div>
       </div>
 
-      {apiError && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{apiError}</div>}
+      {apiError && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{tr(apiError)}</div>}
       {Object.keys(fe).length > 0 && (
-        <div className="alert alert-danger" style={{ marginBottom: 16 }}>
-          Please fix the following:
-          <ul style={{ margin: '6px 0 0 0', paddingLeft: 18 }}>
+        <div className="alert alert-danger" style={{ marginBottom: 16 }}>{tr("Please fix the following:")}<ul style={{ margin: '6px 0 0 0', paddingLeft: 18 }}>
             {Object.values(fe).map((msg, i) => <li key={i}>{msg}</li>)}
           </ul>
         </div>
@@ -225,20 +225,20 @@ export default function TrainingProgramFormPage() {
 
         {/* Program Details */}
         <FormSection title="Program Details">
-          <Field label="Program Code" required error={fe.code} fieldKey="code">
+          <Field label={tr("Program Code")} required error={fe.code} fieldKey="code">
             {input('code')}
           </Field>
-          <Field label="Title" required span={2} error={fe.title} fieldKey="title">
+          <Field label={tr("Title")} required span={2} error={fe.title} fieldKey="title">
             {input('title')}
           </Field>
-          <Field label="Category" required error={fe.category} fieldKey="category">
+          <Field label={tr("Category")} required error={fe.category} fieldKey="category">
             {selectEl('category', CATEGORIES)}
           </Field>
 
-          <Field label="Mode" required error={fe.mode} fieldKey="mode">
+          <Field label={tr("Mode")} required error={fe.mode} fieldKey="mode">
             {selectEl('mode', MODES)}
           </Field>
-          <Field label="Duration (hours)" required error={fe.durationHours} fieldKey="durationHours">
+          <Field label={tr("Duration (hours)")} required error={fe.durationHours} fieldKey="durationHours">
             <input
               type="number"
               className="input"
@@ -249,10 +249,10 @@ export default function TrainingProgramFormPage() {
               style={{ width: '100%', height: 34, fontSize: 13, padding: '0 10px', ...errBorder(!!fe.durationHours) }}
             />
           </Field>
-          <Field label="Provider" error={fe.provider} fieldKey="provider">
+          <Field label={tr("Provider")} error={fe.provider} fieldKey="provider">
             {input('provider')}
           </Field>
-          <Field label="Cost (ETB)" error={fe.cost} fieldKey="cost">
+          <Field label={tr("Cost (ETB)")} error={fe.cost} fieldKey="cost">
             <input
               type="number"
               className="input"
@@ -260,7 +260,7 @@ export default function TrainingProgramFormPage() {
               onChange={e => set('cost', e.target.value === '' ? '' : Number(e.target.value))}
               min={0}
               step={0.01}
-              placeholder="0.00"
+              placeholder={tr("0.00")}
               style={{ width: '100%', height: 34, fontSize: 13, padding: '0 10px', ...errBorder(!!fe.cost) }}
             />
           </Field>
@@ -275,10 +275,8 @@ export default function TrainingProgramFormPage() {
                 style={{ width: 16, height: 16, cursor: 'pointer' }}
               />
               <span>
-                <strong>Mandatory</strong>
-                <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>
-                  All active employees will be required to complete this program
-                </span>
+                <strong>{tr("Mandatory")}</strong>
+                <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>{tr("All active employees will be required to complete this program")}</span>
               </span>
             </label>
           </div>
@@ -289,33 +287,27 @@ export default function TrainingProgramFormPage() {
           <div style={{
             fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
             letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 16,
-          }}>
-            Description & Objectives
-          </div>
+          }}>{tr("Description & Objectives")}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
-              <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
-                Description
-              </label>
+              <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{tr("Description")}</label>
               <textarea
                 className="input"
                 value={values.description}
                 onChange={e => set('description', e.target.value)}
                 rows={4}
-                placeholder="Describe the program content, target audience, and prerequisites..."
+                placeholder={tr("Describe the program content, target audience, and prerequisites...")}
                 style={{ width: '100%', fontSize: 13, padding: '8px 10px', resize: 'vertical' }}
               />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
-                Learning Objectives
-              </label>
+              <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{tr("Learning Objectives")}</label>
               <textarea
                 className="input"
                 value={values.objectives}
                 onChange={e => set('objectives', e.target.value)}
                 rows={3}
-                placeholder="List the key skills and knowledge participants will gain..."
+                placeholder={tr("List the key skills and knowledge participants will gain...")}
                 style={{ width: '100%', fontSize: 13, padding: '8px 10px', resize: 'vertical' }}
               />
             </div>
@@ -326,9 +318,7 @@ export default function TrainingProgramFormPage() {
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? 'Creating...' : 'Create Program'}
           </button>
-          <button type="button" className="btn" onClick={() => nav('/hr/training')} disabled={saving}>
-            Cancel
-          </button>
+          <button type="button" className="btn" onClick={() => nav('/hr/training')} disabled={saving}>{tr("Cancel")}</button>
         </div>
       </form>
     </div>

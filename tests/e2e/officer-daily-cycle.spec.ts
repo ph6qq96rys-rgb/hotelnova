@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedWorkspaceAuth, TEST_COMPANY_ID } from "../fixtures/auth";
+import { seedOperationsOwner as seedWorkspaceAuth, TEST_COMPANY_ID } from "../fixtures/auth";
 
 const branch = "branch-daily";
 const row = {

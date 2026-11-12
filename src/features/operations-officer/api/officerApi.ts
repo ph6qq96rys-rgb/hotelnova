@@ -282,7 +282,7 @@ export type CaseDetail = CaseListItem & {
   decisions: { decision: PersonnelDecision; note: string; decidedByName: string; decidedAtUtc: string }[]; events: { event: string; note?: string | null; actorName: string; atUtc: string }[];
   canDo: string[];
 };
-export type ReviewEntryKind = "opening" | "question" | "answer" | "statement" | "evidence" | "correction" | "challenge" | "recognition" | "decision" | "note" | "escalation" | "humanReview" | "changes";
+export type ReviewEntryKind = "opening" | "question" | "answer" | "statement" | "evidence" | "correction" | "challenge" | "recognition" | "decision" | "note" | "escalation" | "humanReview" | "changes" | "timeline" | "demoRequest" | "decisionRecord";
 export type ReviewClassification = "statement" | "verified" | "assumed" | "disputed" | "agreed";
 export type CommitmentKind = "agreed" | "instruction";
 export type CommitmentStatus = "proposed" | "confirmed" | "constrained" | "issued" | "completed" | "withdrawn";
@@ -300,7 +300,7 @@ export type ReviewCommitment = {
 };
 export type ReviewSummary = {
   version: number; atUtc: string; by: string; decisions: string[]; verifiedFacts: string[]; statements: string[]; assumptions: string[]; disputed: string[];
-  commitments: string[]; openIssues: string[]; amendment?: string | null;
+  commitments: string[]; openIssues: string[]; amendment?: string | null; responsibilities?: string[] | null; milestones?: string[] | null; decision?: string | null;
 };
 export type ReviewListItem = {
   id: string; reviewNo: string; kind: string; trigger: string; status: "open" | "concluded" | "cancelled"; branchId?: string | null; branchName?: string | null; title: string;
@@ -312,10 +312,31 @@ export type Review = {
   escalatedAtUtc?: string | null; escalatedToName?: string | null; escalationReason?: string | null; openedByName: string; openedAtUtc: string; concludedAtUtc?: string | null;
   concludedByName?: string | null; retainUntilUtc?: string | null; redacted: boolean; version: string;
   participants: { employeeId: string; name?: string | null; role: ReviewRole; responsibility?: string | null; restricted: boolean; channel: string }[];
-  entries: ReviewEntry[]; commitments: ReviewCommitment[]; summaries: ReviewSummary[]; facilitator: boolean; restricted: boolean; canDo: string[];
+  entries: ReviewEntry[]; commitments: ReviewCommitment[]; summaries: ReviewSummary[]; facilitator: boolean; restricted: boolean; canDo: string[]; details: ReviewDetails;
 };
+export type ReviewKind = "operational" | "crossDepartment" | "implementation" | "decision";
+export type DecisionOutcome = "approved" | "rejected" | "conditional" | "moreInformation";
+export type MilestoneStage = "notStarted" | "developed" | "deployed" | "accepted" | "adopted";
+export type MilestoneCategory = "deliverable" | "defect" | "training" | "configuration" | "businessDecision";
+export type ChangeKind = "scope" | "budget" | "release";
+export type ReviewOption = { id: string; label: string; description: string; expectedImpact: string; evidence?: string | null; value?: number | null; contractual: boolean; recommended: boolean };
+export type ReviewMilestone = {
+  id: string; category: MilestoneCategory; title: string; ownerEmployeeId: string; ownerName?: string | null; dueAtUtc: string; dependencies?: string | null; acceptanceEvidence: string;
+  targetStage: MilestoneStage; claimedStage: MilestoneStage; verifiedStage: MilestoneStage; claimedAtUtc?: string | null; claimNote?: string | null;
+  verifications: { stage: MilestoneStage; evidence: string; by: string; at: string }[]; awaitingProof: boolean; overdue: boolean; version: string;
+};
+export type ReviewChange = {
+  id: string; kind: ChangeKind; description: string; reason: string; value?: number | null; actionId?: string | null; actionStatus?: string | null; requestedByName: string; requestedAtUtc: string;
+};
+export type ReviewDetails = {
+  decisionMakerEmployeeId?: string | null; decisionMakerName?: string | null; decisionDueUtc?: string | null; decisionOutcome?: DecisionOutcome | null; decidedOptionId?: string | null;
+  decisionNote?: string | null; decidedAtUtc?: string | null; decidedByName?: string | null; contractActionId?: string | null; contractStatus?: string | null;
+  externalParties?: string | null; externalChannel?: string | null; externalAuthorizedByName?: string | null; externalAuthorizedAtUtc?: string | null;
+  options: ReviewOption[]; milestones: ReviewMilestone[]; changes: ReviewChange[]; departments: Record<string, string>; canDo: string[];
+};
+export type ReviewOptionInput = { label: string; description?: string; expectedImpact: string; evidence?: string; value?: number | null; contractual: boolean; recommended: boolean };
 export type ReviewOpenInput = {
-  kind: "operational"; trigger: "request"; branchId: string; title: string; purpose: string; expectedOutcome: string; language: "en" | "am";
+  kind: ReviewKind; trigger: "request"; decisionMakerEmployeeId?: string | null; decisionDueUtc?: string | null; options?: ReviewOptionInput[]; branchId: string; title: string; purpose: string; expectedOutcome: string; language: "en" | "am";
   links: { type: string; id: string }[]; participants: { employeeId: string; role: ReviewRole; responsibility?: string; restricted: boolean }[];
 };
 

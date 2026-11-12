@@ -30,6 +30,7 @@ const COMPANY_ADMIN_RESTRICTED_PERMISSIONS = new Set(
 const COMPANY_ADMIN_RESTRICTED_PREFIXES = ["purchasing.", "suppliers.", "fixedassets.", "finance.payables."];
 
 export type AccessIdentity = {
+  email?: string | null;
   roles?: string[] | null;
   permissions?: string[] | null;
 };
@@ -125,8 +126,9 @@ export function hasAnyErpRole(
 
 export function canAccessRoute(
   identity: AccessIdentity,
-  route: Pick<AppRouteLike, "roles" | "permissions">
+  route: Pick<AppRouteLike, "roles" | "permissions"> & { path?: string }
 ): boolean {
+  if (!canAccessOperations(identity, route)) return false;
   if (hasSystemAdminRole(identity.roles)) return true;
 
   const requiresRole = (route.roles ?? []).length > 0;
@@ -139,4 +141,9 @@ export function canAccessRoute(
     requiresPermission && hasAnyErpPermission(identity, route.permissions);
 
   return roleAllowed || permissionAllowed;
+}
+
+export function canAccessOperations(identity: AccessIdentity, route: { path?: string }): boolean {
+  return !(route.path ?? "").split("/").includes("operations-officer")
+    || identity.email?.trim().toLowerCase() === "tilahun.z@fnbnova.com";
 }

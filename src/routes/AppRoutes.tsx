@@ -4,8 +4,10 @@ import { Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 
 import RequireCompany from "../auth/RequireCompany";
+import { useAuth } from "../auth/AuthProvider";
 import {
   canAccessRoute as canAccessErpRoute,
+  canAccessOperations,
   hasCompanyAdminRole,
   hasSystemAdminRole,
 } from "../auth/erpAccess";
@@ -68,6 +70,7 @@ const LEGACY_COMPANY_ROUTE_ROOTS = [
 ] as const;
 
 type AuthLike = {
+  user?: { email?: string | null } | null;
   accessToken?: string | null;
   companyId?: string | null;
   roles?: string[] | null;
@@ -331,6 +334,9 @@ function RouteGuard({
   const roles = auth?.roles ?? [];
   const permissions = auth?.permissions ?? [];
 
+  const email = useAuth().user?.email;
+  if (!canAccessOperations({ email }, route)) return <AccessDenied route={route} />;
+
   if (!route.permissions?.length && !route.roles?.length) {
     return <>{children}</>;
   }
@@ -345,7 +351,7 @@ function RouteGuard({
     return <>{children}</>;
   }
 
-  if (!canAccessErpRoute({ roles, permissions }, route)) {
+  if (!canAccessErpRoute({ roles, permissions, email }, route)) {
     return <AccessDenied route={route} />;
   }
 

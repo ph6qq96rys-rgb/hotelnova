@@ -54,8 +54,9 @@ import PerformanceCycleFormPage from "../features/hr/pages/performance/Performan
 import PerformanceReviewPage from "../features/hr/pages/performance/Performancereviewpage";
 
 import TrainingPage from "../features/hr/pages/training/TrainingPage";
+import MyOnlineTrainingPage from "../features/hr/pages/training/MyOnlineTrainingPage";
 import TrainingProgramFormPage from "../features/hr/pages/training/Trainingprogramformpage";
-import TrainingProgramDetailPage from "../features/hr/pages/training/Trainingprogramdetailpage";
+import TrainingProgramDetailPage from "../features/hr/pages/training/TrainingWorkspacePage";
 
 export type AppRoute = RouteObject & {
   label?: string;
@@ -351,16 +352,21 @@ export function getHrRoutes(): AppRoute[] {
       permissions: ["hr.training.view"],
     },
 
+    { path: "hr/my-training", label: "My online training", element: <MyOnlineTrainingPage />, icon: <School size={18} />, nav: true, section: HR_SECTION, order: 81 },
+    { path: "hr/my-training/:enrollmentId", element: <MyOnlineTrainingPage />, nav: false },
+
     {
       path: "hr/training/programs/new",
       element: <TrainingProgramFormPage />,
       nav: false,
+      permissions: ["hr.training.manage"],
     },
 
     {
       path: "hr/training/programs/:programId",
       element: <TrainingProgramDetailPage />,
       nav: false,
+      permissions: ["hr.training.view"],
     },
   ];
 }

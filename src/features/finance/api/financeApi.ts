@@ -28,8 +28,11 @@ export type GlAccount = {
   id: string; code: string; name: string; type: AccountType; parentId?: string | null; isHeader: boolean; isActive: boolean;
   allowManualPosting: boolean; requiresCostCenter: boolean; description?: string | null; hasPostings: boolean;
   accountCategory?: string | null; normalBalance: "Debit" | "Credit"; isPostingAccount: boolean;
+  /** Explicit cash-flow section; null uses the automatic one in defaultCashFlowActivity. */
+  cashFlowActivity?: CashFlowActivity | null; defaultCashFlowActivity?: CashFlowActivity | null;
 };
-export type GlAccountInput = Omit<GlAccount, "id" | "hasPostings" | "normalBalance" | "isPostingAccount">;
+export type CashFlowActivity = "Operating" | "Investing" | "Financing";
+export type GlAccountInput = Omit<GlAccount, "id" | "hasPostings" | "normalBalance" | "isPostingAccount" | "defaultCashFlowActivity">;
 export type CostCenter = { id: string; code: string; name: string; branchId?: string | null; isActive: boolean };
 export type Period = {
   id: string; fiscalYearId: string; periodNo: number; name: string; startDate: string; endDate: string; status: PeriodStatus;

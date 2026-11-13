@@ -36,6 +36,7 @@ test("bank statement imports quoted CSV and displays approval failures", async (
     const path = new URL(route.request().url()).pathname;
     let body: unknown = [];
     if (path.endsWith("/finance/accounts")) body = [bank];
+    if (path.endsWith("/bank-reconciliations/opening-candidates")) body = { before: "2026-11-01", ledgerOpening: 0, lines: [], truncated: false };
     if (path.endsWith("/bank-reconciliations") && route.request().method() === "POST") { imported = route.request().postDataJSON(); body = { id: "statement" }; }
     if (path.endsWith("/bank-reconciliations/statement")) body = {
       statement: { id: "statement", reference: "BANK-1", status: "Draft", version: "version", closingBalance: 100, lines: [{ id: "line", date: "2026-11-07", reference: "Deposit, customer", amount: 100, journalLineId: "ledger" }] },

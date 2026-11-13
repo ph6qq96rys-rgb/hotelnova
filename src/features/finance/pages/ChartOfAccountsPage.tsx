@@ -14,7 +14,7 @@ import { apiError, Chip, Field, GlDialog } from "../components/glShared";
 import { useFinanceRefs } from "../components/useFinanceRefs";
 
 type Tab = "accounts" | "centers";
-const emptyAccount: GlAccountInput = { code: "", name: "", type: "expense", parentId: null, isHeader: false, isActive: true, allowManualPosting: true, requiresCostCenter: false, description: "", accountCategory: "" };
+const emptyAccount: GlAccountInput = { code: "", name: "", type: "expense", parentId: null, isHeader: false, isActive: true, allowManualPosting: true, requiresCostCenter: false, description: "", accountCategory: "", cashFlowActivity: null };
 const CATEGORIES = ["Cash", "Bank", "Clearing", "Receivables", "Inventory", "Tax", "Fixed assets", "Accumulated depreciation", "Payables", "Accrued liabilities", "Capital", "Retained earnings", "Sales", "Other income", "COGS", "Payroll", "Occupancy", "Operating", "Depreciation"];
 
 /** Ordered as a tree: each header followed by its sub-accounts, with their depth. */
@@ -118,7 +118,7 @@ export default function ChartOfAccountsPage() {
                     </td>
                     <td className="gl-actions">
                       {!a.isHeader ? <Button size="sm" variant="ghost" onClick={() => ledgerLink(a)}>Ledger</Button> : null}
-                      {canManage ? <Button size="sm" variant="ghost" onClick={() => { setError(null); setEditing({ id: a.id, input: { code: a.code, name: a.name, type: a.type, parentId: a.parentId, isHeader: a.isHeader, isActive: a.isActive, allowManualPosting: a.allowManualPosting, requiresCostCenter: a.requiresCostCenter, description: a.description, accountCategory: a.accountCategory } }); }}>Edit</Button> : null}
+                      {canManage ? <Button size="sm" variant="ghost" onClick={() => { setError(null); setEditing({ id: a.id, input: { code: a.code, name: a.name, type: a.type, parentId: a.parentId, isHeader: a.isHeader, isActive: a.isActive, allowManualPosting: a.allowManualPosting, requiresCostCenter: a.requiresCostCenter, description: a.description, accountCategory: a.accountCategory, cashFlowActivity: a.cashFlowActivity ?? null } }); }}>Edit</Button> : null}
                       {canManage && !a.hasPostings ? <Button size="sm" variant="ghost" onClick={() => { setError(null); setDeleting(a); }}>Delete</Button> : null}
                     </td>
                   </tr>
@@ -176,6 +176,14 @@ export default function ChartOfAccountsPage() {
                   <Input list="gl-categories" maxLength={50} value={editing.input.accountCategory ?? ""} onChange={(e) => set({ accountCategory: e.target.value })} />
                 </Field>
                 <datalist id="gl-categories">{CATEGORIES.map((c) => <option key={c} value={c} />)}</datalist>
+                <Field label="Cash-flow section" hint="Where cash paid or received against this account appears in the cash-flow statement.">
+                  <Select value={editing.input.cashFlowActivity ?? ""} onChange={(e) => set({ cashFlowActivity: (e.target.value || null) as GlAccountInput["cashFlowActivity"] })}>
+                    <option value="">Automatic{editing.id ? ` (${refs.accounts.find((x) => x.id === editing.id)?.defaultCashFlowActivity ?? "Operating"})` : ""}</option>
+                    <option value="Operating">Operating</option>
+                    <option value="Investing">Investing</option>
+                    <option value="Financing">Financing</option>
+                  </Select>
+                </Field>
                 <Field label="Description" wide><Input maxLength={500} value={editing.input.description ?? ""} onChange={(e) => set({ description: e.target.value })} /></Field>
                 <label className="gl-check"><Checkbox checked={editing.input.isHeader} disabled={!!used} onChange={(e) => set({ isHeader: e.target.checked })} /> Header (groups accounts, never posted to)</label>
                 <label className="gl-check"><Checkbox checked={editing.input.isActive} onChange={(e) => set({ isActive: e.target.checked })} /> Active</label>

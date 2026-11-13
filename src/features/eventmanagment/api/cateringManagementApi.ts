@@ -14,6 +14,7 @@ function withBranch(params?: { branchId?: string | null }) {
 }
 
 export type CateringEventDto = {
+  services?: import("../sales/ServiceSchedule").ScheduledService[];
   id: string;
   companyId: string;
   branchId: string;

@@ -7,6 +7,8 @@ import { Select } from "../../../components/ui/select";
 import { EmptyState } from "../../../components/ui/Feedback";
 import { getCateringEventJourney, listCateringEvents, type CateringEventDto, type CateringEventJourney, type CateringWorkflowStep } from "../api/cateringManagementApi";
 import { EventsScreen } from "../sales/EventsScreen";
+import { ServiceScheduleTable } from "../sales/ServiceSchedule";
+import { EventServiceProgress } from "./EventServiceProgress";
 import { EventJourneyPanel } from "./EventJourneyPanel";
 import { EventStagePanel, STAGE_TAB, type StageTab } from "./EventStagePanel";
 import { cateringPath } from "../components/CateringLayout";
@@ -263,7 +265,7 @@ export function EventOperations({ companyId, branchId, mode }: { companyId: stri
               <small>{formatDateTime(selected.eventDateUtc)}</small>
             </article>
             <article>
-              <span>Guests</span>
+              <span>{selected.services?.length ? "Peak guests per service" : "Guests"}</span>
               <strong>{selected.guestCount}</strong>
               <small>{humanize(String(selected.serviceStyle))}</small>
             </article>
@@ -286,6 +288,8 @@ export function EventOperations({ companyId, branchId, mode }: { companyId: stri
               </Link>
             ))}
           </nav>
+          <ServiceScheduleTable services={selected.services} />
+          {!!selected.services?.length && <EventServiceProgress key={selected.id} event={selected} onChanged={refresh} />}
 
           {active === "overview" && (
             <EventsScreen

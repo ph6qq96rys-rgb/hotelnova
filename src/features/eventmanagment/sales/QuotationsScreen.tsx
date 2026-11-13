@@ -1,3 +1,4 @@
+import { ServiceScheduleEditor, ServiceScheduleTable, scheduleFromJson, type ServiceDraft } from "./ServiceSchedule";
 import { Button } from "../../../components/ui/button";
 import { Checkbox } from "../../../components/ui/checkbox";
 import { http } from "../../../api/http";
@@ -48,6 +49,7 @@ import {
 } from "./ui";
 
 type PricingForm = {
+  services?: ServiceDraft[];
   selectedLineKeys?: string[];
   priceOverrideReason?: string;
   pricingMode?: string;
@@ -102,6 +104,7 @@ function toPricing(quote: CateringQuotationDto): PricingForm {
     /* Legacy quotation without snapshot. */
   }
   return {
+    services: scheduleFromJson(quote.packageSnapshotJson).map(s => ({ serviceAtUtc: s.serviceAtUtc, name: s.name, packageId: s.packageId, guestCount: s.snapshot.guestCount, selectedLineKeys: s.snapshot.selectedLineKeys ?? [] })),
     pricingMode: snapshot?.offering?.pricingMode,
     selectedLineKeys:
       snapshot?.selectedLineKeys ??
@@ -132,12 +135,13 @@ const n = (value: number | "") => (typeof value === "number" && Number.isFinite(
 
 function toPayload(form: PricingForm): UpsertCateringQuotationDto {
   return {
+    services: form.services?.length ? form.services : undefined,
     selectedLineKeys: form.selectedLineKeys ?? [],
     priceOverrideReason: form.priceOverrideReason || null,
     inquiryId: form.inquiryId,
-    packageId: form.packageId || null,
-    guestCount: n(form.guestCount),
-    pricePerPerson: typeof form.pricePerPerson === "number" ? form.pricePerPerson : null,
+    packageId: form.services?.length ? null : form.packageId || null,
+    guestCount: form.services?.length ? Math.max(...form.services.map(s => s.guestCount)) : n(form.guestCount),
+    pricePerPerson: form.services?.length ? null : typeof form.pricePerPerson === "number" ? form.pricePerPerson : null,
     venueCharge: n(form.venueCharge),
     equipmentCharge: n(form.equipmentCharge),
     staffingCharge: n(form.staffingCharge),
@@ -157,8 +161,8 @@ function toPayload(form: PricingForm): UpsertCateringQuotationDto {
  * and is authoritative — this exists so the person pricing the job can see the
  * effect of a change before saving.
  */
-function estimate(form: PricingForm) {
-  const food = form.pricingMode === "Fixed" ? n(form.pricePerPerson) : n(form.guestCount) * n(form.pricePerPerson);
+function estimate(form: PricingForm, packages: CateringPackage[] = []) {
+  const food = form.services?.length ? form.services.reduce((sum, row) => { const p = packages.find(p => p.id === row.packageId); return sum + (p?.offering?.pricingMode === "Fixed" ? p.offering.fixedPrice : (p?.pricePerPerson ?? 0) * row.guestCount); }, 0) : form.pricingMode === "Fixed" ? n(form.pricePerPerson) : n(form.guestCount) * n(form.pricePerPerson);
   const subtotal =
     food +
     n(form.venueCharge) +
@@ -384,13 +388,14 @@ export function QuotationsScreen({
 
         {mutation.error ? <ErrorBanner message={mutation.error} /> : null}
 
+        <ServiceScheduleTable services={scheduleFromJson(selected.packageSnapshotJson)} />
         <div className="cat-split">
           <Card title="Pricing">
             <table className="cat-table cat-table--totals">
               <tbody>
                 <tr>
                   <td>
-                    Food ({selected.guestCount} guests × {formatCurrency(selected.pricePerPerson)})
+                    {scheduleFromJson(selected.packageSnapshotJson).length ? "All scheduled meal services" : `Food (${selected.guestCount} guests × ${formatCurrency(selected.pricePerPerson)})`}
                   </td>
                   <td className="is-end">{formatCurrency(selected.foodAmount)}</td>
                 </tr>
@@ -643,7 +648,7 @@ function PricingDialog({
   error: string | null;
 }) {
   const set = <K extends keyof PricingForm>(key: K, value: PricingForm[K]) => onChange({ ...form, [key]: value });
-  const totals = useMemo(() => estimate(form), [form]);
+  const totals = useMemo(() => estimate(form, packages), [form, packages]);
   const inquiry = inquiries.find((item) => item.id === form.inquiryId);
   const selectedPackage = packages.find((p) => p.id === form.packageId);
   const packagePrice = (p: CateringPackage, selected: string[], guests: number) => {
@@ -663,7 +668,7 @@ function PricingDialog({
           ? "Creates a new version of this quotation. The previous version is superseded."
           : "Prices the job against an inquiry. Totals are recalculated by the server on save."
       }
-      disabled={!canQuoteInquiry(inquiry)}
+      disabled={!canQuoteInquiry(inquiry) || !!form.services?.some(s => !s.serviceAtUtc || !s.name.trim() || !s.packageId || s.guestCount < 1)}
       error={error ?? closedInquiryMessage(inquiry)}
       onClose={onClose}
       onSubmit={onSubmit}
@@ -684,6 +689,9 @@ function PricingDialog({
         />
       ) : null}
 
+      <ServiceScheduleEditor services={form.services ?? []} packages={packages.filter(p => !!p.offering && !p.offering.archived && (p.offering.companyWide || p.branchId === inquiry?.branchId))} onChange={services => { const first = packages.find(p => p.id === services[0]?.packageId); onChange({ ...form, services, ...(first && form.services?.[0]?.packageId !== services[0]?.packageId ? { taxPercent: first.offering?.taxPercent ?? form.taxPercent, serviceChargePercent: first.offering?.serviceChargePercent ?? form.serviceChargePercent } : {}) }); }} />
+      {!!form.services?.length && <p>The total below is indicative. Saved service prices include selected options and guest-dependent costs calculated by the server. Booking charges, service charge, discount and VAT apply once to the booking.</p>}
+      {!form.services?.length && <>
       <SelectField
         label="Menu package"
         value={form.packageId}
@@ -738,7 +746,9 @@ function PricingDialog({
             </fieldset>
           ),
       )}
+      </>}
       <div className="cat-form-grid">
+        {!form.services?.length && <>
         <NumberField
           label="Guest count"
           min={0}
@@ -760,6 +770,7 @@ function PricingDialog({
           step={10}
           value={form.pricePerPerson}
         />
+        </>}
         <NumberField
           label="Venue charge"
           min={0}

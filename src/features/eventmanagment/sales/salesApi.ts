@@ -279,6 +279,7 @@ export type CateringQuotationDto = {
 
 /** Used for both create and revise. */
 export type UpsertCateringQuotationDto = {
+  services?: import("./ServiceSchedule").ServiceDraft[];
   selectedItemIds?: string[];
   selectedLineKeys?: string[];
   priceOverrideReason?: string | null;

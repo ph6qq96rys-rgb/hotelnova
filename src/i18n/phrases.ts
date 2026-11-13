@@ -1,6 +1,8 @@
 import type { LanguageCode } from "./i18n.types";
 
 const amharicPhrases: Record<string, string> = {
+  "Main Store managing branch": "ዋና መጋዘኑን የሚያስተዳድረው ቅርንጫፍ",
+  "Company-wide commitments to suppliers, from draft through receipt and closure.": "ለድርጅቱ በሙሉ የሚደረጉ የግዢ ትዕዛዞች፤ ከረቂቅ እስከ እቃ መቀበልና መዝጋት።",
   "Event lifecycle": "የዝግጅቱ ሂደት",
   "Start event": "ዝግጅቱን ጀምር",
   "Complete event": "ዝግጅቱን አጠናቅቅ",

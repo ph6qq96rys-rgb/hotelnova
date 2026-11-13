@@ -10,11 +10,11 @@ import { Input } from "../../../components/ui/input";
 import { Select } from "../../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { useI18n } from "../../../i18n";
-import { useAppScope } from "../../../app/useAppScope";
+import { http } from "../../../api/http";
 import { inventoryItemsApi } from "../../inventoryMaster/items/api/inventoryItemsApi";
 import NegotiatedPriceHint from "../components/NegotiatedPriceHint";
 import type { InventoryItemDto, ItemUomDto } from "../../inventoryMaster/items/types";
-import { stockLocationsApi } from "../../inventory/stock-locations/api/stockLocationsApi";
+
 import type { StockLocationDto } from "../../inventory/stock-locations/types";
 import {
   PO_LINE_TYPES,
@@ -76,8 +76,8 @@ export default function PurchaseOrderEditorPage() {
   const { id } = useParams<{ id: string }>();
   const isNew = !id;
   const navigate = useNavigate();
-  // Branch-scoped users must send their branch when the delivery warehouse is company-level.
-  const scope = useAppScope();
+  // Purchase orders belong to the company; receiving allocation is separate.
+
 
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
   const [suppliers, setSuppliers] = useState<SupplierLookup[]>([]);
@@ -115,7 +115,7 @@ export default function PurchaseOrderEditorPage() {
       try {
         const [sup, locs, its, settings] = await Promise.all([
           suppliersApi.lookup(companyId),
-          stockLocationsApi.list(companyId),
+          http.get<StockLocationDto[]>(`/companies/${companyId}/procurement/purchase-orders/receiving-locations`).then(r=>r.data),
           inventoryItemsApi.list(companyId),
           purchasingSetupApi.getSettings(companyId).catch(() => null),
         ]);
@@ -394,7 +394,7 @@ export default function PurchaseOrderEditorPage() {
                           ) : <span className="p2p-muted">-</span>}
                         </TableCell>
                         <TableCell><Input aria-label={tx("Qty")} type="number" min={0} step="0.0001" value={l.quantity} onChange={(e) => updateLine(l.key, { quantity: e.target.value })} /></TableCell>
-                        <TableCell><Input aria-label={tx("Unit Price")} type="number" min={0} step="0.0001" placeholder={tx("Auto")} value={l.unitPrice} onChange={(e) => updateLine(l.key, { unitPrice: e.target.value })} /><NegotiatedPriceHint companyId={companyId} supplierId={header.supplierId} branchId={locations.find(x=>x.id===header.deliveryLocationId)?.branchId ?? (scope.branchId || null)} itemId={l.inventoryItemId} uomId={l.uomId} quantity={Number(l.quantity)} currency={currency} date={header.orderDate} onUse={price=>updateLine(l.key,{unitPrice:String(price),discountPercent:"0"})}/></TableCell>
+                        <TableCell><Input aria-label={tx("Unit Price")} type="number" min={0} step="0.0001" placeholder={tx("Auto")} value={l.unitPrice} onChange={(e) => updateLine(l.key, { unitPrice: e.target.value })} /><NegotiatedPriceHint companyId={companyId} supplierId={header.supplierId} branchId={null} itemId={l.inventoryItemId} uomId={l.uomId} quantity={Number(l.quantity)} currency={currency} date={header.orderDate} onUse={price=>updateLine(l.key,{unitPrice:String(price),discountPercent:"0"})}/></TableCell>
                         <TableCell><Input aria-label={tx("Disc. %")} type="number" min={0} max={100} step="0.01" value={l.discountPercent} onChange={(e) => updateLine(l.key, { discountPercent: e.target.value })} /></TableCell>
                         <TableCell><Input aria-label={tx("Tax %")} type="number" min={0} max={100} step="0.01" placeholder={lineVat(l) === "Standard" ? `${defaultVat}%` : tx(VAT_TREATMENT_LABELS[lineVat(l)])} title={tx(VAT_TREATMENT_LABELS[lineVat(l)])} value={l.taxRatePercent} onChange={(e) => updateLine(l.key, { taxRatePercent: e.target.value })} /></TableCell>
                         <TableCell className="p2p-right">{l.unitPrice === "" ? tx("Auto") : money(net, currency)}</TableCell>

@@ -12,7 +12,7 @@ import { useI18n } from "../../../i18n";
 import { Button } from "../../../components/ui/button";
 import { inventoryItemsApi } from "../../inventoryMaster/items/api/inventoryItemsApi";
 import type { InventoryItemDto } from "../../inventoryMaster/items/types";
-import { stockLocationsApi } from "../../inventory/stock-locations/api/stockLocationsApi";
+
 import type { StockLocationDto } from "../../inventory/stock-locations/types";
 import { createPurchaseRequisition, updatePurchaseRequisition, getPurchaseRequisition, submitPurchaseRequisition, listReorderSuggestions, revisePurchaseRequisition, type CreatePurchaseRequisitionPayload, type PurchaseRequisition, type PurchaseRequisitionRevisionResult } from "../api/procurementApi";
 import { procurementDocumentsApi } from "../api/procurementDocumentsApi";
@@ -61,7 +61,7 @@ export default function PurchaseRequisitionEditorPage() {
       .catch(e=>active&&setError(apiError(e,"Unable to load requisition setup."))).finally(()=>active&&setLoading(false));
     return()=>{active=false;};
   },[companyId,id]);
-  useEffect(()=>{if(!companyId||!id)return;let active=true;stockLocationsApi.list(companyId,form.branchId).then(l=>active&&setLocations(l.filter(x=>x.isActive).map(x=>({...x,id:(x as {stockLocationId?:string}).stockLocationId??x.id})))).catch(e=>active&&setError(apiError(e,"Unable to load authorized locations.")));return()=>{active=false;};},[companyId,id,form.branchId]);
+  useEffect(()=>{if(!companyId||!id)return;let active=true;http.get<StockLocationDto[]>(`/companies/${companyId}/procurement/purchase-orders/receiving-locations`).then(r=>r.data).then(l=>active&&setLocations(l.filter(x=>x.isActive).map(x=>({...x,id:(x as {stockLocationId?:string}).stockLocationId??x.id})))).catch(e=>active&&setError(apiError(e,"Unable to load authorized locations.")));return()=>{active=false;};},[companyId,id,form.branchId]);
   async function loadReorder(){if(!companyId)return;setBusy(true);setError("");try{const rows=await listReorderSuggestions(companyId,{branchId:form.branchId,stockLocationId:form.requiredStockLocationId});if(!rows.length){setError(tx("No items require replenishment at this location."));return;}patch({lines:rows.map(r=>({lineType:"InventoryItem",inventoryItemId:r.inventoryItemId,itemName:r.itemName,uomId:r.uomId,uomName:r.uomName,quantity:r.suggestedPurchaseQty,estimatedUnitPrice:r.estimatedUnitPrice,specification:r.recommendation}))});}catch(e){setError(apiError(e,"Unable to load reorder suggestions."));}finally{setBusy(false);}}
   function validate(requireDestination=false){
     if(requireDestination&&hasInventory&&(!form.branchId||!(form.requiredStockLocationId||form.deliveryLocationId))){setError(tx("Select a branch and destination stock location for inventory purchase requests before submitting."));return false;}
@@ -112,7 +112,7 @@ export default function PurchaseRequisitionEditorPage() {
     <fieldset disabled={busy||!editable||(!id&&!origin)} style={{border:0,padding:0,margin:0}}>
       <section className="prq-panel prq-form-grid">
         <label>{tx("Requester")}<Input readOnly value={document?.requestedByName??tx("Current signed-in user")}/></label>
-        <label>{tx("Managing branch")}<Input readOnly value={origin?.branchName??document?.branchName??branches.find(b=>b.id===form.branchId)?.name??""}/></label>
+        <label>{tx("Main Store managing branch")}<Input readOnly value={origin?.branchName??document?.branchName??branches.find(b=>b.id===form.branchId)?.name??""}/></label>
         {!id||document?.requiredStockLocationId ? <label>{tx("Requisition origin")}<Input readOnly value={origin?.locationName??document?.requiredStockLocationName??locations.find(l=>l.id===form.requiredStockLocationId)?.name??""}/></label> : <label>{tx("Receiving location")}<Select value={form.requiredStockLocationId??form.deliveryLocationId??""} onChange={e=>patch({requiredStockLocationId:e.target.value||null,deliveryLocationId:e.target.value||null})}><option value="">{tx(hasInventory?"Select destination (required for inventory)":"Not applicable / select location")}</option>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</Select></label>}
         <label>{tx("Required by")}<Input type="date" value={form.requiredByDateUtc?.slice(0,10)??""} onChange={e=>patch({requiredByDateUtc:e.target.value})}/></label>
         <label>{tx("Priority")}<Select value={form.priority} onChange={e=>patch({priority:e.target.value})}>{["Low","Normal","High","Urgent","Emergency"].map(p=><option key={p} value={p}>{tx(p)}</option>)}</Select></label>

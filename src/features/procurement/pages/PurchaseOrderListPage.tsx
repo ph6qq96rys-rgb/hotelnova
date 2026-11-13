@@ -60,7 +60,7 @@ export default function PurchaseOrderListPage() {
     <main className="p2p-page">
       <PageHeader
         title={tx("Purchase Orders")}
-        subtitle={tx("Approved commitments to suppliers, from draft through receipt and closure.")}
+        subtitle={tx("Company-wide commitments to suppliers, from draft through receipt and closure.")}
         actions={canCreate ? <Button onClick={() => navigate(`${root}/new`)}><Plus size={16} />{tx("New purchase order")}</Button> : undefined}
       />
 

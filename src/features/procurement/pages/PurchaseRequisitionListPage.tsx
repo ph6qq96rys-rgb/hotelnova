@@ -122,7 +122,7 @@ export default function PurchaseRequisitionListPage() {
                 <th>{tx("Priority")}</th>
                 <th>{tx("Category")}</th>
                 <th>{tx("Requester")}</th>
-                <th>{tx("Branch")}</th>
+                <th>{tx("Scope")}</th>
                 <th>{tx("Required By")}</th>
                 <th className="prq-right">{tx("Estimated Total")}</th>
               </tr>
@@ -135,7 +135,7 @@ export default function PurchaseRequisitionListPage() {
                   <td>{tx(row.priority)}</td>
                   <td>{row.purchaseCategory}</td>
                   <td>{row.requestedByName ?? "-"}</td>
-                  <td>{row.branchName ?? tx("Company scope")}</td>
+                  <td>{tx("Company scope")}</td>
                   <td>{formatDate(row.requiredByDateUtc)}</td>
                   <td className="prq-right">{money.format(row.estimatedTotal || 0)}</td>
                 </tr>

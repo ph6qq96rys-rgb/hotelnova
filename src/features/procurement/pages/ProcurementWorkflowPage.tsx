@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, ArrowRight, ClipboardList, PackageCheck, Plus, RefreshCw, Search, ShieldCheck, ShoppingCart, Sparkles, Truck } from "lucide-react";
 
-import { http } from "../../../api/http";
+
 import { PageHeader } from "../../../components/PageHeader";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { Select } from "../../../components/ui/select";
+
 import { EmptyState, StateMessage } from "../../../components/ui/Feedback";
 import { useI18n } from "../../../i18n";
-import { apiError, asItems, date, money, StatusChip, useCompanyId } from "../components/p2pShared";
+import { apiError, date, money, StatusChip, useCompanyId } from "../components/p2pShared";
 import {
   procurementWorkflowApi,
   WORKFLOW_STAGES,
@@ -46,11 +46,11 @@ export default function ProcurementWorkflowPage() {
   const [params, setParams] = useSearchParams();
   const stage = (params.get("stage") ?? "") as WorkflowStage | "";
   const mine = params.get("mine") === "1";
-  const branchId = params.get("branch") ?? "";
+
   const query = params.get("q") ?? "";
   const [search, setSearch] = useState(params.get("q") ?? "");
   const [board, setBoard] = useState<ProcurementWorkflowBoard | null>(null);
-  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const controller = useRef<AbortController | null>(null);
@@ -74,31 +74,20 @@ export default function ProcurementWorkflowPage() {
     setLoading(true);
     setError("");
     try {
-      const data = await procurementWorkflowApi.board(companyId, { search: query, branchId, mine }, current.signal);
+      const data = await procurementWorkflowApi.board(companyId, { search: query, mine }, current.signal);
       if (!current.signal.aborted) setBoard(data);
     } catch (e) {
       if (!current.signal.aborted) setError(apiError(e, "Unable to load the purchase workflow."));
     } finally {
       if (!current.signal.aborted) setLoading(false);
     }
-  }, [companyId, branchId, mine, query]);
+  }, [companyId, mine, query]);
 
   useEffect(() => {
     void load();
     return () => controller.current?.abort();
   }, [load]);
 
-  useEffect(() => {
-    if (!companyId) return;
-    let active = true;
-    http
-      .get<{ id: string; name: string }[] | { items?: { id: string; name: string }[] }>(`/companies/${companyId}/branches`)
-      .then((r) => active && setBranches(asItems(r.data)))
-      .catch(() => active && setBranches([]));
-    return () => {
-      active = false;
-    };
-  }, [companyId]);
 
   // Search applies after a short pause in typing.
   useEffect(() => {
@@ -187,17 +176,6 @@ export default function ProcurementWorkflowPage() {
               placeholder={tx("Search by number, category or purpose")}
             />
           </label>
-          {branches.length > 1 ? (
-            <label className="wf-filter">
-              <span className="wf-sr">{tx("Branch")}</span>
-              <Select value={branchId} onChange={(e) => setParam("branch", e.target.value)}>
-                <option value="">{tx("All my branches")}</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </Select>
-            </label>
-          ) : null}
           <div className="wf-segment" role="group" aria-label={tx("Show")}>
             <Button variant={mine ? "outline" : "default"} size="sm" aria-pressed={!mine} onClick={() => setParam("mine", "")}>
               {tx("Everything I can see")}

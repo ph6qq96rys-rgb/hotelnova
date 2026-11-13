@@ -70,3 +70,35 @@
     flex-basis: 45%;
   }
 }
+
+/* Event stages as guided checklists: one numbered card per step, its tool opens inside the card. */
+.ew-stage { display: grid; gap: 14px; }
+.ew-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ew-stage-head p { margin: 0; color: var(--text-muted); font-size: 13px; }
+.ew-stepcards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ew-stepcard { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.ew-stepcard.is-open { border-color: var(--accent-dark); }
+.ew-stepcard-head { display: flex; align-items: center; gap: 14px; padding: 14px 18px; }
+.ew-stepcard-no { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 50%;
+  border: 2px solid var(--border); font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.ew-stepcard--todo .ew-stepcard-no { border-color: var(--accent-dark); color: var(--accent-dark); }
+.ew-stepcard--done .ew-stepcard-no { border-color: var(--success-border); background: var(--success-bg); color: var(--success); }
+.ew-stepcard--missed { opacity: .7; }
+.ew-stepcard-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.ew-stepcard-text strong { font-size: 14px; }
+.ew-stepcard-text small { color: var(--text-muted); font-size: 12px; }
+.ew-stepcard--done .ew-stepcard-text strong { color: var(--text-muted); }
+.ew-stepcard-body { padding: 0 14px 14px; border-top: 1px solid var(--border-soft); }
+.ew-stepcard-body > .co-card, .ew-stepcard-body .co-documents { margin-top: 14px; }
+.ew-stepcard-body .co-documents { padding: 0; }
+.ew-workspace-link, .co-workspace .ew-link-button { border: 1px solid var(--border); border-radius: 7px; background: var(--surface);
+  padding: 10px 14px; font-size: 12px; color: var(--text); text-decoration: none; white-space: nowrap; }
+.ew-stage-more { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 12px 18px; }
+.ew-stage-more summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.ew-stage-more[open] > .co-card { margin-top: 14px; }
+.ew-journey-stages a { color: inherit; text-decoration: none; display: block; }
+@media (max-width: 640px) {
+  .ew-stepcard-head { flex-wrap: wrap; }
+  .ew-stepcard-head > a, .ew-stepcard-head > button, .ew-stepcard-head > span:last-child { width: 100%; }
+}
+.ew-journey .ew-journey-stages { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }

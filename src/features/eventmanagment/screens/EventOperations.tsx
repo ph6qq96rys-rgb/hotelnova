@@ -5,12 +5,10 @@ import { Button } from "../../../components/ui/button";
 import { Checkbox } from "../../../components/ui/checkbox";
 import { Select } from "../../../components/ui/select";
 import { EmptyState } from "../../../components/ui/Feedback";
-import { listCateringEvents, type CateringEventDto } from "../api/cateringManagementApi";
-import { EventDocuments } from "./EventDocuments";
-import { EventLifecycleCard, EventProfitabilityCard, EventStockWorkspace } from "./EventStock";
+import { getCateringEventJourney, listCateringEvents, type CateringEventDto, type CateringEventJourney, type CateringWorkflowStep } from "../api/cateringManagementApi";
 import { EventsScreen } from "../sales/EventsScreen";
 import { EventJourneyPanel } from "./EventJourneyPanel";
-import { CateringAccountingPanel } from "./CateringAccountingPanel";
+import { EventStagePanel, STAGE_TAB, type StageTab } from "./EventStagePanel";
 import { cateringPath } from "../components/CateringLayout";
 import { formatCurrency } from "../../../shared/currency/currencyFormat";
 import { formatDateTime, formatDay, readApiError } from "../sales/ui";
@@ -19,7 +17,12 @@ import { appDayKey } from "./eventWorkspaceDates";
 import "./event-workspace.css";
 
 type Mode = "event" | "kitchen" | "finance" | "inventory";
-type TabKey = "overview" | "logistics" | "kitchen" | "stock" | "billing" | "close";
+type TabKey = "overview" | StageTab;
+/** Links from before the stage tabs (sidebar areas, the workflow board) land on the stage and step they meant. */
+const LEGACY_TAB: Record<string, { tab: TabKey; step: string }> = {
+  logistics: { tab: "plan", step: "staffing-plan" }, kitchen: { tab: "plan", step: "production-plan" },
+  stock: { tab: "plan", step: "reserve-stock" }, billing: { tab: "closeout", step: "final-bill" }, close: { tab: "closeout", step: "complete" },
+};
 
 const STATUSES = ["", "pendingDeposit", "confirmed", "inPlanning", "inExecution", "completed", "cancelled"];
 
@@ -47,17 +50,18 @@ const ROUTE_PERMISSIONS: Record<Mode, string[]> = {
   finance: ["catering.billing.manage", "catering.billing.approve", "catering.payments.manage", "catering.profitability.view"],
 };
 
-/** Tab labels are the sidebar labels, so the menu and the page always say the same thing. */
-const TABS: Array<{ key: TabKey; label: string; mode: Mode }> = [
-  { key: "overview", label: "Overview & payments", mode: "event" },
-  { key: "logistics", label: "Staffing & logistics", mode: "event" },
-  { key: "kitchen", label: "Kitchen production", mode: "kitchen" },
-  { key: "stock", label: "Event stock", mode: "inventory" },
-  { key: "billing", label: "Invoicing", mode: "finance" },
-  { key: "close", label: "Close event", mode: "event" },
+/** The event's pages follow its stages; every team works from the same pages and sees the steps it can do. */
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "overview", label: "Overview & payments" },
+  { key: "plan", label: "1 · Plan" },
+  { key: "deliver", label: "2 · Deliver" },
+  { key: "closeout", label: "3 · Close out" },
 ];
 
-const DEFAULT_TAB: Record<Mode, TabKey> = { event: "logistics", kitchen: "kitchen", inventory: "stock", finance: "billing" };
+/** Where each sidebar area opens when no page is chosen (the event area follows the event's current stage). */
+const AREA_START: Record<Exclude<Mode, "event">, { tab: TabKey; step: string }> = {
+  kitchen: { tab: "plan", step: "production-plan" }, inventory: { tab: "plan", step: "reserve-stock" }, finance: { tab: "closeout", step: "final-bill" },
+};
 
 /** The event to open when none is chosen: the next open one, else the latest still open, else the latest. */
 function defaultEvent(events: CateringEventDto[]): CateringEventDto | null {
@@ -73,8 +77,9 @@ function defaultEvent(events: CateringEventDto[]): CateringEventDto | null {
 }
 
 /**
- * Event workspace: one record per catering event, with its stage and every area of work as tabs
- * (the sidebar entries open the matching tab). The event stays selected across tabs.
+ * Event workspace: one record per catering event. Its pages follow the event's stages (overview, plan, deliver,
+ * close out); each stage is a numbered checklist whose steps open their tool in place. Sidebar areas open the
+ * step they are about. The event stays selected across pages.
  */
 export function EventOperations({ companyId, branchId, mode }: { companyId: string; branchId: string; mode: Mode }) {
   const { pathname } = useLocation();
@@ -124,21 +129,42 @@ export function EventOperations({ companyId, branchId, mode }: { companyId: stri
   }, [selected, requested, params, setParams]);
 
   const canOpen = (m: Mode) => ROUTE_PERMISSIONS[m].some((p) => hasPermission(p));
-  const tabs = TABS.map((t) =>
-    // Closing is also offered from invoicing to people who cannot open the logistics page.
-    t.key === "close" && !canOpen("event") && canOpen("finance") ? { ...t, mode: "finance" as Mode } : t,
-  ).filter((t) => t.mode === mode || canOpen(t.mode));
-  const requestedTab = params.get("tab") as TabKey | null;
-  const active =
-    tabs.find((t) => t.key === requestedTab && t.mode === mode) ??
-    tabs.find((t) => t.key === DEFAULT_TAB[mode]) ??
-    tabs[0];
 
-  const tabHref = (t: { key: TabKey; mode: Mode }) => {
+  // The event's checklist, from the server; it decides which steps are done and which stage is current.
+  const [journey, setJourney] = useState<CateringEventJourney | null>(null), [journeyError, setJourneyError] = useState("");
+  const selectedId = selected?.id;
+  useEffect(() => {
+    if (!selectedId) { setJourney(null); return; }
+    const c = new AbortController();
+    setJourneyError("");
+    getCateringEventJourney(companyId, selectedId, c.signal)
+      .then((j) => { if (!c.signal.aborted) setJourney(j); })
+      .catch((e) => { if (!c.signal.aborted) setJourneyError(readApiError(e)); });
+    return () => c.abort();
+  }, [companyId, selectedId, revision]);
+
+  const rawTab = params.get("tab");
+  const legacy = rawTab ? LEGACY_TAB[rawTab] : undefined;
+  const fallback: { tab: TabKey; step: string | null } = mode === "event"
+    ? { tab: journey ? STAGE_TAB[journey.stage] ?? "plan" : "plan", step: null }
+    : AREA_START[mode];
+  const active: TabKey = legacy?.tab ?? (TABS.some((t) => t.key === rawTab) ? (rawTab as TabKey) : fallback.tab);
+  const openStep: string | null = params.has("step") ? params.get("step") : legacy?.step ?? (rawTab ? null : fallback.step);
+
+  /** Same sidebar area, another page (and optionally a step) of the selected event. */
+  const pageHref = (tab: TabKey, step?: string) => {
     const query = new URLSearchParams();
     if (selected) query.set("event", selected.id);
-    if (t.key !== DEFAULT_TAB[t.mode]) query.set("tab", t.key);
-    return cateringPath(pathname, t.mode + "?" + query.toString());
+    query.set("tab", tab);
+    if (step) query.set("step", step);
+    return cateringPath(pathname, mode + "?" + query.toString());
+  };
+  const stepHref = (step: CateringWorkflowStep) => pageHref(STAGE_TAB[step.stage] ?? "closeout", step.key);
+  const openStepHere = (key: string) => {
+    const next = new URLSearchParams(params);
+    next.set("tab", active);
+    next.set("step", key);
+    setParams(next, { replace: true });
   };
 
   const today = appDayKey(new Date());
@@ -161,7 +187,7 @@ export function EventOperations({ companyId, branchId, mode }: { companyId: stri
     <section className="co-workspace">
       <header className="co-heading">
         <div>
-          <h1>{selected ? selected.eventNo + " · " + selected.customerName : (active?.label ?? "Events")}</h1>
+          <h1>{selected ? selected.eventNo + " · " + selected.customerName : (TABS.find((t) => t.key === active)?.label ?? "Events")}</h1>
           <p>
             {selected
               ? selected.venueName + " · " + formatDateTime(selected.eventDateUtc)
@@ -212,7 +238,8 @@ export function EventOperations({ companyId, branchId, mode }: { companyId: stri
             Show completed and cancelled
           </label>
         </div>
-        {selected && <EventJourneyPanel companyId={companyId} eventId={selected.id} revision={revision} />}
+        {selected && <EventJourneyPanel journey={journey} error={journeyError} eventId={selected.id}
+          stageHref={(stage) => pageHref(STAGE_TAB[stage] ?? "closeout")} stepHref={stepHref} />}
       </section>
 
       {!loading && !events.length && !error && (
@@ -252,15 +279,15 @@ export function EventOperations({ companyId, branchId, mode }: { companyId: stri
             </article>
           </div>
 
-          <nav className="ew-tabs" aria-label="Event areas">
-            {tabs.map((t) => (
-              <Link key={t.key} to={tabHref(t)} aria-current={t.key === active?.key ? "page" : undefined}>
+          <nav className="ew-tabs" aria-label="Event pages">
+            {TABS.map((t) => (
+              <Link key={t.key} to={pageHref(t.key)} aria-current={t.key === active ? "page" : undefined}>
                 {t.label}
               </Link>
             ))}
           </nav>
 
-          {active?.key === "overview" && (
+          {active === "overview" && (
             <EventsScreen
               key={"overview" + selected.id}
               embedded
@@ -273,20 +300,17 @@ export function EventOperations({ companyId, branchId, mode }: { companyId: stri
               onConfirmConsumed={() => undefined}
             />
           )}
-          {active?.key === "logistics" && <EventDocuments key={"event" + selected.id} event={selected} mode="event" />}
-          {active?.key === "kitchen" && <EventDocuments key={"kitchen" + selected.id} event={selected} mode="kitchen" />}
-          {active?.key === "stock" && !loading && (
-            <EventStockWorkspace key={"stock" + selected.id} event={selected} onChanged={refresh} />
-          )}
-          {active?.key === "billing" && (
-            <>
-              <EventDocuments key={"finance" + selected.id} event={selected} mode="finance" />
-              <EventProfitabilityCard key={"profit" + selected.id} event={selected} />
-              <CateringAccountingPanel key={"accounting" + selected.id} companyId={companyId} eventId={selected.id} />
-            </>
-          )}
-          {active?.key === "close" && (
-            <EventLifecycleCard key={"life" + selected.id} event={selected} onChanged={refresh} />
+          {active !== "overview" && (
+            <EventStagePanel
+              event={selected}
+              journey={journey}
+              stage={active}
+              openStep={openStep}
+              onOpenStep={openStepHere}
+              canOpen={canOpen}
+              overviewHref={pageHref("overview")}
+              onChanged={refresh}
+            />
           )}
         </>
       )}

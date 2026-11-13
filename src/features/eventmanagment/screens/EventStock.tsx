@@ -334,9 +334,15 @@ function positions(data: StockData): ItemPosition[] {
     .sort((a, b) => a.itemName.localeCompare(b.itemName));
 }
 
-export function EventStockWorkspace({ event, onChanged }: { event: CateringEventDto; onChanged: () => void }) {
+export type EventStockSection = StockTab;
+
+export function EventStockWorkspace({ event, onChanged, only }: {
+  event: CateringEventDto; onChanged: () => void;
+  /** Show only these sections (one step of the event checklist); the switcher is hidden when there is one. */
+  only?: StockTab[];
+}) {
   const { hasPermission } = useAuth();
-  const [tab, setTab] = useState<StockTab>("requirements");
+  const [tab, setTab] = useState<StockTab>(only?.[0] ?? "requirements");
   const [data, setData] = useState<StockData>({
     requirements: null,
     reservations: [],
@@ -430,19 +436,19 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
   const latestRecon = data.reconciliations.find((r) => r.status !== "cancelled") ?? null;
   const pendingWaste = data.waste.filter((w) => w.status === "recorded");
 
-  const tabs: [StockTab, string][] = [
+  const tabs = ([
     ["requirements", "Requirements & issues"],
     ["reservations", `Reservations (${data.reservations.length})`],
     ["returns", `Returns (${data.returns.length})`],
     ["waste", `Waste (${data.waste.length})`],
     ["reconciliation", "Reconciliation"],
-  ];
+  ] as [StockTab, string][]).filter(([key]) => !only?.length || only.includes(key));
 
   return (
     <section className="co-card">
       <header className="co-toolbar">
         <div className="co-view co-stock-tabs">
-          {tabs.map(([key, label]) => (
+          {tabs.length > 1 && tabs.map(([key, label]) => (
             <Button variant="outline" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>
               {label}
             </Button>

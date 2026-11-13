@@ -14,7 +14,8 @@ import { formatCurrency } from "../../../shared/currency/currencyFormat";
 import { humanize } from "../sales/options";
 import { readApiError, toDateTimeInput } from "../sales/ui";
 import type { CateringEventDto } from "../api/cateringManagementApi";
-type Kind = "staffing-plans" | "equipment-plans" | "production-plans" | "dispatches" | "final-bills";
+export type EventDocumentKind = "staffing-plans" | "equipment-plans" | "production-plans" | "dispatches" | "final-bills";
+type Kind = EventDocumentKind;
 type Line = Record<string, string | number | null>;
 type Document = {
   id: string;
@@ -169,12 +170,18 @@ const configs: Record<Kind, { label: string; permission: string; fields: Field[]
 export function EventDocuments({
   event,
   mode,
+  only,
+  onChanged,
 }: {
   event: CateringEventDto | null;
   mode: "event" | "kitchen" | "finance";
+  /** Show only these documents (one step of the event checklist); the switcher is hidden when there is one. */
+  only?: Kind[];
+  /** Called after any change, so the event checklist can refresh. */
+  onChanged?: () => void;
 }) {
   const { hasPermission } = useAuth();
-  const kinds: Kind[] =
+  const kinds: Kind[] = only?.length ? only :
     mode === "event"
       ? ["staffing-plans", "equipment-plans", "dispatches"]
       : mode === "kitchen"
@@ -282,6 +289,7 @@ export function EventDocuments({
       setConfirm(null);
       setRevision((v) => v + 1);
       setMessage(success);
+      onChanged?.();
     } catch (e) {
       setError(readApiError(e));
     } finally {
@@ -412,7 +420,7 @@ export function EventDocuments({
         )}
         <header className="co-toolbar">
           <div className="co-view">
-            {kinds.map((k) => (
+            {kinds.length > 1 && kinds.map((k) => (
               <Button variant="outline"
                 key={k}
                 disabled={busy}

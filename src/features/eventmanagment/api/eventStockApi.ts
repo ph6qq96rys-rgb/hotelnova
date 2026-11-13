@@ -211,8 +211,10 @@ export const eventStockApi = {
     }),
   butcheryDemand: (c: string, e: string, notes: string | null) =>
     post<unknown>(eventPath(c, e, "/butchery/demand"), { notes }),
-  requisition: (c: string, e: string, notes: string | null) =>
-    post<unknown>(eventPath(c, e, "/procurement/requisition"), { notes }),
+  receivingLocations: (c: string, s?: AbortSignal) =>
+    get<{ id: string; name: string }[]>(`/companies/${c}/procurement/purchase-orders/receiving-locations`, s),
+  requisition: (c: string, e: string, notes: string | null, deliveryLocationId: string) =>
+    post<unknown>(eventPath(c, e, "/procurement/requisition"), { notes, priority: "Normal", submit: false, deliveryLocationId }),
 
   returns: (c: string, e: string, s?: AbortSignal) => get<EventReturn[]>(eventPath(c, e, "/returns"), s),
   createReturn: (

@@ -348,7 +348,7 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const [dialog, setDialog] = useState<
-    | { kind: "reserve" | "siv" | "requisition" | "demand"; notes: string; submit?: boolean }
+    | { kind: "reserve" | "siv" | "requisition" | "demand"; notes: string; submit?: boolean; deliveryLocationId?: string }
     | { kind: "release"; id: string; reason: string }
     | { kind: "return"; notes: string; locationId: string; quantities: Record<string, number | ""> }
     | { kind: "waste"; notes: string; rows: Record<string, { quantity: number | ""; type: WasteType; reason: string }> }
@@ -363,6 +363,8 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
     | null
   >(null);
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
+  const [receivingLocations, setReceivingLocations] = useState<{ id: string; name: string }[]>([]);
+  const [receivingError, setReceivingError] = useState("");
   const done = useCallback(() => {
     setDialog(null);
     setRevision((v) => v + 1);
@@ -372,6 +374,16 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
   const c = event.companyId,
     e = event.id;
   const closed = ["completed", "cancelled"].includes(String(event.status));
+
+  useEffect(() => {
+    if (dialog?.kind !== "requisition") return;
+    const ctl = new AbortController();
+    setReceivingLocations([]); setReceivingError("");
+    eventStockApi.receivingLocations(c, ctl.signal)
+      .then(rows => { if (!ctl.signal.aborted) setReceivingLocations(rows); })
+      .catch(error => { if (!ctl.signal.aborted) setReceivingError(readApiError(error)); });
+    return () => ctl.abort();
+  }, [c, dialog?.kind]);
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -863,11 +875,23 @@ export function EventStockWorkspace({ event, onChanged }: { event: CateringEvent
             : dialog.kind === "siv"
               ? () => eventStockApi.createSiv(c, e, { submit: !!dialog.submit, notes })
               : dialog.kind === "requisition"
-                ? () => eventStockApi.requisition(c, e, notes)
+                ? () => eventStockApi.requisition(c, e, notes, dialog.deliveryLocationId!)
                 : () => eventStockApi.butcheryDemand(c, e, notes);
         return (
-          <Dialog {...common} title={meta[0]} submitLabel={meta[0]} onSubmit={() => void action.run(call, meta[2])}>
+          <Dialog {...common} title={meta[0]} submitLabel={meta[0]}
+            disabled={dialog.kind === "requisition" && !receivingLocations.some(l => l.id === dialog.deliveryLocationId)}
+            onSubmit={() => void action.run(call, meta[2])}>
             <p>{meta[1]}</p>
+            {dialog.kind === "requisition" && <>
+              <p>Creates a company purchase request with Normal priority, saved as a draft for review.</p>
+              {receivingError && <p role="alert">{receivingError}</p>}
+              <label>Receiving destination
+                <Select value={dialog.deliveryLocationId ?? ""} onChange={ev => setDialog({ ...dialog, deliveryLocationId: ev.target.value })}>
+                  <option value="">Select receiving warehouse</option>
+                  {receivingLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </Select>
+              </label>
+            </>}
             {dialog.kind === "siv" && (
               <label className="co-check">
                 <Checkbox

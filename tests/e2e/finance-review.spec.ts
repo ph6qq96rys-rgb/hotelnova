@@ -50,7 +50,7 @@ test("bank statement imports quoted CSV and displays approval failures", async (
   await page.getByRole("combobox", { name: "Bank account", exact: true }).selectOption("bank");
   await page.getByLabel("Statement reference", { exact: true }).fill("BANK-1");
   await page.getByLabel("Closing balance", { exact: true }).fill("100");
-  await page.getByLabel("Statement CSV", { exact: true }).fill('Date,Reference,Amount\n2026-11-07,"Deposit, customer",100');
+  await page.getByLabel("Or paste it here", { exact: true }).fill('Date,Reference,Amount\n2026-11-07,"Deposit, customer",100');
   await page.getByRole("button", { name: "Save statement" }).click();
   await expect(page.getByRole("heading", { name: "BANK-1 · Draft" })).toBeVisible();
   expect(imported.lines[0]).toEqual({ date: "2026-11-07", reference: "Deposit, customer", amount: 100 });

@@ -9,6 +9,7 @@ import PostingSetupPage from "../features/finance/pages/PostingSetupPage";
 import TrialBalancePage from "../features/finance/pages/TrialBalancePage";
 import FinancialStatementsPage from "../features/finance/pages/FinancialStatementsPage";
 import BankReconciliationPage from "../features/finance/pages/BankReconciliationPage";
+import BankAccountsPage from "../features/finance/pages/BankAccountsPage";
 import VatReturnPage from "../features/finance/pages/VatReturnPage";
 import ReceivablesPage from "../features/finance/pages/ReceivablesPage";
 
@@ -26,6 +27,7 @@ const FINANCE_SECTION = "Finance";
 /** General ledger (finance phase 1). */
 export const financeRoutes: AppRoute[] = [
   { path: "finance/statements", label: "Financial Statements", element: <FinancialStatementsPage />, icon: <Scale size={18} />, nav: true, section: FINANCE_SECTION, order: 21, permissions: ["finance.view"] },
+  { path: "finance/bank-accounts", label: "Bank Accounts & Transfers", element: <BankAccountsPage />, icon: <Scale size={18} />, nav: true, section: FINANCE_SECTION, order: 21, permissions: ["finance.view"] },
   { path: "finance/bank-reconciliation", label: "Bank Reconciliation", element: <BankReconciliationPage />, icon: <Scale size={18} />, nav: true, section: FINANCE_SECTION, order: 22, permissions: ["finance.view"] },
   { path: "finance/receivables", label: "Accounts Receivable", element: <ReceivablesPage />, icon: <BookOpen size={18} />, nav: true, section: FINANCE_SECTION, order: 15, permissions: ["finance.view"] },
   { path: "finance/vat-return", label: "VAT Return", element: <VatReturnPage />, icon: <Scale size={18} />, nav: true, section: FINANCE_SECTION, order: 23, permissions: ["finance.view"] },
